@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RacetrackAssetControlRegistry, authorizeRacrAction, createRacrAssetTemplate, validateRacrAsset, racrSupportedAssetTypes } from '../dist/index.js';
+import { RacetrackAssetControlRegistry, authorizeRacrAction, createRacrAssetTemplate, validateRacrAsset, racrRegistryEventTypes, racrSupportedAssetTypes } from '../dist/index.js';
 
 const admin = { id: 'admin-1', roles: ['registry-admin', 'compliance-officer'] };
 const ops = { id: 'ops-1', roles: ['track-ops'] };
@@ -24,10 +24,14 @@ test('RACR versions assets, audits changes, emits events, and returns defensive 
   assert.equal(registry.history(created.globalId).length, 2);
   assert.equal(registry.auditTrail(created.globalId).length, 2);
   assert.equal(registry.events().length, 2);
-  assert.deepEqual(registry.events().map((event) => event.type), ['RacrAssetCreated', 'RacrAssetUpdated']);
+  assert.deepEqual(registry.events().map((event) => event.type), [racrRegistryEventTypes.assetCreated, racrRegistryEventTypes.assetUpdated]);
   assert.equal(registry.events()[0].lineage.aggregateId, created.globalId);
   assert.equal(registry.events()[0].payload.tenantId, 'trk-1');
-  assert.ok(registry.eventGovernanceCatalog().some((schema) => schema.schemaRef === 'RacrAssetCreated.v1' && schema.compliance === 'regulated'));
+  assert.equal(registry.events({ tenantId: 'trk-1', type: racrRegistryEventTypes.assetCreated }).length, 1);
+  assert.equal(registry.events()[0].payload.approvalRequired, true);
+  const governance = registry.eventGovernanceCatalog();
+  assert.ok(governance.some((entry) => entry.schemaRef === 'racr.asset.created.v1.v1' && entry.digitalTwinSync && entry.tenantScoped));
+  assert.ok(governance.every((entry) => entry.requiredMetadata.includes('tenantId') && entry.replayUseCases.includes('digital-twin-resynchronization')));
   updated.metadata.barn = 'mutated';
   assert.equal(registry.current(created.globalId).metadata.barn, 'A');
 });

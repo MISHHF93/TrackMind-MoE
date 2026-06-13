@@ -51,6 +51,44 @@ export interface RacrAssetVersion {
   deletedAt?: string;
 }
 
+
+export type RacrRegistryEventType = 'racr.asset.created.v1' | 'racr.asset.updated.v1';
+
+export const racrRegistryEventTypes = {
+  assetCreated: 'racr.asset.created.v1',
+  assetUpdated: 'racr.asset.updated.v1',
+} as const satisfies Record<string, RacrRegistryEventType>;
+
+export interface RacrRegistryEventPayload {
+  globalId: string;
+  tenantId: string;
+  assetType: string;
+  assetClass: RacrAssetClass;
+  version: number;
+  lifecycleState: RacrLifecycleState;
+  riskClassification: RacrRiskClassification;
+  digitalTwinId: string;
+  changedFields: string[];
+  approvalRequired: boolean;
+  complianceControlIds: string[];
+  schemaVersion: string;
+}
+
+export interface RacrEventGovernanceCatalogEntry {
+  eventType: RacrRegistryEventType;
+  schemaRef: string;
+  aggregate: 'RacrAsset';
+  tenantScoped: true;
+  authoritativeSource: 'RACR';
+  digitalTwinSync: true;
+  cqrsProjection: string;
+  replayUseCases: string[];
+  auditControls: string[];
+  complianceControls: string[];
+  requiredMetadata: string[];
+  payloadFields: string[];
+}
+
 export interface RacrAuditEntry { auditId: string; globalId: string; version: number; action: RacrAction; actorId: string; occurredAt: string; changes: string[]; reason?: string }
 
 export const racrSupportedAssetTypes = [
@@ -107,7 +145,7 @@ export class RacetrackAssetControlRegistry {
     this.assertValid(next);
     this.versions.set(next.globalId, [this.clone(next)]);
     this.audit(next, 'create', actor, ['asset-created']);
-    void this.publish('RacrAssetCreated', next, ['asset-created']);
+    void this.publish(racrRegistryEventTypes.assetCreated, next, ['asset-created']);
     return this.clone(next);
   }
 
@@ -118,7 +156,7 @@ export class RacetrackAssetControlRegistry {
     this.assertValid(next);
     this.versions.get(globalId)!.push(this.clone(next));
     this.audit(next, 'update', actor, Object.keys(patch), reason);
-    void this.publish('RacrAssetUpdated', next, Object.keys(patch));
+    void this.publish(racrRegistryEventTypes.assetUpdated, next, Object.keys(patch));
     return this.clone(next);
   }
 
@@ -183,29 +221,48 @@ export class RacetrackAssetControlRegistry {
 
   history(globalId: string): RacrAssetVersion[] { return (this.versions.get(globalId) ?? []).map((item) => this.clone(item)); }
   auditTrail(globalId?: string): RacrAuditEntry[] { return this.audits.filter((entry) => !globalId || entry.globalId === globalId).map((entry) => ({ ...entry, changes: [...entry.changes] })); }
-  events(): RaceDayEvent[] { return this.eventBus.events(); }
-  eventGovernanceCatalog() { return this.eventBus.governanceCatalog(); }
+  events(filter: { tenantId?: string; type?: RacrRegistryEventType; aggregateId?: string } = {}): RaceDayEvent[] {
+    return this.eventBus.events({ type: filter.type, aggregateId: filter.aggregateId }).filter((event) => !filter.tenantId || event.metadata.tenantId === filter.tenantId);
+  }
+  eventGovernanceCatalog(): RacrEventGovernanceCatalogEntry[] {
+    return this.eventBus.governanceCatalog()
+      .filter((schema) => Object.values(racrRegistryEventTypes).includes(schema.type as RacrRegistryEventType))
+      .map((schema) => ({
+        eventType: schema.type as RacrRegistryEventType,
+        schemaRef: schema.schemaRef,
+        aggregate: 'RacrAsset',
+        tenantScoped: true,
+        authoritativeSource: 'RACR',
+        digitalTwinSync: true,
+        cqrsProjection: 'racr.asset-authoritative-read-model',
+        replayUseCases: ['digital-twin-resynchronization', 'compliance-evidence-rebuild', 'asset-inventory-read-model-rebuild'],
+        auditControls: ['RACR-AUDIT', 'TM-COMP-001'],
+        complianceControls: ['RACR-BASELINE', 'TM-SEC-002', 'TM-AI-001'],
+        requiredMetadata: ['tenantId', 'correlationId', 'aggregateId', 'schemaRef', 'traceId', 'producer'],
+        payloadFields: [...schema.payloadFields],
+      }));
+  }
 
   private require(actor: RacrActor, action: RacrAction) { if (!authorizeRacrAction(actor, action)) throw new Error(`Actor ${actor.id} is not authorized for ${action}`); }
   private assertValid(asset: RacrAssetVersion) { const result = validateRacrAsset(asset); if (!result.valid) throw new Error(result.errors.join('; ')); }
   private audit(asset: RacrAssetVersion, action: RacrAction, actor: RacrActor, changes: string[], reason?: string) { this.audits.push({ auditId: `audit-${this.audits.length + 1}`, globalId: asset.globalId, version: asset.version, action, actorId: actor.id, occurredAt: asset.updatedAt, changes, reason }); }
   private registerEventSchemas() {
     const owner = { service: 'racetrack-asset-control-registry', team: 'platform-governance', accountableRole: 'RACR Service Owner' };
-    for (const type of ['RacrAssetCreated', 'RacrAssetUpdated'] as const) {
+    for (const type of Object.values(racrRegistryEventTypes)) {
       this.eventBus.registerEvent({
         type,
         version: 1,
         description: `${type} authoritative inventory event emitted by the Racetrack Asset and Control Registry`,
         owner,
-        payloadFields: ['globalId', 'tenantId', 'assetType', 'assetClass', 'version', 'lifecycleState', 'riskClassification', 'digitalTwinId', 'changedFields'],
+        payloadFields: ['globalId', 'tenantId', 'assetType', 'assetClass', 'version', 'lifecycleState', 'riskClassification', 'digitalTwinId', 'changedFields', 'approvalRequired', 'complianceControlIds', 'schemaVersion'],
         compliance: 'regulated',
-        operationalMetadata: { domain: 'asset-management', authoritativeSource: 'RACR', digitalTwinSync: true, auditRequired: true },
-        validate: (payload: { globalId?: string; tenantId?: string; version?: number; digitalTwinId?: string }) => Boolean(payload.globalId?.startsWith('racr:') && payload.tenantId && payload.version && payload.version > 0 && payload.digitalTwinId),
+        operationalMetadata: { domain: 'asset-management', authoritativeSource: 'RACR', aggregate: 'RacrAsset', tenantScoped: true, digitalTwinSync: true, auditRequired: true, cqrsProjection: 'racr.asset-authoritative-read-model' },
+        validate: (payload: Partial<RacrRegistryEventPayload>) => Boolean(payload.globalId?.startsWith('racr:') && payload.tenantId && payload.version && payload.version > 0 && payload.digitalTwinId && Array.isArray(payload.changedFields) && payload.schemaVersion),
       });
     }
   }
 
-  private async publish(type: 'RacrAssetCreated' | 'RacrAssetUpdated', asset: RacrAssetVersion, changedFields: string[] = []) {
+  private async publish(type: RacrRegistryEventType, asset: RacrAssetVersion, changedFields: string[] = []) {
     await this.eventBus.publish({
       id: `${asset.globalId}:v${asset.version}`,
       type,
@@ -214,9 +271,25 @@ export class RacetrackAssetControlRegistry {
       correlationId: asset.globalId,
       aggregateId: asset.globalId,
       producer: 'racetrack-asset-control-registry',
-      payload: { globalId: asset.globalId, tenantId: asset.tenantId, assetType: asset.assetType, assetClass: asset.assetClass, version: asset.version, lifecycleState: asset.lifecycleState, riskClassification: asset.riskClassification, digitalTwinId: asset.digitalTwin.twinId, changedFields },
+      payload: this.toRegistryEventPayload(asset, changedFields),
       metadata: { tenantId: asset.tenantId, compliance: 'regulated', team: 'platform-governance', accountableRole: 'RACR Service Owner' },
     });
+  }
+  private toRegistryEventPayload(asset: RacrAssetVersion, changedFields: string[]): RacrRegistryEventPayload {
+    return {
+      globalId: asset.globalId,
+      tenantId: asset.tenantId,
+      assetType: asset.assetType,
+      assetClass: asset.assetClass,
+      version: asset.version,
+      lifecycleState: asset.lifecycleState,
+      riskClassification: asset.riskClassification,
+      digitalTwinId: asset.digitalTwin.twinId,
+      changedFields: [...changedFields],
+      approvalRequired: asset.approvalRequirements.length > 0 || asset.lifecycleControls.some((control) => control.state === asset.lifecycleState && control.approvalRequired),
+      complianceControlIds: asset.complianceMappings.map((mapping) => mapping.controlId),
+      schemaVersion: asset.schemaVersion,
+    };
   }
   private clone(asset: RacrAssetVersion): RacrAssetVersion { return structuredClone(asset); }
 }
