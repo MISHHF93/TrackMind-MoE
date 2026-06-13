@@ -29,6 +29,28 @@ export interface EventSchema<T = unknown> {
   validate?: (payload: T) => boolean | readonly string[];
 }
 
+export interface EventContract<T = unknown> extends EventSchema<T> {
+  deprecated?: boolean;
+  supersededBy?: string;
+  examples?: T[];
+}
+
+export interface EventDiscoveryFilter {
+  ownerService?: string;
+  compliance?: ComplianceClassification;
+  eventTypePrefix?: string;
+  includeDeprecated?: boolean;
+}
+
+export interface EventDiscoveryResult {
+  events: Array<EventContract & { schemaRef: string; latest: boolean }>;
+  producers: EventProducerProfile[];
+  consumers: EventConsumerProfile[];
+}
+
+export interface EventProducerProfile { name: string; service: string; emits: EventName[]; owner: EventOwner }
+export interface EventConsumerProfile { name: string; service: string; consumes: Array<EventName | '*'>; owner?: EventOwner }
+
 export interface EventTraceContext {
   traceId: string;
   spanId: string;
@@ -113,25 +135,25 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const id = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 export class EventSchemaRegistry {
-  private readonly schemas = new Map<string, EventSchema>();
+  private readonly schemas = new Map<string, EventContract>();
 
-  register<T>(schema: EventSchema<T>): string {
+  register<T>(schema: EventContract<T>): string {
     const key = this.ref(schema.type, schema.version);
     this.schemas.set(key, { ...(schema as EventSchema), dependencies: [...(schema.dependencies ?? [])], operationalMetadata: { ...(schema.operationalMetadata ?? {}) } });
     return key;
   }
 
-  get(type: EventName, version: number): EventSchema {
+  get(type: EventName, version: number): EventContract {
     const schema = this.schemas.get(this.ref(type, version));
     if (!schema) throw new Error(`event schema not registered: ${String(type)}@v${version}`);
     return schema;
   }
 
-  latest(type: EventName): EventSchema | undefined {
+  latest(type: EventName): EventContract | undefined {
     return [...this.schemas.values()].filter((schema) => schema.type === type).sort((a, b) => b.version - a.version)[0];
   }
 
-  all(): EventSchema[] {
+  all(): EventContract[] {
     return [...this.schemas.values()].map(clone);
   }
 
@@ -146,17 +168,38 @@ export class UniversalEventBus {
   private readonly eventStore: RaceDayEvent[] = [];
   private readonly deadLetters: DeadLetterEntry[] = [];
   private readonly hooks: ObservabilityHook[] = [];
+  private readonly producers = new Map<string, EventProducerProfile>();
+  private readonly consumers = new Map<string, EventConsumerProfile>();
   private sequence = 0;
 
-  registerEvent<T>(schema: EventSchema<T>): string {
+  registerEvent<T>(schema: EventContract<T>): string {
     const ref = this.schemaRegistry.register(schema);
     this.emit({ name: 'schema.registered', eventType: schema.type, details: { schemaRef: ref, owner: schema.owner, compliance: schema.compliance } });
     return ref;
   }
 
-  subscribe(type: EventName | '*', handler: Handler, options: { name?: string; retry?: Partial<RetryPolicy> } = {}): () => void {
+  registerProducer(profile: EventProducerProfile): EventProducerProfile {
+    const existing = this.producers.get(profile.name);
+    const next = { ...profile, emits: [...new Set([...(existing?.emits ?? []), ...profile.emits])] };
+    this.producers.set(profile.name, clone(next));
+    for (const eventType of next.emits) this.ensureProducerSchema(eventType, next);
+    return clone(next);
+  }
+
+  registerConsumer(profile: EventConsumerProfile): EventConsumerProfile {
+    const existing = this.consumers.get(profile.name);
+    const next = { ...profile, consumes: [...new Set([...(existing?.consumes ?? []), ...profile.consumes])] };
+    this.consumers.set(profile.name, clone(next));
+    return clone(next);
+  }
+
+  producer(name: string): EventProducer { return new EventProducer(this, name); }
+  consumer(name: string): EventConsumer { return new EventConsumer(this, name); }
+
+  subscribe(type: EventName | '*', handler: Handler, options: { name?: string; service?: string; owner?: EventOwner; retry?: Partial<RetryPolicy> } = {}): () => void {
     const subscription = { name: options.name ?? `handler:${String(type)}:${this.subscriptions.length + 1}`, type, handler, retry: { ...defaultRetry, ...(options.retry ?? {}) } };
     this.subscriptions.push(subscription);
+    this.registerConsumer({ name: subscription.name, service: options.service ?? subscription.name, consumes: [type], owner: options.owner });
     return () => {
       const index = this.subscriptions.indexOf(subscription);
       if (index >= 0) this.subscriptions.splice(index, 1);
@@ -171,7 +214,8 @@ export class UniversalEventBus {
   async publish<T>(input: PublishInput<T>): Promise<RaceDayEvent<T>> {
     const version = input.version ?? this.schemaRegistry.latest(input.type)?.version ?? 1;
     const schema = this.ensureSchema(input.type, version, input);
-    const validation = schema.validate?.(input.payload);
+    const missingFields = schema.payloadFields.filter((field) => !(input.payload && typeof input.payload === 'object' && field in (input.payload as Record<string, unknown>)));
+    const validation = missingFields.length ? missingFields.map((field) => `missing required payload field: ${field}`) : schema.validate?.(input.payload);
     if (validation === false || (Array.isArray(validation) && validation.length > 0)) throw new Error(`event payload failed schema validation: ${String(input.type)}@v${version}`);
     const traceId = input.trace?.traceId ?? input.correlationId ?? id('trace');
     const event: RaceDayEvent<T> = {
@@ -188,6 +232,7 @@ export class UniversalEventBus {
       trace: { traceId, spanId: input.trace?.spanId ?? id('span'), parentSpanId: input.trace?.parentSpanId },
       metadata: { ...(schema.operationalMetadata ?? {}), ...(input.metadata ?? {}) },
     };
+    this.registerProducer({ name: event.lineage.producer, service: event.lineage.producer, emits: [event.type], owner: event.owner });
     this.eventStore.push(event);
     this.emitEvent('event.published', event);
     await this.deliver(event);
@@ -211,13 +256,30 @@ export class UniversalEventBus {
     return events.map(clone);
   }
 
-  governanceCatalog(): Array<EventSchema & { schemaRef: string }> {
+  governanceCatalog(): Array<EventContract & { schemaRef: string }> {
     return this.schemaRegistry.all().map((schema) => ({ ...schema, schemaRef: this.schemaRegistry.ref(schema.type, schema.version) }));
   }
 
-  private ensureSchema(type: EventName, version: number, input: PublishInput): EventSchema {
-    const existing = this.schemaRegistry.latest(type);
-    if (existing && existing.version === version) return existing;
+  discover(filter: EventDiscoveryFilter = {}): EventDiscoveryResult {
+    const allSchemas = this.schemaRegistry.all();
+    const latestByType = new Map<EventName, number>();
+    for (const schema of allSchemas) latestByType.set(schema.type, Math.max(latestByType.get(schema.type) ?? 0, schema.version));
+    const events = allSchemas
+      .filter((schema) => (filter.includeDeprecated || !schema.deprecated) && (!filter.ownerService || schema.owner.service === filter.ownerService) && (!filter.compliance || schema.compliance === filter.compliance) && (!filter.eventTypePrefix || String(schema.type).startsWith(filter.eventTypePrefix)))
+      .map((schema) => ({ ...schema, schemaRef: this.schemaRegistry.ref(schema.type, schema.version), latest: latestByType.get(schema.type) === schema.version }));
+    return { events, producers: [...this.producers.values()].map(clone), consumers: [...this.consumers.values()].map(clone) };
+  }
+
+  async processDeadLetters(filter: { handlerName?: string; eventType?: EventName } = {}): Promise<{ retried: number; remaining: number }> {
+    const retryable = this.deadLetters.filter((entry) => (!filter.handlerName || entry.handlerName === filter.handlerName) && (!filter.eventType || entry.event.type === filter.eventType));
+    this.deadLetters.splice(0, this.deadLetters.length, ...this.deadLetters.filter((entry) => !retryable.includes(entry)));
+    for (const entry of retryable) await this.deliver(entry.event, true);
+    return { retried: retryable.length, remaining: this.deadLetters.length };
+  }
+
+  private ensureSchema(type: EventName, version: number, input: PublishInput): EventContract {
+    const exact = (() => { try { return this.schemaRegistry.get(type, version); } catch { return undefined; } })();
+    if (exact) return exact;
     const owner: EventOwner = {
       service: input.producer ?? 'unregistered-producer',
       team: String(input.metadata?.team ?? 'platform'),
@@ -268,6 +330,29 @@ export class UniversalEventBus {
     const enriched = { ...signal, timestamp: new Date().toISOString() };
     for (const hook of this.hooks) hook(enriched);
   }
+
+  private ensureProducerSchema(eventType: EventName, profile: EventProducerProfile): void {
+    if (this.schemaRegistry.latest(eventType)) return;
+    this.registerEvent({ type: eventType, version: 1, description: `Auto-registered ${String(eventType)} producer contract`, owner: profile.owner, payloadFields: [], compliance: 'internal', operationalMetadata: { autoRegistered: true, registeredFrom: 'producer-profile' } });
+  }
+}
+
+export class EventProducer {
+  constructor(private readonly bus: UniversalEventBus, private readonly name: string) {}
+  publish<T>(input: Omit<PublishInput<T>, 'producer'>): Promise<RaceDayEvent<T>> { return this.bus.publish({ ...input, producer: this.name }); }
+}
+
+export class EventConsumer {
+  constructor(private readonly bus: UniversalEventBus, private readonly name: string) {}
+  subscribe(type: EventName | '*', handler: Handler, retry?: Partial<RetryPolicy>): () => void { return this.bus.subscribe(type, handler, { name: this.name, retry }); }
+}
+
+export function bindAuditLogToEvents(bus: UniversalEventBus, auditLog: { append(record: { id: string; type: string; actor: string; timestamp: string; payload: unknown; subjectId?: string; tenantId?: string; correlationId?: string; severity?: string; regulations?: string[] }): unknown }, options: { consumerName?: string; includeTypes?: EventName[]; excludeTypes?: EventName[] } = {}): () => void {
+  return bus.subscribe('*', (event) => {
+    if (options.includeTypes && !options.includeTypes.includes(event.type)) return;
+    if (options.excludeTypes?.includes(event.type)) return;
+    auditLog.append({ id: `audit:${event.id}`, type: 'system-event', actor: event.lineage.producer, timestamp: event.occurredAt, payload: { eventId: event.id, eventType: event.type, schemaRef: event.schemaRef, trace: event.trace, metadata: event.metadata }, subjectId: event.lineage.aggregateId, correlationId: event.correlationId, severity: event.compliance === 'restricted' ? 'critical' : event.compliance === 'regulated' ? 'warning' : 'info' });
+  }, { name: options.consumerName ?? 'audit-log-event-sink', retry: { maxAttempts: 1 } });
 }
 
 export class InMemoryEventBus extends UniversalEventBus {}
