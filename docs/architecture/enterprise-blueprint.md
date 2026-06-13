@@ -64,3 +64,23 @@ flowchart LR
 3. Every command, decision, model output, approval, and integration call emits an immutable audit event.
 4. Tenant context is mandatory for every request, event, secret, database row, blob, and telemetry record.
 5. Services publish events and own their write models; other services consume events and build read models.
+
+## Enterprise data lakehouse, analytics, and knowledge fabric
+
+TrackMind Nexus includes a governed enterprise data lakehouse that consolidates operational data, telemetry streams, Digital Twin state changes, regulatory documents, maintenance records, security events, compliance evidence, race operations, AI recommendations, and workflow histories into a single analytical platform. The platform uses source registration, immutable lineage, quality scoring, policy checks, and curated product publishing so domain teams can share trusted data without bypassing tenancy, security, or audit controls.
+
+### Lakehouse zones
+
+1. **Landing** captures original files, events, documents, and workflow payloads with tenant metadata and retention classification.
+2. **Bronze** preserves raw append-only facts for replay, audit reconstruction, and regulatory evidence.
+3. **Silver** conforms schemas across operational systems, IoT telemetry, Digital Twin entities, security logs, and maintenance systems.
+4. **Gold** publishes curated executive metrics, forecasting tables, risk aggregates, compliance coverage, and race-day intelligence marts.
+5. **Semantic** indexes regulatory text, maintenance narratives, steward reports, evidence packages, and decision histories for governed search and retrieval-augmented analysis.
+6. **Feature** exposes approved machine-learning features for forecasting, anomaly detection, predictive maintenance, and responsible AI evaluation.
+
+### Governance and intelligence controls
+
+- Every dataset is tied to an accountable source, domain owner, system of record, retention period, sensitivity label, partition strategy, lineage chain, and quality score.
+- Confidential and restricted domains require encryption, private access, access review evidence, and domain-specific tags before downstream analytical products are considered compliant.
+- Analytics products declare their purpose, source datasets, metrics, refresh cadence, and consumers to support reporting, forecasting, machine learning, semantic search, and enterprise intelligence.
+- Knowledge fabric documents retain citations, effective dates, sensitivity labels, and domain metadata so AI assistants and analysts can retrieve authoritative regulatory and operational context.
