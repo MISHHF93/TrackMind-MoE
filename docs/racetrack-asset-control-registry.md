@@ -57,3 +57,26 @@ The executable registry lives in `apps/api/src/racetrackControlRegistry.ts`. It 
 - `controlsRequiringApproval` for governance workflow discovery.
 - `validateRaceDistanceSetup` for race-distance approval validation.
 - `buildStartingGateMoveRecommendation` for the first gate-positioning workflow.
+
+## RACR v1 foundational registry implementation
+
+The v1 registry is implemented as an authoritative, event-emitting asset repository for all platform asset classes. Each registered object uses the `racr:` global identifier namespace and is stored as a complete immutable version snapshot with lifecycle state, ownership, risk classification, approval requirements, telemetry bindings, maintenance records, Digital Twin relationships, and lineage links.
+
+### Supported enterprise asset coverage
+
+RACR v1 explicitly supports the foundational racetrack asset catalog required by TrackMind Nexus:
+
+- Physical infrastructure: starting gates, irrigation systems, track sectors, cameras, lighting systems, and ambulances.
+- Biological and licensed participants: horses, jockeys, veterinarians, and stewards.
+- Operational objects: race events, ticketing systems, wagering systems, and AI agents.
+- Regulatory objects: regulatory records and compliance controls.
+
+### Control guarantees
+
+- **Schema validation:** required identifiers, tenants, owners, schema versions, telemetry bindings, and critical-asset approval policies are validated before write acceptance.
+- **RBAC enforcement:** create, read, update, rollback, soft delete, approval, telemetry binding, and maintenance actions are role-gated.
+- **Version history and rollback:** every mutation appends a new version, and rollback creates a new version from a prior snapshot rather than rewriting history.
+- **Change auditing:** every accepted command records actor, action, version, timestamp, reason, and changed fields.
+- **Soft deletes:** decommissioning moves assets into `deleted` lifecycle state while preserving history and auditability.
+- **Event streams:** creation and update commands publish registry events for downstream Digital Twin, CQRS, compliance, and command-center consumers.
+- **Lineage and twin relationships:** assets can link to parent assets, replacement chains, configuration sources, and Digital Twin nodes for traceable simulation and operational synchronization.
