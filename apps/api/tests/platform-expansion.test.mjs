@@ -60,3 +60,65 @@ test('surface, maintenance, biometric, integrity, operations, and governance ser
   center.record({ id: 'm1', kind: 'model-version', actor: 'mlops', timestamp: '2026-06-13T00:00:00Z', evidence: ['registry'] });
   assert.equal(center.byKind('model-version').length, 1);
 });
+
+import {
+  designFederatedRacetrackArchitecture,
+  RacingKnowledgeGraph,
+  DigitalTwinRuntimeEngine,
+  EventSourcedCqrsStore,
+  evaluateTrackAccreditation,
+  nationalCommandDashboard,
+  monteCarloRaceDay,
+  weatherIntelligence,
+  surfaceIntelligenceLab,
+  validateExplainableDecision,
+  responsibleAiGovernanceBlueprint,
+  ModelRegistry,
+  ComplianceEvidenceVault,
+  integrityMonitoringService,
+  visionOrchestrationPlatform,
+  equineDigitalPassport,
+  predictiveInjuryResearchSandbox,
+  enterpriseArchitectureArtifacts,
+} from '../dist/index.js';
+
+test('enterprise-scale federation, graph, twins, CQRS, governance, and command services are modeled', () => {
+  const federation = designFederatedRacetrackArchitecture([{ id: 'trk-1', name: 'Track 1', region: 'east', tier: 'local-track', dataResidency: 'US' }]);
+  assert.equal(federation.maxRacetracks, 500);
+  assert.equal(federation.capacityOk, true);
+  assert.ok(federation.isolation.includes('per-track encryption keys'));
+
+  const kg = new RacingKnowledgeGraph();
+  kg.upsert({ id: 'horse-1', kind: 'horse', name: 'Example Horse' });
+  kg.upsert({ id: 'incident-1', kind: 'incident', name: 'Inquiry' });
+  kg.connect({ from: 'horse-1', to: 'incident-1', relationship: 'INVOLVED_IN', evidence: ['steward-report'] });
+  assert.equal(kg.trace('horse-1').edges.length, 1);
+
+  const runtime = new DigitalTwinRuntimeEngine();
+  assert.equal(runtime.targetAssetCapacity, 10_000_000);
+  assert.equal(runtime.sync({ id: 'gate-1', tenantId: 'trk-1', updatedAt: '2026-06-13T00:00:00Z', state: { open: false } }).version, 1);
+
+  const store = new EventSourcedCqrsStore();
+  store.append({ id: 'e1', aggregateId: 'race-1', type: 'RaceScheduled', version: 1, occurredAt: '2026-06-13T00:00:00Z', payload: { status: 'scheduled' } });
+  assert.equal(store.project('race-1', (state, event) => ({ ...state, ...event.payload }), {}).status, 'scheduled');
+
+  assert.equal(evaluateTrackAccreditation([{ domain: 'operations', score: 95, evidence: ['ops'] }, { domain: 'maintenance', score: 92, evidence: ['maint'] }, { domain: 'safety', score: 94, evidence: ['safe'] }, { domain: 'compliance', score: 93, evidence: ['comp'] }]).status, 'accredited');
+  assert.equal(nationalCommandDashboard([{ tenantId: 'trk-1', assetId: 'a1', latitude: 1, longitude: 2, health: 'critical', metric: 9 }]).criticalAssets, 1);
+  assert.equal(monteCarloRaceDay([{ delayMinutes: 10, incidentProbability: 0.05, cost: 1000 }], 100).recommendation, 'proceed');
+  assert.equal(weatherIntelligence({ sensorRainMm: 1, forecastRainMm: 2, windMph: 5 }).risk, 'normal');
+  assert.equal(surfaceIntelligenceLab({ moisture: 18, compaction: 240, drainageRate: 10, wearIndex: 2, maintenanceEffectiveness: 10 }).action, 'race-ready');
+  assert.equal(validateExplainableDecision({ id: 'd1', evidence: ['obs'], confidence: 0.9, confidenceInterval: [0.8, 0.95], approvals: ['steward'] }).valid, true);
+  assert.equal(responsibleAiGovernanceBlueprint().length, 4);
+
+  const registry = new ModelRegistry();
+  registry.register({ id: 'm1', lineage: ['data-1'], approvals: ['mlops'], evaluations: { safety: 0.91 }, deployed: false });
+  assert.equal(registry.deployable('m1'), true);
+  const vault = new ComplianceEvidenceVault();
+  vault.add({ id: 'audit-1', type: 'inspection', hash: 'sha256:abc', retainedUntil: '2032-01-01' });
+  assert.equal(vault.query('inspection').length, 1);
+  assert.equal(integrityMonitoringService([{ id: 'w1', type: 'wagering', zScore: 5.1, evidence: ['pool'] }])[0].severity, 'critical');
+  assert.equal(visionOrchestrationPlatform([{ id: 'v1', task: 'horse-detection', approved: true, edgeTargets: ['cam-1'] }]).deployableModels, 1);
+  assert.equal(equineDigitalPassport({ horseId: 'h1', welfareEvents: ['exam'], races: ['r1'], complianceFlags: [] }).eligible, true);
+  assert.equal(predictiveInjuryResearchSandbox(true).decisionUse, 'prohibited');
+  assert.ok(enterpriseArchitectureArtifacts.threatModel.includes('tampering'));
+});
