@@ -23,3 +23,5 @@ export type ProtectedAction = typeof protectedActions[number];
 export * from './identityGovernance.js';
 
 export * from './foundation.js';
+
+export * from './domainKernel.js';

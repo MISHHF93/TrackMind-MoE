@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import { createMasterDataEntityTemplate, EnterpriseMasterDataRegistry, enterpriseDomainSchemas, enterpriseRelationshipBlueprints, getEnterpriseDomainSchema, validateMasterDataEntity } from '../dist/index.js';
 
 test('enterprise domain catalog covers racetrack canonical entities with governance metadata', () => {
-  const expected = ['racetrack', 'race-day', 'race', 'horse', 'jockey', 'trainer', 'owner', 'veterinarian', 'steward', 'maintenance-crew', 'security-personnel', 'facility', 'asset', 'sensor', 'track-sector', 'betting-system', 'ticketing-system', 'incident', 'investigation', 'compliance-record', 'ai-recommendation', 'approval', 'digital-twin-object'];
+  const expected = ['racetrack', 'race-day', 'race', 'horse', 'jockey', 'trainer', 'owner', 'veterinarian', 'steward', 'maintenance-crew', 'security-personnel', 'facility', 'asset', 'sensor', 'track-sector', 'betting-system', 'ticketing-system', 'incident', 'investigation', 'compliance-record', 'ai-recommendation', 'approval', 'digital-twin-object', 'starting-gate', 'vehicle', 'workflow', 'audit-record'];
   assert.deepEqual(enterpriseDomainSchemas.map((schema) => schema.kind), expected);
   const horse = getEnterpriseDomainSchema('horse');
   assert.equal(horse.classification, 'regulated');
   assert.equal(horse.schemaVersion, 'edm.v1');
+  assert.equal(horse.kernelSchemaVersion, 'trackmind.domain-kernel.v1');
+  assert.equal(horse.nexusKind, 'horse');
   assert.ok(horse.owner.accountableRole.includes('Horse'));
   assert.ok(horse.fields.some((field) => field.name === 'registrationNumber' && field.required));
 });
