@@ -33,3 +33,61 @@ test('equine intelligence platform manages lifecycle, eligibility, audit, privac
   assert.equal(platform.evaluateEligibility(flagged).eligible, false);
   assert.equal(flagged.complianceStatus, 'under-review');
 });
+
+test('equine lifecycle domain enforces advisory-only health AI until veterinarian review', () => {
+  const platform = new EquineIntelligencePlatform();
+  const registrar = { id: 'secretary-2', roles: ['racing-secretary'], tenantId: 'trk-1' };
+  const aiAgent = { id: 'ai-health-1', roles: ['ai-agent'], tenantId: 'trk-1', human: false };
+  const vet = { id: 'vet-2', roles: ['veterinarian'], tenantId: 'trk-1', human: true };
+
+  platform.createProfile({ horseId: 'horse-ai-1', tenantId: 'trk-1', name: 'Governed Runner', lifecycleStatus: 'active' }, registrar);
+  platform.recordLifecycleEvent('horse-ai-1', {
+    ownershipHistory: [{ ownerId: 'owner-ai-1', ownerName: 'AI Stable', effectiveFrom: '2026-01-01', percentage: 100, evidence: ['ownership-registry'] }],
+    trainerAssignments: [{ trainerId: 'trainer-ai-1', trainerName: 'Trainer AI', effectiveFrom: '2026-02-01', licenseStatus: 'active', evidence: ['license-registry'] }],
+    veterinaryRecords: [{ recordId: 'exam-1', recordedAt: '2026-06-10T10:00:00Z', veterinarianId: 'vet-2', category: 'exam', summary: 'Baseline exam', privacyScope: 'veterinary-confidential' }],
+    welfareRecords: [{ recordId: 'welfare-ai-1', observedAt: '2026-06-11T10:00:00Z', observerId: 'welfare-2', score: 82, notes: 'Normal', interventions: [] }],
+  }, registrar, 'baseline-care-profile');
+
+  const recommendation = platform.recordAIRecommendation('horse-ai-1', {
+    domain: 'health', modelId: 'equine-risk-model-v1', summary: 'Possible soreness pattern; consider veterinary restriction.', confidence: 0.72,
+    proposedOperationalAction: 'add-veterinary-restriction', evidence: ['stride-sensor-window-42'],
+  }, aiAgent);
+
+  assert.equal(recommendation.advisoryOnly, true);
+  assert.equal(recommendation.veterinarianReviewRequired, true);
+  assert.equal(recommendation.status, 'pending-veterinarian-review');
+  assert.throws(() => platform.applyAIRecommendation('horse-ai-1', recommendation.id, registrar), /advisory only/);
+  assert.equal(platform.viewProfile('horse-ai-1', registrar).eligibilityFlags.length, 0);
+
+  const reviewed = platform.reviewAIRecommendation('horse-ai-1', recommendation.id, vet, 'approved', 'Confirmed by clinical exam', ['vet-review-note']);
+  assert.equal(reviewed.approvals.find((approval) => approval.recommendationId === recommendation.id).status, 'approved');
+  const operationalized = platform.applyAIRecommendation('horse-ai-1', recommendation.id, registrar);
+  assert.equal(operationalized.eligibilityFlags.length, 1);
+  assert.equal(operationalized.aiRecommendations.find((rec) => rec.id === recommendation.id).status, 'operationalized');
+  assert.equal(platform.twinSnapshot('trk-1')[0].state.openApprovalCount, 0);
+});
+
+test('equine lifecycle domain exposes event streams, relationship maps, retirement, and AI hooks', () => {
+  const platform = new EquineIntelligencePlatform();
+  const registrar = { id: 'secretary-3', roles: ['racing-secretary'], tenantId: 'trk-1' };
+  platform.registerAIRecommendationHook((profile) => [{
+    id: 'hook-rec-1', horseId: profile.identity.horseId, tenantId: profile.identity.tenantId, createdAt: '2026-06-13T00:00:00Z', requestedBy: 'hook',
+    domain: 'training', modelId: 'workload-v1', summary: 'Maintain current workload.', confidence: 0.9, advisoryOnly: true, status: 'advisory', veterinarianReviewRequired: false, evidence: ['workout-history'],
+  }]);
+
+  platform.createProfile({ horseId: 'horse-map-1', tenantId: 'trk-1', name: 'Mapped Runner', lifecycleStatus: 'active' }, registrar);
+  platform.recordLifecycleEvent('horse-map-1', {
+    ownershipHistory: [{ ownerId: 'owner-map-1', ownerName: 'Mapped Stable', effectiveFrom: '2026-01-01', percentage: 100, evidence: ['bill-of-sale'] }],
+    trainerAssignments: [{ trainerId: 'trainer-map-1', trainerName: 'Mapped Trainer', effectiveFrom: '2026-02-01', licenseStatus: 'active', evidence: ['license'] }],
+    racingHistory: [{ raceId: 'race-map-1', date: '2026-06-01', trackId: 'trk-1', status: 'completed', finishPosition: 1, evidence: ['chart'] }],
+  }, registrar, 'relationship-source-update');
+  platform.runAIRecommendationHooks('horse-map-1', registrar);
+  const retired = platform.retireHorse('horse-map-1', { retiredAt: '2026-06-13', reason: 'aftercare placement', destination: 'aftercare-farm-1', aftercareContact: 'aftercare@example.test', evidence: ['aftercare-agreement'] }, registrar);
+
+  assert.equal(retired.identity.lifecycleStatus, 'retired');
+  assert.equal(platform.evaluateEligibility(retired).eligible, false);
+  assert.ok(platform.relationshipMap('horse-map-1', registrar).some((rel) => rel.type === 'retired-to'));
+  assert.ok(platform.eventStream('horse-map-1', registrar).length >= 4);
+  assert.ok(platform.platformEvents('horse-map-1').some((event) => event.type === 'equine.ai.recommendation.recorded'));
+  assert.ok(platform.auditTrail().every((entry) => entry.subjectId === 'horse-map-1'));
+});
