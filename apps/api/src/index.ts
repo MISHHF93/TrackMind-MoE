@@ -20,6 +20,7 @@ export * from './moeRouter.js';
 export * from './operationsCenter.js';
 export * from './raceOperationsPlatform.js';
 export * from './racetrackControlRegistry.js';
+export * from './racetrackAssetRegistryService.js';
 export * from './racrFoundation.js';
 export * from './regulatoryOperations.js';
 export * from './responsibleAiGovernor.js';
