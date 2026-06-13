@@ -1,3 +1,5 @@
+import type { ApprovalToken, CentralizedApprovalService } from './approvals.js';
+
 export type RaceStatus = 'draft' | 'scheduled' | 'entries-open' | 'declared' | 'post-positions-drawn' | 'ready' | 'running' | 'official' | 'cancelled';
 export type ApprovalState = 'not-required' | 'pending' | 'approved' | 'rejected';
 
@@ -76,6 +78,8 @@ export class RaceOperationsPlatform {
   private races = new Map<string, RaceCard>();
   private execution = new Map<string, RaceExecutionEvent[]>();
 
+  constructor(private readonly approvalService?: CentralizedApprovalService, private readonly tenantId = 'default-tenant') {}
+
   scheduleRace(input: Omit<RaceCard, 'status' | 'entries' | 'approvals' | 'regulatoryControls' | 'twinLinks' | 'telemetryStreams'> & Partial<Pick<RaceCard, 'entries' | 'approvals' | 'regulatoryControls' | 'twinLinks' | 'telemetryStreams'>>): RaceCard {
     const race: RaceCard = {
       ...input,
@@ -135,6 +139,23 @@ export class RaceOperationsPlatform {
     const ready = activeEntries.length > 0 && approvalsOk && telemetryOk && staffingOk && resourceOk;
     if (ready) this.update(raceId, (current) => ({ ...current, status: 'ready' }));
     return { raceId, ready, activeEntries: activeEntries.length, blockers: [activeEntries.length ? '' : 'no active declared entries', approvalsOk ? '' : 'workflow approvals pending', telemetryOk ? '' : 'telemetry unhealthy', staffingOk ? '' : 'staffing incomplete', resourceOk ? '' : 'starting gate unavailable'].filter(Boolean) };
+  }
+
+  startRace(raceId: string, token?: ApprovalToken, now = new Date().toISOString()): RaceCard {
+    this.approvalService?.assertAuthorized(token, 'race-start', raceId, this.tenantId, now);
+    this.monitorExecution(raceId, { timestamp: now, type: 'off', message: 'approved race start' });
+    return this.requireRace(raceId);
+  }
+
+  cancelRace(raceId: string, token?: ApprovalToken, now = new Date().toISOString()): RaceCard {
+    this.approvalService?.assertAuthorized(token, 'race-cancellation', raceId, this.tenantId, now);
+    return this.update(raceId, (race) => ({ ...race, status: 'cancelled' }));
+  }
+
+  publishOfficialResults(raceId: string, token?: ApprovalToken, now = new Date().toISOString()): RaceCard {
+    this.approvalService?.assertAuthorized(token, 'official-results', raceId, this.tenantId, now);
+    this.monitorExecution(raceId, { timestamp: now, type: 'official', message: 'approved official result' });
+    return this.requireRace(raceId);
   }
 
   monitorExecution(raceId: string, event: RaceExecutionEvent): RaceExecutionEvent[] {
