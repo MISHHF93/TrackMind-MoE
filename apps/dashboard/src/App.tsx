@@ -1,2 +1,2 @@
-const panels=['Race schedule','Horse readiness','Vet status','Track condition','Weather','Incidents','Steward inquiries','Security alerts','Ticketing metrics','AI recommendations'];
+const panels=['Race schedule','Horse readiness','Vet status','Track condition','Weather','Incidents','Steward inquiries','Security alerts','Ticketing metrics','AI recommendations','Emergency command','Continuity plans','Evacuation routes','Disaster recovery','Simulation exercises','After-action reports'];
 export function App(){return <main><h1>TrackMind Race-Day Command</h1><section>{panels.map(p=><article key={p}><h2>{p}</h2><p>Operational panel placeholder</p></article>)}</section></main>}
