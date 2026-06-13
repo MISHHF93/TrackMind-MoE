@@ -1,206 +1,84 @@
 import type { ApprovalToken, CentralizedApprovalService } from './approvals.js';
+import type { ImmutableAuditLog } from './auditLog.js';
+import type { UniversalEventBus } from './eventBus.js';
+import type { WorkflowOrchestrationEngine, WorkflowInstance } from './workflowEngine.js';
+import type { DigitalTwinRuntime } from './digitalTwinRuntime.js';
+import type { ApiServiceDefinition } from './enterpriseApiGateway.js';
 
 export type RaceStatus = 'draft' | 'scheduled' | 'entries-open' | 'declared' | 'post-positions-drawn' | 'ready' | 'running' | 'official' | 'cancelled';
 export type ApprovalState = 'not-required' | 'pending' | 'approved' | 'rejected';
+export type RaceActivityType = 'race.scheduled' | 'race.entry.added' | 'race.entry.declared' | 'race.entry.scratched' | 'race.posts.drawn' | 'race.gates.assigned' | 'race.conditions.updated' | 'race.staffing.assigned' | 'race.resources.allocated' | 'race.readiness.assessed' | 'race.started' | 'race.execution.tracked' | 'race.official' | 'race.cancelled';
 
-export interface RaceCondition {
-  surface: 'dirt' | 'turf' | 'synthetic';
-  distanceFurlongs: number;
-  classLevel: string;
-  purse: number;
-  eligibility: string[];
-  medicationRules?: string[];
+export interface RaceCondition { surface: 'dirt' | 'turf' | 'synthetic'; distanceFurlongs: number; classLevel: string; purse: number; eligibility: string[]; medicationRules?: string[]; weatherRestrictions?: string[]; surfaceRequirements?: string[]; }
+export interface RaceEntry { id: string; horseId: string; trainerId: string; ownerId: string; jockeyId?: string; weightLbs?: number; declared?: boolean; scratched?: boolean; scratchReason?: string; scratchApprovedBy?: string; postPosition?: number; gate?: string; }
+export interface StaffingAssignment { id: string; role: keyof StaffingPlan | string; personId: string; shiftStart: string; shiftEnd: string; status: 'assigned' | 'checked-in' | 'released'; zone?: string; }
+export interface RaceCard { id: string; trackId: string; raceDate: string; raceNumber: number; scheduledPostTime: string; status: RaceStatus; conditions: RaceCondition; entries: RaceEntry[]; approvals: Record<string, ApprovalState>; regulatoryControls: string[]; twinLinks: string[]; telemetryStreams: string[]; staffingPlan?: StaffingPlan; staffingAssignments: StaffingAssignment[]; resources: ResourceAllocation[]; workflowInstanceId?: string; readiness?: RaceReadinessAssessment; updatedAt: string; }
+export interface StaffingPlan { stewards: string[]; veterinarians: string[]; gateCrew: string[]; outriders: string[]; trackMaintenance: string[]; security: string[]; }
+export interface ResourceAllocation { id: string; type: 'starting-gate' | 'ambulance' | 'tractor' | 'harrow' | 'camera' | 'sensor' | 'tote' | 'security-post'; zone: string; status: 'allocated' | 'standby' | 'unavailable'; }
+export interface RaceTelemetrySignal { streamId: string; type: 'gate' | 'surface' | 'weather' | 'gps' | 'vision' | 'biometric' | 'tote'; observedAt: string; healthy: boolean; value: number | string | boolean; }
+export interface RaceExecutionEvent { timestamp: string; type: 'loaded' | 'off' | 'fraction' | 'incident' | 'objection' | 'finish' | 'official'; message: string; severity?: 'info' | 'warning' | 'critical'; evidenceIds?: string[]; }
+export interface RaceReadinessAssessment { raceId: string; ready: boolean; activeEntries: number; blockers: string[]; assessedAt: string; telemetryStreams: string[]; }
+export interface RaceOperationsDashboard { generatedAt: string; totals: Record<RaceStatus | 'all', number>; byTrack: Array<{ trackId: string; races: number; ready: number; running: number; blocked: number }>; upcoming: Array<{ raceId: string; trackId: string; raceNumber: number; postTime: string; status: RaceStatus; blockers: string[] }>; resourceExceptions: Array<{ raceId: string; resourceId: string; type: string; status: string }>; staffingExceptions: Array<{ raceId: string; missing: string[] }>; executionAlerts: Array<{ raceId: string; timestamp: string; message: string; severity: string }>; }
+
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const id = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+export class RaceOperationsRepository {
+  private readonly races = new Map<string, RaceCard>();
+  private readonly execution = new Map<string, RaceExecutionEvent[]>();
+  saveRace(race: RaceCard): RaceCard { this.races.set(race.id, clone(race)); return clone(race); }
+  getRace(raceId: string): RaceCard | undefined { const race = this.races.get(raceId); return race ? clone(race) : undefined; }
+  listRaces(filter: { trackId?: string; raceDate?: string; status?: RaceStatus } = {}): RaceCard[] { return [...this.races.values()].filter((r) => (!filter.trackId || r.trackId === filter.trackId) && (!filter.raceDate || r.raceDate === filter.raceDate) && (!filter.status || r.status === filter.status)).map(clone); }
+  appendExecution(raceId: string, event: RaceExecutionEvent): RaceExecutionEvent[] { const events = [...(this.execution.get(raceId) ?? []), clone(event)].sort((a, b) => a.timestamp.localeCompare(b.timestamp)); this.execution.set(raceId, events); return events.map(clone); }
+  executionEvents(raceId: string): RaceExecutionEvent[] { return (this.execution.get(raceId) ?? []).map(clone); }
 }
 
-export interface RaceEntry {
-  id: string;
-  horseId: string;
-  trainerId: string;
-  ownerId: string;
-  jockeyId?: string;
-  weightLbs?: number;
-  declared?: boolean;
-  scratched?: boolean;
-  scratchReason?: string;
-  postPosition?: number;
-  gate?: string;
-}
-
-export interface RaceCard {
-  id: string;
-  trackId: string;
-  raceDate: string;
-  raceNumber: number;
-  scheduledPostTime: string;
-  status: RaceStatus;
-  conditions: RaceCondition;
-  entries: RaceEntry[];
-  approvals: Record<string, ApprovalState>;
-  regulatoryControls: string[];
-  twinLinks: string[];
-  telemetryStreams: string[];
-  staffingPlan?: StaffingPlan;
-  resources?: ResourceAllocation[];
-}
-
-export interface StaffingPlan {
-  stewards: string[];
-  veterinarians: string[];
-  gateCrew: string[];
-  outriders: string[];
-  trackMaintenance: string[];
-  security: string[];
-}
-
-export interface ResourceAllocation {
-  id: string;
-  type: 'starting-gate' | 'ambulance' | 'tractor' | 'harrow' | 'camera' | 'sensor' | 'tote' | 'security-post';
-  zone: string;
-  status: 'allocated' | 'standby' | 'unavailable';
-}
-
-export interface RaceTelemetrySignal {
-  streamId: string;
-  type: 'gate' | 'surface' | 'weather' | 'gps' | 'vision' | 'biometric' | 'tote';
-  observedAt: string;
-  healthy: boolean;
-  value: number | string | boolean;
-}
-
-export interface RaceExecutionEvent {
-  timestamp: string;
-  type: 'loaded' | 'off' | 'fraction' | 'incident' | 'objection' | 'finish' | 'official';
-  message: string;
-  severity?: 'info' | 'warning' | 'critical';
-}
+export interface RaceOperationsDeps { approvalService?: CentralizedApprovalService; eventBus?: UniversalEventBus; auditLog?: ImmutableAuditLog; workflow?: WorkflowOrchestrationEngine; twinRuntime?: DigitalTwinRuntime; repository?: RaceOperationsRepository; tenantId?: string; }
 
 export class RaceOperationsPlatform {
-  private races = new Map<string, RaceCard>();
-  private execution = new Map<string, RaceExecutionEvent[]>();
+  private readonly repository: RaceOperationsRepository;
+  private readonly tenantId: string;
+  constructor(depsOrApproval?: RaceOperationsDeps | CentralizedApprovalService, tenantId = 'default-tenant') {
+    const deps = depsOrApproval && 'assertAuthorized' in depsOrApproval ? { approvalService: depsOrApproval as CentralizedApprovalService, tenantId } : (depsOrApproval ?? {}) as RaceOperationsDeps;
+    this.approvalService = deps.approvalService; this.eventBus = deps.eventBus; this.auditLog = deps.auditLog; this.workflow = deps.workflow; this.twinRuntime = deps.twinRuntime; this.repository = deps.repository ?? new RaceOperationsRepository(); this.tenantId = deps.tenantId ?? tenantId;
+  }
+  private readonly approvalService?: CentralizedApprovalService; private readonly eventBus?: UniversalEventBus; private readonly auditLog?: ImmutableAuditLog; private readonly workflow?: WorkflowOrchestrationEngine; private readonly twinRuntime?: DigitalTwinRuntime;
 
-  constructor(private readonly approvalService?: CentralizedApprovalService, private readonly tenantId = 'default-tenant') {}
-
-  scheduleRace(input: Omit<RaceCard, 'status' | 'entries' | 'approvals' | 'regulatoryControls' | 'twinLinks' | 'telemetryStreams'> & Partial<Pick<RaceCard, 'entries' | 'approvals' | 'regulatoryControls' | 'twinLinks' | 'telemetryStreams'>>): RaceCard {
-    const race: RaceCard = {
-      ...input,
-      status: 'scheduled',
-      entries: input.entries ?? [],
-      approvals: { racingOffice: 'pending', stewards: 'pending', veterinarian: 'pending', ...(input.approvals ?? {}) },
-      regulatoryControls: input.regulatoryControls ?? ['HISA', 'ARCI', 'state-racing-commission'],
-      twinLinks: input.twinLinks ?? [`track:${input.trackId}`, `race:${input.id}`],
-      telemetryStreams: input.telemetryStreams ?? ['gate-status', 'surface-condition', 'weather', 'vision']
-    };
-    this.races.set(race.id, race);
+  scheduleRace(input: Omit<RaceCard, 'status' | 'entries' | 'approvals' | 'regulatoryControls' | 'twinLinks' | 'telemetryStreams' | 'staffingAssignments' | 'resources' | 'updatedAt'> & Partial<Pick<RaceCard, 'entries' | 'approvals' | 'regulatoryControls' | 'twinLinks' | 'telemetryStreams' | 'staffingAssignments' | 'resources'>>, actor = 'racing-office'): RaceCard {
+    const now = new Date().toISOString();
+    const race: RaceCard = { ...input, status: 'scheduled', entries: input.entries ?? [], approvals: { racingOffice: 'pending', stewards: 'pending', veterinarian: 'pending', ...(input.approvals ?? {}) }, regulatoryControls: input.regulatoryControls ?? ['HISA', 'ARCI', 'state-racing-commission'], twinLinks: input.twinLinks ?? [`track:${input.trackId}`, `race:${input.id}`], telemetryStreams: input.telemetryStreams ?? ['gate-status', 'surface-condition', 'weather', 'vision'], staffingAssignments: input.staffingAssignments ?? [], resources: input.resources ?? [], updatedAt: now };
+    this.saveAndConnect(race, 'race.scheduled', actor, { race });
     return race;
   }
-
-  addEntry(raceId: string, entry: RaceEntry): RaceCard {
-    return this.update(raceId, (race) => ({ ...race, status: 'entries-open', entries: [...race.entries.filter((e) => e.id !== entry.id), { ...entry, declared: entry.declared ?? false, scratched: false }] }));
+  addEntry(raceId: string, entry: RaceEntry, actor = 'racing-office'): RaceCard { return this.update(raceId, actor, 'race.entry.added', (race) => ({ ...race, status: 'entries-open', entries: [...race.entries.filter((e) => e.id !== entry.id), { ...entry, declared: entry.declared ?? false, scratched: false }] })); }
+  declareEntry(raceId: string, entryId: string, jockeyId: string, weightLbs: number, actor = 'racing-office'): RaceCard { return this.mapEntry(raceId, entryId, actor, 'race.entry.declared', (entry) => ({ ...entry, jockeyId, weightLbs, declared: true })); }
+  scratchEntry(raceId: string, entryId: string, reason: string, approvedBy: string, actor = approvedBy): RaceCard { return this.mapEntry(raceId, entryId, actor, 'race.entry.scratched', (entry) => ({ ...entry, scratched: true, scratchReason: reason, scratchApprovedBy: approvedBy })); }
+  updateConditions(raceId: string, conditions: Partial<RaceCondition>, actor = 'racing-office'): RaceCard { return this.update(raceId, actor, 'race.conditions.updated', (race) => ({ ...race, conditions: { ...race.conditions, ...conditions } })); }
+  drawPostPositions(raceId: string, seed = 1, actor = 'racing-office'): RaceCard { const race = this.requireRace(raceId); const active = race.entries.filter((e) => e.declared && !e.scratched).sort((a, b) => `${a.id}:${seed}`.localeCompare(`${b.id}:${seed}`)); const positions = new Map(active.map((entry, index) => [entry.id, index + 1])); return this.update(raceId, actor, 'race.posts.drawn', (current) => ({ ...current, status: 'post-positions-drawn', entries: current.entries.map((entry) => positions.has(entry.id) ? { ...entry, postPosition: positions.get(entry.id) } : entry) })); }
+  assignGates(raceId: string, gatePrefix = 'G', actor = 'starter'): RaceCard { return this.update(raceId, actor, 'race.gates.assigned', (race) => ({ ...race, entries: race.entries.map((entry) => entry.postPosition && !entry.scratched ? { ...entry, gate: `${gatePrefix}-${entry.postPosition}` } : entry) })); }
+  coordinateStaffing(raceId: string, staffingPlan: StaffingPlan, actor = 'operations'): RaceCard { return this.update(raceId, actor, 'race.staffing.assigned', (race) => ({ ...race, staffingPlan })); }
+  assignStaffing(raceId: string, assignments: StaffingAssignment[], actor = 'operations'): RaceCard { return this.update(raceId, actor, 'race.staffing.assigned', (race) => ({ ...race, staffingAssignments: assignments.map(clone) })); }
+  allocateResources(raceId: string, resources: ResourceAllocation[], actor = 'operations'): RaceCard { return this.update(raceId, actor, 'race.resources.allocated', (race) => ({ ...race, resources: resources.map(clone) })); }
+  approveWorkflow(raceId: string, step: string, state: ApprovalState, actor = 'approval-engine'): RaceCard { return this.update(raceId, actor, 'race.readiness.assessed', (race) => ({ ...race, approvals: { ...race.approvals, [step]: state } })); }
+  startWorkflow(raceId: string, definitionId = 'race-lifecycle', actor = 'racing-office'): WorkflowInstance | undefined { const race = this.requireRace(raceId); const instance = this.workflow?.start(definitionId, { tenantId: this.tenantId, priority: 'high', digitalTwinRefs: race.twinLinks, payload: { raceId, raceDate: race.raceDate, raceNumber: race.raceNumber } }, actor); if (instance) this.update(raceId, actor, 'race.scheduled', (r) => ({ ...r, workflowInstanceId: instance.id })); return instance; }
+  assessReadiness(raceId: string, telemetry: RaceTelemetrySignal[], actor = 'operations'): RaceReadinessAssessment { const race = this.requireRace(raceId); const activeEntries = race.entries.filter((entry) => entry.declared && !entry.scratched); const approvalsOk = Object.values(race.approvals).every((state) => state === 'approved' || state === 'not-required'); const telemetryOk = telemetry.every((signal) => signal.healthy); const staffingOk = Boolean(race.staffingPlan?.stewards.length && race.staffingPlan.veterinarians.length && race.staffingPlan.gateCrew.length); const resourceOk = Boolean(race.resources?.some((r) => r.type === 'starting-gate' && r.status === 'allocated')); const ready = activeEntries.length > 0 && approvalsOk && telemetryOk && staffingOk && resourceOk; const assessment = { raceId, ready, activeEntries: activeEntries.length, blockers: [activeEntries.length ? '' : 'no active declared entries', approvalsOk ? '' : 'workflow approvals pending', telemetryOk ? '' : 'telemetry unhealthy', staffingOk ? '' : 'staffing incomplete', resourceOk ? '' : 'starting gate unavailable'].filter(Boolean), assessedAt: new Date().toISOString(), telemetryStreams: telemetry.map((t) => t.streamId) }; this.update(raceId, actor, 'race.readiness.assessed', (current) => ({ ...current, status: ready ? 'ready' : current.status, readiness: assessment })); return assessment; }
+  startRace(raceId: string, token?: ApprovalToken, now = new Date().toISOString()): RaceCard { this.approvalService?.assertAuthorized(token, 'race-start', raceId, this.tenantId, now); this.monitorExecution(raceId, { timestamp: now, type: 'off', message: 'approved race start' }, 'starter'); return this.requireRace(raceId); }
+  cancelRace(raceId: string, token?: ApprovalToken, now = new Date().toISOString()): RaceCard { this.approvalService?.assertAuthorized(token, 'race-cancellation', raceId, this.tenantId, now); return this.update(raceId, 'stewards', 'race.cancelled', (race) => ({ ...race, status: 'cancelled' })); }
+  publishOfficialResults(raceId: string, token?: ApprovalToken, now = new Date().toISOString()): RaceCard { this.approvalService?.assertAuthorized(token, 'official-results', raceId, this.tenantId, now); this.monitorExecution(raceId, { timestamp: now, type: 'official', message: 'approved official result' }, 'stewards'); return this.requireRace(raceId); }
+  monitorExecution(raceId: string, event: RaceExecutionEvent, actor = 'race-control'): RaceExecutionEvent[] { const events = this.repository.appendExecution(raceId, event); if (event.type === 'off') this.update(raceId, actor, 'race.started', (race) => ({ ...race, status: 'running' })); else if (event.type === 'official') this.update(raceId, actor, 'race.official', (race) => ({ ...race, status: 'official' })); else this.connect('race.execution.tracked', actor, this.requireRace(raceId), { event }); return events; }
+  operationalReport(raceId: string) { const race = this.requireRace(raceId); const events = this.repository.executionEvents(raceId); return { raceId, status: race.status, entries: race.entries.length, activeEntries: race.entries.filter((e) => e.declared && !e.scratched).length, scratches: race.entries.filter((e) => e.scratched).length, approvals: race.approvals, regulatoryControls: race.regulatoryControls, twinLinks: race.twinLinks, telemetryStreams: race.telemetryStreams, criticalEvents: events.filter((e) => e.severity === 'critical').length, events: events.length, workflowInstanceId: race.workflowInstanceId, readiness: race.readiness };
   }
-
-  declareEntry(raceId: string, entryId: string, jockeyId: string, weightLbs: number): RaceCard {
-    return this.mapEntry(raceId, entryId, (entry) => ({ ...entry, jockeyId, weightLbs, declared: true }));
-  }
-
-  scratchEntry(raceId: string, entryId: string, reason: string, approvedBy: string): RaceCard {
-    return this.mapEntry(raceId, entryId, (entry) => ({ ...entry, scratched: true, scratchReason: `${reason}; approvedBy=${approvedBy}` }));
-  }
-
-  drawPostPositions(raceId: string, seed = 1): RaceCard {
-    const race = this.requireRace(raceId);
-    const active = race.entries.filter((entry) => entry.declared && !entry.scratched).sort((a, b) => `${a.id}:${seed}`.localeCompare(`${b.id}:${seed}`));
-    const positions = new Map(active.map((entry, index) => [entry.id, index + 1]));
-    return this.update(raceId, (current) => ({ ...current, status: 'post-positions-drawn', entries: current.entries.map((entry) => positions.has(entry.id) ? { ...entry, postPosition: positions.get(entry.id) } : entry) }));
-  }
-
-  assignGates(raceId: string, gatePrefix = 'G'): RaceCard {
-    return this.update(raceId, (race) => ({ ...race, entries: race.entries.map((entry) => entry.postPosition && !entry.scratched ? { ...entry, gate: `${gatePrefix}-${entry.postPosition}` } : entry) }));
-  }
-
-  coordinateStaffing(raceId: string, staffingPlan: StaffingPlan): RaceCard {
-    return this.update(raceId, (race) => ({ ...race, staffingPlan }));
-  }
-
-  allocateResources(raceId: string, resources: ResourceAllocation[]): RaceCard {
-    return this.update(raceId, (race) => ({ ...race, resources }));
-  }
-
-  approveWorkflow(raceId: string, step: string, state: ApprovalState): RaceCard {
-    return this.update(raceId, (race) => ({ ...race, approvals: { ...race.approvals, [step]: state } }));
-  }
-
-  assessReadiness(raceId: string, telemetry: RaceTelemetrySignal[]) {
-    const race = this.requireRace(raceId);
-    const activeEntries = race.entries.filter((entry) => entry.declared && !entry.scratched);
-    const approvalsOk = Object.values(race.approvals).every((state) => state === 'approved' || state === 'not-required');
-    const telemetryOk = telemetry.every((signal) => signal.healthy);
-    const staffingOk = Boolean(race.staffingPlan?.stewards.length && race.staffingPlan.veterinarians.length && race.staffingPlan.gateCrew.length);
-    const resourceOk = Boolean(race.resources?.some((r) => r.type === 'starting-gate' && r.status === 'allocated'));
-    const ready = activeEntries.length > 0 && approvalsOk && telemetryOk && staffingOk && resourceOk;
-    if (ready) this.update(raceId, (current) => ({ ...current, status: 'ready' }));
-    return { raceId, ready, activeEntries: activeEntries.length, blockers: [activeEntries.length ? '' : 'no active declared entries', approvalsOk ? '' : 'workflow approvals pending', telemetryOk ? '' : 'telemetry unhealthy', staffingOk ? '' : 'staffing incomplete', resourceOk ? '' : 'starting gate unavailable'].filter(Boolean) };
-  }
-
-  startRace(raceId: string, token?: ApprovalToken, now = new Date().toISOString()): RaceCard {
-    this.approvalService?.assertAuthorized(token, 'race-start', raceId, this.tenantId, now);
-    this.monitorExecution(raceId, { timestamp: now, type: 'off', message: 'approved race start' });
-    return this.requireRace(raceId);
-  }
-
-  cancelRace(raceId: string, token?: ApprovalToken, now = new Date().toISOString()): RaceCard {
-    this.approvalService?.assertAuthorized(token, 'race-cancellation', raceId, this.tenantId, now);
-    return this.update(raceId, (race) => ({ ...race, status: 'cancelled' }));
-  }
-
-  publishOfficialResults(raceId: string, token?: ApprovalToken, now = new Date().toISOString()): RaceCard {
-    this.approvalService?.assertAuthorized(token, 'official-results', raceId, this.tenantId, now);
-    this.monitorExecution(raceId, { timestamp: now, type: 'official', message: 'approved official result' });
-    return this.requireRace(raceId);
-  }
-
-  monitorExecution(raceId: string, event: RaceExecutionEvent): RaceExecutionEvent[] {
-    const events = [...(this.execution.get(raceId) ?? []), event].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-    this.execution.set(raceId, events);
-    if (event.type === 'off') this.update(raceId, (race) => ({ ...race, status: 'running' }));
-    if (event.type === 'official') this.update(raceId, (race) => ({ ...race, status: 'official' }));
-    return events;
-  }
-
-  operationalReport(raceId: string) {
-    const race = this.requireRace(raceId);
-    const events = this.execution.get(raceId) ?? [];
-    return { raceId, status: race.status, entries: race.entries.length, activeEntries: race.entries.filter((e) => e.declared && !e.scratched).length, scratches: race.entries.filter((e) => e.scratched).length, approvals: race.approvals, regulatoryControls: race.regulatoryControls, twinLinks: race.twinLinks, telemetryStreams: race.telemetryStreams, criticalEvents: events.filter((e) => e.severity === 'critical').length, events: events.length };
-  }
-
-  aiRecommendations(raceId: string, telemetry: RaceTelemetrySignal[]) {
-    const readiness = this.assessReadiness(raceId, telemetry);
-    return { raceId, humanApprovalRequired: true, recommendations: readiness.ready ? ['proceed-to-post-parade'] : readiness.blockers.map((blocker) => `resolve:${blocker}`), evidence: telemetry.map((signal) => signal.streamId), policy: 'AI recommendations are advisory until approved by racing officials' };
-  }
-
+  operationalDashboard(now = new Date().toISOString()): RaceOperationsDashboard { const races = this.repository.listRaces(); const totals = Object.fromEntries(['draft','scheduled','entries-open','declared','post-positions-drawn','ready','running','official','cancelled'].map((s) => [s, races.filter((r) => r.status === s).length])) as Record<RaceStatus, number>; const byTrack = [...new Set(races.map((r) => r.trackId))].map((trackId) => { const scoped = races.filter((r) => r.trackId === trackId); return { trackId, races: scoped.length, ready: scoped.filter((r) => r.status === 'ready').length, running: scoped.filter((r) => r.status === 'running').length, blocked: scoped.filter((r) => (r.readiness?.blockers.length ?? 0) > 0).length }; }); return { generatedAt: now, totals: { ...totals, all: races.length }, byTrack, upcoming: races.filter((r) => !['official','cancelled'].includes(r.status)).sort((a,b)=>a.scheduledPostTime.localeCompare(b.scheduledPostTime)).map((r) => ({ raceId: r.id, trackId: r.trackId, raceNumber: r.raceNumber, postTime: r.scheduledPostTime, status: r.status, blockers: r.readiness?.blockers ?? [] })), resourceExceptions: races.flatMap((r) => r.resources.filter((x) => x.status === 'unavailable').map((x) => ({ raceId: r.id, resourceId: x.id, type: x.type, status: x.status }))), staffingExceptions: races.map((r) => ({ raceId: r.id, missing: ['stewards','veterinarians','gateCrew'].filter((k) => !(r.staffingPlan as any)?.[k]?.length) })).filter((x) => x.missing.length), executionAlerts: races.flatMap((r) => this.repository.executionEvents(r.id).filter((e) => e.severity && e.severity !== 'info').map((e) => ({ raceId: r.id, timestamp: e.timestamp, message: e.message, severity: e.severity! }))) }; }
+  aiRecommendations(raceId: string, telemetry: RaceTelemetrySignal[]) { const readiness = this.assessReadiness(raceId, telemetry, 'ai-agent'); return { raceId, humanApprovalRequired: true, recommendations: readiness.ready ? ['proceed-to-post-parade'] : readiness.blockers.map((blocker) => `resolve:${blocker}`), evidence: telemetry.map((signal) => signal.streamId), policy: 'AI recommendations are advisory until approved by racing officials' }; }
+  listRaces(filter: { trackId?: string; raceDate?: string; status?: RaceStatus } = {}) { return this.repository.listRaces(filter); }
   getRace(raceId: string): RaceCard { return this.requireRace(raceId); }
+  apiDefinition(): ApiServiceDefinition { return { id: 'race-operations', name: 'Race Operations', domain: 'race-day', version: 'v1', basePath: '/api/v1/race-operations', description: 'APIs for schedules, entries, declarations, scratches, post positions, race conditions, readiness, gates, staffing, resources, and execution tracking.', owner: { team: 'racing-operations', productOwner: 'Racing Secretary', technicalOwner: 'Race Operations Platform Owner', supportChannel: '#race-ops' }, lifecycle: 'active', auth: ['jwt','oauth2','mtls'], rateLimit: { requests: 600, perSeconds: 60, burst: 100 }, tags: ['race-day','workflow','audit','digital-twin'], slo: { availability: 99.9, latencyMs: 250 }, endpoints: [{ method: 'POST', path: '/races', summary: 'Schedule race', scopes: ['race:write'] }, { method: 'GET', path: '/races', summary: 'List races', scopes: ['race:read'] }, { method: 'POST', path: '/races/{raceId}/entries', summary: 'Add entry', scopes: ['race:write'] }, { method: 'POST', path: '/races/{raceId}/declarations', summary: 'Declare entry', scopes: ['race:write'] }, { method: 'POST', path: '/races/{raceId}/scratches', summary: 'Scratch entry', scopes: ['race:write'] }, { method: 'POST', path: '/races/{raceId}/post-positions', summary: 'Draw post positions', scopes: ['race:write'] }, { method: 'POST', path: '/races/{raceId}/readiness', summary: 'Assess readiness', scopes: ['race:write'] }, { method: 'POST', path: '/races/{raceId}/execution-events', summary: 'Track execution', scopes: ['race:write'] }, { method: 'GET', path: '/dashboard', summary: 'Operational dashboard', scopes: ['race:read'] }] }; }
 
-  private mapEntry(raceId: string, entryId: string, mapper: (entry: RaceEntry) => RaceEntry): RaceCard {
-    return this.update(raceId, (race) => ({ ...race, status: 'declared', entries: race.entries.map((entry) => entry.id === entryId ? mapper(entry) : entry) }));
-  }
-
-  private update(raceId: string, mapper: (race: RaceCard) => RaceCard): RaceCard {
-    const next = mapper(this.requireRace(raceId));
-    this.races.set(raceId, next);
-    return next;
-  }
-
-  private requireRace(raceId: string): RaceCard {
-    const race = this.races.get(raceId);
-    if (!race) throw new Error(`Unknown race ${raceId}`);
-    return race;
-  }
+  private mapEntry(raceId: string, entryId: string, actor: string, activity: RaceActivityType, mapper: (entry: RaceEntry) => RaceEntry): RaceCard { return this.update(raceId, actor, activity, (race) => ({ ...race, status: 'declared', entries: race.entries.map((entry) => entry.id === entryId ? mapper(entry) : entry) })); }
+  private update(raceId: string, actor: string, activity: RaceActivityType, mapper: (race: RaceCard) => RaceCard): RaceCard { const next = { ...mapper(this.requireRace(raceId)), updatedAt: new Date().toISOString() }; return this.saveAndConnect(next, activity, actor, { raceId }); }
+  private saveAndConnect(race: RaceCard, activity: RaceActivityType, actor: string, payload: Record<string, unknown>): RaceCard { const saved = this.repository.saveRace(race); this.connect(activity, actor, saved, payload); return saved; }
+  private connect(activity: RaceActivityType, actor: string, race: RaceCard, payload: Record<string, unknown>): void { const correlationId = `${race.id}:${activity}`; this.auditLog?.append({ id: id('audit-race'), type: activity.includes('twin') ? 'digital-twin-update' : activity.includes('approved') ? 'approval' : 'workflow-action', actor, timestamp: new Date().toISOString(), payload: { activity, ...payload }, subjectId: race.id, tenantId: this.tenantId, workflowId: race.workflowInstanceId, correlationId, severity: activity.includes('cancelled') ? 'warning' : 'info', regulations: race.regulatoryControls }); void this.eventBus?.publish({ type: activity, payload: { raceId: race.id, trackId: race.trackId, status: race.status, race, ...payload }, aggregateId: race.id, correlationId, producer: 'race-operations', metadata: { compliance: 'regulated', team: 'racing-operations', accountableRole: 'racing-secretary' } }); for (const twinId of race.twinLinks.filter((x) => x.startsWith('twin:'))) { try { this.twinRuntime?.updateState({ twinId, actor, sourceEventId: correlationId, patch: { raceId: race.id, raceStatus: race.status, raceNumber: race.raceNumber } }); } catch { /* twin may be provisioned asynchronously */ } } }
+  private requireRace(raceId: string): RaceCard { const race = this.repository.getRace(raceId); if (!race) throw new Error(`Unknown race ${raceId}`); return race; }
 }
 
-export function raceOperationsControlMatrix() {
-  return [
-    { workflow: 'schedule-to-card', approvals: ['racingOffice', 'stewards'], controls: ['condition-book', 'commission-rules'], systems: ['digital-twin', 'telemetry', 'event-bus'] },
-    { workflow: 'entries-declarations-scratches', approvals: ['racingOffice', 'veterinarian', 'stewards'], controls: ['eligibility', 'medication', 'welfare'], systems: ['passport', 'approval-store', 'audit-log'] },
-    { workflow: 'race-day-readiness', approvals: ['operations', 'safety', 'stewards'], controls: ['surface', 'weather', 'gate', 'staffing'], systems: ['iot', 'vision', 'ai-recommendations'] },
-    { workflow: 'execution-reporting', approvals: ['stewards'], controls: ['official-order', 'incident-evidence', 'regulatory-retention'], systems: ['telemetry', 'video', 'compliance-vault'] }
-  ];
-}
+export function raceOperationsControlMatrix() { return [ { workflow: 'schedule-to-card', approvals: ['racingOffice', 'stewards'], controls: ['condition-book', 'commission-rules'], systems: ['digital-twin', 'telemetry', 'event-bus'] }, { workflow: 'entries-declarations-scratches', approvals: ['racingOffice', 'veterinarian', 'stewards'], controls: ['eligibility', 'medication', 'welfare'], systems: ['passport', 'approval-store', 'audit-log'] }, { workflow: 'race-day-readiness', approvals: ['operations', 'safety', 'stewards'], controls: ['surface', 'weather', 'gate', 'staffing'], systems: ['iot', 'vision', 'ai-recommendations'] }, { workflow: 'execution-reporting', approvals: ['stewards'], controls: ['official-order', 'incident-evidence', 'regulatory-retention'], systems: ['telemetry', 'video', 'compliance-vault'] } ]; }
