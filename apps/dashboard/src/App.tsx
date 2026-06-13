@@ -10,12 +10,13 @@ import { breadcrumbForPath, filterCommandPalette, selectTenant, serviceBanner, t
 import { visibleNavItems } from './shell/navigation.js';
 
 export async function loadCommandCenter(client: NexusApiClient) {
-  const [approvals, auditEvents, trackMap] = await Promise.all([
+  const [approvals, auditEvents, trackMap, operations] = await Promise.all([
     client.listApprovals(),
     client.listAuditEvents(),
     client.getTrackMap(),
+    client.getOperationsCommandCenter(),
   ]);
-  return { approvals, auditEvents, trackMap, streamUrl: client.eventStreamUrl(), mode: client.mode };
+  return { approvals, auditEvents, trackMap, operations, streamUrl: client.eventStreamUrl(), mode: client.mode };
 }
 
 export function isSafetyCriticalEnabled(args: { authenticated: boolean; hasApprovalToken: boolean; backendMode: 'live' | 'mock' }) {
@@ -62,6 +63,16 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
       <section aria-label="Quick-access command palette"><h2>Command Palette</h2><input aria-label="Command palette query" defaultValue={paletteQuery} /><ul>{paletteItems.map((item) => <li key={item.id}><a href={item.path}>{item.label}</a></li>)}</ul></section>
       {data.mode === 'mock' && <aside role="note">Mock adapter active: panels are placeholders until matching backend APIs are available.</aside>}
       <section aria-label="Operational state examples"><DataState state={{ status: 'loading' }}>{() => null}</DataState><DataState state={{ status: 'empty', mock: data.mode === 'mock' }}>{() => null}</DataState><DataState state={{ status: 'error', message: 'Example degraded feed', mock: data.mode === 'mock' }}>{() => null}</DataState><p role="alert">Permission denied state: request a role grant to unlock restricted workflows.</p><p role="status">Offline/degraded-service state: cached read-only view is available.</p></section>
+      <section aria-label="Unified Operations Command Center">
+        <h2>Unified Operations Command Center</h2>
+        <p>Primary landing page aggregating race readiness, surface, weather, incidents, approvals, stewarding, assets, workforce, emergency resources, facilities, and AI recommendations from governed sources.</p>
+        <div aria-label="Configurable widget grid">{data.operations.widgets.map((widget) => <article key={widget.id} aria-label={`${widget.title} widget`} data-source={widget.source} data-configurable={widget.configurable}><h3><a href={widget.drillDownPath}>{widget.title}</a></h3><RiskBadge level={widget.status === 'nominal' ? 'low' : widget.status === 'advisory' ? 'medium' : widget.status === 'warning' ? 'high' : 'critical'} /><strong>{widget.value}</strong><p>{widget.detail}</p><small>Source: {widget.source}; domain: {widget.domain}; drill-down: {widget.drillDownPath}</small></article>)}</div>
+        <section aria-label="Saved layouts and role-specific views"><h3>Saved layouts</h3>{data.operations.savedLayouts.map((layout) => <article key={layout.id}><strong>{layout.name}</strong><p>Role view: {layout.role}; widgets: {layout.widgetIds.join(', ')}</p></article>)}</section>
+        <section aria-label="Operational alerts"><h3>Operational alerts</h3>{data.operations.alerts.map((alert) => <article key={alert.id} role={alert.severity === 'critical' ? 'alert' : 'status'}><strong>{alert.title}</strong><p>{alert.severity}; acknowledged: {String(alert.acknowledged)}; action: <a href={alert.actionPath}>{alert.actionPath}</a></p><p>Evidence: {alert.evidence.join(', ')}</p></article>)}</section>
+        <section aria-label="Live event streaming"><h3>Live event streaming</h3><p>Subscribed to <code>{data.streamUrl}</code></p><EventTimeline events={data.operations.liveEvents.map((event) => ({ time: event.timestamp, label: `${event.domain}: ${event.summary}`, tone: event.severity }))} /></section>
+        <section aria-label="AI recommendations"><h3>AI recommendations</h3>{data.operations.aiRecommendations.map((item) => <article key={item.id}><strong>{item.recommendation}</strong><p>Confidence {Math.round(item.confidence * 100)}%; approval required: {String(item.requiresApproval)}; action: <a href={item.actionPath}>{item.actionPath}</a></p><p>Evidence: {item.evidence.join(', ')}</p></article>)}</section>
+        <section aria-label="Data lineage"><h3>Data lineage</h3>{data.operations.dataLineage.map((lineage) => <p key={`${lineage.domain}-${lineage.reference}`}>{lineage.domain}: {lineage.source} via <code>{lineage.reference}</code></p>)}</section>
+      </section>
       <section aria-label="Command center overview"><StatusCard title="Race readiness" status="On schedule" detail="Paddock, gate, and steward channels are linked." /><KpiTile label="Open approvals" value={String(data.approvals.length)} trend="Needs human review" /><RiskBadge level={serviceState === 'offline' ? 'critical' : 'medium'} /><ApprovalChip status={data.approvals[0]?.status ?? 'pending-approval'} /><EventTimeline events={[{ time: 'T-15', label: 'Gate readiness check', tone: 'advisory' }]} /></section>
       <TrackMapPanel map={data.trackMap} />
       <TrackMap map={data.trackMap} />
@@ -96,7 +107,7 @@ export function App() {
   return (
     <main>
       <h1>TrackMind Nexus</h1>
-      <p>Use <code>loadCommandCenter</code> with a Nexus API client to render the modular command center.</p>
+      <p>The Unified Operations Command Center is the primary landing experience for race-day readiness, incident response, operational alerts, live streams, and role-specific saved layouts.</p>
     </main>
   );
 }
