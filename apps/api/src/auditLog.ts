@@ -55,6 +55,8 @@ function stable(value: unknown): string {
   return `{${Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, val]) => `${JSON.stringify(key)}:${stable(val)}`).join(',')}}`;
 }
 
+function deepClone<T>(value: T): T { return value === undefined ? value : JSON.parse(JSON.stringify(value)) as T; }
+
 function digest(value: unknown): string {
   const input = stable(value);
   let h1 = 0xdeadbeef;
@@ -75,7 +77,7 @@ export class ImmutableAuditLog {
   append(log: AuditRecordInput): AuditLogEntry {
     const previousHash = this.logs.at(-1)?.hash ?? 'genesis';
     const custody = log.custody?.map((step) => ({ ...step })) ?? [{ actor: log.actor, action: 'created' as const, timestamp: log.timestamp }];
-    const unsigned = { ...log, previousHash, custody, evidenceIds: [...(log.evidenceIds ?? [])], regulations: [...(log.regulations ?? [])] };
+    const unsigned = { ...log, payload: deepClone(log.payload), previousHash, custody, evidenceIds: [...(log.evidenceIds ?? [])], regulations: [...(log.regulations ?? [])] };
     const entry = Object.freeze({ ...unsigned, hash: digest(unsigned) });
     this.logs.push(entry);
     return this.clone(entry);
@@ -123,7 +125,7 @@ export class ImmutableAuditLog {
   }
 
   private clone(entry: Readonly<AuditLogEntry>): AuditLogEntry {
-    return { ...entry, regulations: [...(entry.regulations ?? [])], evidenceIds: [...(entry.evidenceIds ?? [])], custody: entry.custody?.map((step) => ({ ...step })) };
+    return { ...entry, payload: deepClone(entry.payload), regulations: [...(entry.regulations ?? [])], evidenceIds: [...(entry.evidenceIds ?? [])], custody: entry.custody?.map((step) => ({ ...step })) };
   }
 }
 
