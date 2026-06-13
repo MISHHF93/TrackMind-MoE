@@ -1,0 +1,11 @@
+{
+  "name": "trackmind-nexus-baseline",
+  "description": "Baseline Azure Policy expectations for TrackMind Nexus workloads.",
+  "rules": [
+    "Require managed identities for compute workloads",
+    "Deny public network access for data services unless explicitly exempted",
+    "Require diagnostic settings to Log Analytics",
+    "Require Microsoft Defender for Cloud recommendations to be tracked",
+    "Require approved location, tags, TLS versions, and private endpoints"
+  ]
+}

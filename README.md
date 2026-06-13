@@ -14,6 +14,12 @@ The system treats a racetrack as a live digital twin: horses, people, restricted
 - `infra/azure` — Azure Bicep deployment baseline.
 - `docs` — architecture and compliance mappings.
 
+## TrackMind Nexus enterprise expansion
+
+This repository is structured as the TrackMind Nexus enterprise monorepo: an Azure-first, API-first, event-driven Digital Twin platform for multi-racetrack Thoroughbred operations. New modules should inherit the standards in `docs/architecture/enterprise-blueprint.md`, `docs/engineering/coding-standards.md`, `docs/engineering/branching-strategy.md`, `docs/security/security-baseline.md`, and `templates/service-template`.
+
+Enterprise domains are organized across `services`, `digital-twin`, `ai`, `workflows`, `compliance`, `integrations`, `infra`, `tests`, and `deploy` so future teams can add production modules with consistent tenant isolation, CQRS/event sourcing patterns, observability, compliance evidence, and human-governed AI automation.
+
 ## Safety model
 
 TrackMind-MoE never directly automates race starts/stops, official results, scratches, medication decisions, emergency actions, payouts, or disciplinary decisions without a human approval record. Every AI recommendation carries confidence, evidence, required approvals, and immutable audit logging hooks.
