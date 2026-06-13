@@ -5,9 +5,9 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "npm run link:shared && tsc -p tsconfig.json",
+    "build": "npm --prefix ../../packages/shared run build && npm run link:shared && tsc -p tsconfig.json",
     "test": "npm run build && node --test tests/*.test.mjs",
-    "link:shared": "mkdir -p ../../node_modules/@trackmind && ln -sfn ../../packages/shared ../../node_modules/@trackmind/shared"
+    "link:shared": "mkdir -p ../../node_modules/@trackmind && rm -f ../../node_modules/@trackmind/shared && ln -s ../../packages/shared ../../node_modules/@trackmind/shared"
   },
   "dependencies": {
     "@trackmind/shared": "file:../../packages/shared"
