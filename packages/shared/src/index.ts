@@ -19,3 +19,5 @@ export type RaceDayEventType = 'horse-arrived'|'vet-check-completed'|'track-read
 export type ExpertDomain = 'RaceOps'|'Stewarding'|'EquineSafety'|'VetCompliance'|'TrackSurface'|'WeatherEnvironment'|'WageringIntegrity'|'TicketingFanExperience'|'SecuritySOC'|'FacilitiesIoT'|'FinanceRevenue'|'LegalRegulatory'|'ResponsibleAIGovernor';
 export const protectedActions = ['race-start','race-stop','official-results','scratch-horse','medication-decision','clear-vet-flag','emergency-action','payout','disciplinary-decision'] as const;
 export type ProtectedAction = typeof protectedActions[number];
+
+export * from './identityGovernance.js';
