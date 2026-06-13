@@ -103,3 +103,30 @@ test('rendered safety-critical action stays disabled without approval requiremen
   assert.equal(safetyButtons[0].props.approvalsSatisfied, false);
   assert.equal(safetyButtons[0].props.backendLive, false);
 });
+
+test('unified operations command center aggregates governed operational domains', async () => {
+  const data = await loadCommandCenter(createMockClient());
+  const titles = data.operations.widgets.map((widget) => widget.title);
+  for (const required of ['Race readiness','Surface conditions','Weather status','Active incidents','Pending approvals','Steward inquiries','Asset health','Workforce readiness','Emergency resources','Facility status','AI recommendations']) {
+    assert.ok(titles.includes(required), `missing ${required}`);
+  }
+  assert.ok(data.operations.widgets.every((widget) => ['service','event-stream','digital-twin','approved-mock-adapter'].includes(widget.source)));
+  assert.ok(data.operations.widgets.every((widget) => widget.drillDownPath.startsWith('/')));
+  assert.ok(data.operations.savedLayouts.length >= 3);
+  assert.ok(data.operations.liveEvents.length >= 3);
+  assert.ok(data.operations.alerts.length >= 1);
+});
+
+test('command center landing page renders widgets, saved layouts, live timeline, alerts, and lineage', async () => {
+  const data = await loadCommandCenter(createMockClient());
+  const tree = CommandCenter({ data, roles: ['admin'], authenticated: true });
+  const labels = collect(tree, (node) => Boolean(node.props?.['aria-label'])).map((node) => node.props['aria-label']);
+  assert.ok(labels.includes('Unified Operations Command Center'));
+  assert.ok(labels.includes('Configurable widget grid'));
+  assert.ok(labels.includes('Saved layouts and role-specific views'));
+  assert.ok(labels.includes('Live event streaming'));
+  assert.ok(labels.includes('Operational alerts'));
+  assert.ok(labels.includes('Data lineage'));
+  assert.match(textFrom(tree), /Far Turn requires operations review/);
+  assert.match(textFrom(tree), /Source:\s+digital-twin/);
+});
