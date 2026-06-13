@@ -10,13 +10,14 @@ import { breadcrumbForPath, filterCommandPalette, selectTenant, serviceBanner, t
 import { visibleNavItems } from './shell/navigation.js';
 
 export async function loadCommandCenter(client: NexusApiClient) {
-  const [approvals, auditEvents, trackMap, operations] = await Promise.all([
+  const [approvals, auditEvents, trackMap, operations, readiness] = await Promise.all([
     client.listApprovals(),
     client.listAuditEvents(),
     client.getTrackMap(),
     client.getOperationsCommandCenter(),
+    client.getRaceDayReadinessDashboard(),
   ]);
-  return { approvals, auditEvents, trackMap, operations, streamUrl: client.eventStreamUrl(), mode: client.mode };
+  return { approvals, auditEvents, trackMap, operations, readiness, streamUrl: client.eventStreamUrl(), mode: client.mode };
 }
 
 export function isSafetyCriticalEnabled(args: { authenticated: boolean; hasApprovalToken: boolean; backendMode: 'live' | 'mock' }) {
@@ -74,6 +75,17 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
         <section aria-label="Data lineage"><h3>Data lineage</h3>{data.operations.dataLineage.map((lineage) => <p key={`${lineage.domain}-${lineage.reference}`}>{lineage.domain}: {lineage.source} via <code>{lineage.reference}</code></p>)}</section>
       </section>
       <section aria-label="Command center overview"><StatusCard title="Race readiness" status="On schedule" detail="Paddock, gate, and steward channels are linked." /><KpiTile label="Open approvals" value={String(data.approvals.length)} trend="Needs human review" /><RiskBadge level={serviceState === 'offline' ? 'critical' : 'medium'} /><ApprovalChip status={data.approvals[0]?.status ?? 'pending-approval'} /><EventTimeline events={[{ time: 'T-15', label: 'Gate readiness check', tone: 'advisory' }]} /></section>
+
+      <section aria-label="Race-day readiness dashboard">
+        <h2>Race-day Readiness</h2>
+        <p>Continuous readiness score: <strong>{data.readiness.averageScore}</strong>; ready {data.readiness.ready}, watch {data.readiness.watch}, blocked {data.readiness.blocked}.</p>
+        <div aria-label="Race readiness scorecards">{data.readiness.races.map((race) => <article key={race.raceId} data-status={race.status}><h3>{race.raceId}</h3><RiskBadge level={race.status === 'ready' ? 'low' : race.status === 'watch' ? 'high' : 'critical'} /><p>{race.trackId} post time {race.postTime}; score {race.score}; warnings {race.warnings}; approvals {race.approvals}.</p></article>)}</div>
+        <section aria-label="Readiness domain scores"><h3>Domain scores</h3>{data.readiness.domainScores.map((domain) => <article key={domain.domain}><strong>{domain.domain}</strong><meter min={0} max={100} value={domain.averageScore}>{domain.averageScore}</meter><p>Average {domain.averageScore}; watch {domain.watch}; blocked {domain.blocked}.</p></article>)}</section>
+        <section aria-label="Operational readiness warnings"><h3>Operational warnings</h3>{data.readiness.warnings.map((warning) => <article key={warning.id} role={warning.severity === 'critical' ? 'alert' : 'status'}><strong>{warning.domain}: {warning.message}</strong><p>Action: {warning.recommendedAction}</p><p>Evidence: {warning.evidence.join(', ')}</p></article>)}</section>
+        <section aria-label="Readiness approval requirements"><h3>Approval requirements</h3>{data.readiness.approvals.map((approval) => <article key={approval.id}><ApprovalChip status={approval.status === 'satisfied' ? 'approved' : 'pending-approval'} /><strong>{approval.action}</strong><p>{approval.reason}; roles: {approval.requiredRoles.join(', ')}</p><p>Evidence: {approval.evidence.join(', ')}</p></article>)}</section>
+        <section aria-label="Readiness events"><h3>Readiness events</h3><EventTimeline events={data.readiness.events.map((event) => ({ time: event.timestamp, label: `${event.type}: ${event.message}`, tone: event.severity }))} /></section>
+        <section aria-label="Readiness audit records"><h3>Audit records</h3>{data.readiness.auditRecords.map((record) => <article key={record.id}><code>{record.summaryHash}</code><p>{record.actor} scored {record.score} for {record.raceId}; previous hash {record.previousHash}; evidence {record.evidence.join(', ')}.</p></article>)}</section>
+      </section>
       <TrackMapPanel map={data.trackMap} />
       <TrackMap map={data.trackMap} />
       <ApprovalsPanel approvals={data.approvals} />
