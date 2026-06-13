@@ -24,6 +24,10 @@ test('RACR versions assets, audits changes, emits events, and returns defensive 
   assert.equal(registry.history(created.globalId).length, 2);
   assert.equal(registry.auditTrail(created.globalId).length, 2);
   assert.equal(registry.events().length, 2);
+  assert.deepEqual(registry.events().map((event) => event.type), ['RacrAssetCreated', 'RacrAssetUpdated']);
+  assert.equal(registry.events()[0].lineage.aggregateId, created.globalId);
+  assert.equal(registry.events()[0].payload.tenantId, 'trk-1');
+  assert.ok(registry.eventGovernanceCatalog().some((schema) => schema.schemaRef === 'RacrAssetCreated.v1' && schema.compliance === 'regulated'));
   updated.metadata.barn = 'mutated';
   assert.equal(registry.current(created.globalId).metadata.barn, 'A');
 });
