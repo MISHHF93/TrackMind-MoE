@@ -1,0 +1,3 @@
+import type { LoadState } from '../types.js';
+export function DataState<T>({ state, children }: { state: LoadState<T>; children: (data:T)=>React.ReactNode }) { if (state.status==='loading') return <p role="status">Loading live operational data…</p>; if (state.status==='error') return <p role="alert">Unable to load {state.mock?'mock':'live'} data: {state.message}</p>; if (state.status==='empty') return <p>No records available{state.mock?' (mock adapter active)':''}.</p>; return <>{state.mock && <strong>Mock data — backend API not yet available.</strong>}{children(state.data)}</>; }
+export function SafetyButton({ disabled, children }: { disabled:boolean; children:React.ReactNode }) { return <button disabled={disabled} aria-disabled={disabled}> {children} </button>; }
