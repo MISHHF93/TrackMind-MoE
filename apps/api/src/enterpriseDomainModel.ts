@@ -1,7 +1,8 @@
+import { domainKernelSchemaVersion, domainSchemas as nexusDomainSchemas, type DomainEntityKind as NexusDomainEntityKind } from '@trackmind/shared';
 export type EnterpriseEntityKind =
   | 'racetrack' | 'race-day' | 'race' | 'horse' | 'jockey' | 'trainer' | 'owner' | 'veterinarian' | 'steward'
   | 'maintenance-crew' | 'security-personnel' | 'facility' | 'asset' | 'sensor' | 'track-sector' | 'betting-system'
-  | 'ticketing-system' | 'incident' | 'investigation' | 'compliance-record' | 'ai-recommendation' | 'approval' | 'digital-twin-object';
+  | 'ticketing-system' | 'incident' | 'investigation' | 'compliance-record' | 'ai-recommendation' | 'approval' | 'digital-twin-object' | 'starting-gate' | 'vehicle' | 'workflow' | 'audit-record';
 export type EnterpriseLifecycleState = 'proposed' | 'draft' | 'pending-approval' | 'active' | 'suspended' | 'under-review' | 'retired' | 'archived';
 export type DataClassification = 'public' | 'internal' | 'confidential' | 'restricted' | 'regulated';
 export type RelationshipCardinality = 'one-to-one' | 'one-to-many' | 'many-to-one' | 'many-to-many';
@@ -9,7 +10,7 @@ export type RelationshipStrength = 'canonical' | 'derived' | 'observed' | 'exter
 
 export interface DomainOwnerDefinition { ownerId: string; ownerType: 'person' | 'role' | 'department' | 'regulator' | 'system'; accountableRole: string; stewardshipGroup: string; escalationContact?: string }
 export interface SchemaFieldDefinition { name: string; type: 'string' | 'number' | 'boolean' | 'datetime' | 'object' | 'array' | 'geojson'; required: boolean; pii?: boolean; description: string; allowedValues?: readonly string[] }
-export interface DomainSchemaDefinition { kind: EnterpriseEntityKind; schemaVersion: string; namespace: string; displayName: string; description: string; classification: DataClassification; lifecycleStates: EnterpriseLifecycleState[]; owner: DomainOwnerDefinition; keyFields: string[]; fields: SchemaFieldDefinition[]; regulatoryTags: string[]; analyticsGrain: string; retentionPolicy: string; integrationAliases: string[] }
+export interface DomainSchemaDefinition { kind: EnterpriseEntityKind; schemaVersion: string; kernelSchemaVersion: typeof domainKernelSchemaVersion; nexusKind?: NexusDomainEntityKind; namespace: string; displayName: string; description: string; classification: DataClassification; lifecycleStates: EnterpriseLifecycleState[]; owner: DomainOwnerDefinition; keyFields: string[]; fields: SchemaFieldDefinition[]; regulatoryTags: string[]; analyticsGrain: string; retentionPolicy: string; integrationAliases: string[] }
 export interface EntityLineageLink { sourceEntityId: string; relationship: 'created-from' | 'derived-from' | 'supersedes' | 'merged-from' | 'imported-from' | 'model-generated-from'; evidence: string[]; observedAt: string }
 export interface EntityRelationship { relationshipId: string; fromEntityId: string; toEntityId: string; relationshipType: string; cardinality: RelationshipCardinality; strength: RelationshipStrength; validFrom: string; validTo?: string; metadata?: Record<string, unknown> }
 export interface EntityAuditEntry { auditId: string; entityId: string; version: number; action: 'create' | 'update' | 'transition' | 'relate' | 'retire'; actorId: string; occurredAt: string; changes: string[]; reason?: string }
@@ -23,7 +24,7 @@ const commonFields: SchemaFieldDefinition[] = [
   { name: 'updatedAt', type: 'datetime', required: true, description: 'Last canonical update timestamp.' },
 ];
 const schema = (kind: EnterpriseEntityKind, displayName: string, stewardshipGroup: string, extra: SchemaFieldDefinition[], tags: string[], classification: DataClassification = 'internal'): DomainSchemaDefinition => ({
-  kind, schemaVersion: 'edm.v1', namespace: `trackmind.enterprise.${kind}`, displayName,
+  kind, schemaVersion: 'edm.v1', kernelSchemaVersion: domainKernelSchemaVersion, nexusKind: kind in nexusDomainSchemas ? kind as NexusDomainEntityKind : undefined, namespace: `trackmind.enterprise.${kind}`, displayName,
   description: `Canonical master-data schema for ${displayName}.`, classification,
   lifecycleStates: ['proposed', 'draft', 'pending-approval', 'active', 'suspended', 'under-review', 'retired', 'archived'],
   owner: owner(`${displayName} Data Owner`, stewardshipGroup), keyFields: ['entityId', 'tenantId'], fields: [...commonFields, ...extra],
@@ -55,6 +56,10 @@ export const enterpriseDomainSchemas: readonly DomainSchemaDefinition[] = [
   schema('ai-recommendation', 'AI Recommendation', 'Responsible AI', [{ name: 'modelId', type: 'string', required: true, description: 'Model or agent version.' }], ['ISO42001', 'NIST-AI-RMF'], 'regulated'),
   schema('approval', 'Approval', 'Governance', [{ name: 'approvalStatus', type: 'string', required: true, description: 'Approval status.' }], ['segregation-of-duties'], 'regulated'),
   schema('digital-twin-object', 'Digital Twin Object', 'Digital Twin Platform', [{ name: 'twinModelId', type: 'string', required: true, description: 'Digital Twin model identifier.' }], ['digital-twin']),
+  schema('starting-gate', 'Starting Gate', 'Racing Operations', [{ name: 'stalls', type: 'number', required: true, description: 'Number of gate stalls.' }, { name: 'sectorId', type: 'string', required: true, description: 'Track sector where the gate is positioned.' }], ['race-start', 'safety-critical']),
+  schema('vehicle', 'Vehicle', 'Facilities', [{ name: 'vehicleType', type: 'string', required: true, description: 'Ambulance, maintenance, security, or transport vehicle type.' }], ['asset-management', 'emergency-response']),
+  schema('workflow', 'Workflow', 'Governance', [{ name: 'workflowType', type: 'string', required: true, description: 'Governed workflow type.' }, { name: 'state', type: 'string', required: true, description: 'Workflow lifecycle state.' }], ['approval-chain'], 'regulated'),
+  schema('audit-record', 'Audit Record', 'Compliance', [{ name: 'actorId', type: 'string', required: true, description: 'Actor responsible for the audited action.' }, { name: 'action', type: 'string', required: true, description: 'Audited action.' }], ['audit-evidence', 'legal-hold'], 'regulated'),
 ];
 
 export const enterpriseRelationshipBlueprints: readonly Omit<EntityRelationship, 'relationshipId' | 'fromEntityId' | 'toEntityId' | 'validFrom'>[] = [
