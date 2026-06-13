@@ -80,3 +80,18 @@ RACR v1 explicitly supports the foundational racetrack asset catalog required by
 - **Soft deletes:** decommissioning moves assets into `deleted` lifecycle state while preserving history and auditability.
 - **Event streams:** creation and update commands publish registry events for downstream Digital Twin, CQRS, compliance, and command-center consumers.
 - **Lineage and twin relationships:** assets can link to parent assets, replacement chains, configuration sources, and Digital Twin nodes for traceable simulation and operational synchronization.
+
+## Authoritative enterprise inventory envelope
+
+RACR now treats every registered object as an authoritative inventory record across physical, digital, biological, operational, regulatory, and AI-agent domains. Each asset snapshot carries:
+
+- A globally unique `racr:` identifier, tenant boundary, asset type, asset class, owner, accountable role, and immutable version metadata.
+- A Digital Twin representation with model reference, twin identifier, state topic, optional command topic, simulation profile, and shadow state.
+- Risk classification, approval requirements, approval decisions, operational state, health score, active incidents, and lifecycle controls for draft, active, retired, deleted, and exceptional states.
+- Telemetry bindings, maintenance history, lineage, twin relationships, compliance mappings, governance controls, and API exposure metadata.
+
+## API, event stream, and governance contract
+
+The registry exposes command-oriented APIs for listing, creating, updating, telemetry binding, maintenance recording, approvals, state transitions, soft deletes, and rollback. Every accepted command appends a new immutable version, writes an audit entry, and publishes an event stream message so Digital Twin, CQRS projection, command-center, compliance, and AI-governance consumers can synchronize from the registry rather than maintaining parallel inventories.
+
+Governance controls are enforced with role-based access control, critical-asset approval requirements, lifecycle entry and exit criteria, soft-delete preservation, version rollback, compliance mappings, and immutable audit evidence. The supported type catalog includes starting gates, irrigation systems, surface sectors, lighting systems, cameras, vehicles, emergency resources, horses, race events, regulatory records, AI agents, workflows, and a reserved future asset category for controlled expansion.

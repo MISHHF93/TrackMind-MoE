@@ -4,14 +4,21 @@ export type RacrAssetClass = 'physical' | 'digital' | 'biological' | 'operationa
 export type RacrLifecycleState = 'draft' | 'pending-approval' | 'active' | 'maintenance' | 'suspended' | 'retired' | 'deleted';
 export type RacrRiskClassification = 'low' | 'medium' | 'high' | 'critical';
 export type RacrRole = 'registry-admin' | 'asset-owner' | 'steward' | 'veterinarian' | 'track-ops' | 'security-ops' | 'compliance-officer' | 'ai-governance' | 'viewer';
-export type RacrAction = 'create' | 'read' | 'update' | 'delete' | 'rollback' | 'approve' | 'bind-telemetry' | 'record-maintenance';
+export type RacrAction = 'create' | 'read' | 'update' | 'delete' | 'rollback' | 'approve' | 'bind-telemetry' | 'record-maintenance' | 'change-state';
 
 export interface RacrActor { id: string; roles: RacrRole[]; tenantId?: string }
 export interface RacrOwner { ownerId: string; ownerType: 'person' | 'department' | 'tenant' | 'regulator' | 'system'; accountableRole: string }
 export interface RacrApprovalRequirement { action: string; requiredRoles: RacrRole[]; minApprovals: number; reason: string }
+export interface RacrApprovalRecord { approvalId: string; action: string; approvedBy: string; role: RacrRole; decidedAt: string; decision: 'approved' | 'rejected'; evidence: string[] }
 export interface RacrTelemetryBinding { bindingId: string; sourceId: string; stream: string; schemaRef: string; required: boolean; lastObservedAt?: string }
 export interface RacrMaintenanceRecord { recordId: string; performedAt: string; performedBy: string; summary: string; evidence: string[] }
 export interface RacrDigitalTwinRelationship { twinId: string; relationship: 'represents' | 'depends-on' | 'controls' | 'monitors' | 'part-of' | 'simulates'; since: string }
+export interface RacrDigitalTwinRepresentation { twinId: string; modelRef: string; stateTopic: string; commandTopic?: string; simulationProfile?: string; shadowState: Record<string, unknown> }
+export interface RacrComplianceMapping { framework: 'HISA' | 'ARCI' | 'OSHA' | 'PCI-DSS' | 'SOC2' | 'ISO27001' | 'ISO42001' | 'NIST-AI-RMF' | 'TrackPolicy' | 'StateRacingCommission'; controlId: string; obligation: string; evidenceRefs: string[] }
+export interface RacrLifecycleControl { state: RacrLifecycleState; entryCriteria: string[]; exitCriteria: string[]; approvalRequired: boolean }
+export interface RacrOperationalState { status: 'unknown' | 'ready' | 'active' | 'degraded' | 'maintenance' | 'suspended' | 'retired'; healthScore: number; lastObservedAt?: string; activeIncidents: string[] }
+export interface RacrApiSurface { name: string; method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; path: string; requiredRoles: RacrRole[] }
+export interface RacrGovernanceControl { controlId: string; name: string; description: string; enforcedBy: 'rbac' | 'approval-workflow' | 'policy-as-code' | 'audit' | 'segregation-of-duties'; evidence: string[] }
 export interface RacrLineageLink { parentAssetId: string; relationship: 'derived-from' | 'replaces' | 'split-from' | 'merged-from' | 'configured-by'; evidence: string[] }
 
 export interface RacrAssetVersion {
@@ -26,9 +33,16 @@ export interface RacrAssetVersion {
   owner: RacrOwner;
   riskClassification: RacrRiskClassification;
   approvalRequirements: RacrApprovalRequirement[];
+  approvals: RacrApprovalRecord[];
+  digitalTwin: RacrDigitalTwinRepresentation;
   telemetryBindings: RacrTelemetryBinding[];
   maintenanceHistory: RacrMaintenanceRecord[];
   twinRelationships: RacrDigitalTwinRelationship[];
+  operationalState: RacrOperationalState;
+  complianceMappings: RacrComplianceMapping[];
+  lifecycleControls: RacrLifecycleControl[];
+  apiSurface: RacrApiSurface[];
+  governanceControls: RacrGovernanceControl[];
   lineage: RacrLineageLink[];
   schemaVersion: string;
   createdAt: string;
@@ -40,7 +54,7 @@ export interface RacrAssetVersion {
 export interface RacrAuditEntry { auditId: string; globalId: string; version: number; action: RacrAction; actorId: string; occurredAt: string; changes: string[]; reason?: string }
 
 export const racrSupportedAssetTypes = [
-  'StartingGate', 'IrrigationSystem', 'TrackSector', 'Camera', 'LightingSystem', 'Ambulance', 'Horse', 'Jockey', 'Veterinarian', 'Steward', 'RaceEvent', 'WageringSystem', 'TicketingSystem', 'RegulatoryRecord', 'ComplianceControl', 'AIAgent',
+  'StartingGate', 'IrrigationSystem', 'TrackSector', 'SurfaceSector', 'Camera', 'LightingSystem', 'Vehicle', 'Ambulance', 'FireTruck', 'Horse', 'Jockey', 'Veterinarian', 'Steward', 'RaceEvent', 'Workflow', 'WageringSystem', 'TicketingSystem', 'RegulatoryRecord', 'ComplianceControl', 'AIAgent', 'FutureAssetCategory',
 ] as const;
 
 const permissionMatrix: Record<RacrAction, RacrRole[]> = {
@@ -52,6 +66,7 @@ const permissionMatrix: Record<RacrAction, RacrRole[]> = {
   approve: ['registry-admin', 'steward', 'veterinarian', 'compliance-officer', 'ai-governance'],
   'bind-telemetry': ['registry-admin', 'asset-owner', 'track-ops', 'security-ops'],
   'record-maintenance': ['registry-admin', 'asset-owner', 'track-ops'],
+  'change-state': ['registry-admin', 'asset-owner', 'track-ops', 'security-ops', 'compliance-officer'],
 };
 
 export function authorizeRacrAction(actor: RacrActor, action: RacrAction): boolean {
@@ -66,6 +81,10 @@ export function validateRacrAsset(asset: RacrAssetVersion): { valid: boolean; er
   if (!racrSupportedAssetTypes.includes(asset.assetType as typeof racrSupportedAssetTypes[number])) errors.push(`unsupported assetType ${asset.assetType}`);
   if (asset.version < 1) errors.push('version must be positive');
   if (!asset.owner?.ownerId) errors.push('owner is required');
+  if (!asset.digitalTwin?.twinId || !asset.digitalTwin.modelRef || !asset.digitalTwin.stateTopic) errors.push('digitalTwin representation requires twinId, modelRef, and stateTopic');
+  if (!asset.operationalState?.status) errors.push('operationalState is required');
+  if (!asset.lifecycleControls?.length) errors.push('lifecycleControls are required');
+  if (!asset.governanceControls?.length) errors.push('governanceControls are required');
   if (asset.riskClassification === 'critical' && asset.approvalRequirements.length === 0) errors.push('critical assets require approval requirements');
   for (const binding of asset.telemetryBindings) {
     if (!binding.bindingId || !binding.sourceId || !binding.stream || !binding.schemaRef) errors.push('telemetry bindings require id, source, stream, and schema');
@@ -126,6 +145,32 @@ export class RacetrackAssetControlRegistry {
     return this.update(globalId, { maintenanceHistory: [...current.maintenanceHistory, record] }, actor, 'maintenance-recorded');
   }
 
+  changeOperationalState(globalId: string, operationalState: RacrOperationalState, actor: RacrActor, reason?: string): RacrAssetVersion {
+    this.require(actor, 'change-state');
+    return this.update(globalId, { operationalState }, actor, reason ?? 'operational-state-changed');
+  }
+
+  approve(globalId: string, approval: RacrApprovalRecord, actor: RacrActor): RacrAssetVersion {
+    this.require(actor, 'approve');
+    const current = this.current(globalId, true);
+    return this.update(globalId, { approvals: [...current.approvals, approval] }, actor, 'approval-recorded');
+  }
+
+  query(filter: Partial<Pick<RacrAssetVersion, 'tenantId' | 'assetClass' | 'assetType' | 'riskClassification' | 'lifecycleState'>> = {}): RacrAssetVersion[] {
+    return [...this.versions.keys()].map((id) => this.current(id, true)).filter((asset) => Object.entries(filter).every(([key, value]) => asset[key as keyof RacrAssetVersion] === value));
+  }
+
+  apiCatalog(): RacrApiSurface[] {
+    const base: RacrApiSurface[] = [
+      { name: 'List assets', method: 'GET', path: '/racr/assets', requiredRoles: ['viewer'] },
+      { name: 'Create asset', method: 'POST', path: '/racr/assets', requiredRoles: ['registry-admin', 'asset-owner'] },
+      { name: 'Update asset', method: 'PATCH', path: '/racr/assets/{globalId}', requiredRoles: ['registry-admin', 'asset-owner'] },
+      { name: 'Bind telemetry', method: 'POST', path: '/racr/assets/{globalId}/telemetry-bindings', requiredRoles: ['registry-admin', 'track-ops'] },
+      { name: 'Record maintenance', method: 'POST', path: '/racr/assets/{globalId}/maintenance', requiredRoles: ['registry-admin', 'track-ops'] },
+    ];
+    return base.map((api) => ({ ...api, requiredRoles: [...api.requiredRoles] }));
+  }
+
   current(globalId: string, includeDeleted = false): RacrAssetVersion {
     const stream = this.versions.get(globalId);
     if (!stream?.length) throw new Error('Asset not found');
@@ -147,5 +192,33 @@ export class RacetrackAssetControlRegistry {
 
 export function createRacrAssetTemplate(input: { globalId: string; assetType: typeof racrSupportedAssetTypes[number]; assetClass: RacrAssetClass; tenantId: string; name: string; owner: RacrOwner; riskClassification: RacrRiskClassification; updatedBy: string }): RacrAssetVersion {
   const now = '2026-06-13T00:00:00Z';
-  return { ...input, version: 1, metadata: {}, lifecycleState: 'draft', approvalRequirements: input.riskClassification === 'critical' ? [{ action: 'activate', requiredRoles: ['compliance-officer'], minApprovals: 1, reason: 'Critical asset activation requires accountable approval' }] : [], telemetryBindings: [], maintenanceHistory: [], twinRelationships: [], lineage: [], schemaVersion: 'racr.asset.v1', createdAt: now, updatedAt: now };
+  const slug = input.globalId.replaceAll(':', '.');
+  return {
+    ...input,
+    version: 1,
+    metadata: {},
+    lifecycleState: 'draft',
+    approvalRequirements: input.riskClassification === 'critical' ? [{ action: 'activate', requiredRoles: ['compliance-officer'], minApprovals: 1, reason: 'Critical asset activation requires accountable approval' }] : [],
+    approvals: [],
+    digitalTwin: { twinId: `twin:${slug}`, modelRef: `dtmi:trackmind:${input.assetType};1`, stateTopic: `racr/${input.tenantId}/${slug}/state`, commandTopic: `racr/${input.tenantId}/${slug}/commands`, shadowState: {} },
+    telemetryBindings: [],
+    maintenanceHistory: [],
+    twinRelationships: [],
+    operationalState: { status: 'unknown', healthScore: 100, activeIncidents: [] },
+    complianceMappings: [{ framework: 'TrackPolicy', controlId: 'RACR-BASELINE', obligation: 'Maintain authoritative inventory, ownership, lifecycle, and audit evidence', evidenceRefs: [] }],
+    lifecycleControls: [
+      { state: 'draft', entryCriteria: ['registered by authorized actor'], exitCriteria: ['required metadata complete'], approvalRequired: false },
+      { state: 'active', entryCriteria: ['owner assigned', 'risk classified', 'approval requirements satisfied'], exitCriteria: ['retirement or suspension approved'], approvalRequired: input.riskClassification !== 'low' },
+      { state: 'retired', entryCriteria: ['decommission evidence attached'], exitCriteria: [], approvalRequired: true },
+    ],
+    apiSurface: [],
+    governanceControls: [
+      { controlId: 'RACR-RBAC', name: 'Role-based command authorization', description: 'Registry mutations require an authorized actor role.', enforcedBy: 'rbac', evidence: [] },
+      { controlId: 'RACR-AUDIT', name: 'Immutable audit and event trail', description: 'Accepted commands append versioned history, audit records, and event stream messages.', enforcedBy: 'audit', evidence: [] },
+    ],
+    lineage: [],
+    schemaVersion: 'racr.asset.v1',
+    createdAt: now,
+    updatedAt: now,
+  };
 }
