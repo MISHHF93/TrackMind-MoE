@@ -20,6 +20,12 @@ This repository is structured as the TrackMind Nexus enterprise monorepo: an Azu
 
 Enterprise domains are organized across `services`, `digital-twin`, `ai`, `workflows`, `compliance`, `integrations`, `infra`, `tests`, and `deploy` so future teams can add production modules with consistent tenant isolation, CQRS/event sourcing patterns, observability, compliance evidence, and human-governed AI automation.
 
+## Equine Intelligence Platform
+
+TrackMind now includes an Equine Intelligence Platform for a horse-centered digital profile across the full lifecycle. The platform models ownership history, trainer assignments, racing starts, workouts, transportation, veterinary records with privacy scopes, welfare observations, retirement, participation eligibility, compliance posture, immutable audit history, and Digital Twin synchronization for every horse.
+
+Governance is enforced through tenant boundaries, role-based veterinary privacy filtering, eligibility rules, hash-chained audit events, and synchronized equine twin state so racing officials, care teams, regulators, and auditors operate from a controlled source of truth.
+
 ## Safety model
 
 TrackMind-MoE never directly automates race starts/stops, official results, scratches, medication decisions, emergency actions, payouts, or disciplinary decisions without a human approval record. Every AI recommendation carries confidence, evidence, required approvals, and immutable audit logging hooks.
