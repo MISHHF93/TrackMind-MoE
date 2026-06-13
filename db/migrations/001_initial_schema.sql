@@ -142,3 +142,34 @@ $$;
 CREATE TRIGGER audit_logs_immutable
 BEFORE UPDATE OR DELETE ON audit_logs
 FOR EACH ROW EXECUTE FUNCTION prevent_audit_log_update();
+
+CREATE TABLE equine_profiles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id text NOT NULL,
+  horse_id text NOT NULL UNIQUE,
+  name text NOT NULL,
+  microchip_id text UNIQUE,
+  lifecycle_status text NOT NULL CHECK (lifecycle_status IN ('active','inactive','retired','deceased')),
+  compliance_status text NOT NULL CHECK (compliance_status IN ('compliant','under-review','suspended','ineligible')),
+  twin_id text NOT NULL UNIQUE,
+  profile jsonb NOT NULL DEFAULT '{}'::jsonb,
+  version int NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE equine_profile_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  horse_id text NOT NULL REFERENCES equine_profiles(horse_id),
+  tenant_id text NOT NULL,
+  event_type text NOT NULL,
+  privacy_scope text NOT NULL DEFAULT 'racing-officials',
+  payload jsonb NOT NULL,
+  evidence jsonb NOT NULL DEFAULT '[]'::jsonb,
+  actor_id text NOT NULL,
+  hash text NOT NULL UNIQUE,
+  previous_hash text NOT NULL,
+  occurred_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX equine_profiles_tenant_status_idx ON equine_profiles(tenant_id, lifecycle_status, compliance_status);
+CREATE INDEX equine_profile_events_horse_idx ON equine_profile_events(horse_id, occurred_at DESC);
