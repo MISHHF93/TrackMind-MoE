@@ -1,0 +1,10 @@
+INSERT INTO racetracks(id,name,timezone,commission_name) VALUES ('00000000-0000-0000-0000-000000000001','Demo Park','America/New_York','Demo Racing Commission');
+INSERT INTO race_days(id,racetrack_id,race_date,status) VALUES ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','2026-06-13','scheduled');
+INSERT INTO races(id,race_day_id,race_number,status) VALUES ('00000000-0000-0000-0000-000000000010','00000000-0000-0000-0000-000000000002',1,'scheduled');
+INSERT INTO horses(id,name,foaled,safety_profile) VALUES ('00000000-0000-0000-0000-000000000003','Safety First','2021-04-01','{"restDays":21,"vetFlags":[]}');
+INSERT INTO jockeys(id,name,license_number) VALUES ('00000000-0000-0000-0000-000000000004','Alex Rider','J-100');
+INSERT INTO trainers(id,name,license_number) VALUES ('00000000-0000-0000-0000-000000000005','Casey Trainer','T-100');
+INSERT INTO veterinarians(id,name,license_number) VALUES ('00000000-0000-0000-0000-000000000006','Dr. Morgan Vet','V-100');
+INSERT INTO stewards(id,name,license_number) VALUES ('00000000-0000-0000-0000-000000000007','Jordan Steward','S-100');
+INSERT INTO race_entries(id,race_id,horse_id,jockey_id,trainer_id,post_position) VALUES ('00000000-0000-0000-0000-000000000011','00000000-0000-0000-0000-000000000010','00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000004','00000000-0000-0000-0000-000000000005',1);
+INSERT INTO track_condition_readings(id,race_day_id,sensor_id,moisture,cushion_depth,compaction,temperature,rainfall,wind,lightning_distance,gate_status,lighting_status,camera_health) VALUES ('00000000-0000-0000-0000-000000000012','00000000-0000-0000-0000-000000000002','surface-1',12.4,3.5,210,72,0,8,25,'closed','ok','ok');
