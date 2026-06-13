@@ -21,6 +21,7 @@ export * from './iot.js';
 export * from './moeRouter.js';
 export * from './operationsCenter.js';
 export * from './raceOperationsPlatform.js';
+export * from './raceDayReadiness.js';
 export * from './racetrackControlRegistry.js';
 export * from './racetrackAssetRegistryService.js';
 export * from './racrFoundation.js';
