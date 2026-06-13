@@ -4,25 +4,8 @@ import { SafetyButton } from './components/states.js';
 import { ApprovalsPanel } from './domains/approvals/ApprovalsPanel.js';
 import { AuditReviewPanel } from './domains/audit/AuditReviewPanel.js';
 import { TrackMap } from './domains/track-map/TrackMap.js';
+import { domainScreens } from './shell/domains.js';
 import { visibleNavItems } from './shell/navigation.js';
-
-const screens = [
-  'Operations Command',
-  'Race Office',
-  'Asset Registry',
-  'Digital Twin View',
-  'Starting Gate Control',
-  'Surface Intelligence',
-  'Equine Intelligence',
-  'Steward Center',
-  'Approvals',
-  'Audit Ledger',
-  'Security',
-  'Emergency Ops',
-  'Compliance',
-  'AI Governance',
-  'Executive Center',
-];
 
 export async function loadCommandCenter(client: NexusApiClient) {
   const [approvals, auditEvents, trackMap] = await Promise.all([
@@ -48,6 +31,7 @@ export async function requestRaceStartApproval(client: NexusApiClient, actor: st
 
 export function CommandCenter({ data, roles, authenticated = true }: { data: Awaited<ReturnType<typeof loadCommandCenter>>; roles: Role[]; authenticated?: boolean }) {
   const nav = visibleNavItems(roles);
+  const visibleIds = new Set(nav.map((item) => item.id));
   const canExecute = isSafetyCriticalEnabled({ authenticated, hasApprovalToken: false, backendMode: data.mode });
 
   return (
@@ -64,10 +48,14 @@ export function CommandCenter({ data, roles, authenticated = true }: { data: Awa
       <ApprovalsPanel approvals={data.approvals} />
       <AuditReviewPanel events={data.auditEvents} />
       <section aria-label="Domain screens">
-        {screens.map((name) => (
-          <article key={name}>
-            <h2>{name}</h2>
-            <p>Placeholder-safe module: connects to live API when present, otherwise displays clearly marked mock/read-only data. State-changing controls route through approval, event, and audit aware backend paths.</p>
+        {domainScreens.filter((screen) => visibleIds.has(screen.id)).map((screen) => (
+          <article key={screen.id}>
+            <h2>{screen.title}</h2>
+            <p>Route <code>{screen.route}</code> is owned by {screen.owner}; shell owns authentication, layout, and top-level routing.</p>
+            <p>{screen.liveApi ? <>Live API target: <code>{screen.liveApi}</code>.</> : 'No state-changing API target is configured for this read-only module.'}</p>
+            {data.mode === 'mock' && screen.mockReason && <p><strong>Mock/read-only:</strong> {screen.mockReason}.</p>}
+            <p>Event-stream ready topics: {screen.eventStreams.join(', ')}.</p>
+            <p>State changes: {screen.stateChangingActions.length ? screen.stateChangingActions.join(', ') : 'none; review-only screen'}; never direct local mutation.</p>
           </article>
         ))}
       </section>
