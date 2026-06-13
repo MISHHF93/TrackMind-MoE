@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runSurfaceIntelligenceSystem, analyzeSurfaceSection, buildSurfaceHeatmap } from '../dist/index.js';
+import { runSurfaceIntelligenceSystem, analyzeSurfaceSection, buildSurfaceHeatmap, runSurfaceManagementDomain } from '../dist/index.js';
 
 const input = {
   trackId: 'track-a',
@@ -35,4 +35,23 @@ test('surface intelligence supports section analysis and geospatial heatmaps', (
   assert.equal(section.riskLevel, 'low');
   const heatmap = buildSurfaceHeatmap(input.telemetry);
   assert.ok(heatmap.some((cell) => cell.riskIndex > 0));
+});
+
+test('surface management domain ingests all sources and gates operational actions', () => {
+  const domain = runSurfaceManagementDomain(input);
+  assert.ok(domain.measurements.some((item) => item.kind === 'moisture'));
+  assert.ok(domain.measurements.some((item) => item.kind === 'compaction'));
+  assert.ok(domain.measurements.some((item) => item.kind === 'cushion-depth'));
+  assert.ok(domain.measurements.some((item) => item.kind === 'weather'));
+  assert.ok(domain.measurements.some((item) => item.kind === 'drainage'));
+  assert.ok(domain.measurements.some((item) => item.kind === 'maintenance-activity'));
+  assert.ok(domain.measurements.some((item) => item.kind === 'inspection'));
+  assert.ok(domain.measurements.some((item) => item.kind === 'manual-observation'));
+  assert.ok(domain.anomalies.length > 0);
+  assert.ok(domain.forecasts.length >= 3);
+  assert.ok(domain.digitalTwinSync.every((sync) => sync.status === 'queued-for-human-approved-sync'));
+  assert.ok(domain.maintenanceRecommendations.every((item) => item.requiresHumanApproval && item.executionState === 'approval-required'));
+  assert.ok(domain.events.length >= domain.measurements.length + domain.digitalTwinSync.length);
+  assert.ok(domain.auditRecords.length >= domain.events.length);
+  assert.equal(domain.operationalActionsRequireHumanApproval, true);
 });
