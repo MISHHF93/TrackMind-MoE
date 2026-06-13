@@ -104,7 +104,8 @@ test('track configuration changes require approvals before Digital Twin sync and
 
   platform.approve('chg-2', 'racing-secretary', ['condition-book-reviewed'], '2026-06-13T13:05:00Z');
   platform.approve('chg-2', 'track-superintendent', ['work-order-reviewed'], '2026-06-13T13:10:00Z');
-  const approved = platform.approve('chg-2', 'steward', ['regulatory-checklist'], '2026-06-13T13:15:00Z');
+  platform.approve('chg-2', 'steward', ['regulatory-checklist'], '2026-06-13T13:15:00Z');
+  const approved = platform.approve('chg-2', 'course-superintendent', ['turf-lane-release'], '2026-06-13T13:16:00Z');
   assert.equal(approved.status, 'approved');
 
   const sync = platform.synchronizeDigitalTwin('chg-2', '2026-06-13T13:20:00Z');
@@ -113,6 +114,66 @@ test('track configuration changes require approvals before Digital Twin sync and
 
   const exported = platform.raceOfficeExport('chg-2');
   assert.equal(exported.jurisdiction, 'US-HISA-state-racing-commission');
-  assert.deepEqual(exported.approvals, ['racing-secretary', 'track-superintendent', 'steward']);
-  assert.equal(platform.auditTrail('chg-2').length, 5);
+  assert.deepEqual(exported.approvals, ['racing-secretary', 'track-superintendent', 'steward', 'course-superintendent']);
+  assert.equal(platform.auditTrail('chg-2').length, 6);
+});
+
+test('gate moves recalculate race distance, require expanded approvals, and sync dependent layout state', () => {
+  const platform = new TrackConfigurationPlatform();
+  const sector = platform.registerSector({
+    id: 'turf-stretch',
+    name: 'Turf Stretch',
+    surface: 'turf',
+    kind: 'straight',
+    centerline: { points: [{ latitude: 38.05, longitude: -76.97 }, { latitude: 38.05, longitude: -76.95 }] },
+    lengthMeters: 900,
+    widthMeters: 24,
+    restrictions: ['portable-rail-clearance'],
+  });
+  platform.registerCourseLayout({
+    id: 'layout-mile-turf',
+    name: 'One Mile Turf',
+    surface: 'turf',
+    sectors: [sector.id],
+    nominalDistanceMeters: 1600,
+    startGateCandidates: [raceSetup.gatePlacement],
+    finishLine: { points: [{ latitude: 38.05, longitude: -76.95 }, { latitude: 38.051, longitude: -76.95 }] },
+    regulatoryReferences: ['state-distance-measurement-rule'],
+  });
+
+  const submitted = platform.submit({
+    id: 'chg-3',
+    kind: 'race-setup',
+    requestedBy: 'race-office',
+    requestedAt: '2026-06-13T14:00:00Z',
+    raceSetup: { ...raceSetup, courseLayoutId: 'layout-mile-turf', sectorIds: [sector.id], advertisedDistanceMeters: 1600 },
+    evidence: ['condition-book', 'course-survey'],
+    reason: 'publish one mile turf setup',
+    status: 'draft',
+    approvals: [],
+  });
+  assert.equal(submitted.raceSetup.calculations.measuredDistanceMeters, 1614.4);
+
+  const moved = platform.moveGate('chg-3', {
+    gateId: 'gate-a',
+    newDistanceMeters: 1650,
+    newLocation: { latitude: 38.052, longitude: -76.952, accuracyMeters: 0.2 },
+    headingDegrees: 93,
+    reason: 'move start to accommodate temporary rail and preserve safe first-turn run',
+    requestedBy: 'racing-secretary',
+    requestedAt: '2026-06-13T14:20:00Z',
+    evidence: ['surveyor-stakeout', 'timer-recalculation'],
+  });
+
+  assert.equal(moved.raceSetup.calculations.calculationVersion, 2);
+  assert.ok(moved.raceSetup.calculations.regulatoryFlags.includes('distance-variance-review'));
+  assert.ok(moved.raceSetup.calculations.regulatoryFlags.includes('gate-position-changed'));
+
+  for (const role of ['racing-secretary', 'track-superintendent', 'steward', 'timer', 'course-superintendent', 'regulatory-compliance']) {
+    platform.approve(moved.id, role, [`${role}-approval`], '2026-06-13T14:30:00Z');
+  }
+  const sync = platform.synchronizeDigitalTwin(moved.id, '2026-06-13T14:40:00Z');
+  assert.equal(sync.state.calculations.measuredDistanceMeters, 1664.4);
+  assert.equal(sync.state.courseLayout.id, 'layout-mile-turf');
+  assert.equal(platform.auditTrail(moved.id).some((entry) => entry.action === 'move-gate-and-recalculate-race-distance'), true);
 });
