@@ -35,3 +35,44 @@ test('race operations control matrix maps workflows to approvals, twins, telemet
   assert.equal(matrix.length, 4);
   assert.ok(matrix[2].systems.includes('ai-recommendations'));
 });
+
+test('race operations bounded context persists APIs and connects event, audit, workflow, approval, twin, and dashboards', async () => {
+  const { UniversalEventBus, ImmutableAuditLog, WorkflowOrchestrationEngine, RaceOperationsRepository } = await import('../dist/index.js');
+  const eventBus = new UniversalEventBus();
+  const auditLog = new ImmutableAuditLog();
+  const workflow = new WorkflowOrchestrationEngine();
+  workflow.register({ id: 'race-lifecycle', name: 'Race lifecycle', domain: 'race-day', version: '1.0.0', bpmnProcessId: 'race-lifecycle', startStepId: 'card', ownerRole: 'racing-secretary', tenantId: 'tenant-1', steps: [{ id: 'card', name: 'Build card', type: 'userTask', role: 'racing-secretary', next: ['approve'] }, { id: 'approve', name: 'Approve readiness', type: 'approvalTask', approvalRoles: ['steward'], requiredApprovals: 1 }] });
+  const repository = new RaceOperationsRepository();
+  const seen = [];
+  eventBus.subscribe('*', (event) => seen.push(event), { name: 'race-test-spy' });
+  const platform = new RaceOperationsPlatform({ eventBus, auditLog, workflow, repository, tenantId: 'tenant-1' });
+
+  platform.scheduleRace({ id: 'race-integrated', trackId: 'trk-1', raceDate: '2026-06-13', raceNumber: 7, scheduledPostTime: '2026-06-13T21:00:00Z', conditions: { surface: 'turf', distanceFurlongs: 8, classLevel: 'Stakes', purse: 250000, eligibility: ['fillies'], medicationRules: ['lasix-free'] } });
+  const instance = platform.startWorkflow('race-integrated');
+  assert.equal(instance.definitionId, 'race-lifecycle');
+  platform.addEntry('race-integrated', { id: 'entry-a', horseId: 'horse-a', trainerId: 'trainer-a', ownerId: 'owner-a' });
+  platform.declareEntry('race-integrated', 'entry-a', 'jockey-a', 120);
+  platform.updateConditions('race-integrated', { weatherRestrictions: ['no-lightning'] });
+  platform.drawPostPositions('race-integrated');
+  platform.assignGates('race-integrated', 'MAIN');
+  platform.coordinateStaffing('race-integrated', { stewards: ['s1'], veterinarians: ['v1'], gateCrew: ['g1'], outriders: ['o1'], trackMaintenance: ['m1'], security: ['sec1'] });
+  platform.assignStaffing('race-integrated', [{ id: 'staff-1', role: 'stewards', personId: 's1', shiftStart: '2026-06-13T19:00:00Z', shiftEnd: '2026-06-14T00:00:00Z', status: 'checked-in' }]);
+  platform.allocateResources('race-integrated', [{ id: 'gate-1', type: 'starting-gate', zone: 'turf-course', status: 'allocated' }, { id: 'camera-9', type: 'camera', zone: 'finish', status: 'unavailable' }]);
+  for (const step of ['racingOffice', 'stewards', 'veterinarian']) platform.approveWorkflow('race-integrated', step, 'approved');
+
+  const readiness = platform.assessReadiness('race-integrated', [{ streamId: 'weather', type: 'weather', observedAt: '2026-06-13T20:55:00Z', healthy: true, value: 'clear' }]);
+  assert.equal(readiness.ready, true);
+  platform.monitorExecution('race-integrated', { timestamp: '2026-06-13T21:00:00Z', type: 'off', message: 'started cleanly' });
+  platform.monitorExecution('race-integrated', { timestamp: '2026-06-13T21:01:00Z', type: 'incident', message: 'camera offline', severity: 'warning' });
+
+  const persisted = repository.getRace('race-integrated');
+  assert.equal(persisted.workflowInstanceId, instance.id);
+  assert.equal(platform.listRaces({ status: 'running' }).length, 1);
+  const dashboard = platform.operationalDashboard('2026-06-13T21:02:00Z');
+  assert.equal(dashboard.totals.running, 1);
+  assert.equal(dashboard.resourceExceptions[0].resourceId, 'camera-9');
+  assert.equal(dashboard.executionAlerts[0].severity, 'warning');
+  assert.ok(auditLog.forensicTimeline({ subjectId: 'race-integrated' }).length >= 10);
+  assert.ok(seen.some((event) => event.type === 'race.started'));
+  assert.ok(platform.apiDefinition().endpoints.some((endpoint) => endpoint.path === '/dashboard'));
+});
