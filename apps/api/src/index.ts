@@ -3,6 +3,7 @@ export * from './assetIntelligence.js';
 export * from './auditLog.js';
 export * from './digitalTwin.js';
 export * from './digitalTwinFoundation.js';
+export * from './digitalTwinRuntime.js';
 export * from './emergencyOperations.js';
 export * from './enterpriseApiGateway.js';
 export * from './enterpriseArchitecture.js';
