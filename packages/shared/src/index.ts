@@ -16,6 +16,6 @@ export const rolePermissions: Record<Role, Permission[]> = {
 export function hasPermission(role: Role, permission: Permission): boolean { return rolePermissions[role]?.includes(permission) ?? false; }
 export type ApprovalStatus = 'draft'|'pending-approval'|'approved'|'rejected'|'expired'|'overridden';
 export type RaceDayEventType = 'horse-arrived'|'vet-check-completed'|'track-reading-ingested'|'race-start-requested'|'steward-inquiry-opened'|'incident-created'|'ticket-sale-completed'|'emergency-alert-raised';
-export type ExpertDomain = 'RaceOps'|'Stewarding'|'EquineSafety'|'VetCompliance'|'TrackSurface'|'WeatherEnvironment'|'WageringIntegrity'|'TicketingFanExperience'|'SecuritySOC'|'FacilitiesIoT'|'FinanceRevenue'|'LegalRegulatory'|'ResponsibleAIGovernor';
+export type ExpertDomain = 'RaceOps'|'Stewarding'|'EquineSafety'|'VetCompliance'|'TrackSurface'|'WeatherEnvironment'|'WageringIntegrity'|'TicketingFanExperience'|'SecuritySOC'|'FacilitiesIoT'|'MaintenanceOps'|'FinanceRevenue'|'LegalRegulatory'|'ExecutiveDecisionSupport'|'ResponsibleAIGovernor';
 export const protectedActions = ['race-start','race-stop','official-results','scratch-horse','medication-decision','clear-vet-flag','emergency-action','payout','disciplinary-decision'] as const;
 export type ProtectedAction = typeof protectedActions[number];
