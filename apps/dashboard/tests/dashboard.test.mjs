@@ -130,3 +130,17 @@ test('command center landing page renders widgets, saved layouts, live timeline,
   assert.match(textFrom(tree), /Far Turn requires operations review/);
   assert.match(textFrom(tree), /Source:\s+digital-twin/);
 });
+
+test('track map mock exposes geospatial Digital Twin layers, controls, playback, and simulation overlays', async () => {
+  const map = await createMockClient().getTrackMap();
+  assert.ok(map.geospatial);
+  const layers = map.geospatial.overlays.map((overlay) => overlay.layer);
+  for (const required of ['sector','gate','rail','barn','facility','camera','emergency','measurement','incident','maintenance','workforce','twin','simulation']) {
+    assert.ok(layers.includes(required), `missing ${required}`);
+  }
+  assert.ok(map.geospatial.controls.zoom.presets.includes(18));
+  assert.ok(map.geospatial.controls.overlayModes.includes('historical-playback'));
+  assert.ok(map.geospatial.playback.length >= 2);
+  assert.equal(map.geospatial.simulationOverlays[0].approvalRequired, true);
+  assert.equal(map.geospatial.digitalTwinState[0].health, 'degraded');
+});

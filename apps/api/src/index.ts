@@ -14,6 +14,7 @@ export * from './enterpriseRulesPolicyEngine.js';
 export * from './equineIntelligencePlatform.js';
 export * from './eventBus.js';
 export * from './governanceCenter.js';
+export * from './geospatialOperations.js';
 export * from './horseSafety.js';
 export * from './integrityAndVision.js';
 export * from './iot.js';
