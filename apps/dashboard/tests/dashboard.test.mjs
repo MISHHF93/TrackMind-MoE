@@ -39,3 +39,67 @@ test('live controlled actions POST to the approval-aware backend path with JSON 
   assert.equal(JSON.parse(request.init.body).action, 'race-start');
   globalThis.fetch = original;
 });
+import React from 'react';
+import { CommandCenter } from '../dist/App.js';
+import { breadcrumbForPath, filterCommandPalette, selectTenant, serviceBanner } from '../dist/shell/experience.js';
+
+function textFrom(node) {
+  if (node == null || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(textFrom).join(' ');
+  if (React.isValidElement(node)) return textFrom(node.props.children);
+  return '';
+}
+
+function collect(node, predicate, out = []) {
+  if (node == null || typeof node === 'boolean') return out;
+  if (Array.isArray(node)) { node.forEach((child) => collect(child, predicate, out)); return out; }
+  if (React.isValidElement(node)) {
+    if (predicate(node)) out.push(node);
+    collect(node.props.children, predicate, out);
+  }
+  return out;
+}
+
+test('app shell renders persistent layout, command bar, breadcrumbs, tenant selector, notifications, and palette', async () => {
+  const data = await loadCommandCenter(createMockClient());
+  const tree = CommandCenter({ data, roles: ['admin'], path: '/surface', paletteQuery: 'gate' });
+  const labels = collect(tree, (node) => Boolean(node.props?.['aria-label'])).map((node) => node.props['aria-label']);
+  assert.ok(labels.includes('Persistent sidebar'));
+  assert.ok(labels.includes('Top command bar'));
+  assert.ok(labels.includes('Global search'));
+  assert.ok(labels.includes('Breadcrumb'));
+  assert.ok(labels.includes('Tenant racetrack selector'));
+  assert.ok(labels.includes('Notification center'));
+  assert.ok(labels.includes('Quick-access command palette'));
+  assert.match(textFrom(tree), /Nexus .* Surface Intelligence/);
+});
+
+test('tenant switching helpers resolve known and fallback racetracks', () => {
+  assert.equal(selectTenant('belmont').name, 'Belmont Park');
+  assert.equal(selectTenant('missing').id, 'saratoga');
+  assert.deepEqual(breadcrumbForPath('/starting-gate'), ['Nexus', 'Starting Gate Control']);
+});
+
+test('command palette filters by role and query', () => {
+  const auditorGate = filterCommandPalette('gate', ['read-only-auditor']).map((item) => item.label);
+  assert.equal(auditorGate.some((label) => label.includes('Starting Gate')), false);
+  const adminGate = filterCommandPalette('gate', ['admin']).map((item) => item.label);
+  assert.ok(adminGate.some((label) => label.includes('Starting Gate')));
+});
+
+test('degraded and offline banners communicate locked safety posture', () => {
+  assert.match(serviceBanner('degraded', false).message, /Degraded service/);
+  const offline = serviceBanner('offline', false);
+  assert.equal(offline.tone, 'critical');
+  assert.match(offline.message, /Safety-critical controls remain locked/);
+});
+
+test('rendered safety-critical action stays disabled without approval requirements satisfied', async () => {
+  const data = await loadCommandCenter(createMockClient());
+  const tree = CommandCenter({ data, roles: ['admin'], authenticated: true });
+  const safetyButtons = collect(tree, (node) => (node.type === 'button' || node.type?.name === 'SafetyCriticalActionButton') && textFrom(node).includes('Release starting gate'));
+  assert.equal(safetyButtons.length, 1);
+  assert.equal(safetyButtons[0].props.approvalsSatisfied, false);
+  assert.equal(safetyButtons[0].props.backendLive, false);
+});
