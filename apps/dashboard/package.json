@@ -1,1 +1,15 @@
-{"name":"@trackmind/dashboard","version":"0.1.0","type":"module","scripts":{"build":"tsc -p tsconfig.json"},"dependencies":{"@trackmind/shared":"file:../../packages/shared","@types/react":"^18.3.3","react":"^18.3.1"},"devDependencies":{}}
+{
+  "name": "@trackmind/dashboard",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@trackmind/shared": "file:../../packages/shared",
+    "@types/react": "^18.3.3",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {}
+}

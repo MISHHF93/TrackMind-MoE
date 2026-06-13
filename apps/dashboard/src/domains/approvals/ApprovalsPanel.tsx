@@ -1,0 +1,2 @@
+import type { ApprovalDto } from '../../types.js';
+export function ApprovalsPanel({ approvals }: { approvals: ApprovalDto[] }) { return <section aria-label="Approvals panel"><h2>Human Approval Required</h2>{approvals.length===0?<p>No pending AI or operational approvals.</p>:<ul>{approvals.map(a=><li key={a.id}><strong>{a.action}</strong> for {a.target} · {a.status} · requested by {a.requestedBy}{a.mock?' · MOCK':''}</li>)}</ul>}</section>; }
