@@ -190,3 +190,118 @@ export function buildSurfaceHeatmap(readings: SurfaceTelemetryReading[], precisi
     return { ...cell, latitude, longitude, averageCompaction, averageDrainage, riskIndex };
   });
 }
+
+export type SurfaceMeasurementKind = 'moisture' | 'compaction' | 'cushion-depth' | 'weather' | 'drainage' | 'maintenance-activity' | 'inspection' | 'manual-observation';
+export type SurfaceRecommendationType = 'maintenance' | 'irrigation' | 'inspection' | 'drainage' | 'race-readiness';
+export type SurfaceExecutionState = 'approval-required' | 'approved-for-execution';
+
+export interface SurfaceMeasurementEnvelope<T = unknown> {
+  id: string;
+  kind: SurfaceMeasurementKind;
+  trackId: string;
+  sectionId?: string;
+  observedAt: string;
+  source: string;
+  payload: T;
+  qualityScore: number;
+  normalized: boolean;
+  event: SurfaceDomainEvent;
+  auditRecord: SurfaceAuditRecord;
+}
+
+export interface SurfaceDomainEvent<T = unknown> { id: string; type: string; occurredAt: string; aggregateId: string; payload: T; requiresHumanApproval?: boolean }
+export interface SurfaceAuditRecord<T = unknown> { id: string; type: 'measurement' | 'recommendation' | 'digital-twin-sync' | 'approval-gate'; actor: string; timestamp: string; subjectId: string; payload: T }
+export interface SurfaceRecommendation { id: string; type: SurfaceRecommendationType; trackId: string; sectionId: string; priority: SurfaceRiskLevel; recommendation: string; rationale: string[]; requiresHumanApproval: true; executionState: SurfaceExecutionState; event: SurfaceDomainEvent; auditRecord: SurfaceAuditRecord }
+export interface SurfaceAnomaly { id: string; sectionId: string; metric: string; severity: SurfaceRiskLevel; observedValue: number; expectedValue: number; message: string }
+export interface SurfaceForecast { sectionId: string; horizonHours: number; predictedMoisture: number; predictedRisk: SurfaceRiskLevel; confidence: number; drivers: string[] }
+export interface SurfaceDigitalTwinSyncRecord { twinId: string; syncedAt: string; patch: Record<string, unknown>; status: 'queued-for-human-approved-sync' | 'synced'; event: SurfaceDomainEvent; auditRecord: SurfaceAuditRecord }
+
+const surfaceId = (prefix: string, seed: string) => `${prefix}-${seed.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase()}`;
+
+function measurementEnvelope<T>(kind: SurfaceMeasurementKind, input: { trackId: string; sectionId?: string; observedAt: string; source: string; payload: T; qualityScore?: number }): SurfaceMeasurementEnvelope<T> {
+  const id = surfaceId(`surface-${kind}`, `${input.trackId}-${input.sectionId ?? 'track'}-${input.observedAt}-${JSON.stringify(input.payload).slice(0, 40)}`);
+  const aggregateId = `${input.trackId}:${input.sectionId ?? 'track'}`;
+  const event: SurfaceDomainEvent<T> = { id: `${id}:event`, type: `surface.${kind}.ingested`, occurredAt: input.observedAt, aggregateId, payload: input.payload };
+  const auditRecord: SurfaceAuditRecord<T> = { id: `${id}:audit`, type: 'measurement', actor: input.source, timestamp: input.observedAt, subjectId: aggregateId, payload: input.payload };
+  return { id, kind, trackId: input.trackId, sectionId: input.sectionId, observedAt: input.observedAt, source: input.source, payload: input.payload, qualityScore: input.qualityScore ?? 100, normalized: true, event, auditRecord };
+}
+
+export function ingestMoistureMeasurements(trackId: string, readings: GeoReading[], source = 'moisture-sensor'): SurfaceMeasurementEnvelope<GeoReading>[] { return readings.map((payload) => measurementEnvelope('moisture', { trackId, sectionId: 'sectionId' in payload ? String((payload as { sectionId?: string }).sectionId) : undefined, observedAt: payload.observedAt, source, payload, qualityScore: payload.moisture >= 0 && payload.moisture <= 60 ? 100 : 60 })); }
+export function ingestCompactionMeasurements(trackId: string, readings: SurfaceTelemetryReading[], source = 'compaction-sensor') { return readings.map((payload) => measurementEnvelope('compaction', { trackId, sectionId: payload.sectionId, observedAt: payload.observedAt, source, payload, qualityScore: payload.compaction > 0 ? 100 : 50 })); }
+export function ingestCushionDepthMeasurements(trackId: string, readings: SurfaceTelemetryReading[], source = 'depth-probe') { return readings.map((payload) => measurementEnvelope('cushion-depth', { trackId, sectionId: payload.sectionId, observedAt: payload.observedAt, source, payload, qualityScore: payload.cushionDepth > 0 ? 100 : 50 })); }
+export function ingestWeatherMeasurements(trackId: string, weather: WeatherIntegration, source = 'weather-integration') { return [measurementEnvelope('weather', { trackId, observedAt: weather.observedAt, source, payload: weather, qualityScore: 100 })]; }
+export function ingestDrainageMeasurements(trackId: string, readings: SurfaceTelemetryReading[], source = 'drainage-sensor') { return readings.map((payload) => measurementEnvelope('drainage', { trackId, sectionId: payload.sectionId, observedAt: payload.observedAt, source, payload, qualityScore: payload.drainageRate >= 0 ? 100 : 50 })); }
+export function ingestMaintenanceActivities(trackId: string, records: MaintenanceRecord[], source = 'maintenance-system') { return records.map((payload) => measurementEnvelope('maintenance-activity', { trackId, sectionId: payload.sectionId, observedAt: payload.completedAt, source, payload, qualityScore: Math.max(50, Math.min(100, payload.effectiveness * 10)) })); }
+export function ingestSurfaceInspections(trackId: string, inspections: SurfaceInspection[], source = 'inspection-workflow') { return inspections.map((payload) => measurementEnvelope('inspection', { trackId, sectionId: payload.sectionId, observedAt: payload.inspectedAt, source: payload.inspector || source, payload, qualityScore: payload.footingUniformity })); }
+export function ingestManualObservations(trackId: string, observations: OperationalObservation[], source = 'operations-console') { return observations.map((payload) => measurementEnvelope('manual-observation', { trackId, sectionId: payload.sectionId, observedAt: payload.observedAt, source: `${source}:${payload.role}`, payload, qualityScore: Math.max(40, 100 - payload.severity * 10) })); }
+
+export function buildSurfaceIngestionPipeline(input: SurfaceIntelligenceInput): SurfaceMeasurementEnvelope[] {
+  return [
+    ...ingestMoistureMeasurements(input.trackId, input.telemetry),
+    ...ingestCompactionMeasurements(input.trackId, input.telemetry),
+    ...ingestCushionDepthMeasurements(input.trackId, input.telemetry),
+    ...ingestWeatherMeasurements(input.trackId, input.weather),
+    ...ingestDrainageMeasurements(input.trackId, input.telemetry),
+    ...ingestMaintenanceActivities(input.trackId, input.maintenanceRecords),
+    ...ingestSurfaceInspections(input.trackId, input.inspections),
+    ...ingestManualObservations(input.trackId, input.observations),
+  ];
+}
+
+export function detectSurfaceAnomalies(input: SurfaceIntelligenceInput): SurfaceAnomaly[] {
+  return input.telemetry.flatMap((reading) => {
+    const target = targets[reading.surfaceType];
+    const checks = [
+      ['moisture', reading.moisture, target.moisture, 8], ['compaction', reading.compaction, target.compaction, 45], ['cushionDepth', reading.cushionDepth, target.cushionDepth, 0.8], ['drainageRate', reading.drainageRate, target.drainageRate, 5],
+    ] as const;
+    return checks.filter(([, value, expected, tolerance]) => Math.abs(value - expected) > tolerance).map(([metric, value, expected]) => ({ id: surfaceId('surface-anomaly', `${reading.id}-${metric}`), sectionId: reading.sectionId, metric, severity: riskFromScore(100 - Math.abs(value - expected) * (metric === 'compaction' ? 1 : 8)), observedValue: value, expectedValue: expected, message: `${metric} ${value} outside expected ${expected}` }));
+  });
+}
+
+export function forecastSurfaceRisk(input: SurfaceIntelligenceInput, horizons = [6, 24, 48]): SurfaceForecast[] {
+  const sections = [...new Set(input.telemetry.map((r) => r.sectionId))];
+  return sections.flatMap((sectionId) => {
+    const readings = input.telemetry.filter((r) => r.sectionId === sectionId).sort((a, b) => a.observedAt.localeCompare(b.observedAt));
+    const latest = readings.at(-1)!; const trend = moistureTrend(readings); const target = targets[latest.surfaceType];
+    return horizons.map((horizonHours) => {
+      const rainLoad = input.weather.forecastRainMm * (horizonHours / 24); const drying = input.weather.temperature > 80 ? horizonHours * 0.08 : horizonHours * 0.04;
+      const predictedMoisture = Math.max(0, latest.moisture + rainLoad * 0.35 - drying + (trend === 'wetting' ? 1 : trend === 'drying' ? -1 : 0));
+      const score = 100 - Math.abs(predictedMoisture - target.moisture) * 4 - Math.max(0, target.drainageRate - latest.drainageRate) * 3;
+      return { sectionId, horizonHours, predictedMoisture: Number(predictedMoisture.toFixed(2)), predictedRisk: riskFromScore(score), confidence: readings.length > 2 ? 0.82 : 0.68, drivers: ['moisture-trend', 'forecast-rain', 'drainage-capacity'] };
+    });
+  });
+}
+
+export function generateSurfaceRecommendations(input: SurfaceIntelligenceInput): SurfaceRecommendation[] {
+  const analysis = runSurfaceIntelligenceSystem(input);
+  return analysis.sections.flatMap((section) => section.recommendations.map((recommendation, index) => {
+    const id = surfaceId('surface-rec', `${input.trackId}-${section.sectionId}-${index}-${recommendation}`);
+    const payload = { recommendation, sectionId: section.sectionId, riskLevel: section.riskLevel };
+    const event = { id: `${id}:event`, type: 'surface.recommendation.generated', occurredAt: input.generatedAt, aggregateId: `${input.trackId}:${section.sectionId}`, payload, requiresHumanApproval: true };
+    const auditRecord = { id: `${id}:audit`, type: 'recommendation' as const, actor: 'surface-management-domain', timestamp: input.generatedAt, subjectId: `${input.trackId}:${section.sectionId}`, payload };
+    const type: SurfaceRecommendationType = recommendation.includes('water') ? 'irrigation' : recommendation.includes('drain') ? 'drainage' : recommendation.includes('inspection') || recommendation.includes('pause') ? 'inspection' : 'maintenance';
+    return { id, type, trackId: input.trackId, sectionId: section.sectionId, priority: section.riskLevel, recommendation, rationale: section.explanation.filter((e) => e.impact >= 4).map((e) => e.evidence), requiresHumanApproval: true, executionState: 'approval-required' as const, event, auditRecord };
+  }));
+}
+
+export function synchronizeSurfaceDigitalTwin(input: SurfaceIntelligenceInput, approved = false): SurfaceDigitalTwinSyncRecord[] {
+  const report = runSurfaceIntelligenceSystem(input);
+  return report.digitalTwinUpdates.map((update) => {
+    const id = surfaceId('surface-twin-sync', `${update.twinId}-${input.generatedAt}`);
+    const event = { id: `${id}:event`, type: 'surface.digital-twin.sync-requested', occurredAt: input.generatedAt, aggregateId: update.twinId, payload: update.patch, requiresHumanApproval: !approved };
+    const auditRecord = { id: `${id}:audit`, type: 'digital-twin-sync' as const, actor: 'surface-management-domain', timestamp: input.generatedAt, subjectId: update.twinId, payload: update.patch };
+    return { twinId: update.twinId, syncedAt: input.generatedAt, patch: update.patch, status: approved ? 'synced' as const : 'queued-for-human-approved-sync' as const, event, auditRecord };
+  });
+}
+
+export function runSurfaceManagementDomain(input: SurfaceIntelligenceInput) {
+  const measurements = buildSurfaceIngestionPipeline(input);
+  const analytics = runSurfaceIntelligenceSystem(input);
+  const anomalies = detectSurfaceAnomalies(input);
+  const forecasts = forecastSurfaceRisk(input);
+  const recommendations = generateSurfaceRecommendations(input);
+  const digitalTwinSync = synchronizeSurfaceDigitalTwin(input, Boolean(input.approval?.evidence.length));
+  const events = [...measurements.map((m) => m.event), ...recommendations.map((r) => r.event), ...digitalTwinSync.map((s) => s.event)];
+  const auditRecords = [...measurements.map((m) => m.auditRecord), ...recommendations.map((r) => r.auditRecord), ...digitalTwinSync.map((s) => s.auditRecord), { id: surfaceId('surface-approval-gate', `${input.trackId}-${input.generatedAt}`), type: 'approval-gate' as const, actor: 'surface-management-domain', timestamp: input.generatedAt, subjectId: input.trackId, payload: { operationalActionsRequireHumanApproval: true, approvalState: analytics.approvalState } }];
+  return { trackId: input.trackId, generatedAt: input.generatedAt, measurements, analytics, riskScores: analytics.sections, maintenanceRecommendations: recommendations.filter((r) => r.type !== 'irrigation'), irrigationRecommendations: recommendations.filter((r) => r.type === 'irrigation'), geospatialHeatmaps: analytics.geospatialHeatmap, anomalies, forecasts, digitalTwinSync, events, auditRecords, operationalActionsRequireHumanApproval: true, approvalState: analytics.approvalState };
+}
