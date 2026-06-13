@@ -1,0 +1,15 @@
+{
+  "name": "@trackmind/api",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "npm run link:shared && tsc -p tsconfig.json",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "link:shared": "mkdir -p ../../node_modules/@trackmind && ln -sfn ../../packages/shared ../../node_modules/@trackmind/shared"
+  },
+  "dependencies": {
+    "@trackmind/shared": "file:../../packages/shared"
+  }
+}
