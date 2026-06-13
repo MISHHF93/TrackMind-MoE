@@ -1,0 +1,17 @@
+service:
+  name: replace-me
+  owner: trackmind-platform
+  tier: mission-critical
+  boundedContext: replace-me
+  dataClassification: confidential
+  tenantIsolation: required
+  humanApprovalRequiredFor:
+    - safety-critical-actions
+    - regulated-decisions
+    - external-side-effects
+observability:
+  slo:
+    availability: 99.9
+    p95LatencyMs: 250
+  dashboards: []
+  alerts: []

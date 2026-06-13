@@ -1,0 +1,28 @@
+name: service-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+      - name: Secret scan placeholder
+        run: echo "Run GitHub secret scanning or enterprise secret scanner"
+      - name: IaC scan placeholder
+        run: echo "Run Checkov/Terrascan/Bicep policy checks"
