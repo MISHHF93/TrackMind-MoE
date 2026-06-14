@@ -61,3 +61,22 @@ export interface ComplianceControlLibraryDto { frameworks: Array<{ id: Complianc
 
 export type PlatformHealthState = 'healthy' | 'degraded' | 'critical';
 export interface PlatformHealthWorkspaceDto { generatedAt: string; overallStatus: PlatformHealthState; services: Array<{ serviceId: string; status: PlatformHealthState; latencyMs: number; dependencies: Array<{ id: string; status: PlatformHealthState; required: boolean }>; lastCheckedAt: string }>; eventBus: { status: PlatformHealthState; publishedEvents: number; deadLetters: number; schemas: number; eventsPerMinute: number; throughputCapacity: number; backpressure: boolean }; audit: { status: PlatformHealthState; validLedger: boolean; records: number; criticalRecords: number }; approvalEngine: { status: PlatformHealthState; pending: number; approved: number; rejected: number; escalated: number; expired: number }; aiGovernance: { status: PlatformHealthState; activeAgents: number; pendingReviews: number; blockedActions: number; driftBreaches: number }; digitalTwin: { status: PlatformHealthState; totalTwins: number; healthy: number; degraded: number; critical: number; queuedSync: number; lastSyncAt?: string }; workflows: { status: PlatformHealthState; active: number; completed: number; failed: number }; apiLatency: { p50Ms: number; p95Ms: number; budgetMs: number; status: PlatformHealthState }; frontend: { status: PlatformHealthState; reportedErrors: number; lastErrorAt?: string; degradedMode: boolean }; telemetrySchema: { version: 'platform-observability.v1'; requiredSignals: Array<'log'|'metric'|'trace'|'frontend-error'>; consistent: boolean }; signals: Array<{ kind: string; name: string; serviceId: string; severity: string; traceId: string; spanId?: string; attributes: Record<string, unknown>; timestamp: string }>; }
+
+export interface AIGovernanceWorkspaceDto {
+  generatedAt: string;
+  activeAgents: Array<{ id: string; name: string; owner: string; status: string; modelVersionId: string; promptTemplateId: string; allowedActions: string[]; restrictedActions: string[] }>;
+  modelVersions: Array<{ id: string; name: string; version: string; status: string; riskLevel: string; evidence: string[]; lineage: string[] }>;
+  promptTemplates: Array<{ id: string; name: string; version: string; status: string; evidence: string[] }>;
+  recommendationQueue: Array<{ id: string; agentId: string; recommendation: string; confidence: number; affectedAssets: string[]; evidence: string[]; approvalPolicy: string; riskLevel: string; lineage: string[]; status: string }>;
+  safetyBlockedActions: Array<{ id: string; action: string; target: string; reason: string; evidence: string[]; affectedAssets: string[]; approvalPolicy: string; confidence: number; lineage: string[] }>;
+  evaluationStatus: Array<{ modelVersionId: string; status: string; readiness: { deployable: boolean; gaps: string[] }; latestEvaluation?: { safetyPassed: boolean; explainabilityScore: number; fairnessScore: number } }>;
+  riskClassifications: Array<{ subjectId: string; level: string; drivers: string[] }>;
+  approvalRequirements: Array<{ id: string; recommendationId: string; policy: string; requiredRoles: string[]; status: string; evidence: string[] }>;
+  evidencePackages: Array<{ id: string; recommendationId: string; evidence: string[]; lineage: string[]; hash: string }>;
+  overrides: Array<{ id: string; recommendationId: string; actor: string; reason: string; evidence: string[] }>;
+  rollbackRecords: Array<{ id: string; recommendationId: string; actor: string; reason: string; restoredVersionId: string; evidence: string[] }>;
+  monitoringMetrics: Array<{ modelId: string; metric: string; value: number; threshold: number; evidence: string[] }>;
+  auditTrails: Array<{ id: string; action: string; actor: string; subject: string; evidence: string[]; timestamp: string }>;
+  events: Array<{ id: string; type: string; subjectId: string; timestamp: string }>;
+  mock: boolean;
+}
