@@ -25,7 +25,7 @@ const commandCenterWorkspaces = [
 const startingGateWorkflow = ['Change Distance', 'Move Gate', 'Approve', 'Work Order', 'Verify GPS', 'Activate'];
 
 export async function loadCommandCenter(client: NexusApiClient) {
-  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations, emergencyOperations, complianceLibrary] = await Promise.all([
+  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations, emergencyOperations, complianceLibrary, aiGovernance] = await Promise.all([
     client.listApprovals(),
     client.listAuditEvents(),
     client.getTrackMap(),
@@ -42,8 +42,9 @@ export async function loadCommandCenter(client: NexusApiClient) {
     client.getSecurityOperations(),
     client.getEmergencyOperations(),
     client.getComplianceLibrary(),
+    client.getAIGovernanceWorkspace(),
   ]);
-  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations, emergencyOperations, complianceLibrary, streamUrl: client.eventStreamUrl(), mode: client.mode };
+  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations, emergencyOperations, complianceLibrary, aiGovernance, streamUrl: client.eventStreamUrl(), mode: client.mode };
 }
 
 export function isSafetyCriticalEnabled(args: { authenticated: boolean; hasApprovalToken: boolean; backendMode: 'live' | 'mock' }) {
@@ -101,6 +102,21 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
         <section aria-label="AI recommendations"><h3>AI recommendations</h3>{data.operations.aiRecommendations.map((item) => <article key={item.id}><strong>{item.recommendation}</strong><p>Confidence {Math.round(item.confidence * 100)}%; approval required: {String(item.requiresApproval)}; action: <a href={item.actionPath}>{item.actionPath}</a></p><p>Evidence: {item.evidence.join(', ')}</p></article>)}</section>
         <section aria-label="Data lineage"><h3>Data lineage</h3>{data.operations.dataLineage.map((lineage) => <p key={`${lineage.domain}-${lineage.reference}`}>{lineage.domain}: {lineage.source} via <code>{lineage.reference}</code></p>)}</section>
       </section>
+
+      <section aria-label="AI Governance workspace">
+        <h2>AI Governance Workspace</h2>
+        <p>Responsible AI workspace for active agents, model versions, prompt templates, recommendation records, risk classifications, approval requirements, evidence packages, overrides, rollback records, monitoring metrics, events, and audit trails.</p>
+        <section aria-label="Active AI agents"><h3>Active agents</h3>{data.aiGovernance.activeAgents.map((agent: any) => <article key={agent.id}><strong>{agent.name}</strong><p>{agent.status}; model {agent.modelVersionId}; prompt {agent.promptTemplateId}; restricted {agent.restrictedActions.join(', ')}</p></article>)}</section>
+        <section aria-label="AI recommendation queue"><h3>Recommendation queue</h3>{data.aiGovernance.recommendationQueue.map((rec: any) => <article key={rec.id}><RiskBadge level={rec.riskLevel} /><strong>{rec.recommendation}</strong><p>Confidence {Math.round(rec.confidence * 100)}%; affected assets {rec.affectedAssets.join(', ')}; approval policy {rec.approvalPolicy}; status {rec.status}</p><p>Evidence {rec.evidence.join(', ')}; lineage {rec.lineage.join(' → ')}</p></article>)}</section>
+        <section aria-label="Safety-blocked AI actions"><h3>Safety-blocked actions</h3>{data.aiGovernance.safetyBlockedActions.map((blocked: any) => <article key={blocked.id} role="alert"><strong>{blocked.action}: {blocked.target}</strong><p>{blocked.reason}; approval policy {blocked.approvalPolicy}; confidence {Math.round(blocked.confidence * 100)}%</p><p>Evidence {blocked.evidence.join(', ')}; affected assets {blocked.affectedAssets.join(', ')}</p></article>)}</section>
+        <section aria-label="AI evaluation status"><h3>Evaluation status</h3>{data.aiGovernance.evaluationStatus.map((item: any) => <article key={item.modelVersionId}><strong>{item.modelVersionId}: {item.status}</strong><p>Deployable {String(item.readiness.deployable)}; gaps {(item.readiness.gaps ?? []).join(', ') || 'none'}; explainability {item.latestEvaluation?.explainabilityScore}</p></article>)}</section>
+        <section aria-label="AI evidence packages"><h3>Evidence packages</h3>{data.aiGovernance.evidencePackages.map((pkg: any) => <article key={pkg.id}><code>{pkg.hash}</code><p>{pkg.recommendationId}; evidence {pkg.evidence.join(', ')}; lineage {pkg.lineage.join(' → ')}</p></article>)}</section>
+        <section aria-label="AI approval requirements"><h3>Approval requirements</h3>{data.aiGovernance.approvalRequirements.map((req: any) => <article key={req.id}><ApprovalChip status="pending-approval" /><strong>{req.policy}</strong><p>Roles {req.requiredRoles.join(', ')}; status {req.status}; evidence {req.evidence.join(', ')}</p></article>)}</section>
+        <section aria-label="AI overrides and rollback records"><h3>Overrides and rollbacks</h3>{data.aiGovernance.overrides.map((o: any) => <p key={o.id}>Override {o.recommendationId}: {o.reason}; evidence {o.evidence.join(', ')}</p>)}{data.aiGovernance.rollbackRecords.map((r: any) => <p key={r.id}>Rollback {r.recommendationId} to {r.restoredVersionId}: {r.reason}; evidence {r.evidence.join(', ')}</p>)}</section>
+        <section aria-label="AI monitoring metrics"><h3>Monitoring metrics</h3>{data.aiGovernance.monitoringMetrics.map((m: any) => <article key={`${m.modelId}-${m.metric}`}><strong>{m.metric}</strong><p>{m.modelId}; value {m.value}; threshold {m.threshold}; evidence {m.evidence.join(', ')}</p></article>)}</section>
+        <section aria-label="AI audit trails"><h3>Audit trails</h3>{data.aiGovernance.auditTrails.map((audit: any) => <article key={audit.id}><code>{audit.action}</code><p>{audit.actor}; subject {audit.subject}; evidence {audit.evidence.join(', ')}</p></article>)}</section>
+      </section>
+
       <section aria-label="Command center overview"><StatusCard title="Race readiness" status="On schedule" detail="Paddock, gate, and steward channels are linked." /><KpiTile label="Open approvals" value={String(data.approvals.length)} trend="Needs human review" /><RiskBadge level={serviceState === 'offline' ? 'critical' : 'medium'} /><ApprovalChip status={data.approvals[0]?.status ?? 'pending-approval'} /><EventTimeline events={[{ time: 'T-15', label: 'Gate readiness check', tone: 'advisory' }]} /></section>
 
       <section aria-label="Compliance Control Library dashboard">
