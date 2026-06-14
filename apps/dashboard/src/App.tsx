@@ -25,7 +25,7 @@ const commandCenterWorkspaces = [
 const startingGateWorkflow = ['Change Distance', 'Move Gate', 'Approve', 'Work Order', 'Verify GPS', 'Activate'];
 
 export async function loadCommandCenter(client: NexusApiClient) {
-  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations, emergencyOperations] = await Promise.all([
+  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations, emergencyOperations, complianceLibrary] = await Promise.all([
     client.listApprovals(),
     client.listAuditEvents(),
     client.getTrackMap(),
@@ -41,8 +41,9 @@ export async function loadCommandCenter(client: NexusApiClient) {
     client.getStewardCenter(),
     client.getSecurityOperations(),
     client.getEmergencyOperations(),
+    client.getComplianceLibrary(),
   ]);
-  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations, emergencyOperations, streamUrl: client.eventStreamUrl(), mode: client.mode };
+  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations, emergencyOperations, complianceLibrary, streamUrl: client.eventStreamUrl(), mode: client.mode };
 }
 
 export function isSafetyCriticalEnabled(args: { authenticated: boolean; hasApprovalToken: boolean; backendMode: 'live' | 'mock' }) {
@@ -101,6 +102,19 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
         <section aria-label="Data lineage"><h3>Data lineage</h3>{data.operations.dataLineage.map((lineage) => <p key={`${lineage.domain}-${lineage.reference}`}>{lineage.domain}: {lineage.source} via <code>{lineage.reference}</code></p>)}</section>
       </section>
       <section aria-label="Command center overview"><StatusCard title="Race readiness" status="On schedule" detail="Paddock, gate, and steward channels are linked." /><KpiTile label="Open approvals" value={String(data.approvals.length)} trend="Needs human review" /><RiskBadge level={serviceState === 'offline' ? 'critical' : 'medium'} /><ApprovalChip status={data.approvals[0]?.status ?? 'pending-approval'} /><EventTimeline events={[{ time: 'T-15', label: 'Gate readiness check', tone: 'advisory' }]} /></section>
+
+      <section aria-label="Compliance Control Library dashboard">
+        <h2>Compliance Control Library</h2>
+        <p>Framework placeholders, controls, obligations, evidence records, owners, assessments, findings, corrective actions, review cycles, and audit readiness scores are linked to audit records and workflow evidence collection.</p>
+        <p>Audit readiness score: {data.complianceLibrary.readiness.score}; evidence coverage {data.complianceLibrary.readiness.evidenceCoverage}%.</p><KpiTile label="Audit readiness score" value={String(data.complianceLibrary.readiness.score)} trend={`${data.complianceLibrary.readiness.evidenceCoverage}% evidence coverage`} />
+        <section aria-label="Compliance framework placeholders"><h3>Framework placeholders</h3>{data.complianceLibrary.frameworks.map((framework: any) => <article key={framework.id}><strong>{framework.id}</strong><p>{framework.name}; placeholder: {String(framework.placeholder)}</p></article>)}</section>
+        <section aria-label="Compliance controls"><h3>Controls</h3>{data.complianceLibrary.controls.map((control: any) => <article key={control.id}><strong>{control.title}</strong><p>{control.status}; owner {control.ownerId}; frameworks {control.frameworkIds.join(', ')}</p><p>Evidence {control.evidenceIds.join(', ')}; audit records {control.auditRecordIds.join(', ')}; workflows {control.workflowInstanceIds.join(', ')}</p></article>)}</section>
+        <section aria-label="Compliance obligations"><h3>Obligations</h3>{data.complianceLibrary.obligations.map((obligation: any) => <p key={obligation.id}>{obligation.frameworkId}: {obligation.citation} — {obligation.summary}</p>)}</section>
+        <section aria-label="Control owners and permissions"><h3>Control owners</h3>{data.complianceLibrary.owners.map((owner: any) => <p key={owner.id}>{owner.displayName}: {owner.role}; permissions {owner.permissions.join(', ')}</p>)}</section>
+        <section aria-label="Compliance findings and corrective actions"><h3>Findings and corrective actions</h3>{data.complianceLibrary.findings.map((finding: any) => <article key={finding.id}><strong>{finding.severity}: {finding.summary}</strong><p>Status {finding.status}; actions {finding.correctiveActionIds.join(', ')}</p></article>)}{data.complianceLibrary.correctiveActions.map((action: any) => <p key={action.id}>{action.action}; due {action.dueAt}; workflow {action.workflowInstanceId}</p>)}</section>
+        <section aria-label="Compliance review cycles"><h3>Review cycles</h3>{data.complianceLibrary.reviewCycles.map((cycle: any) => <p key={cycle.id}>{cycle.frameworkId} {cycle.periodStart}–{cycle.periodEnd}: {cycle.status}; score {cycle.readinessScore}</p>)}</section>
+        <section aria-label="Audit readiness score by framework"><h3>Audit readiness by framework</h3>{data.complianceLibrary.readiness.byFramework.map((item: any) => <p key={item.frameworkId}>{item.frameworkId}: {item.score}% across {item.controls} controls</p>)}</section>
+      </section>
 
       <section aria-label="Race Office workspace">
         <h2>Race Office</h2>

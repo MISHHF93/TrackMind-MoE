@@ -309,3 +309,27 @@ test('Steward Center live client uses inquiry endpoint contract', async () => {
   assert.equal(result.mock, false);
   globalThis.fetch = original;
 });
+
+test('Compliance Control Library dashboard renders frameworks, controls, evidence links, owners, actions, cycles, and readiness', async () => {
+  const data = await loadCommandCenter(createMockClient());
+  assert.equal(data.complianceLibrary.frameworks.length, 10);
+  assert.ok(data.complianceLibrary.frameworks.some((framework) => framework.id === 'ISO-42001'));
+  assert.equal(data.complianceLibrary.readiness.evidenceCoverage, 100);
+  const tree = CommandCenter({ data, roles: ['admin'], authenticated: true, path: '/compliance' });
+  const labels = collect(tree, (node) => Boolean(node.props?.['aria-label'])).map((node) => node.props['aria-label']);
+  for (const required of ['Compliance Control Library dashboard','Compliance framework placeholders','Compliance controls','Compliance obligations','Control owners and permissions','Compliance findings and corrective actions','Compliance review cycles','Audit readiness score by framework']) {
+    assert.ok(labels.includes(required), `missing ${required}`);
+  }
+  assert.match(textFrom(tree), /Governed AI evidence trail/);
+  assert.match(textFrom(tree), /ev-ai-approval/);
+  assert.match(textFrom(tree), /Audit readiness score/);
+});
+
+test('Compliance Control Library live client uses endpoint contract', async () => {
+  const original = globalThis.fetch;
+  let requestUrl;
+  globalThis.fetch = async (url) => { requestUrl = url; return { ok: true, json: async () => ({ frameworks: [], controls: [], obligations: [], owners: [], findings: [], correctiveActions: [], reviewCycles: [], readiness: { score: 0, totalControls: 0, effectiveControls: 0, evidenceCoverage: 0, openFindings: 0, overdueActions: 0, byFramework: [] }, mock: false }) }; };
+  await createLiveClient('https://api.example.test/api/v1').getComplianceLibrary();
+  assert.equal(requestUrl, 'https://api.example.test/api/v1/compliance/control-library');
+  globalThis.fetch = original;
+});

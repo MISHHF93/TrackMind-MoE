@@ -1,4 +1,5 @@
 export * from './approvals.js';
+export * from './complianceControlLibrary.js';
 export * from './assetIntelligence.js';
 export * from './barnOperations.js';
 export * from './auditLog.js';
