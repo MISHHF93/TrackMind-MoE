@@ -25,7 +25,7 @@ const commandCenterWorkspaces = [
 const startingGateWorkflow = ['Change Distance', 'Move Gate', 'Approve', 'Work Order', 'Verify GPS', 'Activate'];
 
 export async function loadCommandCenter(client: NexusApiClient) {
-  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations] = await Promise.all([
+  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter] = await Promise.all([
     client.listApprovals(),
     client.listAuditEvents(),
     client.getTrackMap(),
@@ -38,8 +38,9 @@ export async function loadCommandCenter(client: NexusApiClient) {
     client.getSurfaceIntelligence(),
     client.getEquineIntelligence(),
     client.getBarnOperations(),
+    client.getStewardCenter(),
   ]);
-  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, streamUrl: client.eventStreamUrl(), mode: client.mode };
+  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, streamUrl: client.eventStreamUrl(), mode: client.mode };
 }
 
 export function isSafetyCriticalEnabled(args: { authenticated: boolean; hasApprovalToken: boolean; backendMode: 'live' | 'mock' }) {
@@ -142,6 +143,19 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
         <section aria-label="Equine audit records"><h3>Audit records</h3>{data.equineIntelligence.audit.map((audit: any) => <article key={audit.id}><code>{audit.id}</code><p>{audit.actor}; {audit.action}; {audit.timestamp}</p></article>)}</section>
         <section aria-label="Equine event stream"><h3>Events</h3>{data.equineIntelligence.events.map((event: any) => <article key={event.eventId}><strong>{event.type}</strong><p>audit {event.auditId}</p></article>)}</section>
         <section aria-label="Equine approval gates"><button type="button" disabled aria-label="Request veterinarian AI risk review">Request veterinarian review</button><button type="button" disabled aria-label="Request eligibility change approval">Request eligibility change approval</button><button type="button" disabled aria-label="Request barn transfer approval">Request barn transfer approval</button></section>
+      </section>
+
+      <section aria-label="Steward Center workspace">
+        <h2>Steward Center</h2>
+        <p>Vertical slice for inquiry queue, case detail, evidence timeline, rule references, decision drafts, approval controls, final rulings, appeal packages, and immutable audit records.</p>
+        <p>AI may summarize evidence and draft recommendations, but official rulings and official result changes remain locked to authorized human stewards; this workspace never modifies official results.</p>
+        <section aria-label="Steward inquiry queue"><h3>Inquiry queue</h3>{data.stewardCenter.inquiries.map((inq: any) => <article key={inq.id}><strong>{inq.raceId}: {inq.status}</strong><p>Opened {inq.openedAt}; objections {inq.objections.length}; incidents {inq.incidentsUnderReview.length}</p></article>)}</section>
+        {data.stewardCenter.inquiries.map((inq: any) => <section key={`${inq.id}-detail`} aria-label="Steward case detail"><h3>Case detail {inq.id}</h3><p>Horses: {inq.involvedHorses.map((h: any) => `${h.programNumber} ${h.name} locked=${h.officialResultLocked}`).join('; ')}</p><p>Jockeys: {inq.involvedJockeys.map((j: any) => `${j.name} (${j.licenseId})`).join('; ')}</p><p>Objections: {inq.objections.map((o: any) => `${o.allegation} [${o.status}]`).join('; ')}</p></section>)}
+        <section aria-label="Steward evidence timeline"><h3>Evidence timeline</h3>{data.stewardCenter.inquiries.flatMap((inq: any) => inq.evidenceReferences).map((ev: any) => <article key={ev.id}><strong>{ev.kind}: {ev.description}</strong><p>{ev.capturedAt}; {ev.uri}; hash {ev.hash}; AI generated {String(Boolean(ev.aiGenerated))}</p></article>)}</section>
+        <section aria-label="Steward rule reference panel"><h3>Rule reference panel</h3>{data.stewardCenter.inquiries.flatMap((inq: any) => inq.ruleReferences).map((rule: any) => <article key={rule.id}><strong>{rule.jurisdiction} {rule.rulebook} §{rule.section}</strong><p>{rule.citation}: {rule.summary}</p></article>)}</section>
+        <section aria-label="Steward decision draft workflow"><h3>Decision draft workflow</h3>{data.stewardCenter.inquiries.flatMap((inq: any) => inq.decisionDrafts).map((draft: any) => <article key={draft.id}><strong>{draft.recommendation}</strong><p>Author {draft.authorRole}; AI {String(draft.aiGenerated)}; official ruling {String(draft.officialRuling)}</p><p>{draft.rationale}</p></article>)}</section>
+        <section aria-label="Steward approval and finalization controls"><h3>Approval and finalization controls</h3><button type="button" disabled={!data.stewardCenter.permissions.canDraft} aria-label="Save steward decision draft">Save draft</button><button type="button" disabled aria-label="Issue human-only final ruling">Issue final ruling (human steward only)</button><button type="button" disabled={!data.stewardCenter.permissions.canExportAppeal} aria-label="Export steward appeal package">Export appeal package</button><p>Finalization is disabled in mock/read-only UI until live backend verifies steward role, audit completeness, and no official-result mutation.</p></section>
+        <section aria-label="Steward audit records"><h3>Audit records</h3>{data.stewardCenter.inquiries.flatMap((inq: any) => inq.auditRecords).map((audit: any) => <article key={audit.id}><code>{audit.hash}</code><p>{audit.actorId}; {audit.action}; subject {audit.subjectId}; previous {audit.previousHash}</p></article>)}</section>
       </section>
 
       <section aria-label="Race-day readiness dashboard">
