@@ -287,3 +287,25 @@ test('Barn Operations client exposes mock data and live endpoint contract', asyn
   assert.equal(live.mock, false);
   globalThis.fetch = original;
 });
+
+test('Steward Center renders inquiry queue, case detail, evidence timeline, rules, draft workflow, approvals, and audit records', async () => {
+  const data = await loadCommandCenter(createMockClient());
+  const tree = CommandCenter({ data, roles: ['steward'], authenticated: true });
+  const labels = collect(tree, (node) => Boolean(node.props?.['aria-label'])).map((node) => node.props['aria-label']);
+  for (const required of ['Steward Center workspace','Steward inquiry queue','Steward case detail','Steward evidence timeline','Steward rule reference panel','Steward decision draft workflow','Steward approval and finalization controls','Steward audit records']) {
+    assert.ok(labels.includes(required), `missing ${required}`);
+  }
+  assert.match(textFrom(tree), /AI may summarize evidence and draft recommendations/);
+  assert.match(textFrom(tree), /official rulings and official result changes remain locked/);
+  assert.match(textFrom(tree), /official ruling\s+false/);
+});
+
+test('Steward Center live client uses inquiry endpoint contract', async () => {
+  const original = globalThis.fetch;
+  let requested;
+  globalThis.fetch = async (url) => { requested = url; return { ok: true, json: async () => ({ inquiries: [], permissions: { canRead: true, canDraft: false, canFinalize: false, canExportAppeal: false }, mock: false }) }; };
+  const result = await createLiveClient('https://api.example.test/api/v1').getStewardCenter();
+  assert.equal(requested, 'https://api.example.test/api/v1/stewarding/inquiries');
+  assert.equal(result.mock, false);
+  globalThis.fetch = original;
+});

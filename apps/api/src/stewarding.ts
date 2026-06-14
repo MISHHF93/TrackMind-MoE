@@ -1,28 +1,38 @@
+import type { Role } from '@trackmind/shared';
+
+export type StewardCaseStatus = 'inquiry-open' | 'objection-filed' | 'under-review' | 'decision-drafting' | 'pending-final-approval' | 'finalized' | 'appealed';
+export type StewardEvidenceKind = 'video' | 'photo' | 'sensor' | 'chart' | 'radio' | 'witness' | 'ai-summary' | 'official-note';
+export type StewardAuditAction = 'case.opened' | 'objection.recorded' | 'evidence.added' | 'ai.summary.created' | 'decision.draft.saved' | 'final-ruling.recorded' | 'appeal-package.exported' | 'access.denied';
+
+export interface StewardObjection { id: string; filedBy: string; filedAt: string; horseId?: string; jockeyId?: string; allegation: string; status: 'filed' | 'accepted-for-review' | 'dismissed' | 'upheld'; }
+export interface StewardIncidentUnderReview { id: string; raceId: string; openedAt: string; severity: 'minor' | 'major' | 'critical'; description: string; status: 'open' | 'reviewing' | 'resolved'; }
+export interface InvolvedHorse { horseId: string; name: string; programNumber: string; finishPosition?: number; officialResultLocked: true; }
+export interface InvolvedJockey { jockeyId: string; name: string; licenseId: string; horseId: string; }
+export interface StewardEvidenceReference { id: string; kind: StewardEvidenceKind; uri: string; capturedAt: string; addedBy: string; description: string; hash: string; aiGenerated?: boolean; }
+export interface StewardRuleReference { id: string; jurisdiction: string; rulebook: string; section: string; citation: string; summary: string; }
+export interface StewardDecisionDraft { id: string; authorId: string; authorRole: Role | 'ai-agent'; createdAt: string; recommendation: string; rationale: string; evidenceIds: string[]; ruleIds: string[]; aiGenerated: boolean; officialRuling: false; }
+export interface StewardFinalRuling { id: string; issuedBy: string; issuedByRole: Role; issuedAt: string; decision: string; rationale: string; penalties: string[]; officialResultsModified: false; evidenceIds: string[]; ruleIds: string[]; }
+export interface StewardAppealPackage { id: string; generatedAt: string; generatedBy: string; inquiryId: string; contents: { evidenceIds: string[]; ruleIds: string[]; draftIds: string[]; finalRulingId?: string; auditRecordIds: string[] }; }
+export interface StewardAuditRecord { id: string; at: string; actorId: string; actorRole: Role | 'ai-agent' | 'system'; action: StewardAuditAction; subjectId: string; evidenceIds: string[]; ruleIds: string[]; previousHash: string; hash: string; }
+
 export interface StewardInquiry {
-  id: string;
-  raceId: string;
-  openedAt: string;
-  objections: string[];
-  videoClips: Array<{ uri: string; startTimecode: string; endTimecode: string }>;
-  involvedHorses: string[];
-  ruleReferences: Array<{ rulebook: string; section: string; citation: string }>;
-  stewardNotes: string[];
-  decisionDraft?: string;
-  finalDecision?: string;
-  appealPackageUrl?: string;
+  id: string; raceId: string; openedAt: string; status: StewardCaseStatus; objections: StewardObjection[]; incidentsUnderReview: StewardIncidentUnderReview[]; involvedHorses: InvolvedHorse[]; involvedJockeys: InvolvedJockey[]; evidenceReferences: StewardEvidenceReference[]; ruleReferences: StewardRuleReference[]; decisionDrafts: StewardDecisionDraft[]; finalRuling?: StewardFinalRuling; appealPackages: StewardAppealPackage[]; auditRecords: StewardAuditRecord[]; aiGuardrails: { advisoryOnly: true; mayIssueOfficialRuling: false; mayModifyOfficialResults: false };
 }
 
-export function exportAppealPackage(inquiry: StewardInquiry) {
-  return {
-    inquiryId: inquiry.id,
-    raceId: inquiry.raceId,
-    generatedAt: new Date().toISOString(),
-    contents: {
-      videoClips: inquiry.videoClips,
-      ruleReferences: inquiry.ruleReferences,
-      notes: inquiry.stewardNotes,
-      decisionDraft: inquiry.decisionDraft,
-      finalDecision: inquiry.finalDecision,
-    },
-  };
+const finalRulingRoles: Role[] = ['steward', 'admin'];
+function digest(value: string) { let hash = 0; for (const ch of value) hash = Math.imul(31, hash) + ch.charCodeAt(0) | 0; return `sha256:${(hash >>> 0).toString(16).padStart(8, '0')}`; }
+function audit(inquiry: StewardInquiry, record: Omit<StewardAuditRecord, 'id' | 'previousHash' | 'hash'>) { const previousHash = inquiry.auditRecords.at(-1)?.hash ?? 'genesis'; const id = `audit-${inquiry.auditRecords.length + 1}`; const hash = digest(`${previousHash}:${id}:${record.action}:${record.actorId}:${record.subjectId}:${record.evidenceIds.join(',')}:${record.ruleIds.join(',')}`); const entry = { id, previousHash, hash, ...record }; inquiry.auditRecords.push(entry); return entry; }
+
+export function createStewardInquiry(input: { id: string; raceId: string; openedAt: string; openedBy: string; involvedHorses: InvolvedHorse[]; involvedJockeys: InvolvedJockey[]; evidenceReferences?: StewardEvidenceReference[]; ruleReferences?: StewardRuleReference[]; incidentsUnderReview?: StewardIncidentUnderReview[]; objections?: StewardObjection[] }): StewardInquiry {
+  const inquiry: StewardInquiry = { id: input.id, raceId: input.raceId, openedAt: input.openedAt, status: 'inquiry-open', objections: input.objections ?? [], incidentsUnderReview: input.incidentsUnderReview ?? [], involvedHorses: input.involvedHorses, involvedJockeys: input.involvedJockeys, evidenceReferences: input.evidenceReferences ?? [], ruleReferences: input.ruleReferences ?? [], decisionDrafts: [], appealPackages: [], auditRecords: [], aiGuardrails: { advisoryOnly: true, mayIssueOfficialRuling: false, mayModifyOfficialResults: false } };
+  audit(inquiry, { at: input.openedAt, actorId: input.openedBy, actorRole: 'steward', action: 'case.opened', subjectId: input.id, evidenceIds: inquiry.evidenceReferences.map((e) => e.id), ruleIds: inquiry.ruleReferences.map((r) => r.id) });
+  return inquiry;
 }
+
+export function summarizeEvidenceForStewards(inquiry: StewardInquiry, actorId = 'steward-ai'): StewardDecisionDraft { const draft: StewardDecisionDraft = { id: `draft-ai-${inquiry.decisionDrafts.length + 1}`, authorId: actorId, authorRole: 'ai-agent', createdAt: new Date().toISOString(), recommendation: `Advisory summary: review ${inquiry.evidenceReferences.length} evidence items and ${inquiry.ruleReferences.length} rules before any human ruling.`, rationale: inquiry.evidenceReferences.map((e) => `${e.kind}:${e.description}`).join('; '), evidenceIds: inquiry.evidenceReferences.map((e) => e.id), ruleIds: inquiry.ruleReferences.map((r) => r.id), aiGenerated: true, officialRuling: false }; inquiry.decisionDrafts.push(draft); audit(inquiry, { at: draft.createdAt, actorId, actorRole: 'ai-agent', action: 'ai.summary.created', subjectId: draft.id, evidenceIds: draft.evidenceIds, ruleIds: draft.ruleIds }); return draft; }
+export function saveDecisionDraft(inquiry: StewardInquiry, draft: Omit<StewardDecisionDraft, 'officialRuling'>): StewardDecisionDraft { const saved = { ...draft, officialRuling: false as const }; inquiry.decisionDrafts.push(saved); inquiry.status = 'decision-drafting'; audit(inquiry, { at: saved.createdAt, actorId: saved.authorId, actorRole: saved.authorRole, action: 'decision.draft.saved', subjectId: saved.id, evidenceIds: saved.evidenceIds, ruleIds: saved.ruleIds }); return saved; }
+export function issueFinalRuling(inquiry: StewardInquiry, ruling: StewardFinalRuling): StewardFinalRuling { if (!finalRulingRoles.includes(ruling.issuedByRole)) { audit(inquiry, { at: ruling.issuedAt, actorId: ruling.issuedBy, actorRole: ruling.issuedByRole, action: 'access.denied', subjectId: inquiry.id, evidenceIds: ruling.evidenceIds, ruleIds: ruling.ruleIds }); throw new Error('official steward rulings require an authorized human steward role'); } if (ruling.officialResultsModified !== false) throw new Error('steward center may not modify official results'); inquiry.finalRuling = { ...ruling, officialResultsModified: false }; inquiry.status = 'finalized'; audit(inquiry, { at: ruling.issuedAt, actorId: ruling.issuedBy, actorRole: ruling.issuedByRole, action: 'final-ruling.recorded', subjectId: ruling.id, evidenceIds: ruling.evidenceIds, ruleIds: ruling.ruleIds }); return inquiry.finalRuling; }
+export function exportAppealPackage(inquiry: StewardInquiry, generatedBy = 'steward-clerk'): StewardAppealPackage { const pkg: StewardAppealPackage = { id: `appeal-${inquiry.appealPackages.length + 1}`, generatedAt: new Date().toISOString(), generatedBy, inquiryId: inquiry.id, contents: { evidenceIds: inquiry.evidenceReferences.map((e) => e.id), ruleIds: inquiry.ruleReferences.map((r) => r.id), draftIds: inquiry.decisionDrafts.map((d) => d.id), finalRulingId: inquiry.finalRuling?.id, auditRecordIds: inquiry.auditRecords.map((a) => a.id) } }; inquiry.appealPackages.push(pkg); audit(inquiry, { at: pkg.generatedAt, actorId: generatedBy, actorRole: 'steward', action: 'appeal-package.exported', subjectId: pkg.id, evidenceIds: pkg.contents.evidenceIds, ruleIds: pkg.contents.ruleIds }); pkg.contents.auditRecordIds = inquiry.auditRecords.map((a) => a.id); return pkg; }
+export function validateStewardAuditTrail(inquiry: StewardInquiry) { const missing = inquiry.auditRecords.filter((r) => !r.actorId || !r.action || !r.subjectId || !r.hash || !r.previousHash); return { complete: missing.length === 0, recordCount: inquiry.auditRecords.length, missingRecordIds: missing.map((r) => r.id) }; }
+export function canAccessStewardCenter(roles: Role[], action: 'read' | 'draft' | 'finalize' | 'appeal') { if (roles.includes('admin')) return true; if (action === 'read') return roles.some((r) => ['steward', 'compliance-officer', 'read-only-auditor'].includes(r)); if (action === 'draft' || action === 'appeal') return roles.includes('steward') || roles.includes('compliance-officer'); return roles.includes('steward'); }
+export function listStewardInquiries(): StewardInquiry[] { return [createStewardInquiry({ id: 'inq-race-7-1', raceId: 'race-7', openedAt: '2026-06-13T21:04:00.000Z', openedBy: 'steward-1', involvedHorses: [{ horseId: 'horse-4', name: 'Rail Runner', programNumber: '4', finishPosition: 2, officialResultLocked: true }, { horseId: 'horse-7', name: 'Outside Lane', programNumber: '7', finishPosition: 1, officialResultLocked: true }], involvedJockeys: [{ jockeyId: 'jockey-4', name: 'Sam Rivera', licenseId: 'LIC-4', horseId: 'horse-4' }, { jockeyId: 'jockey-7', name: 'Lee Morgan', licenseId: 'LIC-7', horseId: 'horse-7' }], evidenceReferences: [{ id: 'ev-headon', kind: 'video', uri: 's3://stewards/race-7/headon.mp4', capturedAt: '2026-06-13T21:03:30.000Z', addedBy: 'video-review', description: 'Head-on replay entering stretch', hash: 'sha256:headon' }], ruleReferences: [{ id: 'rule-interference', jurisdiction: 'NY', rulebook: 'Racing Rules', section: '4035.2', citation: 'Interference and careless riding', summary: 'Stewards determine whether interference altered placing.' }], incidentsUnderReview: [{ id: 'incident-r7-stretch', raceId: 'race-7', openedAt: '2026-06-13T21:04:00.000Z', severity: 'major', description: 'Possible stretch interference', status: 'reviewing' }], objections: [{ id: 'obj-1', filedBy: 'trainer-4', filedAt: '2026-06-13T21:05:00.000Z', horseId: 'horse-4', jockeyId: 'jockey-4', allegation: 'Horse 7 drifted inward in upper stretch.', status: 'accepted-for-review' }] })]; }
