@@ -177,3 +177,31 @@ test('gate moves recalculate race distance, require expanded approvals, and sync
   assert.equal(sync.state.courseLayout.id, 'layout-mile-turf');
   assert.equal(platform.auditTrail(moved.id).some((entry) => entry.action === 'move-gate-and-recalculate-race-distance'), true);
 });
+
+test('AI cannot move gates or approve track configuration changes', () => {
+  const platform = new TrackConfigurationPlatform();
+  platform.submit({
+    id: 'chg-ai-guard',
+    kind: 'race-setup',
+    requestedBy: 'race-office',
+    requestedAt: '2026-06-13T15:00:00Z',
+    raceSetup,
+    evidence: ['condition-book', 'course-survey'],
+    reason: 'publish guarded setup',
+    status: 'draft',
+    approvals: [],
+  });
+
+  assert.throws(() => platform.moveGate('chg-ai-guard', {
+    gateId: 'gate-a',
+    newDistanceMeters: 1650,
+    newLocation: { latitude: 38.052, longitude: -76.952, accuracyMeters: 0.2 },
+    headingDegrees: 93,
+    reason: 'AI suggested move',
+    requestedBy: 'ai-agent',
+    requestedAt: '2026-06-13T15:05:00Z',
+    evidence: ['model-recommendation'],
+  }), /AI cannot move starting gates/);
+
+  assert.throws(() => platform.approve('chg-ai-guard', 'ai-agent', ['model-confidence'], '2026-06-13T15:06:00Z'), /authorized human roles/);
+});

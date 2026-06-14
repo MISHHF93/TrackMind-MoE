@@ -334,6 +334,7 @@ export function generateGateMoveChange(current: TrackConfigurationChange, move: 
 }
 
 export function approveTrackChange(change: TrackConfigurationChange, approverRole: string, evidence: string[], timestamp: string): TrackConfigurationChange {
+  if (approverRole === 'ai-agent' || approverRole === 'service' || approverRole.startsWith('ai-')) throw new Error('track configuration approvals require authorized human roles');
   if (evidence.length === 0) throw new Error('approval requires evidence');
   const approvals = [...new Set([...change.approvals, approverRole])];
   const required = requiredApprovalsForChange(change);
@@ -399,6 +400,7 @@ export class TrackConfigurationPlatform {
   }
 
   moveGate(changeId: string, move: GateMoveRequest): TrackConfigurationChange {
+    if (move.requestedBy === 'ai-agent' || move.requestedBy.startsWith('ai-')) throw new Error('AI cannot move starting gates; it may only draft recommendations for human approval');
     const current = this.requireChange(changeId);
     const next = generateGateMoveChange(current, move, [...this.sectors.values()]);
     this.changes.set(next.id, next);
