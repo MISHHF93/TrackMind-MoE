@@ -4,6 +4,7 @@ export * from './auditLog.js';
 export * from './digitalTwin.js';
 export * from './digitalTwinFoundation.js';
 export * from './digitalTwinRuntime.js';
+export * from './dailyOperationsExperience.js';
 export * from './emergencyOperations.js';
 export * from './enterpriseApiGateway.js';
 export * from './enterpriseArchitecture.js';
