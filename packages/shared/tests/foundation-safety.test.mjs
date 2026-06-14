@@ -46,3 +46,11 @@ test('protected action execution requires matching approval, authorized role, re
   assert.equal(allowed.allowed, true);
   assert.equal(allowed.approvalId, 'appr-2');
 });
+
+test('protected action intent names normalize to platform approval actions', async () => {
+  const { normalizeProtectedActionIntent, protectedActionIntentMap } = await import('../dist/index.js');
+  assert.equal(normalizeProtectedActionIntent('start-race'), 'race-start');
+  assert.equal(normalizeProtectedActionIntent('clear-veterinary-flag'), 'clear-vet-flag');
+  assert.equal(normalizeProtectedActionIntent('execute-safety-critical-control'), 'safety-critical-control');
+  assert.equal(Object.keys(protectedActionIntentMap).length, protectedAIAutonomyActions.length);
+});
