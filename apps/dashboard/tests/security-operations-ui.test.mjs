@@ -26,3 +26,23 @@ test('Security Operations live client uses workspace endpoint contract', async (
   assert.equal(requestUrl, 'https://api.example.test/api/v1/security-operations/workspace');
   globalThis.fetch = original;
 });
+
+test('Emergency Operations frontend renders command view with override guardrails', async () => {
+  const data = await loadCommandCenter(createMockClient());
+  const tree = CommandCenter({ data, roles: ['admin'], authenticated: true, path: '/emergency' });
+  const labels = collect(tree, (node) => Boolean(node.props?.['aria-label'])).map((node) => node.props['aria-label']);
+  for (const required of ['Emergency Operations command view','Emergency plans','Incident command roles','Emergency resource map','Medical fire and severe weather response','Evacuation zones','Checklist progress','Communication log','Drills and after-action reports','Emergency event stream','Emergency audit timeline']) assert.ok(labels.includes(required), `missing ${required}`);
+  const text = textFrom(tree);
+  assert.match(text, /AI cannot block emergency actions/);
+  assert.match(text, /critical fire-incident/);
+  assert.match(text, /human override\s+true/i);
+});
+
+test('Emergency Operations live client uses workspace endpoint contract', async () => {
+  const original = globalThis.fetch;
+  let requestUrl;
+  globalThis.fetch = async (url) => { requestUrl = url; return { ok: true, json: async () => ({ activeEmergencyStatus: 'none', plans: [], commandRoles: [], resources: [], resourceMap: [], medicalResponse: { lead: '', checklist: [], humanOverrideSupported: true, aiMayBlock: false }, fireResponse: { lead: '', checklist: [], humanOverrideSupported: true, aiMayBlock: false }, severeWeatherResponse: { lead: '', checklist: [], humanOverrideSupported: true, aiMayBlock: false }, evacuationZones: [], checklist: [], communicationLog: [], drills: [], afterActionReports: [], auditTimeline: [], events: [], emergencyActions: { humanOverrideSupported: true, aiMayBlock: false, reason: '' }, mock: false }) }; };
+  await createLiveClient('https://api.example.test/api/v1').getEmergencyOperations();
+  assert.equal(requestUrl, 'https://api.example.test/api/v1/emergency-operations/workspace');
+  globalThis.fetch = original;
+});

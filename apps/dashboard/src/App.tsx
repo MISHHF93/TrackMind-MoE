@@ -25,7 +25,7 @@ const commandCenterWorkspaces = [
 const startingGateWorkflow = ['Change Distance', 'Move Gate', 'Approve', 'Work Order', 'Verify GPS', 'Activate'];
 
 export async function loadCommandCenter(client: NexusApiClient) {
-  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations] = await Promise.all([
+  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations, emergencyOperations] = await Promise.all([
     client.listApprovals(),
     client.listAuditEvents(),
     client.getTrackMap(),
@@ -40,8 +40,9 @@ export async function loadCommandCenter(client: NexusApiClient) {
     client.getBarnOperations(),
     client.getStewardCenter(),
     client.getSecurityOperations(),
+    client.getEmergencyOperations(),
   ]);
-  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations, streamUrl: client.eventStreamUrl(), mode: client.mode };
+  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations, emergencyOperations, streamUrl: client.eventStreamUrl(), mode: client.mode };
 }
 
 export function isSafetyCriticalEnabled(args: { authenticated: boolean; hasApprovalToken: boolean; backendMode: 'live' | 'mock' }) {
@@ -175,6 +176,22 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
         <section aria-label="Escalation workflows"><h3>Escalation workflows</h3>{data.securityOperations.escalations.map((flow: any) => <article key={flow.id}><strong>{flow.status}: {flow.reason}</strong><p>Route {flow.routeTo.join(' → ')}; audit {flow.auditId}</p></article>)}</section>
         <section aria-label="Security audit records"><h3>Audit records</h3>{data.securityOperations.auditRecords.map((audit: any) => <article key={audit.id}><code>{audit.hash}</code><p>{audit.action}; actor {audit.actorId}; subject {audit.subjectId}; previous {audit.previousHash}; sensitive fields {audit.sensitiveFields.join(', ') || 'none'}</p></article>)}</section>
         <section aria-label="Security approval gates"><button type="button" disabled aria-label="Escalate security incident">Escalate security incident</button><button type="button" disabled aria-label="Open security investigation">Open investigation</button><button type="button" disabled aria-label="Reveal sensitive security fields">Reveal sensitive fields requires permission</button></section>
+      </section>
+
+      <section aria-label="Emergency Operations command view">
+        <h2>Emergency Operations</h2>
+        <p>Active emergency status: <strong>{data.emergencyOperations.activeEmergencyStatus}</strong></p>
+        <p>Emergency guardrail: {data.emergencyOperations.emergencyActions.reason} AI may block actions: {String(data.emergencyOperations.emergencyActions.aiMayBlock)}.</p>
+        <section aria-label="Emergency plans"><h3>Emergency plans</h3>{data.emergencyOperations.plans.map((plan: any) => <article key={plan.id}><strong>{plan.name}</strong><p>Scenarios {plan.scenarios.join(', ')}; criteria {plan.activationCriteria.join(', ')}; drill cadence {plan.drillCadenceDays} days.</p></article>)}</section>
+        <section aria-label="Incident command roles"><h3>Incident command roles</h3>{data.emergencyOperations.commandRoles.map((role: any) => <article key={role.id}><strong>{role.role}: {role.assignee}</strong><p>Permissions {role.permissions.join(', ')}</p></article>)}</section>
+        <section aria-label="Emergency resource map"><h3>Resource map</h3>{data.emergencyOperations.resourceMap.map((resource: any) => <article key={resource.id} data-status={resource.status}><strong>{resource.label}</strong><p>{resource.kind}; {resource.zoneId}; {resource.coordinates.latitude}, {resource.coordinates.longitude}</p></article>)}</section>
+        <section aria-label="Medical fire and severe weather response"><h3>Response plans</h3><article><strong>Medical</strong><p>{data.emergencyOperations.medicalResponse.lead}: {data.emergencyOperations.medicalResponse.checklist.join(' → ')}; AI blocks {String(data.emergencyOperations.medicalResponse.aiMayBlock)}</p></article><article><strong>Fire</strong><p>{data.emergencyOperations.fireResponse.lead}: {data.emergencyOperations.fireResponse.checklist.join(' → ')}; AI blocks {String(data.emergencyOperations.fireResponse.aiMayBlock)}</p></article><article><strong>Severe weather</strong><p>{data.emergencyOperations.severeWeatherResponse.lead}: {data.emergencyOperations.severeWeatherResponse.checklist.join(' → ')}; AI blocks {String(data.emergencyOperations.severeWeatherResponse.aiMayBlock)}</p></article></section>
+        <section aria-label="Evacuation zones"><h3>Evacuation zones</h3>{data.emergencyOperations.evacuationZones.map((zone: any) => <article key={zone.id}><strong>{zone.name}: {zone.status}</strong><p>Route {zone.route.join(' → ')}; assembly {zone.assemblyArea}; capacity {zone.capacity}</p></article>)}</section>
+        <section aria-label="Checklist progress"><h3>Checklist progress</h3><p>{data.emergencyOperations.checklist.filter((item: any) => item.completed).length} of {data.emergencyOperations.checklist.length} complete.</p>{data.emergencyOperations.checklist.map((item: any) => <label key={item.id}><input type="checkbox" checked={item.completed} readOnly /> {item.label} — human override {String(item.humanOverrideAvailable)}; AI blocking {String(item.aiBlockingAllowed)}</label>)}</section>
+        <section aria-label="Communication log"><h3>Communication log</h3>{data.emergencyOperations.communicationLog.map((item: any) => <article key={item.id}><strong>{item.channel} to {item.audience}</strong><p>{item.message}; completed {String(item.completed)} {item.completedBy ? `by ${item.completedBy}` : ''}</p></article>)}</section>
+        <section aria-label="Drills and after-action reports"><h3>Drills and after-action reports</h3>{data.emergencyOperations.drills.map((drill: any) => <article key={drill.id}><strong>{drill.scenario}</strong><p>Participants {drill.participants.join(', ')}; criteria {drill.successCriteria.join(', ')}</p></article>)}{data.emergencyOperations.afterActionReports.map((report: any) => <article key={report.incidentId}><strong>After-action {report.incidentId}</strong><p>Findings {report.findings.map((finding: any) => `${finding.finding} (${finding.owner})`).join('; ')}</p><p>Corrective actions {report.correctiveActions.map((action: any) => `${action.action} due ${action.dueDays}d`).join('; ')}</p></article>)}</section>
+        <section aria-label="Emergency event stream"><h3>Events</h3><EventTimeline events={data.emergencyOperations.events.map((event: any) => ({ time: event.timestamp, label: `${event.type}: ${event.subjectId}; audit ${event.auditId}`, tone: event.severity }))} /></section>
+        <section aria-label="Emergency audit timeline"><h3>Audit timeline</h3>{data.emergencyOperations.auditTimeline.map((audit: any) => <article key={audit.id}><code>{audit.hash}</code><p>{audit.action}; actor {audit.actor}; subject {audit.subjectId}; human override {String(audit.humanOverride)}; AI blocked {String(audit.aiBlocked)}; previous {audit.previousHash}</p></article>)}</section>
       </section>
 
       <section aria-label="Race-day readiness dashboard">
