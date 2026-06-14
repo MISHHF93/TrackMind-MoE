@@ -160,3 +160,39 @@ test('command-center UX renders grouped operations navigation and operational wo
   assert.match(textFrom(tree), /Surface Health Score/);
   assert.match(textFrom(tree), /Verify GPS/);
 });
+
+test('Command Center v1 shared client exposes vertical-slice endpoint contracts', async () => {
+  const data = await loadCommandCenter(createMockClient());
+  assert.equal(data.gatePosition.mock, true);
+  assert.equal(data.raceDistanceConfiguration.mock, true);
+  assert.equal(data.digitalTwinState[0].mock, true);
+  const live = createLiveClient('https://api.example.test/api/v1');
+  const original = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async (url, init) => { urls.push({ url, init }); return { ok: true, json: async () => ({}) }; };
+  await live.getGatePosition();
+  await live.getRaceDistanceConfiguration();
+  await live.listDigitalTwinState();
+  await live.createDraftRequest({ action: 'starting-gate-move', target: 'gate-1', reason: 'test', actor: 'starter-1', evidence: [], payload: { sectorId: 'chute' } });
+  assert.deepEqual(urls.map((entry) => entry.url), [
+    'https://api.example.test/api/v1/starting-gate/position',
+    'https://api.example.test/api/v1/race-distance/configuration',
+    'https://api.example.test/api/v1/digital-twin/state',
+    'https://api.example.test/api/v1/approvals/draft-requests',
+  ]);
+  assert.equal(urls[3].init.method, 'POST');
+  globalThis.fetch = original;
+});
+
+test('Command Center renders Digital Twin and Starting Gate workspaces with disabled draft controls', async () => {
+  const data = await loadCommandCenter(createMockClient());
+  const tree = CommandCenter({ data, roles: ['admin'], authenticated: true });
+  const labels = collect(tree, (node) => Boolean(node.props?.['aria-label'])).map((node) => node.props['aria-label']);
+  assert.ok(labels.includes('Digital Twin workspace shell'));
+  assert.ok(labels.includes('Starting Gate Control workspace'));
+  assert.ok(labels.includes('Draft starting gate move request'));
+  assert.ok(labels.includes('Draft race distance configuration request'));
+  const buttons = collect(tree, (node) => node.type === 'button' && String(node.props?.['aria-label'] ?? '').startsWith('Draft'));
+  assert.equal(buttons.every((button) => button.props.disabled), true);
+  assert.match(textFrom(tree), /MOCK DATA/);
+});
