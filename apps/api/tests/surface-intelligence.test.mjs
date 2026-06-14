@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runSurfaceIntelligenceSystem, analyzeSurfaceSection, buildSurfaceHeatmap, runSurfaceManagementDomain } from '../dist/index.js';
+import { runSurfaceIntelligenceSystem, analyzeSurfaceSection, buildSurfaceHeatmap, runSurfaceManagementDomain, buildSurfaceIntelligenceWorkspace, requestSurfaceOperationalAction } from '../dist/index.js';
 
 const input = {
   trackId: 'track-a',
@@ -54,4 +54,20 @@ test('surface management domain ingests all sources and gates operational action
   assert.ok(domain.events.length >= domain.measurements.length + domain.digitalTwinSync.length);
   assert.ok(domain.auditRecords.length >= domain.events.length);
   assert.equal(domain.operationalActionsRequireHumanApproval, true);
+});
+
+test('surface intelligence workspace exposes heatmap-ready UI data and approval-gated action drafts', () => {
+  const workspace = buildSurfaceIntelligenceWorkspace(input);
+  assert.equal(workspace.operationalActionsRequireHumanApproval, true);
+  assert.ok(workspace.statusCards.length >= 4);
+  assert.ok(workspace.timeline.every((point) => point.eventId && point.auditId));
+  assert.ok(workspace.heatmap.every((cell) => typeof cell.latitude === 'number' && typeof cell.riskIndex === 'number'));
+  assert.ok(workspace.recommendations.every((item) => item.requiresHumanApproval && item.executionState === 'approval-required'));
+  assert.ok(workspace.digitalTwinSync.every((sync) => sync.status === 'queued-for-human-approved-sync'));
+  for (const action of ['irrigation', 'harrowing', 'rolling', 'track-closure-recommendation', 'surface-configuration-change']) {
+    const draft = requestSurfaceOperationalAction({ action, trackId: 'track-a', sectionId: 'turn-1', requestedBy: 'superintendent', reason: 'test', requestedAt: input.generatedAt });
+    assert.equal(draft.approvalState, 'approval-required');
+    assert.equal(draft.executionAllowed, false);
+    assert.equal(draft.event.requiresHumanApproval, true);
+  }
 });

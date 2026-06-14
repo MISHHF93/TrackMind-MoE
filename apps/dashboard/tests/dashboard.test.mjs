@@ -216,3 +216,26 @@ test('Race Office live client uses vertical-slice endpoint contract', async () =
   assert.equal(requestUrl, 'https://api.example.test/api/v1/race-operations/race-office');
   globalThis.fetch = original;
 });
+
+test('Surface Intelligence workspace renders vertical slice and approval-gated operational actions', async () => {
+  const data = await loadCommandCenter(createMockClient());
+  assert.equal(data.surfaceIntelligence.operationalActionsRequireHumanApproval, true);
+  assert.ok(data.surfaceIntelligence.heatmap.every((cell) => typeof cell.latitude === 'number' && typeof cell.riskIndex === 'number'));
+  assert.ok(data.surfaceIntelligence.recommendations.every((item) => item.requiresHumanApproval && item.executionState === 'approval-required'));
+  const tree = CommandCenter({ data, roles: ['admin'], authenticated: true, path: '/surface' });
+  const labels = collect(tree, (node) => Boolean(node.props?.['aria-label'])).map((node) => node.props['aria-label']);
+  for (const required of ['Surface Intelligence workspace', 'Surface status cards', 'Surface sector table', 'Surface measurement timeline', 'Surface risk badges', 'Surface recommendation panel', 'Mock-safe surface map overlay', 'Surface Digital Twin sync', 'Surface approval gates', 'Request irrigation approval', 'Request harrowing approval', 'Request rolling approval', 'Request track closure recommendation approval', 'Request surface configuration change approval']) {
+    assert.ok(labels.includes(required), `missing ${required}`);
+  }
+  assert.match(textFrom(tree), /moisture, compaction, cushion depth, drainage, weather observations/i);
+  assert.match(textFrom(tree), /MOCK SAFE MAP OVERLAY/);
+});
+
+test('Surface Intelligence live client uses vertical-slice endpoint contract', async () => {
+  const original = globalThis.fetch;
+  let requestUrl;
+  globalThis.fetch = async (url) => { requestUrl = url; return { ok: true, json: async () => ({}) }; };
+  await createLiveClient('https://api.example.test/api/v1').getSurfaceIntelligence();
+  assert.equal(requestUrl, 'https://api.example.test/api/v1/surface-intelligence/workspace');
+  globalThis.fetch = original;
+});
