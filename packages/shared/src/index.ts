@@ -25,3 +25,5 @@ export * from './identityGovernance.js';
 export * from './foundation.js';
 
 export * from './domainKernel.js';
+
+export * from './apiContracts.js';
