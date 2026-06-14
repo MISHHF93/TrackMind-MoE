@@ -25,7 +25,7 @@ const commandCenterWorkspaces = [
 const startingGateWorkflow = ['Change Distance', 'Move Gate', 'Approve', 'Work Order', 'Verify GPS', 'Activate'];
 
 export async function loadCommandCenter(client: NexusApiClient) {
-  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState] = await Promise.all([
+  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice] = await Promise.all([
     client.listApprovals(),
     client.listAuditEvents(),
     client.getTrackMap(),
@@ -34,8 +34,9 @@ export async function loadCommandCenter(client: NexusApiClient) {
     client.getGatePosition(),
     client.getRaceDistanceConfiguration(),
     client.listDigitalTwinState(),
+    client.getRaceOffice(),
   ]);
-  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, streamUrl: client.eventStreamUrl(), mode: client.mode };
+  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, streamUrl: client.eventStreamUrl(), mode: client.mode };
 }
 
 export function isSafetyCriticalEnabled(args: { authenticated: boolean; hasApprovalToken: boolean; backendMode: 'live' | 'mock' }) {
@@ -94,6 +95,15 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
         <section aria-label="Data lineage"><h3>Data lineage</h3>{data.operations.dataLineage.map((lineage) => <p key={`${lineage.domain}-${lineage.reference}`}>{lineage.domain}: {lineage.source} via <code>{lineage.reference}</code></p>)}</section>
       </section>
       <section aria-label="Command center overview"><StatusCard title="Race readiness" status="On schedule" detail="Paddock, gate, and steward channels are linked." /><KpiTile label="Open approvals" value={String(data.approvals.length)} trend="Needs human review" /><RiskBadge level={serviceState === 'offline' ? 'critical' : 'medium'} /><ApprovalChip status={data.approvals[0]?.status ?? 'pending-approval'} /><EventTimeline events={[{ time: 'T-15', label: 'Gate readiness check', tone: 'advisory' }]} /></section>
+
+      <section aria-label="Race Office workspace">
+        <h2>Race Office</h2>
+        <p>Vertical slice for race meets, race days, cards, conditions, entries, declarations, scratches, post positions, and readiness. Safety-critical changes are approval-gated, audited, event-emitting, and synchronized to Digital Twin state by the backend.</p>
+        <section aria-label="Race meets">{data.raceOffice.meets.map((meet: any) => <article key={meet.id}><h3>{meet.name ?? meet.id}</h3><p>{meet.trackId} · {meet.status}</p></article>)}</section>
+        <section aria-label="Race days">{data.raceOffice.raceDays.map((day: any) => <article key={day.id}><h3>{day.raceDate}</h3><p>{day.status}; races {(day.raceIds ?? []).join(', ')}</p></article>)}</section>
+        <section aria-label="Race cards">{data.raceOffice.cards.map((card: any) => <article key={card.id}><h3>Race {card.raceNumber}</h3><p>Status {card.status}; entries {card.entries}; scratches {card.scratches}; post positions {String(card.postPositionsDrawn)}.</p></article>)}</section>
+        <section aria-label="Race office approval gates"><button type="button" disabled aria-label="Request scratch approval">Request scratch approval</button><button type="button" disabled aria-label="Request race cancellation approval">Request cancellation approval</button><button type="button" disabled aria-label="Request official configuration approval">Request official configuration approval</button></section>
+      </section>
 
       <section aria-label="Race-day readiness dashboard">
         <h2>Race-day Readiness</h2>

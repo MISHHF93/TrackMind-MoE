@@ -196,3 +196,23 @@ test('Command Center renders Digital Twin and Starting Gate workspaces with disa
   assert.equal(buttons.every((button) => button.props.disabled), true);
   assert.match(textFrom(tree), /MOCK DATA/);
 });
+
+test('Race Office route renders vertical-slice screens and approval-gated controls', async () => {
+  const data = await loadCommandCenter(createMockClient());
+  assert.equal(data.raceOffice.mock, true);
+  const tree = CommandCenter({ data, roles: ['admin'], authenticated: true, path: '/race-office' });
+  const labels = collect(tree, (node) => Boolean(node.props?.['aria-label'])).map((node) => node.props['aria-label']);
+  for (const required of ['Race Office workspace', 'Race meets', 'Race days', 'Race cards', 'Race office approval gates', 'Request scratch approval', 'Request race cancellation approval', 'Request official configuration approval']) {
+    assert.ok(labels.includes(required), `missing ${required}`);
+  }
+  assert.match(textFrom(tree), /race meets, race days, cards, conditions, entries, declarations, scratches, post positions, and readiness/i);
+});
+
+test('Race Office live client uses vertical-slice endpoint contract', async () => {
+  const original = globalThis.fetch;
+  let requestUrl;
+  globalThis.fetch = async (url) => { requestUrl = url; return { ok: true, json: async () => ({ meets: [], raceDays: [], cards: [], readiness: [] }) }; };
+  await createLiveClient('https://api.example.test/api/v1').getRaceOffice();
+  assert.equal(requestUrl, 'https://api.example.test/api/v1/race-operations/race-office');
+  globalThis.fetch = original;
+});
