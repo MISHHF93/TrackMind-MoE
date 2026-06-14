@@ -25,7 +25,7 @@ const commandCenterWorkspaces = [
 const startingGateWorkflow = ['Change Distance', 'Move Gate', 'Approve', 'Work Order', 'Verify GPS', 'Activate'];
 
 export async function loadCommandCenter(client: NexusApiClient) {
-  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence] = await Promise.all([
+  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence] = await Promise.all([
     client.listApprovals(),
     client.listAuditEvents(),
     client.getTrackMap(),
@@ -36,8 +36,9 @@ export async function loadCommandCenter(client: NexusApiClient) {
     client.listDigitalTwinState(),
     client.getRaceOffice(),
     client.getSurfaceIntelligence(),
+    client.getEquineIntelligence(),
   ]);
-  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, streamUrl: client.eventStreamUrl(), mode: client.mode };
+  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, streamUrl: client.eventStreamUrl(), mode: client.mode };
 }
 
 export function isSafetyCriticalEnabled(args: { authenticated: boolean; hasApprovalToken: boolean; backendMode: 'live' | 'mock' }) {
@@ -119,6 +120,27 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
         <section aria-label="Mock-safe surface map overlay"><h3>Heatmap-ready overlay</h3><p>{data.surfaceIntelligence.mock ? 'MOCK SAFE MAP OVERLAY - no operational surface state is mutated.' : 'Live read-only overlay; actions still require approval.'}</p>{data.surfaceIntelligence.heatmap.map((cell: any) => <article key={cell.id} data-latitude={cell.latitude} data-longitude={cell.longitude}><strong>{cell.sectorId}</strong><p>Moisture {cell.averageMoisture}; compaction {cell.averageCompaction}; drainage {cell.averageDrainage}; risk index {cell.riskIndex}</p></article>)}</section>
         <section aria-label="Surface Digital Twin sync"><h3>Digital Twin updates</h3>{data.surfaceIntelligence.digitalTwinSync.map((sync: any) => <article key={sync.twinId}><strong>{sync.twinId}</strong><p>{sync.status}; event {sync.eventId}; audit {sync.auditId}</p></article>)}</section>
         <section aria-label="Surface approval gates"><button type="button" disabled aria-label="Request irrigation approval">Request irrigation approval</button><button type="button" disabled aria-label="Request harrowing approval">Request harrowing approval</button><button type="button" disabled aria-label="Request rolling approval">Request rolling approval</button><button type="button" disabled aria-label="Request track closure recommendation approval">Request closure recommendation approval</button><button type="button" disabled aria-label="Request surface configuration change approval">Request surface configuration change approval</button></section>
+      </section>
+
+      <section aria-label="Equine Intelligence workspace">
+        <h2>Equine Intelligence</h2>
+        <p>Vertical slice for horse profiles, ownership, trainer assignment, race history, workout history, veterinary status placeholders, eligibility, welfare, barn assignment, and read-only Digital Twin references.</p>
+        <p>AI or system-generated equine risk recommendations are advisory only and require licensed veterinarian review before affecting operations.</p>
+        <section aria-label="Horse profile detail"><h3>{data.equineIntelligence.horse.name}</h3><p>{data.equineIntelligence.horse.horseId} · {data.equineIntelligence.horse.lifecycleStatus} · microchip {data.equineIntelligence.horse.microchipId}</p></section>
+        <section aria-label="Horse ownership"><h3>Ownership</h3>{data.equineIntelligence.ownership.map((owner: any) => <article key={owner.ownerId}><strong>{owner.ownerName}</strong><p>{owner.percentage}% from {owner.effectiveFrom}</p></article>)}</section>
+        <section aria-label="Trainer assignment"><h3>Trainer</h3>{data.equineIntelligence.trainerAssignments.map((trainer: any) => <article key={trainer.trainerId}><strong>{trainer.trainerName}</strong><p>License {trainer.licenseStatus}; effective {trainer.effectiveFrom}</p></article>)}</section>
+        <section aria-label="Race history"><h3>Race history</h3>{data.equineIntelligence.raceHistory.map((race: any) => <article key={race.raceId}><strong>{race.raceId}</strong><p>{race.date}; {race.trackId}; {race.status}; finish {race.finishPosition ?? 'n/a'}</p></article>)}</section>
+        <section aria-label="Workout history"><h3>Workout history</h3>{data.equineIntelligence.workoutHistory.map((workout: any) => <article key={workout.workoutId}><strong>{workout.distanceFurlongs}f in {workout.timeSeconds}s</strong><p>{workout.date}; {workout.surface}</p></article>)}</section>
+        <section aria-label="Veterinary status placeholder"><h3>Veterinary status</h3><p>{data.equineIntelligence.veterinaryStatus.status}: {data.equineIntelligence.veterinaryStatus.summary}; veterinarian required {String(data.equineIntelligence.veterinaryStatus.requiresVeterinarian)}</p></section>
+        <section aria-label="Eligibility status"><h3>Eligibility</h3><p>Eligible {String(data.equineIntelligence.eligibilityStatus.eligible)}; compliance {data.equineIntelligence.eligibilityStatus.complianceStatus}; flags {data.equineIntelligence.eligibilityStatus.flags.join(', ')}</p></section>
+        <section aria-label="Welfare status"><h3>Welfare</h3><p>{data.equineIntelligence.welfareStatus.level}; score {data.equineIntelligence.welfareStatus.latestScore ?? 'unknown'}; interventions {data.equineIntelligence.welfareStatus.interventions.join(', ') || 'none'}</p></section>
+        <section aria-label="Barn assignment"><h3>Barn assignment</h3><p>{data.equineIntelligence.barnAssignment.barnId} stall {data.equineIntelligence.barnAssignment.stallId}; assigned {data.equineIntelligence.barnAssignment.assignedAt}</p></section>
+        <section aria-label="Equine Digital Twin references"><h3>Digital Twin references</h3>{data.equineIntelligence.digitalTwinReferences.map((ref: any) => <article key={ref.twinId}><strong>{ref.twinId}</strong><p>{ref.twinType}; {ref.relationship}; source {ref.sourceSystem}; read-only {String(ref.readOnly)}</p></article>)}</section>
+        <section aria-label="Equine advisory AI recommendations"><h3>Advisory AI risk recommendations</h3>{data.equineIntelligence.aiRiskRecommendations.map((rec: any) => <article key={rec.id}><strong>{rec.summary}</strong><p>Advisory only {String(rec.advisoryOnly)}; veterinarian review required {String(rec.veterinarianReviewRequired)}; status {rec.status}</p></article>)}</section>
+        <section aria-label="Equine approvals"><h3>Approvals</h3>{data.equineIntelligence.approvals.map((approval: any) => <article key={approval.id}><strong>{approval.action}</strong><p>{approval.status}; required role {approval.requiredRole}</p></article>)}</section>
+        <section aria-label="Equine audit records"><h3>Audit records</h3>{data.equineIntelligence.audit.map((audit: any) => <article key={audit.id}><code>{audit.id}</code><p>{audit.actor}; {audit.action}; {audit.timestamp}</p></article>)}</section>
+        <section aria-label="Equine event stream"><h3>Events</h3>{data.equineIntelligence.events.map((event: any) => <article key={event.eventId}><strong>{event.type}</strong><p>audit {event.auditId}</p></article>)}</section>
+        <section aria-label="Equine approval gates"><button type="button" disabled aria-label="Request veterinarian AI risk review">Request veterinarian review</button><button type="button" disabled aria-label="Request eligibility change approval">Request eligibility change approval</button><button type="button" disabled aria-label="Request barn transfer approval">Request barn transfer approval</button></section>
       </section>
 
       <section aria-label="Race-day readiness dashboard">

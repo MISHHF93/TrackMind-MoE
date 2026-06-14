@@ -239,3 +239,25 @@ test('Surface Intelligence live client uses vertical-slice endpoint contract', a
   assert.equal(requestUrl, 'https://api.example.test/api/v1/surface-intelligence/workspace');
   globalThis.fetch = original;
 });
+
+test('Equine Intelligence route renders horse detail, governed AI advisory review, audit, events, and approval gates', async () => {
+  const data = await loadCommandCenter(createMockClient());
+  assert.equal(data.equineIntelligence.mock, true);
+  assert.equal(data.equineIntelligence.aiRiskRecommendations[0].advisoryOnly, true);
+  assert.equal(data.equineIntelligence.aiRiskRecommendations[0].veterinarianReviewRequired, true);
+  const tree = CommandCenter({ data, roles: ['admin'], authenticated: true, path: '/equine' });
+  const labels = collect(tree, (node) => Boolean(node.props?.['aria-label'])).map((node) => node.props['aria-label']);
+  for (const required of ['Equine Intelligence workspace', 'Horse profile detail', 'Horse ownership', 'Trainer assignment', 'Race history', 'Workout history', 'Veterinary status placeholder', 'Eligibility status', 'Welfare status', 'Barn assignment', 'Equine Digital Twin references', 'Equine advisory AI recommendations', 'Equine approvals', 'Equine audit records', 'Equine event stream', 'Equine approval gates', 'Request veterinarian AI risk review']) {
+    assert.ok(labels.includes(required), `missing ${required}`);
+  }
+  assert.match(textFrom(tree), /advisory only and require licensed veterinarian review/i);
+});
+
+test('Equine Intelligence live client uses horse detail endpoint contract', async () => {
+  const original = globalThis.fetch;
+  let requestUrl;
+  globalThis.fetch = async (url) => { requestUrl = url; return { ok: true, json: async () => ({}) }; };
+  await createLiveClient('https://api.example.test/api/v1').getEquineIntelligence('horse-42');
+  assert.equal(requestUrl, 'https://api.example.test/api/v1/equine-intelligence/horses/horse-42');
+  globalThis.fetch = original;
+});

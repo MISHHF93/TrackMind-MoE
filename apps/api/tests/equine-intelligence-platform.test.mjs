@@ -91,3 +91,38 @@ test('equine lifecycle domain exposes event streams, relationship maps, retireme
   assert.ok(platform.platformEvents('horse-map-1').some((event) => event.type === 'equine.ai.recommendation.recorded'));
   assert.ok(platform.auditTrail().every((entry) => entry.subjectId === 'horse-map-1'));
 });
+
+test('equine vertical slice exposes explicit APIs for ownership, trainer, barn, welfare, eligibility, and read-only twins', () => {
+  const platform = new EquineIntelligencePlatform();
+  const registrar = { id: 'secretary-4', roles: ['racing-secretary'], tenantId: 'trk-1' };
+  const vet = { id: 'vet-4', roles: ['veterinarian'], tenantId: 'trk-1', human: true };
+  platform.createProfile({ horseId: 'horse-slice-1', tenantId: 'trk-1', name: 'Slice Runner', lifecycleStatus: 'active' }, registrar);
+  assert.throws(() => platform.updateOwnership('horse-slice-1', [{ ownerId: 'bad', ownerName: 'Bad', effectiveFrom: '2026-01-01', percentage: 90, evidence: ['x'] }], registrar), /total 100/);
+  platform.updateOwnership('horse-slice-1', [{ ownerId: 'owner-slice', ownerName: 'Slice Stable', effectiveFrom: '2026-01-01', percentage: 100, evidence: ['registry'] }], registrar);
+  platform.assignTrainer('horse-slice-1', { trainerId: 'trainer-slice', trainerName: 'Slice Trainer', effectiveFrom: '2026-02-01', licenseStatus: 'active', evidence: ['license'] }, registrar);
+  platform.assignBarn('horse-slice-1', { barnId: 'barn-2', stallId: '12A', assignedAt: '2026-06-12T12:00:00Z', assignedBy: registrar.id, evidence: ['barn-log'] }, registrar);
+  platform.recordRaceHistory('horse-slice-1', { raceId: 'race-7', date: '2026-06-13', trackId: 'trk-1', status: 'entered', evidence: ['overnight'] }, registrar);
+  platform.recordWorkout('horse-slice-1', { workoutId: 'work-slice', date: '2026-06-01', trackId: 'trk-1', distanceFurlongs: 4, timeSeconds: 49, surface: 'dirt', source: 'clocker' }, registrar);
+  platform.recordWelfareStatus('horse-slice-1', { recordId: 'welfare-slice', observedAt: '2026-06-12T14:00:00Z', observerId: 'welfare-4', score: 92, notes: 'Calm', interventions: [] }, registrar);
+  platform.updateVeterinaryStatus('horse-slice-1', { status: 'cleared', summary: 'Cleared by veterinarian', updatedAt: '2026-06-12T15:00:00Z', requiresVeterinarian: true }, vet);
+  assert.throws(() => platform.addDigitalTwinReference('horse-slice-1', { twinId: 'mutable', twinType: 'biometric', sourceSystem: 'sensor', relationship: 'sensor-feed', readOnly: false }, registrar), /read-only/);
+  platform.addDigitalTwinReference('horse-slice-1', { twinId: 'biometric:horse-slice-1', twinType: 'biometric', sourceSystem: 'sensor', relationship: 'sensor-feed', readOnly: true }, registrar);
+  const profile = platform.viewProfile('horse-slice-1', vet);
+  assert.equal(profile.barnAssignments.at(-1).barnId, 'barn-2');
+  assert.equal(platform.eligibilityStatus('horse-slice-1', registrar).eligible, true);
+  assert.equal(platform.welfareStatus('horse-slice-1', registrar).level, 'acceptable');
+  assert.ok(platform.relationshipMap('horse-slice-1', registrar).some((rel) => rel.type === 'assigned-to-barn'));
+  assert.ok(platform.relationshipMap('horse-slice-1', registrar).some((rel) => rel.type === 'mirrored-by-digital-twin'));
+  assert.ok(platform.auditTrail().length >= 8);
+  assert.ok(platform.platformEvents('horse-slice-1').some((event) => event.type === 'equine.lifecycle.barn-assigned'));
+});
+
+test('non-veterinarians cannot update veterinary status or impersonate AI risk review', () => {
+  const platform = new EquineIntelligencePlatform();
+  const registrar = { id: 'secretary-5', roles: ['racing-secretary'], tenantId: 'trk-1' };
+  const aiVet = { id: 'ai-vet', roles: ['veterinarian'], tenantId: 'trk-1', human: false };
+  platform.createProfile({ horseId: 'horse-vet-guard', tenantId: 'trk-1', name: 'Vet Guard', lifecycleStatus: 'active' }, registrar);
+  assert.throws(() => platform.updateVeterinaryStatus('horse-vet-guard', { status: 'cleared', summary: 'Nope', updatedAt: '2026-06-12T15:00:00Z', requiresVeterinarian: true }, registrar), /required role/);
+  const recommendation = platform.recordAIRecommendation('horse-vet-guard', { domain: 'health', modelId: 'risk-v1', summary: 'Advisory health risk', confidence: .7, proposedOperationalAction: 'clear-to-race', evidence: ['model'] }, { id: 'ai', roles: ['ai-agent'], tenantId: 'trk-1', human: false });
+  assert.throws(() => platform.reviewAIRecommendation('horse-vet-guard', recommendation.id, aiVet, 'approved', 'automated', ['model']), /human veterinarian/);
+});
