@@ -305,3 +305,40 @@ export function runSurfaceManagementDomain(input: SurfaceIntelligenceInput) {
   const auditRecords = [...measurements.map((m) => m.auditRecord), ...recommendations.map((r) => r.auditRecord), ...digitalTwinSync.map((s) => s.auditRecord), { id: surfaceId('surface-approval-gate', `${input.trackId}-${input.generatedAt}`), type: 'approval-gate' as const, actor: 'surface-management-domain', timestamp: input.generatedAt, subjectId: input.trackId, payload: { operationalActionsRequireHumanApproval: true, approvalState: analytics.approvalState } }];
   return { trackId: input.trackId, generatedAt: input.generatedAt, measurements, analytics, riskScores: analytics.sections, maintenanceRecommendations: recommendations.filter((r) => r.type !== 'irrigation'), irrigationRecommendations: recommendations.filter((r) => r.type === 'irrigation'), geospatialHeatmaps: analytics.geospatialHeatmap, anomalies, forecasts, digitalTwinSync, events, auditRecords, operationalActionsRequireHumanApproval: true, approvalState: analytics.approvalState };
 }
+
+export type SurfaceOperationalActionType = 'irrigation' | 'harrowing' | 'rolling' | 'track-closure-recommendation' | 'surface-configuration-change';
+export interface SurfaceOperationalActionDraft { id: string; action: SurfaceOperationalActionType; trackId: string; sectionId: string; requestedBy: string; reason: string; payload: Record<string, unknown>; approvalState: 'approval-required'; executionAllowed: false; event: SurfaceDomainEvent; auditRecord: SurfaceAuditRecord }
+
+export function requestSurfaceOperationalAction(input: { action: SurfaceOperationalActionType; trackId: string; sectionId: string; requestedBy: string; reason: string; payload?: Record<string, unknown>; requestedAt: string }): SurfaceOperationalActionDraft {
+  const id = surfaceId('surface-action-approval', `${input.trackId}-${input.sectionId}-${input.action}-${input.requestedAt}`);
+  const payload = { action: input.action, reason: input.reason, payload: input.payload ?? {}, approvalState: 'approval-required' as const, executionAllowed: false as const };
+  const event: SurfaceDomainEvent = { id: `${id}:event`, type: 'surface.operational-action.approval-requested', occurredAt: input.requestedAt, aggregateId: `${input.trackId}:${input.sectionId}`, payload, requiresHumanApproval: true };
+  const auditRecord: SurfaceAuditRecord = { id: `${id}:audit`, type: 'approval-gate', actor: input.requestedBy, timestamp: input.requestedAt, subjectId: `${input.trackId}:${input.sectionId}`, payload };
+  return { id, action: input.action, trackId: input.trackId, sectionId: input.sectionId, requestedBy: input.requestedBy, reason: input.reason, payload: input.payload ?? {}, approvalState: 'approval-required', executionAllowed: false, event, auditRecord };
+}
+
+export function buildSurfaceIntelligenceWorkspace(input: SurfaceIntelligenceInput) {
+  const domain = runSurfaceManagementDomain(input);
+  return {
+    trackId: domain.trackId,
+    generatedAt: domain.generatedAt,
+    overallScore: domain.analytics.overallScore,
+    approvalState: domain.approvalState,
+    operationalActionsRequireHumanApproval: true as const,
+    statusCards: [
+      { label: 'Surface score', value: String(domain.analytics.overallScore), tone: domain.analytics.overallScore < 70 ? 'warning' as const : 'nominal' as const, detail: `${domain.riskScores.length} sectors scored` },
+      { label: 'Measurements', value: String(domain.measurements.length), tone: 'advisory' as const, detail: 'Moisture, compaction, cushion depth, drainage, weather, inspections, maintenance, and observations ingested' },
+      { label: 'Recommendations', value: String(domain.maintenanceRecommendations.length + domain.irrigationRecommendations.length), tone: 'warning' as const, detail: 'Operational recommendations are approval-gated' },
+      { label: 'Digital Twin sync', value: String(domain.digitalTwinSync.length), tone: 'advisory' as const, detail: 'Twin patches remain queued until approved' },
+    ],
+    sectors: domain.riskScores.map((section) => ({ id: section.sectionId, name: section.sectionId, surfaceType: section.surfaceType, conditionScore: section.conditionScore, safetyScore: section.safetyScore, consistencyScore: section.consistencyScore, riskLevel: section.riskLevel, recommendations: section.recommendations })),
+    timeline: domain.measurements.map((measurement) => ({ id: measurement.id, sectorId: measurement.sectionId ?? 'track', kind: measurement.kind, observedAt: measurement.observedAt, source: measurement.source, eventId: measurement.event.id, auditId: measurement.auditRecord.id, qualityScore: measurement.qualityScore })),
+    heatmap: domain.geospatialHeatmaps.map((cell) => ({ id: surfaceId('surface-heatmap-cell', `${cell.latitude}-${cell.longitude}`), ...cell })),
+    recommendations: [...domain.maintenanceRecommendations, ...domain.irrigationRecommendations].map((recommendation) => ({ id: recommendation.id, type: recommendation.type, sectorId: recommendation.sectionId, priority: recommendation.priority, recommendation: recommendation.recommendation, requiresHumanApproval: recommendation.requiresHumanApproval, executionState: recommendation.executionState, eventId: recommendation.event.id, auditId: recommendation.auditRecord.id })),
+    riskBadges: domain.riskScores.map((section) => ({ sectorId: section.sectionId, level: section.riskLevel, drivers: section.explanation.filter((factor) => factor.impact >= 4).map((factor) => factor.factor) })),
+    weatherObservation: input.weather,
+    digitalTwinSync: domain.digitalTwinSync.map((sync) => ({ twinId: sync.twinId, status: sync.status, patch: sync.patch, eventId: sync.event.id, auditId: sync.auditRecord.id })),
+    events: domain.events,
+    auditRecords: domain.auditRecords,
+  };
+}

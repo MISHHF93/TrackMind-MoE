@@ -25,7 +25,7 @@ const commandCenterWorkspaces = [
 const startingGateWorkflow = ['Change Distance', 'Move Gate', 'Approve', 'Work Order', 'Verify GPS', 'Activate'];
 
 export async function loadCommandCenter(client: NexusApiClient) {
-  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice] = await Promise.all([
+  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence] = await Promise.all([
     client.listApprovals(),
     client.listAuditEvents(),
     client.getTrackMap(),
@@ -35,8 +35,9 @@ export async function loadCommandCenter(client: NexusApiClient) {
     client.getRaceDistanceConfiguration(),
     client.listDigitalTwinState(),
     client.getRaceOffice(),
+    client.getSurfaceIntelligence(),
   ]);
-  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, streamUrl: client.eventStreamUrl(), mode: client.mode };
+  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, streamUrl: client.eventStreamUrl(), mode: client.mode };
 }
 
 export function isSafetyCriticalEnabled(args: { authenticated: boolean; hasApprovalToken: boolean; backendMode: 'live' | 'mock' }) {
@@ -103,6 +104,21 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
         <section aria-label="Race days">{data.raceOffice.raceDays.map((day: any) => <article key={day.id}><h3>{day.raceDate}</h3><p>{day.status}; races {(day.raceIds ?? []).join(', ')}</p></article>)}</section>
         <section aria-label="Race cards">{data.raceOffice.cards.map((card: any) => <article key={card.id}><h3>Race {card.raceNumber}</h3><p>Status {card.status}; entries {card.entries}; scratches {card.scratches}; post positions {String(card.postPositionsDrawn)}.</p></article>)}</section>
         <section aria-label="Race office approval gates"><button type="button" disabled aria-label="Request scratch approval">Request scratch approval</button><button type="button" disabled aria-label="Request race cancellation approval">Request cancellation approval</button><button type="button" disabled aria-label="Request official configuration approval">Request official configuration approval</button></section>
+      </section>
+
+
+      <section aria-label="Surface Intelligence workspace">
+        <h2>Surface Intelligence</h2>
+        <p>Vertical slice for sectors, surface measurements, moisture, compaction, cushion depth, drainage, weather observations, inspections, surface condition scores, recommendations, event audit trails, and Digital Twin updates.</p>
+        <p>Operational actions such as irrigation, harrowing, rolling, track closure recommendations, and surface configuration changes are draft-only until an authorized human approval is recorded.</p>
+        <div aria-label="Surface status cards">{data.surfaceIntelligence.statusCards.map((card: any) => <StatusCard key={card.label} title={card.label} status={card.value} detail={`${card.detail} Tone: ${card.tone}`} />)}</div>
+        <section aria-label="Surface sector table"><h3>Track sectors</h3><table><thead><tr><th>Sector</th><th>Surface</th><th>Score</th><th>Moisture</th><th>Compaction</th><th>Cushion</th><th>Drainage</th></tr></thead><tbody>{data.surfaceIntelligence.sectors.map((sector: any) => <tr key={sector.id}><td>{sector.name}</td><td>{sector.surfaceType}</td><td>{sector.conditionScore}</td><td>{sector.moisture}%</td><td>{sector.compaction}</td><td>{sector.cushionDepth}</td><td>{sector.drainageRate}</td></tr>)}</tbody></table></section>
+        <section aria-label="Surface measurement timeline"><h3>Measurement timeline</h3><EventTimeline events={data.surfaceIntelligence.timeline.map((point: any) => ({ time: point.observedAt, label: `${point.kind}: ${point.label} ${point.value}; event ${point.eventId}; audit ${point.auditId}`, tone: point.kind }))} /></section>
+        <section aria-label="Surface risk badges"><h3>Risk badges</h3>{data.surfaceIntelligence.riskBadges.map((risk: any) => <article key={risk.sectorId}><RiskBadge level={risk.level === 'moderate' ? 'medium' : risk.level} /><p>{risk.sectorId}: {risk.drivers.join(', ')}</p></article>)}</section>
+        <section aria-label="Surface recommendation panel"><h3>Recommendations requiring approval</h3>{data.surfaceIntelligence.recommendations.map((item: any) => <article key={item.id}><strong>{item.recommendation}</strong><p>{item.type}; priority {item.priority}; approval required {String(item.requiresHumanApproval)}; execution {item.executionState}</p><p>Event {item.eventId}; audit {item.auditId}</p></article>)}</section>
+        <section aria-label="Mock-safe surface map overlay"><h3>Heatmap-ready overlay</h3><p>{data.surfaceIntelligence.mock ? 'MOCK SAFE MAP OVERLAY - no operational surface state is mutated.' : 'Live read-only overlay; actions still require approval.'}</p>{data.surfaceIntelligence.heatmap.map((cell: any) => <article key={cell.id} data-latitude={cell.latitude} data-longitude={cell.longitude}><strong>{cell.sectorId}</strong><p>Moisture {cell.averageMoisture}; compaction {cell.averageCompaction}; drainage {cell.averageDrainage}; risk index {cell.riskIndex}</p></article>)}</section>
+        <section aria-label="Surface Digital Twin sync"><h3>Digital Twin updates</h3>{data.surfaceIntelligence.digitalTwinSync.map((sync: any) => <article key={sync.twinId}><strong>{sync.twinId}</strong><p>{sync.status}; event {sync.eventId}; audit {sync.auditId}</p></article>)}</section>
+        <section aria-label="Surface approval gates"><button type="button" disabled aria-label="Request irrigation approval">Request irrigation approval</button><button type="button" disabled aria-label="Request harrowing approval">Request harrowing approval</button><button type="button" disabled aria-label="Request rolling approval">Request rolling approval</button><button type="button" disabled aria-label="Request track closure recommendation approval">Request closure recommendation approval</button><button type="button" disabled aria-label="Request surface configuration change approval">Request surface configuration change approval</button></section>
       </section>
 
       <section aria-label="Race-day readiness dashboard">
