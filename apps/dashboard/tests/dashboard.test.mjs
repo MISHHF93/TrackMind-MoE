@@ -144,3 +144,19 @@ test('track map mock exposes geospatial Digital Twin layers, controls, playback,
   assert.equal(map.geospatial.simulationOverlays[0].approvalRequired, true);
   assert.equal(map.geospatial.digitalTwinState[0].health, 'degraded');
 });
+
+
+test('command-center UX renders grouped operations navigation and operational workspace blueprint', async () => {
+  const data = await loadCommandCenter(createMockClient());
+  const tree = CommandCenter({ data, roles: ['admin'], authenticated: true });
+  const labels = collect(tree, (node) => Boolean(node.props?.['aria-label'])).map((node) => node.props['aria-label']);
+  for (const group of ['OPERATIONS navigation group', 'SAFETY navigation group', 'FACILITIES navigation group', 'GOVERNANCE navigation group', 'EXECUTIVE navigation group']) {
+    assert.ok(labels.includes(group), `missing ${group}`);
+  }
+  assert.ok(labels.includes('Nexus operational workspace blueprint'));
+  assert.ok(labels.includes('Ten-screen operational experience'));
+  assert.ok(labels.includes('Starting gate approval workflow'));
+  assert.match(textFrom(tree), /Airport Operations Center/);
+  assert.match(textFrom(tree), /Surface Health Score/);
+  assert.match(textFrom(tree), /Verify GPS/);
+});
