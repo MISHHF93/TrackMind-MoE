@@ -7,7 +7,22 @@ import { AuditReviewPanel } from './domains/audit/AuditReviewPanel.js';
 import { TrackMap } from './domains/track-map/TrackMap.js';
 import { domainScreens } from './shell/domains.js';
 import { breadcrumbForPath, filterCommandPalette, selectTenant, serviceBanner, tenants, type ServiceState, type UserProfile } from './shell/experience.js';
-import { visibleNavItems } from './shell/navigation.js';
+import { groupedVisibleNavItems, visibleNavItems } from './shell/navigation.js';
+
+
+const commandCenterWorkspaces = [
+  { title: 'Operations Command Homepage', purpose: 'Above-the-fold race readiness, surface, safety, weather, digital twin, incidents, approvals, and AI decision cues.', items: ['Race Readiness', 'Surface', 'Safety', 'Weather', 'Track Digital Twin', 'Incidents', 'Approvals', 'AI'] },
+  { title: 'Racetrack Digital Twin', purpose: 'Interactive track map with clickable sectors, starting gate, barns, cameras, horses, assets, telemetry, event history, and relationships.', items: ['Interactive Track Map', 'Details', 'History', 'Events', 'Approvals', 'Telemetry', 'Relationships'] },
+  { title: 'Race Office Workspace', purpose: 'Airline-style scheduling console for the racing office and day-of-card operations.', items: ['Race Calendar', "Today's Card", 'Entries', 'Declarations', 'Scratches', 'Conditions Book', 'Readiness'] },
+  { title: 'Surface Intelligence Workspace', purpose: 'GIS-style surface health, heatmaps, maintenance queues, and AI recommendations.', items: ['Surface Health Score', 'Moisture Heatmap', 'Compaction Heatmap', 'Drainage Heatmap', 'Maintenance Queue', 'AI Recommendations'] },
+  { title: 'Starting Gate Control Workspace', purpose: 'Controlled gate movement workflow from distance change through GPS verification and activation.', items: ['Track Map', 'Current Position', 'Target Position', 'Distance Calculator', 'Move Request', 'Approval Status'] },
+  { title: 'Approvals Center', purpose: 'Single queue for race day, surface, veterinary, security, compliance, and AI decisions requiring human approval.', items: ['Pending Approvals', 'Race Day', 'Surface', 'Veterinary', 'Security', 'Compliance', 'AI'] },
+  { title: 'AI Command Center', purpose: 'Decision-support interface for governed recommendations, risks, predictions, forecasts, reviews, and expert consensus.', items: ['Recommendations', 'Risks', 'Predictions', 'Forecasts', 'Pending Reviews', 'Expert Consensus'] },
+  { title: 'Executive Center', purpose: 'Real-time executive visibility across safety, operations, revenue, compliance, maintenance, and AI KPIs.', items: ['Safety KPI', 'Operational KPI', 'Revenue KPI', 'Compliance KPI', 'Maintenance KPI', 'AI KPI'] },
+  { title: 'Mobile Command Surface', purpose: 'Focused mobile companion for alerts, approvals, incidents, track status, and emergency actions only.', items: ['Alerts', 'Approvals', 'Incidents', 'Track Status', 'Emergency Actions'] },
+];
+
+const startingGateWorkflow = ['Change Distance', 'Move Gate', 'Approve', 'Work Order', 'Verify GPS', 'Activate'];
 
 export async function loadCommandCenter(client: NexusApiClient) {
   const [approvals, auditEvents, trackMap, operations, readiness] = await Promise.all([
@@ -35,6 +50,7 @@ export async function requestRaceStartApproval(client: NexusApiClient, actor: st
 
 export function CommandCenter({ data, roles, authenticated = true, tenantId = 'saratoga', path = '/operations', serviceState = 'online', paletteQuery = '', user = { name: 'Avery Chen', title: 'Race Day Commander', roles } }: { data: Awaited<ReturnType<typeof loadCommandCenter>>; roles: Role[]; authenticated?: boolean; tenantId?: string; path?: string; serviceState?: ServiceState; paletteQuery?: string; user?: UserProfile }) {
   const nav = visibleNavItems(roles);
+  const navGroups = groupedVisibleNavItems(roles);
   const visibleIds = new Set(nav.map((item) => item.id));
   const tenant = selectTenant(tenantId);
   const banner = serviceBanner(serviceState, data.mode === 'mock');
@@ -46,7 +62,7 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
 
   return (
     <main className="nexus-shell">
-      <aside aria-label="Persistent sidebar"><nav aria-label="Primary navigation">{nav.map((item) => <a key={item.id} href={item.path}>{item.label}</a>)}</nav></aside>
+      <aside aria-label="Persistent sidebar"><nav aria-label="Primary navigation">{navGroups.map((group) => <section key={group.section.id} aria-label={`${group.section.label} navigation group`}><h2>{group.section.label}</h2>{group.items.map((item) => <a key={item.id} href={item.path}>{item.label}</a>)}</section>)}</nav></aside>
       <header aria-label="Top command bar">
         <h1>TrackMind Nexus</h1>
         <p>Enterprise command-center shell with authentication-aware, role-filtered navigation.</p>
@@ -104,8 +120,14 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
           </article>
         ))}
       </section>
+      <section aria-label="Nexus operational workspace blueprint">
+        <h2>Command-center workspace blueprint</h2>
+        <p>TrackMind Nexus is modeled as a hybrid Airport Operations Center, Emergency Command Center, Digital Twin Platform, Smart City Control Room, and Enterprise Operations Dashboard.</p>
+        <div aria-label="Ten-screen operational experience">{commandCenterWorkspaces.map((workspace) => <article key={workspace.title} aria-label={`${workspace.title} blueprint`}><h3>{workspace.title}</h3><p>{workspace.purpose}</p><ul>{workspace.items.map((item) => <li key={item}>{item}</li>)}</ul></article>)}</div>
+      </section>
       <section aria-label="Safety critical controls">
         <h2>Starting Gate Control</h2>
+        <ol aria-label="Starting gate approval workflow">{startingGateWorkflow.map((step) => <li key={step}>{step}</li>)}</ol>
         <SafetyCriticalActionButton approvalsSatisfied={canExecute} backendLive={data.mode === 'live'} authenticated={authenticated}>Release starting gate</SafetyCriticalActionButton>
         <p>Disabled until authenticated live backend returns a valid approval token.</p>
       </section>
@@ -119,7 +141,7 @@ export function App() {
   return (
     <main>
       <h1>TrackMind Nexus</h1>
-      <p>The Unified Operations Command Center is the primary landing experience for race-day readiness, incident response, operational alerts, live streams, and role-specific saved layouts.</p>
+      <p>The Unified Operations Command Center is a desktop-first hybrid of airport operations, emergency command, digital twin, smart city control room, and enterprise operations experiences.</p>
     </main>
   );
 }
