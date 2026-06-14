@@ -16,7 +16,7 @@ test('mock adapter is clearly marked and live adapter uses configured backend pa
 test('API error handling surfaces live adapter failures', async () => { const original = globalThis.fetch; globalThis.fetch = async () => ({ ok:false, status:503, statusText:'Unavailable' }); await assert.rejects(() => createLiveClient('https://api.example.test').listApprovals(), /503 Unavailable/); globalThis.fetch = original; });
 
 test('domain screen registry covers every Nexus command-center module with routes and event readiness', () => {
-  assert.equal(domainScreens.length, 15);
+  assert.equal(domainScreens.length, 16);
   for (const screen of domainScreens) {
     assert.ok(screen.route.startsWith('/'));
     assert.ok(screen.owner.length > 0);

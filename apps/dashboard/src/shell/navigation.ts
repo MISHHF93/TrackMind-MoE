@@ -9,6 +9,7 @@ export const navItems: NavItem[] = [
  {id:'starting-gate',label:'Starting Gate Control',path:'/starting-gate',required:['race:request-start'],eventReady:true,mockAllowed:true,section:'operations'},
  {id:'surface',label:'Surface Intelligence',path:'/surface',required:['track:readings'],eventReady:true,mockAllowed:true,section:'operations'},
  {id:'equine',label:'Veterinary Center',path:'/equine',required:['vet:review'],eventReady:true,mockAllowed:true,section:'equine'},
+ {id:'barns',label:'Barn Operations',path:'/barns',required:['read:any'],eventReady:true,mockAllowed:true,section:'equine'},
  {id:'stewards',label:'Race Stewarding',path:'/stewards',required:['discipline:issue'],eventReady:true,mockAllowed:true,section:'safety'},
  {id:'approvals',label:'Approvals',path:'/approvals',required:['ai:approve'],eventReady:true,mockAllowed:false,section:'governance'},
  {id:'audit',label:'Audit Ledger',path:'/audit',required:['compliance:audit'],eventReady:true,mockAllowed:false,section:'governance'},

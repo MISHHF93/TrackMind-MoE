@@ -31,6 +31,9 @@ export interface SurfaceIntelligenceDto { trackId: string; generatedAt: string; 
 
 export interface EquineIntelligenceDto { horse: { horseId: string; name: string; lifecycleStatus: string; microchipId?: string }; ownership: Array<{ ownerId: string; ownerName: string; percentage: number; effectiveFrom: string }>; trainerAssignments: Array<{ trainerId: string; trainerName: string; licenseStatus: string; effectiveFrom: string }>; raceHistory: Array<{ raceId: string; date: string; trackId: string; status: string; finishPosition?: number }>; workoutHistory: Array<{ workoutId: string; date: string; distanceFurlongs: number; timeSeconds: number; surface: string }>; veterinaryStatus: { status: string; summary: string; requiresVeterinarian: true }; eligibilityStatus: { eligible: boolean; complianceStatus: string; flags: string[]; failedRules: string[] }; welfareStatus: { level: string; latestScore?: number; interventions: string[] }; barnAssignment: { barnId: string; stallId?: string; assignedAt: string }; digitalTwinReferences: Array<{ twinId: string; twinType: string; sourceSystem: string; relationship: string; readOnly: boolean }>; aiRiskRecommendations: Array<{ id: string; summary: string; advisoryOnly: true; veterinarianReviewRequired: boolean; status: string; proposedOperationalAction?: string }>; approvals: Array<{ id: string; action: string; status: string; requiredRole: string }>; audit: Array<{ id: string; actor: string; action: string; timestamp: string }>; events: Array<{ eventId: string; type: string; auditId: string }>; mock: boolean }
 
+
+export interface RaceOfficeWorkspaceDto { meets: Array<{ id: string; name: string; trackId: string; status: string }>; raceDays: Array<{ id: string; raceDate: string; status: string; raceIds: string[] }>; cards: Array<{ id: string; raceNumber: number; status: string; entries: number; scratches: number; postPositionsDrawn: boolean; approvals?: string[] }>; readiness: Array<{ raceId: string; ready: boolean; blockers: string[] }>; mock?: boolean }
+
 export interface ActionResultDto { accepted: boolean; approvalId: string; eventType: string; audited: boolean; message: string; mock: boolean }
 
 
@@ -65,9 +68,9 @@ export interface PlatformHealthWorkspaceDto { generatedAt: string; overallStatus
 export interface AIGovernanceWorkspaceDto {
   generatedAt: string;
   activeAgents: Array<{ id: string; name: string; owner: string; status: string; modelVersionId: string; promptTemplateId: string; allowedActions: string[]; restrictedActions: string[] }>;
-  modelVersions: Array<{ id: string; name: string; version: string; status: string; riskLevel: string; evidence: string[]; lineage: string[] }>;
+  modelVersions: Array<{ id: string; name: string; version: string; status: string; riskLevel: 'low' | 'medium' | 'high' | 'critical'; evidence: string[]; lineage: string[] }>;
   promptTemplates: Array<{ id: string; name: string; version: string; status: string; evidence: string[] }>;
-  recommendationQueue: Array<{ id: string; agentId: string; recommendation: string; confidence: number; affectedAssets: string[]; evidence: string[]; approvalPolicy: string; riskLevel: string; lineage: string[]; status: string }>;
+  recommendationQueue: Array<{ id: string; agentId: string; recommendation: string; confidence: number; affectedAssets: string[]; evidence: string[]; approvalPolicy: string; riskLevel: 'low' | 'medium' | 'high' | 'critical'; lineage: string[]; status: string }>;
   safetyBlockedActions: Array<{ id: string; action: string; target: string; reason: string; evidence: string[]; affectedAssets: string[]; approvalPolicy: string; confidence: number; lineage: string[] }>;
   evaluationStatus: Array<{ modelVersionId: string; status: string; readiness: { deployable: boolean; gaps: string[] }; latestEvaluation?: { safetyPassed: boolean; explainabilityScore: number; fairnessScore: number } }>;
   riskClassifications: Array<{ subjectId: string; level: string; drivers: string[] }>;
