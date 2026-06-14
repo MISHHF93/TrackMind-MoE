@@ -25,7 +25,7 @@ const commandCenterWorkspaces = [
 const startingGateWorkflow = ['Change Distance', 'Move Gate', 'Approve', 'Work Order', 'Verify GPS', 'Activate'];
 
 export async function loadCommandCenter(client: NexusApiClient) {
-  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter] = await Promise.all([
+  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations] = await Promise.all([
     client.listApprovals(),
     client.listAuditEvents(),
     client.getTrackMap(),
@@ -39,8 +39,9 @@ export async function loadCommandCenter(client: NexusApiClient) {
     client.getEquineIntelligence(),
     client.getBarnOperations(),
     client.getStewardCenter(),
+    client.getSecurityOperations(),
   ]);
-  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, streamUrl: client.eventStreamUrl(), mode: client.mode };
+  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations, streamUrl: client.eventStreamUrl(), mode: client.mode };
 }
 
 export function isSafetyCriticalEnabled(args: { authenticated: boolean; hasApprovalToken: boolean; backendMode: 'live' | 'mock' }) {
@@ -156,6 +157,24 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
         <section aria-label="Steward decision draft workflow"><h3>Decision draft workflow</h3>{data.stewardCenter.inquiries.flatMap((inq: any) => inq.decisionDrafts).map((draft: any) => <article key={draft.id}><strong>{draft.recommendation}</strong><p>Author {draft.authorRole}; AI {String(draft.aiGenerated)}; official ruling {String(draft.officialRuling)}</p><p>{draft.rationale}</p></article>)}</section>
         <section aria-label="Steward approval and finalization controls"><h3>Approval and finalization controls</h3><button type="button" disabled={!data.stewardCenter.permissions.canDraft} aria-label="Save steward decision draft">Save draft</button><button type="button" disabled aria-label="Issue human-only final ruling">Issue final ruling (human steward only)</button><button type="button" disabled={!data.stewardCenter.permissions.canExportAppeal} aria-label="Export steward appeal package">Export appeal package</button><p>Finalization is disabled in mock/read-only UI until live backend verifies steward role, audit completeness, and no official-result mutation.</p></section>
         <section aria-label="Steward audit records"><h3>Audit records</h3>{data.stewardCenter.inquiries.flatMap((inq: any) => inq.auditRecords).map((audit: any) => <article key={audit.id}><code>{audit.hash}</code><p>{audit.actorId}; {audit.action}; subject {audit.subjectId}; previous {audit.previousHash}</p></article>)}</section>
+      </section>
+
+      <section aria-label="Security Operations workspace">
+        <h2>Security Operations</h2>
+        <p>End-to-end security command surface for access-control events, restricted zones, camera assets, incidents, investigations, watchlist placeholders, visitor logs, credential checks, and escalation workflows.</p>
+        <section aria-label="Security dashboard widgets"><h3>Dashboard widgets</h3><KpiTile label="Active alerts" value={String(data.securityOperations.dashboard.activeAlerts)} trend="security" /><KpiTile label="Restricted-zone events" value={String(data.securityOperations.dashboard.restrictedZoneEvents)} trend="security" /><KpiTile label="Camera health" value={`Online ${data.securityOperations.dashboard.cameraHealth.online} / degraded ${data.securityOperations.dashboard.cameraHealth.degraded} / offline ${data.securityOperations.dashboard.cameraHealth.offline}`} trend="security" /><KpiTile label="Investigation queue" value={String(data.securityOperations.dashboard.investigationQueue)} trend="security" /></section>
+        <section aria-label="Restricted zones"><h3>Restricted zones</h3>{data.securityOperations.restrictedZones.map((zone: any) => <article key={zone.id}><strong>{zone.name}</strong><p>{zone.classification}; credential {zone.requiredCredential}; cameras {zone.cameraIds.join(', ')}</p></article>)}</section>
+        <section aria-label="Access-control events"><h3>Access-control events</h3>{data.securityOperations.accessEvents.map((event: any) => <article key={event.id}><strong>{event.personDisplayName}: {event.decision}</strong><p>{event.zoneId}; credential {event.credentialId}; reason {event.reason}; event {event.eventId}; audit {event.auditId}</p></article>)}</section>
+        <section aria-label="Camera assets"><h3>Camera assets</h3>{data.securityOperations.cameras.map((camera: any) => <article key={camera.id}><AssetHealthIndicator label={camera.label} status={camera.health === 'online' ? 'healthy' : camera.health === 'degraded' ? 'degraded' : 'offline'} /><strong>{camera.label}</strong><p>{camera.zoneId}; privacy masking {String(camera.privacyMasking)}; last heartbeat {camera.lastHeartbeatAt}</p></article>)}</section>
+        <section aria-label="Security incidents"><h3>Security incidents</h3>{data.securityOperations.incidents.map((incident: any) => <article key={incident.id}><RiskBadge level={incident.severity} /><strong>{incident.title}</strong><p>{incident.status}; zone {incident.zoneId}; events {incident.eventIds.join(', ')}; audit {incident.auditId}</p></article>)}</section>
+        <section aria-label="Incident timeline widget"><h3>Incident timeline</h3><EventTimeline events={data.securityOperations.dashboard.incidentTimeline.map((entry: any) => ({ time: entry.at, label: entry.label, tone: entry.severity }))} /></section>
+        <section aria-label="Investigation queue widget"><h3>Investigation queue</h3>{data.securityOperations.investigations.map((item: any) => <article key={item.id}><strong>{item.incidentId}: {item.status}</strong><p>Lead {item.lead}; evidence {item.evidence.join(', ')}; audit {item.auditId}</p></article>)}</section>
+        <section aria-label="Watchlist placeholders"><h3>Watchlist placeholders</h3>{data.securityOperations.watchlistPlaceholders.map((item: any) => <article key={item.id}><strong>{item.displayLabel}</strong><p>{item.category}; notes {item.sensitiveNotes}; human review required {String(item.requiresHumanReview)}</p></article>)}</section>
+        <section aria-label="Visitor logs"><h3>Visitor logs</h3>{data.securityOperations.visitorLogs.map((visitor: any) => <article key={visitor.id}><strong>{visitor.visitorDisplayName}</strong><p>Host {visitor.host}; zone {visitor.zoneId}; credential check {visitor.credentialCheckId}; audit {visitor.auditId}</p></article>)}</section>
+        <section aria-label="Credential checks"><h3>Credential checks</h3>{data.securityOperations.credentialChecks.map((check: any) => <article key={check.id}><strong>{check.holderDisplayName}: {check.status}</strong><p>Decision {check.decision}; credential {check.credentialId}; audit {check.auditId}</p></article>)}</section>
+        <section aria-label="Escalation workflows"><h3>Escalation workflows</h3>{data.securityOperations.escalations.map((flow: any) => <article key={flow.id}><strong>{flow.status}: {flow.reason}</strong><p>Route {flow.routeTo.join(' → ')}; audit {flow.auditId}</p></article>)}</section>
+        <section aria-label="Security audit records"><h3>Audit records</h3>{data.securityOperations.auditRecords.map((audit: any) => <article key={audit.id}><code>{audit.hash}</code><p>{audit.action}; actor {audit.actorId}; subject {audit.subjectId}; previous {audit.previousHash}; sensitive fields {audit.sensitiveFields.join(', ') || 'none'}</p></article>)}</section>
+        <section aria-label="Security approval gates"><button type="button" disabled aria-label="Escalate security incident">Escalate security incident</button><button type="button" disabled aria-label="Open security investigation">Open investigation</button><button type="button" disabled aria-label="Reveal sensitive security fields">Reveal sensitive fields requires permission</button></section>
       </section>
 
       <section aria-label="Race-day readiness dashboard">
