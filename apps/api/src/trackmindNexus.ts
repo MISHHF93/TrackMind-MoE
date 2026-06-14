@@ -1,4 +1,4 @@
-import { protectedActions, type ProtectedAction } from '@trackmind/shared';
+import { normalizeProtectedActionIntent, protectedActions, type ProtectedAction } from '@trackmind/shared';
 import { ImmutableAuditLog } from './auditLog.js';
 import { CentralizedApprovalService, type ApprovalActor, type ControlledAction } from './approvals.js';
 import { DigitalTwinRuntime } from './digitalTwinRuntime.js';
@@ -15,10 +15,17 @@ export interface NexusSafetyDecision { allowed: boolean; reason: string; require
 
 const owner = { service: 'trackmind-nexus', team: 'racetrack-platform', accountableRole: 'nexus-platform-owner' };
 const id = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-const protectedByIntent: Record<string, ControlledAction> = {
-  'start-race': 'race-start', 'stop-race': 'race-cancellation', 'declare-official-results': 'official-results', 'modify-official-results': 'official-results',
-  'scratch-horse': 'steward-decision', 'clear-veterinary-flag': 'veterinary-clearance', 'issue-steward-ruling': 'steward-decision', 'trigger-payout': 'payout',
-  'override-emergency-personnel': 'emergency-action', 'execute-safety-critical-control': 'emergency-action',
+const controlledActionByIntent: Record<string, ControlledAction> = {
+  'start-race': 'race-start',
+  'stop-race': 'race-stop',
+  'declare-official-results': 'official-results',
+  'modify-official-results': 'modify-official-results',
+  'scratch-horse': 'scratch-horse',
+  'clear-veterinary-flag': 'clear-vet-flag',
+  'issue-steward-ruling': 'steward-ruling',
+  'trigger-payout': 'payout',
+  'override-emergency-personnel': 'emergency-personnel-override',
+  'execute-safety-critical-control': 'safety-critical-control',
 };
 
 export class TrackMindNexusFoundation {
@@ -58,12 +65,13 @@ export class TrackMindNexusFoundation {
   evaluateAiAction(input: { activity: string; requestedAction?: string; actorType: 'human'|'ai-agent'|'service'; approvalToken?: unknown }): NexusSafetyDecision {
     const advisory = ['recommend','simulate','classify','forecast','create-draft-action','summarize'].includes(input.activity);
     if (!advisory) return { allowed: false, reason: 'AI activity is outside the advisory boundary', requiresHumanApproval: false, protectedAction: input.requestedAction };
-    if (input.requestedAction && protectedActions.includes(input.requestedAction as ProtectedAction)) return { allowed: true, reason: 'AI may draft or recommend only; execution requires authorized human approval.', requiresHumanApproval: true, protectedAction: input.requestedAction };
+    const normalizedAction = input.requestedAction ? normalizeProtectedActionIntent(input.requestedAction) : undefined;
+    if (normalizedAction && protectedActions.includes(normalizedAction as ProtectedAction)) return { allowed: true, reason: 'AI may draft or recommend only; execution requires authorized human approval.', requiresHumanApproval: true, protectedAction: normalizedAction };
     return { allowed: true, reason: 'Advisory AI activity permitted with event and audit capture.', requiresHumanApproval: false };
   }
 
   requestProtectedExecution(input: { tenantId: string; requestedAction: string; target: string; requestedBy: string; actorType: 'human'|'ai-agent'|'service'; reason: string; evidence: string[] }) {
-    const action = protectedByIntent[input.requestedAction] ?? input.requestedAction as ControlledAction;
+    const action = controlledActionByIntent[input.requestedAction] ?? normalizeProtectedActionIntent(input.requestedAction) as ControlledAction;
     return this.approvals.createRequest({ tenantId: input.tenantId, action, target: input.target, requestedBy: input.requestedBy, actorType: input.actorType, reason: input.reason, evidence: input.evidence });
   }
 

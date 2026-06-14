@@ -35,11 +35,29 @@ Audit date: 2026-06-14
 | Unused/scaffold files | Present | `.gitkeep` service/app/integration placeholders and template files are intentionally unused until future production modules are implemented. |
 | Documentation drift | Moderate | README and architecture docs correctly describe reference/stub status, but root test documentation implied `npm test` covered automated tests broadly while dashboard tests were omitted until this change. |
 
+
+## TrackMind Nexus target-architecture gap classification (2026-06-14 follow-up)
+
+| Target area | Gap | Severity | Remediation status |
+| --- | --- | --- | --- |
+| Responsible AI governance / approval engine | AI intent verbs from the Nexus definition (`start-race`, `clear-veterinary-flag`, `execute-safety-critical-control`, etc.) were not normalized consistently to platform protected actions (`race-start`, `clear-vet-flag`, `safety-critical-control`, etc.), creating a potential policy bypass or missing approval policy lookup when callers used definition-language action names. | Critical | Fixed by adding a shared normalization map and routing Nexus safety evaluation and protected execution requests through it. |
+| Approval engine | Default approval policies covered core aliases but not every normalized protected action (`race-stop`, `modify-official-results`, `scratch-horse`, `clear-vet-flag`, `steward-ruling`, `emergency-personnel-override`). | Critical | Fixed by adding explicit policies for the missing normalized protected actions with role chains, evidence, expiration, and escalation rules. |
+| Shared types | Shared safety types exposed both AI autonomy intent names and platform protected action names without a first-class bridge type. | High | Fixed by exporting `protectedActionIntentMap`, `ProtectedActionIntent`, `NormalizedProtectedAction`, and normalization helpers from the shared package. |
+| API contracts | Dashboard live clients still target endpoint paths without a deployable HTTP router or generated OpenAPI/client binding for every module. | High | Not fixed in this pass; remains a next priority because it requires introducing or generating HTTP adapters across multiple modules. |
+| Event bus / audit ledger | Core protected workflows emit events and hash-chained audit records, but external API boundary event/audit completeness is not enforced uniformly for future HTTP handlers. | Medium | Partially covered by existing domain tests; contract-level enforcement remains recommended. |
+| Digital Twin runtime | Runtime is in-memory/reference-level and lacks durable outbox/reconciliation for production Azure Digital Twins synchronization. | Medium | Not fixed in this pass; current safety alignment is modeled and tested in memory. |
+| Asset registry | Registry models controlled assets and approval-sensitive controls but is not connected to live actuators, which is correct for the first slice but leaves production execution adapters absent. | Medium | No change; intentional safety posture. |
+| Workflow engine | Workflow state machines and approvals are modeled, but BPMN/external-worker persistence is still reference-level. | Medium | No change in this pass. |
+| Frontend app shell / command-center UX | Command-center shell and disabled safety controls are covered by tests, but live/mock DTO duplication can drift over time. | Medium | Not fixed in this pass; typed fixture consolidation remains recommended. |
+| Domain models | Canonical entities and metadata are present; some service-specific models still use local literals instead of central shared unions. | Low | Partially improved by centralizing protected action normalization; broader consolidation remains incremental work. |
+
 ## Safe incremental fixes made
 
 1. Added dashboard tests to the root `npm test` command so frontend/backend contract checks and command-center UI safeguards run in the default verification path.
 2. Added an explicit `AIGovernanceWorkspaceDto` dashboard contract and changed the dashboard client from `Promise<any>` to `Promise<AIGovernanceWorkspaceDto>`.
 3. Removed avoidable `as any` casts in dashboard compliance mock data by using the existing `ComplianceFrameworkIdDto` union.
+4. Added shared protected-action intent normalization so AI governance, Nexus safety decisions, and backend approval requests treat definition-language protected actions and platform protected actions consistently.
+5. Added missing normalized protected-action approval policies for race stops, official-result modification, horse scratches, vet-flag clearance, steward rulings, and emergency-personnel overrides.
 
 ## Recommended next steps
 

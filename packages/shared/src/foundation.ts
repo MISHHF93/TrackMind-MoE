@@ -86,6 +86,29 @@ export const protectedAIAutonomyActions = [
 ] as const;
 export type ProtectedAIAutonomyAction = typeof protectedAIAutonomyActions[number];
 
+export const protectedActionIntentMap = {
+  'start-race': 'race-start',
+  'stop-race': 'race-stop',
+  'declare-official-results': 'official-results',
+  'modify-official-results': 'modify-official-results',
+  'scratch-horse': 'scratch-horse',
+  'clear-veterinary-flag': 'clear-vet-flag',
+  'issue-steward-ruling': 'steward-ruling',
+  'trigger-payout': 'payout',
+  'override-emergency-personnel': 'emergency-personnel-override',
+  'execute-safety-critical-control': 'safety-critical-control',
+} as const;
+export type ProtectedActionIntent = keyof typeof protectedActionIntentMap;
+export type NormalizedProtectedAction = typeof protectedActionIntentMap[ProtectedActionIntent];
+
+export function normalizeProtectedActionIntent(action: string): ProtectedAIAutonomyAction | NormalizedProtectedAction | string {
+  return (protectedActionIntentMap as Record<string, NormalizedProtectedAction>)[action] ?? action;
+}
+
+export function isProtectedActionIntent(action: string): action is ProtectedActionIntent {
+  return action in protectedActionIntentMap;
+}
+
 export interface AIRecommendation {
   id: EntityId;
   tenantId: TenantId;
