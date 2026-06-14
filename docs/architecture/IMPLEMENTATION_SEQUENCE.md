@@ -55,6 +55,10 @@ APIs: create recommendation, evaluate automation request.
 Schemas: recommendation, safety decision.
 Tests: all protected actions require authorized human approval.
 
+## Vertical slice backlog
+
+After the foundation phases are stable, use the vertical slice execution prompts in `VERTICAL_SLICE_EXECUTION_PROMPTS.md` to implement Race Office, Surface Intelligence, Equine Intelligence, Barn Operations, Steward Center, Security Operations, Emergency Operations, Compliance Control Library, Responsible AI Governance, and Platform Observability as coordinated frontend-backend increments.
+
 ## Phase 8 — Service extraction and deployment hardening
 Files/folders: service folders, OpenAPI specs, CI, Azure modules, observability dashboards.
 Events/APIs/Schemas: promoted from prior phases with compatibility guarantees.
