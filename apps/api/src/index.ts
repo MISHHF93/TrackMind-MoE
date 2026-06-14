@@ -1,5 +1,6 @@
 export * from './approvals.js';
 export * from './assetIntelligence.js';
+export * from './barnOperations.js';
 export * from './auditLog.js';
 export * from './digitalTwin.js';
 export * from './digitalTwinFoundation.js';

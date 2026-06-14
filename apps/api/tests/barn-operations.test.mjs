@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { CoordinatedBarnOperationsService, CentralizedApprovalService, ImmutableAuditLog, UniversalEventBus } from '../dist/index.js';
+
+const admin = { id:'admin-1', roles:['admin'], tenantId:'tenant-1' };
+const steward = { id:'steward-1', roles:['steward'], tenantId:'tenant-1', human:true };
+const superintendent = { id:'super-1', roles:['track-superintendent'], tenantId:'tenant-1', human:true };
+
+function seeded() {
+  const eventBus = new UniversalEventBus(); const auditLog = new ImmutableAuditLog(); const approvals = new CentralizedApprovalService({ auditLog, eventBus });
+  const service = new CoordinatedBarnOperationsService({ eventBus, auditLog, approvals });
+  service.createBarn(admin, { id:'barn-a', name:'Barn A', tenantId:'tenant-1', location:'Backstretch', status:'ready', capacity:2, incidentIds:['incident-1'], trainerIds:[] }, [{ id:'stall-a1', label:'A1' }, { id:'stall-a2', label:'A2' }]);
+  return { service, eventBus, auditLog, approvals };
+}
+
+test('stall occupancy prevents double assignment', () => { const { service } = seeded(); service.assignHorse({ actor:admin, horseId:'horse-1', barnId:'barn-a', stallId:'stall-a1', assignedAt:'2026-06-13T00:00:00.000Z', reason:'arrival' }); assert.throws(() => service.assignHorse({ actor:admin, horseId:'horse-2', barnId:'barn-a', stallId:'stall-a1', assignedAt:'2026-06-13T00:01:00.000Z', reason:'arrival' }), /stall already occupied/); });
+
+test('horse movement and stall changes emit events, immutable audit records, and Digital Twin patches', () => { const { service, eventBus, auditLog } = seeded(); service.assignHorse({ actor:admin, horseId:'horse-1', barnId:'barn-a', stallId:'stall-a1', assignedAt:'2026-06-13T00:00:00.000Z', reason:'arrival' }); const move = service.moveHorse({ actor:admin, horseId:'horse-1', toBarnId:'barn-a', toStallId:'stall-a2', movedAt:'2026-06-13T00:02:00.000Z', reason:'trainer requested adjacent stall' }); assert.equal(move.fromStallId, 'stall-a1'); assert.ok(eventBus.events({ type:'barn.horse.assigned', aggregateId:'horse-1' }).length >= 2); assert.equal(eventBus.events({ type:'barn.horse.moved', aggregateId:'horse-1' }).length, 1); assert.ok(eventBus.events({ type:'digital-twin.state.patch', aggregateId:'equine:horse-1' }).length >= 2); assert.equal(auditLog.verify().valid, true); assert.ok(auditLog.forensicTimeline({ subjectId:'horse-1' }).some((e)=>e.payload.action === 'horse.movement.recorded')); });
+
+test('barn role permissions block read-only and steward stall mutations', () => { const { service } = seeded(); assert.throws(() => service.assignHorse({ actor:{ id:'auditor-1', roles:['read-only-auditor'], tenantId:'tenant-1' }, horseId:'horse-1', barnId:'barn-a', stallId:'stall-a1', assignedAt:'2026-06-13T00:00:00.000Z', reason:'bad' }), /Actor lacks stall:assign/); assert.throws(() => service.createRestriction({ actor:{ id:'steward-2', roles:['steward'], tenantId:'tenant-1' }, barnId:'barn-a', type:'security', reason:'bad', at:'2026-06-13T00:00:00.000Z' }), /Actor lacks restriction:manage/); });
+
+test('restricted stall assignment requires approval policy token', () => { const { service, approvals } = seeded(); const request = approvals.createRequest({ id:'approval-stall-a2', tenantId:'tenant-1', action:'safety-critical-control', target:'stall-a2', requestedBy:'super-1', actorType:'human', reason:'quarantine exception', evidence:['human-approval-record'] }); approvals.decide(request.id, superintendent, 'approved', 'ops approve', ['human-approval-record'], '2026-06-13T00:01:00.000Z'); approvals.decide(request.id, steward, 'approved', 'steward approve', ['human-approval-record'], '2026-06-13T00:02:00.000Z'); const token = approvals.authorizeExecution({ requestId:request.id, action:'safety-critical-control', target:'stall-a2', tenantId:'tenant-1', actor:superintendent, now:'2026-06-13T00:03:00.000Z' }); service.createRestriction({ actor:admin, barnId:'barn-a', stallId:'stall-a2', type:'quarantine', reason:'monitor horse', at:'2026-06-13T00:03:00.000Z', approvalToken:token }); assert.throws(() => service.assignHorse({ actor:admin, horseId:'horse-9', barnId:'barn-a', stallId:'stall-a2', assignedAt:'2026-06-13T00:04:00.000Z', reason:'without token' }), /requires approval token/); const occ = service.assignHorse({ actor:admin, horseId:'horse-9', barnId:'barn-a', stallId:'stall-a2', assignedAt:'2026-06-13T00:04:00.000Z', reason:'approved exception', approvalToken:token }); assert.equal(occ.stallId, 'stall-a2'); });

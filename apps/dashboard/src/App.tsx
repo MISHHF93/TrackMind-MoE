@@ -25,7 +25,7 @@ const commandCenterWorkspaces = [
 const startingGateWorkflow = ['Change Distance', 'Move Gate', 'Approve', 'Work Order', 'Verify GPS', 'Activate'];
 
 export async function loadCommandCenter(client: NexusApiClient) {
-  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence] = await Promise.all([
+  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations] = await Promise.all([
     client.listApprovals(),
     client.listAuditEvents(),
     client.getTrackMap(),
@@ -37,8 +37,9 @@ export async function loadCommandCenter(client: NexusApiClient) {
     client.getRaceOffice(),
     client.getSurfaceIntelligence(),
     client.getEquineIntelligence(),
+    client.getBarnOperations(),
   ]);
-  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, streamUrl: client.eventStreamUrl(), mode: client.mode };
+  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, streamUrl: client.eventStreamUrl(), mode: client.mode };
 }
 
 export function isSafetyCriticalEnabled(args: { authenticated: boolean; hasApprovalToken: boolean; backendMode: 'live' | 'mock' }) {
@@ -154,6 +155,39 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
         <section aria-label="Readiness audit records"><h3>Audit records</h3>{data.readiness.auditRecords.map((record) => <article key={record.id}><code>{record.summaryHash}</code><p>{record.actor} scored {record.score} for {record.raceId}; previous hash {record.previousHash}; evidence {record.evidence.join(', ')}.</p></article>)}</section>
       </section>
 
+
+      <section aria-label="Barn Operations workspace">
+        <h2>Barn Operations</h2>
+        <p>Coordinated frontend-backend module for barns, stalls, occupancy, trainer assignments, veterinary visits, access control, inspections, restrictions, incidents, audited movement events, and Digital Twin updates.</p>
+        <section aria-label="Barn map and list">
+          <h3>Barn map/list</h3>
+          {data.barnOperations.barns.map((barn) => <article key={barn.id} data-status={barn.status}><h4>{barn.name}</h4><p>{barn.location}; capacity {barn.capacity}; trainers {barn.trainerIds.join(', ')}; linked incidents {barn.incidentIds.join(', ')}.</p></article>)}
+        </section>
+        <section aria-label="Stall occupancy grid">
+          <h3>Stall occupancy</h3>
+          {data.barnOperations.stalls.map((stall) => <article key={stall.id} data-status={stall.status}><strong>{stall.label}</strong><p>{stall.status}{stall.occupancyHorseId ? ` — ${stall.occupancyHorseId}` : ''}; restrictions {stall.restrictionIds.join(', ') || 'none'}.</p></article>)}
+        </section>
+        <section aria-label="Horse movement timeline">
+          <h3>Horse movement timeline</h3>
+          <EventTimeline events={data.barnOperations.movements.map((movement) => ({ time: movement.movedAt, label: `${movement.horseId}: ${movement.fromStallId ?? 'arrival'} → ${movement.toStallId}; event ${movement.eventId}; audit ${movement.auditId}`, tone: 'info' }))} />
+          {data.barnOperations.movements.map((movement) => <p key={`${movement.id}-evidence`}>Movement evidence: {movement.eventId} / {movement.auditId}</p>)}
+        </section>
+        <section aria-label="Barn access history">
+          <h3>Access history</h3>
+          {data.barnOperations.access.map((record) => <article key={record.id}><strong>{record.actorId}</strong><p>{record.decision} for {record.purpose} at {record.accessAt}; event {record.eventId}; audit {record.auditId}.</p></article>)}
+        </section>
+        <section aria-label="Barn readiness dashboard">
+          <h3>Barn readiness</h3>
+          {data.barnOperations.readiness.map((ready) => <article key={ready.barnId} data-status={ready.status}><RiskBadge level={ready.status === 'ready' ? 'low' : ready.status === 'watch' ? 'high' : 'critical'} /><strong>{ready.barnId}: {ready.score}</strong><p>{ready.occupiedStalls}/{ready.capacity} stalls occupied; restrictions {ready.openRestrictions}; blockers {ready.blockers.join(', ') || 'none'}.</p></article>)}
+        </section>
+        <section aria-label="Barn inspections restrictions trainer assignments veterinary visits">
+          <h3>Inspections, restrictions, trainers, veterinary visits</h3>
+          <p>Inspections: {data.barnOperations.inspections.map((i) => `${i.barnId} score ${i.score}`).join('; ')}.</p>
+          <p>Restrictions: {data.barnOperations.restrictions.map((r) => `${r.type} ${r.reason} (${r.eventId}/${r.auditId})`).join('; ')}.</p>
+          <p>Trainer assignments: {data.barnOperations.trainers.map((t) => `${t.trainerId} active=${t.active}`).join('; ')}.</p>
+          <p>Veterinary visits: {data.barnOperations.vetVisits.map((v) => `${v.horseId} by ${v.veterinarianId}`).join('; ')}.</p>
+        </section>
+      </section>
       <section aria-label="Digital Twin workspace shell">
         <h2>Digital Twin Workspace</h2>
         <p>Shared typed client source: <code>{data.mode}</code>; Digital Twin updates are read-only until an approved backend execution path emits the patch event.</p>

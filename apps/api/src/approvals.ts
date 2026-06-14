@@ -38,7 +38,7 @@ export class ApprovalStore {
   allApprovals(): HumanApprovalRecord[] { return [...this.approvals.values()]; }
 }
 
-export type ControlledAction = ProtectedAction | 'race-cancellation' | 'veterinary-clearance' | 'steward-decision' | 'starting-gate-move' | 'race-distance-configuration' | 'race-office-scratch' | 'race-status-change' | 'race-office-configuration';
+export type ControlledAction = ProtectedAction | 'race-cancellation' | 'veterinary-clearance' | 'steward-decision' | 'starting-gate-move' | 'race-distance-configuration' | 'race-office-scratch' | 'race-status-change' | 'race-office-configuration' | 'safety-critical-control';
 export type ApprovalRequestStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'escalated';
 
 export interface ApprovalStepRequirement { id: string; roles: Role[]; minimumApprovals: number; evidenceRequired: string[]; }
@@ -67,6 +67,7 @@ export function defaultApprovalPolicies(): ApprovalPolicy[] {
     { action: 'race-office-scratch', chain: [{ id: 'veterinary', roles: ['veterinarian'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 30, escalationRules: [{ afterMinutes: 15, escalateToRoles: ['admin'], reason: 'race scratch approval pending' }] },
     { action: 'race-status-change', chain: [{ id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 20, escalationRules: [{ afterMinutes: 10, escalateToRoles: ['admin'], reason: 'race status change approval pending' }] },
     { action: 'race-office-configuration', chain: [{ id: 'race-office', roles: ['racing-secretary'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 60, escalationRules: [{ afterMinutes: 30, escalateToRoles: ['admin'], reason: 'race office configuration approval pending' }] },
+    { action: 'safety-critical-control', chain: [{ id: 'operations', roles: ['track-superintendent'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 20, escalationRules: [{ afterMinutes: 10, escalateToRoles: ['admin'], reason: 'safety-critical barn control approval pending' }] },
     { action: 'race-distance-configuration', chain: [{ id: 'race-office', roles: ['racing-secretary'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 20, escalationRules: [{ afterMinutes: 10, escalateToRoles: ['admin'], reason: 'race distance configuration approval pending' }] },
   ];
 }
