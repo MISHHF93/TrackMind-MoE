@@ -54,3 +54,25 @@ test('protected action intent names normalize to platform approval actions', asy
   assert.equal(normalizeProtectedActionIntent('execute-safety-critical-control'), 'safety-critical-control');
   assert.equal(Object.keys(protectedActionIntentMap).length, protectedAIAutonomyActions.length);
 });
+
+test('protected execution validation blocks normalized backend action names without approval', async () => {
+  const { validateProtectedActionExecution } = await import('../dist/index.js');
+  const denied = validateProtectedActionExecution({ action: 'race-start', recommendationId: 'rec-2', tenantId: 'tenant-1', target: 'race-7' });
+  assert.equal(denied.allowed, false);
+  assert.match(denied.reason, /Explicit authorized human approval required/);
+
+  const allowed = validateProtectedActionExecution({
+    action: 'race-start', recommendationId: 'rec-2', tenantId: 'tenant-1', target: 'race-7',
+    approval: { id: 'appr-3', tenantId: 'tenant-1', recommendationId: 'rec-2', protectedAction: 'race-start', target: 'race-7', status: 'approved', approverId: 'steward-1', approverRoles: ['steward'], reason: 'Race-start checklist complete', evidence: ['human-approval-record'] },
+  });
+  assert.equal(allowed.allowed, true);
+});
+
+test('Nexus event envelopes enforce versioned event contract and tenant-scoped subject', async () => {
+  const { validateNexusEventEnvelope } = await import('../dist/index.js');
+  const valid = validateNexusEventEnvelope({ eventId: 'evt-1', eventType: 'race.race.startRequested.v1', tenantId: 'tenant-1', occurredAt: '2026-06-13T12:00:00Z', actor: { id: 'steward-1', type: 'human', roles: ['steward'] }, correlationId: 'corr-1', subject: { id: 'race-7', type: 'race', tenantId: 'tenant-1' }, payload: { status: 'pending-approval' }, evidence: ['approval-request'] });
+  assert.equal(valid.allowed, true);
+
+  const invalid = validateNexusEventEnvelope({ eventId: 'evt-2', eventType: 'race-start-requested', tenantId: 'tenant-1', occurredAt: '2026-06-13T12:00:00Z', actor: { id: 'ai-1', type: 'ai-agent' }, correlationId: 'corr-2', subject: { id: 'race-7', type: 'race', tenantId: 'tenant-2' }, payload: {}, evidence: [] });
+  assert.equal(invalid.allowed, false);
+});
