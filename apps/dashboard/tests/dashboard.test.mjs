@@ -261,3 +261,29 @@ test('Equine Intelligence live client uses horse detail endpoint contract', asyn
   assert.equal(requestUrl, 'https://api.example.test/api/v1/equine-intelligence/horses/horse-42');
   globalThis.fetch = original;
 });
+
+test('Barn Operations frontend renders barn map, stall occupancy, movement timeline, access history, and readiness', async () => {
+  const data = await loadCommandCenter(createMockClient());
+  const tree = CommandCenter({ data, roles: ['admin'], authenticated: true, path: '/barns' });
+  const labels = collect(tree, (node) => Boolean(node.props?.['aria-label'])).map((node) => node.props['aria-label']);
+  for (const label of ['Barn Operations workspace','Barn map and list','Stall occupancy grid','Horse movement timeline','Barn access history','Barn readiness dashboard']) assert.ok(labels.includes(label), `missing ${label}`);
+  assert.match(textFrom(tree), /Barn 2/);
+  assert.match(textFrom(tree), /stall-12A|12A/);
+  assert.match(textFrom(tree), /barn\.horse\.moved/);
+  assert.match(textFrom(tree), /audit-barn-2/);
+  assert.match(textFrom(tree), /credential patrol/);
+});
+
+test('Barn Operations client exposes mock data and live endpoint contract', async () => {
+  const mock = await createMockClient().getBarnOperations();
+  assert.equal(mock.mock, true);
+  assert.equal(mock.occupancy[0].twinId, 'equine:horse-1');
+  assert.ok(mock.restrictions[0].eventId.startsWith('barn.restriction'));
+  const original = globalThis.fetch;
+  let requested;
+  globalThis.fetch = async (url) => { requested = url; return { ok: true, json: async () => ({ barns: [], stalls: [], occupancy: [], movements: [], access: [], inspections: [], restrictions: [], trainers: [], vetVisits: [], readiness: [], mock: false }) }; };
+  const live = await createLiveClient('https://api.example.test/api/v1').getBarnOperations();
+  assert.equal(requested, 'https://api.example.test/api/v1/barn-operations/workspace');
+  assert.equal(live.mock, false);
+  globalThis.fetch = original;
+});
