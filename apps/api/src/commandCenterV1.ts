@@ -1,4 +1,5 @@
 import { TrackMindNexusFoundation } from './trackmindNexus.js';
+import { apiContractSchemas, apiEndpointContracts, assertContract, type AIRecommendationDto, type ApprovalDto, type AssetMarkerDto, type AuditEventDto, type DigitalTwinStateDto, type GatePositionDto, type RaceDistanceConfigurationDto, type RaceDto, type SurfaceMeasurementDto } from '@trackmind/shared';
 import type { ApprovalActor, ApprovalToken, ControlledActionRequest } from './approvals.js';
 
 export interface CommandCenterTrackSector { id: string; name: string; startMeters: number; endMeters: number; condition: 'fast' | 'good' | 'muddy' | 'maintenance' }
@@ -68,3 +69,22 @@ export class TrackMindCommandCenterV1Service {
 }
 
 export function createTrackMindCommandCenterV1Service() { return new TrackMindCommandCenterV1Service(); }
+
+export interface CommandCenterContractSnapshot { assets: AssetMarkerDto[]; races: RaceDto[]; approvals: ApprovalDto[]; auditEvents: AuditEventDto[]; digitalTwinState: DigitalTwinStateDto[]; surfaceMeasurements: SurfaceMeasurementDto[]; gatePosition: GatePositionDto; raceDistanceConfiguration: RaceDistanceConfigurationDto; aiRecommendations: AIRecommendationDto[]; openApi: { title: string; version: string; endpoints: typeof apiEndpointContracts }; errors: { notAuthorized: { ok: false; error: { code: string; message: string } } } }
+
+export function createCommandCenterContractSnapshot(service = new TrackMindCommandCenterV1Service()): CommandCenterContractSnapshot {
+  const snapshot = service.snapshot();
+  const assets = snapshot.assets.map((asset): AssetMarkerDto => assertContract('AssetMarkerDto', { ...asset, twinId: asset.id === 'gate-1' ? 'twin:main-track:gate-1' : `twin:main-track:${asset.id}` }, apiContractSchemas.AssetMarkerDto));
+  const approvals = snapshot.pendingApprovals.map((request): ApprovalDto => assertContract('ApprovalDto', { id: request.id, action: request.action, target: request.target, requestedBy: request.requestedBy, status: request.status, createdAt: request.createdAt, expiresAt: request.expiresAt, evidence: request.evidence, mock: false }, apiContractSchemas.ApprovalDto));
+  const auditEvents = snapshot.auditEvents.map((event): AuditEventDto => assertContract('AuditEventDto', { id: event.id, type: event.type, actor: event.actor, timestamp: event.timestamp, subjectId: event.subjectId, severity: event.severity ?? 'info', hash: event.hash, previousHash: event.previousHash, mock: false }, apiContractSchemas.AuditEventDto));
+  const digitalTwinState = snapshot.digitalTwinState.map((state): DigitalTwinStateDto => assertContract('DigitalTwinStateDto', { ...state, mock: false }, apiContractSchemas.DigitalTwinStateDto));
+  const gatePosition = assertContract('GatePositionDto', { ...snapshot.gatePosition, mock: false }, apiContractSchemas.GatePositionDto);
+  const raceDistanceConfiguration = assertContract('RaceDistanceConfigurationDto', { ...snapshot.raceDistanceConfiguration, mock: false }, apiContractSchemas.RaceDistanceConfigurationDto);
+  const surfaceMeasurements: SurfaceMeasurementDto[] = [
+    { sectorId: 'backstretch', moisture: 18, compaction: 238, measuredAt: now(), eventId: 'evt-surface-backstretch', auditId: 'audit-surface-backstretch' },
+    { sectorId: 'far-turn', moisture: 27, compaction: 276, measuredAt: now(), eventId: 'evt-surface-far-turn', auditId: 'audit-surface-far-turn' },
+  ].map((measurement) => assertContract('SurfaceMeasurementDto', measurement, apiContractSchemas.SurfaceMeasurementDto));
+  const races: RaceDto[] = [{ raceId: 'race-7', trackId: 'main-track', postTime: '2026-06-13T21:00:00.000Z', score: 87, status: 'watch' as const, warnings: 2, approvals: approvals.length, mock: false }].map((race) => assertContract('RaceDto', race, apiContractSchemas.RaceDto));
+  const aiRecommendations: AIRecommendationDto[] = [{ id: 'ai-1', recommendation: 'Dispatch surface crew for one harrow pass before Race 7.', confidence: 0.82, evidence: ['surface:far-turn moisture=27', 'asset:sensor-44 warning'], requiresApproval: true, actionPath: '/ai-governance', eventId: 'evt-ai-1', auditId: 'audit-ai-1', mock: false }].map((rec) => assertContract('AIRecommendationDto', rec, apiContractSchemas.AIRecommendationDto));
+  return { assets, races, approvals, auditEvents, digitalTwinState, surfaceMeasurements, gatePosition, raceDistanceConfiguration, aiRecommendations, openApi: { title: 'TrackMind Nexus API', version: '1.0.0', endpoints: apiEndpointContracts }, errors: { notAuthorized: { ok: false, error: { code: 'forbidden', message: 'Actor is not authorized for this TrackMind API operation' } } } };
+}
