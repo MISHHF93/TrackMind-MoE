@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DigitalTwinFoundationPlatform } from '../dist/index.js';
+import { DigitalTwinFoundationPlatform } from '../dist/digitalTwinFoundation.js';
 
 test('digital twin foundation synchronizes full racetrack objects with playback, controls, simulation, risk, dependencies, and audit', () => {
   const platform = new DigitalTwinFoundationPlatform();
@@ -17,8 +17,10 @@ test('digital twin foundation synchronizes full racetrack objects with playback,
   assert.equal(synced.version, 3);
   assert.equal(synced.health, 'critical');
   assert.ok(synced.riskScore >= 80);
+  assert.ok(synced.healthIndicators.some((indicator) => indicator.status === 'critical'));
   assert.equal(platform.playback('horse-7').length, 3);
   assert.equal(platform.simulationEnvironment(['horse-7', 'facility-paddock'], 'race-day-delay').controlsIsolated, true);
   assert.equal(platform.dependencyGraph(['horse-7']).length, 2);
+  assert.equal(platform.healthIndicatorsFor('horse-7').at(-1).name, 'telemetry-source');
   assert.equal(platform.audit('horse-7').at(-1).actor, 'wearable-stream');
 });

@@ -23,6 +23,12 @@ test('AI may recommend or draft protected actions but the recommendation declare
   assert.ok(result.reason.includes('advisory'));
 });
 
+test('AI advisory boundary includes prioritization but not execution', async () => {
+  const { aiAllowedActivities } = await import('../dist/index.js');
+  assert.ok(aiAllowedActivities.includes('prioritize'));
+  assert.equal(aiAllowedActivities.includes('execute'), false);
+});
+
 test('all protected AI autonomy actions are blocked without explicit human approval', () => {
   for (const action of protectedAIAutonomyActions) {
     const result = validateProtectedActionExecution({ action, recommendationId: 'rec-1', tenantId: 'tenant-1', target: 'target-1' });
@@ -50,7 +56,10 @@ test('protected action execution requires matching approval, authorized role, re
 test('protected action intent names normalize to platform approval actions', async () => {
   const { normalizeProtectedActionIntent, protectedActionIntentMap } = await import('../dist/index.js');
   assert.equal(normalizeProtectedActionIntent('start-race'), 'race-start');
+  assert.equal(normalizeProtectedActionIntent('make-medication-decision'), 'medication-decision');
   assert.equal(normalizeProtectedActionIntent('clear-veterinary-flag'), 'clear-vet-flag');
+  assert.equal(normalizeProtectedActionIntent('issue-disciplinary-decision'), 'disciplinary-decision');
+  assert.equal(normalizeProtectedActionIntent('execute-emergency-action'), 'emergency-action');
   assert.equal(normalizeProtectedActionIntent('execute-safety-critical-control'), 'safety-critical-control');
   assert.equal(Object.keys(protectedActionIntentMap).length, protectedAIAutonomyActions.length);
 });
@@ -66,6 +75,29 @@ test('protected execution validation blocks normalized backend action names with
     approval: { id: 'appr-3', tenantId: 'tenant-1', recommendationId: 'rec-2', protectedAction: 'race-start', target: 'race-7', status: 'approved', approverId: 'steward-1', approverRoles: ['steward'], reason: 'Race-start checklist complete', evidence: ['human-approval-record'] },
   });
   assert.equal(allowed.allowed, true);
+});
+
+test('normalized regulated action names are protected even when callers use backend contract names', async () => {
+  const { validateAIRecommendation, validateProtectedActionExecution } = await import('../dist/index.js');
+  for (const action of ['medication-decision', 'emergency-action', 'disciplinary-decision']) {
+    const recommendation = validateAIRecommendation({ ...baseRecommendation, id: `rec-${action}`, requestedAction: action });
+    assert.equal(recommendation.allowed, true);
+    assert.equal(recommendation.requiredApproval.minimumApprovals, 1);
+
+    const execution = validateProtectedActionExecution({ action, recommendationId: `rec-${action}`, tenantId: 'tenant-1', target: 'regulated-target' });
+    assert.equal(execution.allowed, false);
+    assert.match(execution.reason, /Explicit authorized human approval required/);
+  }
+});
+
+test('protected execution validation rejects AI or service approval identities', async () => {
+  const { validateProtectedActionExecution } = await import('../dist/index.js');
+  const denied = validateProtectedActionExecution({
+    action: 'race-start', recommendationId: 'rec-3', tenantId: 'tenant-1', target: 'race-8',
+    approval: { id: 'appr-ai', tenantId: 'tenant-1', recommendationId: 'rec-3', protectedAction: 'race-start', target: 'race-8', status: 'approved', approverId: 'ai-copilot', approverRoles: ['steward'], reason: 'Autonomous approval attempt', evidence: ['human-approval-record'] },
+  });
+  assert.equal(denied.allowed, false);
+  assert.equal(denied.reason, 'Approval must be granted by an authorized human role');
 });
 
 test('Nexus event envelopes enforce versioned event contract and tenant-scoped subject', async () => {

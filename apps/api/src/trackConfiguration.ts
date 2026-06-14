@@ -1,3 +1,8 @@
+import type { ImmutableAuditLog } from './auditLog.js';
+import type { CentralizedApprovalService, ControlledAction, ControlledActionRequest } from './approvals.js';
+import type { UniversalEventBus } from './eventBus.js';
+import type { WorkflowDefinition, WorkflowInstance, WorkflowOrchestrationEngine } from './workflowEngine.js';
+
 export type RacingSurface = 'dirt' | 'turf' | 'synthetic';
 export type ApprovalState = 'draft' | 'pending-approval' | 'approved' | 'rejected' | 'scheduled' | 'synced';
 export type TrackModificationKind = 'race-distance' | 'gate-placement' | 'rail-position' | 'turf-configuration' | 'surface-allocation' | 'track-sector' | 'course-layout' | 'race-setup';
@@ -129,6 +134,7 @@ export interface WorkOrder {
   id: string;
   changeId: string;
   crew: 'gate-crew' | 'rail-crew' | 'turf-crew' | 'surface-crew' | 'race-office';
+  status?: 'draft' | 'approval-blocked' | 'issued' | 'verification-pending' | 'verified';
   tasks: string[];
   safetyHoldPoints: string[];
   evidenceRequired: string[];
@@ -161,6 +167,51 @@ export interface GateMoveRequest {
   requestedBy: string;
   requestedAt: string;
   evidence: string[];
+}
+
+export interface VerificationTask {
+  id: string;
+  workOrderId: string;
+  label: string;
+  requiredEvidence: string[];
+  status: 'open' | 'verified';
+}
+
+export interface TrackVerificationWorkflow {
+  id: string;
+  changeId: string;
+  status: 'draft' | 'approval-blocked' | 'ready-for-field-verification' | 'verified';
+  tasks: VerificationTask[];
+  requiredRoles: string[];
+  digitalTwinSync: 'blocked-until-approved' | 'blocked-until-verified' | 'ready-for-sync';
+  actuatorControlAvailable: false;
+}
+
+export interface TrackConfigurationExecutionPlan {
+  changeId: string;
+  executionMode: 'draft-work-order-verification-only';
+  noLiveActuatorControl: true;
+  geospatialValidation: GPSValidationResult;
+  simulation: SimulationResult;
+  approvalRequirements: string[];
+  workOrders: WorkOrder[];
+  verificationWorkflow: TrackVerificationWorkflow;
+  digitalTwinPatchPreview: { twinId: string; patch: Record<string, unknown>; status: 'approval-required' | 'verification-required' | 'ready-for-sync' };
+  eventTypes: string[];
+  auditActions: string[];
+}
+
+export interface TrackConfigurationSubmitOptions {
+  tenantId?: string;
+  boundaries?: TrackBoundary[];
+  startVerificationWorkflow?: boolean;
+}
+
+export interface TrackConfigurationPlatformOptions {
+  eventBus?: UniversalEventBus;
+  auditLog?: ImmutableAuditLog;
+  approvals?: CentralizedApprovalService;
+  workflow?: WorkflowOrchestrationEngine;
 }
 
 export interface TrackConfigurationSnapshot {
@@ -272,6 +323,7 @@ export function generateTrackWorkOrders(change: TrackConfigurationChange): WorkO
       id: `${change.id}-gate`,
       changeId: change.id,
       crew: 'gate-crew',
+      status: change.status === 'approved' ? 'issued' : 'approval-blocked',
       tasks: [...base, 'capture post-placement GPS proof'],
       safetyHoldPoints: ['starter sign-off', 'steward visual inspection', 'timing-beam alignment hold'],
       evidenceRequired: ['gps-fix', 'photo', 'crew-attestation', 'distance-calculation-sheet'],
@@ -283,6 +335,7 @@ export function generateTrackWorkOrders(change: TrackConfigurationChange): WorkO
       id: `${change.id}-rail`,
       changeId: change.id,
       crew: 'rail-crew',
+      status: change.status === 'approved' ? 'issued' : 'approval-blocked',
       tasks: [`set rail ${setup.railPosition.railId} to ${setup.railPosition.offsetMeters}m`, 'inspect protected turns'],
       safetyHoldPoints: ['maintenance supervisor sign-off'],
       evidenceRequired: ['rail-measurement', 'inspection-report'],
@@ -294,6 +347,7 @@ export function generateTrackWorkOrders(change: TrackConfigurationChange): WorkO
       id: `${change.id}-turf`,
       changeId: change.id,
       crew: 'turf-crew',
+      status: change.status === 'approved' ? 'issued' : 'approval-blocked',
       tasks: [`prepare turf lane ${setup.turfConfiguration.lane}`, `confirm going ${setup.turfConfiguration.going}`],
       safetyHoldPoints: ['course superintendent approval'],
       evidenceRequired: ['going-stick-reading', 'irrigation-log', 'mowing-log'],
@@ -301,6 +355,83 @@ export function generateTrackWorkOrders(change: TrackConfigurationChange): WorkO
     });
   }
   return orders;
+}
+
+export function validateTrackConfigurationChange(change: TrackConfigurationChange, boundaries: TrackBoundary[] = [], sectors: TrackSector[] = []): GPSValidationResult {
+  const geospatial = boundaries.length ? validateGpsPlacement(change.raceSetup.gatePlacement, boundaries) : { valid: true, errors: [], warnings: ['track boundary validation was not provided'], mappedSurface: undefined };
+  const errors = [...geospatial.errors];
+  const warnings = [...geospatial.warnings];
+  if (geospatial.mappedSurface && geospatial.mappedSurface !== change.raceSetup.surface) errors.push(`gate surface ${geospatial.mappedSurface} does not match race surface ${change.raceSetup.surface}`);
+  if (change.raceSetup.railPosition && change.raceSetup.railPosition.offsetMeters < 0) errors.push('rail offset cannot be negative');
+  if (change.raceSetup.railPosition && change.raceSetup.railPosition.offsetMeters > 18) warnings.push('rail offset exceeds standard portable rail operating range');
+  if (change.raceSetup.surface !== 'turf' && change.raceSetup.turfConfiguration) errors.push('turf configuration can only be applied to turf races');
+  if (change.raceSetup.surface === 'turf' && !change.raceSetup.turfConfiguration) warnings.push('turf races should include going, irrigation, mowing, and resting-lane configuration');
+  const knownSectors = new Set(sectors.map((sector) => sector.id));
+  for (const sectorId of change.raceSetup.sectorIds ?? []) if (!knownSectors.has(sectorId)) errors.push(`unknown sector in race setup: ${sectorId}`);
+  if (change.raceSetup.surfaceAllocation.purpose !== 'racing') warnings.push('surface allocation is not marked for racing');
+  return { valid: errors.length === 0, errors, warnings, mappedSurface: geospatial.mappedSurface };
+}
+
+export function buildVerificationWorkflow(change: TrackConfigurationChange, workOrders = generateTrackWorkOrders(change)): TrackVerificationWorkflow {
+  const approved = change.status === 'approved' || change.status === 'scheduled' || change.status === 'synced';
+  const tasks = workOrders.map((order): VerificationTask => ({
+    id: `${order.id}-verify`,
+    workOrderId: order.id,
+    label: `Verify ${order.crew} work order ${order.id}`,
+    requiredEvidence: [...new Set([...order.evidenceRequired, ...order.safetyHoldPoints])],
+    status: 'open',
+  }));
+  return {
+    id: `${change.id}-verification`,
+    changeId: change.id,
+    status: approved ? 'ready-for-field-verification' : 'approval-blocked',
+    tasks,
+    requiredRoles: requiredApprovalsForChange(change),
+    digitalTwinSync: approved ? 'blocked-until-verified' : 'blocked-until-approved',
+    actuatorControlAvailable: false,
+  };
+}
+
+export function buildTrackConfigurationExecutionPlan(change: TrackConfigurationChange, boundaries: TrackBoundary[] = [], sectors: TrackSector[] = []): TrackConfigurationExecutionPlan {
+  const workOrders = generateTrackWorkOrders(change);
+  const verificationWorkflow = buildVerificationWorkflow(change, workOrders);
+  const geospatialValidation = validateTrackConfigurationChange(change, boundaries, sectors);
+  const approved = change.status === 'approved' || change.status === 'scheduled' || change.status === 'synced';
+  return {
+    changeId: change.id,
+    executionMode: 'draft-work-order-verification-only',
+    noLiveActuatorControl: true,
+    geospatialValidation,
+    simulation: simulateRaceSetup(change.raceSetup),
+    approvalRequirements: requiredApprovalsForChange(change),
+    workOrders,
+    verificationWorkflow,
+    digitalTwinPatchPreview: { twinId: `race-setup:${change.raceSetup.raceId}`, patch: { ...change.raceSetup }, status: approved ? 'verification-required' : 'approval-required' },
+    eventTypes: ['track.configuration.change.requested', 'track.configuration.approval.required', 'track.configuration.work-order.issued', 'track.configuration.verified', 'track.configuration.digital-twin.sync.requested', 'digital-twin.state.patch'],
+    auditActions: ['submit-track-configuration-change', 'approval.requested', 'issue-track-work-orders', 'verify-track-configuration', 'synchronize-track-configuration'],
+  };
+}
+
+export function trackConfigurationWorkflowDefinition(tenantId: string, change: TrackConfigurationChange): WorkflowDefinition {
+  const refs = [`race-setup:${change.raceSetup.raceId}`, `starting-gate:${change.raceSetup.gatePlacement.gateId}`];
+  return {
+    id: `track-configuration-${change.id}`,
+    name: `Track Configuration Verification ${change.id}`,
+    domain: 'maintenance',
+    version: '1.0.0',
+    bpmnProcessId: `Process_TrackConfiguration_${change.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
+    startStepId: 'approval-gate',
+    ownerRole: 'track-superintendent',
+    tenantId,
+    triggerEvents: ['track.configuration.change.requested'],
+    steps: [
+      { id: 'approval-gate', name: 'Confirm approvals before field work', type: 'parallelApproval', approvalRoles: requiredApprovalsForChange(change), requiredApprovals: requiredApprovalsForChange(change).length, slaMinutes: 20, digitalTwin: { refs, syncMode: 'read', statePatch: { approvalGate: 'pending' } }, next: ['issue-work-orders'] },
+      { id: 'issue-work-orders', name: 'Issue draft work orders', type: 'userTask', role: 'race-office', slaMinutes: 30, digitalTwin: { refs, syncMode: 'read', statePatch: { workOrders: 'drafted' } }, next: ['field-verification'] },
+      { id: 'field-verification', name: 'Verify GPS, rail, turf, and timing evidence', type: 'userTask', role: 'track-superintendent', slaMinutes: 30, digitalTwin: { refs, syncMode: 'read', statePatch: { verification: 'pending' } }, next: ['queue-twin-sync'] },
+      { id: 'queue-twin-sync', name: 'Queue Digital Twin synchronization', type: 'serviceTask', action: () => ({ trackConfigurationTwinSync: 'queued-after-verification', noLiveActuatorControl: true }), digitalTwin: { refs, syncMode: 'write', statePatch: { trackConfiguration: 'verified' } }, next: ['done'] },
+      { id: 'done', name: 'Track configuration verification complete', type: 'endEvent' },
+    ],
+  };
 }
 
 export function generateGateMoveChange(current: TrackConfigurationChange, move: GateMoveRequest, sectors: TrackSector[] = []): TrackConfigurationChange {
@@ -371,6 +502,14 @@ export class TrackConfigurationPlatform {
   private twinVersions = new Map<string, number>();
   private sectors = new Map<string, TrackSector>();
   private courseLayouts = new Map<string, CourseLayout>();
+  private workOrderRecords = new Map<string, WorkOrder[]>();
+  private verificationRecords = new Map<string, TrackVerificationWorkflow>();
+  private approvalRequestRecords = new Map<string, ControlledActionRequest[]>();
+  private workflowInstances = new Map<string, WorkflowInstance>();
+
+  constructor(private readonly options: TrackConfigurationPlatformOptions = {}) {
+    this.registerEventContracts();
+  }
 
   registerSector(sector: TrackSector): TrackSector {
     const measuredLength = lineLengthMeters(sector.centerline);
@@ -389,13 +528,21 @@ export class TrackConfigurationPlatform {
     return layout;
   }
 
-  submit(change: TrackConfigurationChange): TrackConfigurationChange {
+  submit(change: TrackConfigurationChange, options: TrackConfigurationSubmitOptions = {}): TrackConfigurationChange {
     if (change.evidence.length === 0) throw new Error('track configuration changes require evidence');
     const sectorList = [...this.sectors.values()];
     const calculations = change.raceSetup.calculations ?? calculateRaceDistance(change.raceSetup, sectorList);
     const saved = { ...change, raceSetup: { ...change.raceSetup, calculations }, status: change.status === 'draft' ? 'pending-approval' as const : change.status };
+    const geospatial = validateTrackConfigurationChange(saved, options.boundaries ?? [], sectorList);
+    if (!geospatial.valid) throw new Error(`track configuration failed geospatial validation: ${geospatial.errors.join('; ')}`);
     this.changes.set(saved.id, saved);
+    this.workOrderRecords.set(saved.id, generateTrackWorkOrders(saved));
+    this.verificationRecords.set(saved.id, buildVerificationWorkflow(saved, this.workOrderRecords.get(saved.id)));
+    if (options.tenantId && this.options.approvals) this.approvalRequestRecords.set(saved.id, this.createApprovalRequests(saved, options.tenantId));
+    if (options.tenantId && options.startVerificationWorkflow && this.options.workflow) this.workflowInstances.set(saved.id, this.startVerificationWorkflow(saved, options.tenantId));
     this.audit(change.requestedBy, 'submit-track-configuration-change', saved.id, saved.requestedAt, saved.evidence);
+    void this.publish('track.configuration.change.requested', { changeId: saved.id, raceId: saved.raceSetup.raceId, status: saved.status, requiredApprovals: requiredApprovalsForChange(saved), noLiveActuatorControl: true }, saved.id);
+    void this.publish('track.configuration.approval.required', { changeId: saved.id, requiredApprovals: requiredApprovalsForChange(saved), approvalRequestIds: this.approvalRequests(saved.id).map((request) => request.id) }, saved.id);
     return saved;
   }
 
@@ -404,7 +551,10 @@ export class TrackConfigurationPlatform {
     const current = this.requireChange(changeId);
     const next = generateGateMoveChange(current, move, [...this.sectors.values()]);
     this.changes.set(next.id, next);
+    this.workOrderRecords.set(next.id, generateTrackWorkOrders(next));
+    this.verificationRecords.set(next.id, buildVerificationWorkflow(next, this.workOrderRecords.get(next.id)));
     this.audit(move.requestedBy, 'move-gate-and-recalculate-race-distance', next.id, move.requestedAt, next.evidence);
+    void this.publish('track.configuration.change.requested', { changeId: next.id, raceId: next.raceSetup.raceId, status: next.status, requiredApprovals: requiredApprovalsForChange(next), noLiveActuatorControl: true }, next.id);
     return next;
   }
 
@@ -412,18 +562,85 @@ export class TrackConfigurationPlatform {
     const current = this.requireChange(changeId);
     const next = approveTrackChange(current, approverRole, evidence, timestamp);
     this.changes.set(changeId, next);
+    this.workOrderRecords.set(changeId, generateTrackWorkOrders(next));
+    this.verificationRecords.set(changeId, buildVerificationWorkflow(next, this.workOrderRecords.get(changeId)));
     this.audit(approverRole, 'approve-track-configuration-change', changeId, timestamp, evidence);
+    void this.publish('track.configuration.approval.recorded', { changeId, approverRole, status: next.status, approvals: next.approvals }, changeId);
     return next;
+  }
+
+  executionPlan(changeId: string, boundaries: TrackBoundary[] = []): TrackConfigurationExecutionPlan {
+    return buildTrackConfigurationExecutionPlan(this.requireChange(changeId), boundaries, [...this.sectors.values()]);
+  }
+
+  approvalRequests(changeId: string): ControlledActionRequest[] {
+    return (this.approvalRequestRecords.get(changeId) ?? []).map((request) => structuredClone(request));
+  }
+
+  verificationWorkflow(changeId: string): TrackVerificationWorkflow {
+    const workflow = this.verificationRecords.get(changeId) ?? buildVerificationWorkflow(this.requireChange(changeId), this.workOrders(changeId));
+    return structuredClone(workflow);
+  }
+
+  workflowInstance(changeId: string): WorkflowInstance | undefined {
+    const instance = this.workflowInstances.get(changeId);
+    return instance ? structuredClone(instance) : undefined;
+  }
+
+  workOrders(changeId: string): WorkOrder[] {
+    const orders = this.workOrderRecords.get(changeId) ?? generateTrackWorkOrders(this.requireChange(changeId));
+    return orders.map((order) => ({ ...order, tasks: [...order.tasks], safetyHoldPoints: [...order.safetyHoldPoints], evidenceRequired: [...order.evidenceRequired] }));
+  }
+
+  issueWorkOrders(changeId: string, actor: string, issuedAt: string): WorkOrder[] {
+    const current = this.requireChange(changeId);
+    if (current.status !== 'approved') throw new Error('work orders can only be issued after track configuration approval');
+    if (actor === 'ai-agent' || actor.startsWith('ai-')) throw new Error('AI cannot issue track configuration work orders');
+    const orders = generateTrackWorkOrders(current).map((order) => ({ ...order, status: 'issued' as const }));
+    this.workOrderRecords.set(changeId, orders);
+    this.verificationRecords.set(changeId, buildVerificationWorkflow(current, orders));
+    this.audit(actor, 'issue-track-work-orders', changeId, issuedAt, orders.map((order) => order.id));
+    void this.publish('track.configuration.work-order.issued', { changeId, workOrders: orders, noLiveActuatorControl: true }, changeId);
+    return this.workOrders(changeId);
+  }
+
+  recordVerification(changeId: string, input: { verifiedBy: string; verifiedAt: string; evidence: string[] }): TrackVerificationWorkflow {
+    const current = this.requireChange(changeId);
+    if (current.status !== 'approved') throw new Error('field verification requires approved track configuration');
+    if (input.verifiedBy === 'ai-agent' || input.verifiedBy.startsWith('ai-')) throw new Error('track configuration verification requires authorized human evidence');
+    if (input.evidence.length === 0) throw new Error('verification requires evidence');
+    const orders = this.workOrders(changeId);
+    const requiredEvidence = [...new Set(orders.flatMap((order) => order.evidenceRequired))];
+    const missing = requiredEvidence.filter((item) => !input.evidence.includes(item));
+    if (missing.length) throw new Error(`verification evidence missing: ${missing.join(', ')}`);
+    const workflow: TrackVerificationWorkflow = {
+      id: `${changeId}-verification`,
+      changeId,
+      status: 'verified',
+      tasks: orders.map((order) => ({ id: `${order.id}-verify`, workOrderId: order.id, label: `Verified ${order.crew} work order ${order.id}`, requiredEvidence: [...new Set([...order.evidenceRequired, ...order.safetyHoldPoints])], status: 'verified' })),
+      requiredRoles: requiredApprovalsForChange(current),
+      digitalTwinSync: 'ready-for-sync',
+      actuatorControlAvailable: false,
+    };
+    this.verificationRecords.set(changeId, workflow);
+    this.workOrderRecords.set(changeId, orders.map((order) => ({ ...order, status: 'verified' })));
+    this.audit(input.verifiedBy, 'verify-track-configuration', changeId, input.verifiedAt, input.evidence);
+    void this.publish('track.configuration.verified', { changeId, verification: workflow, noLiveActuatorControl: true }, changeId);
+    return this.verificationWorkflow(changeId);
   }
 
   synchronizeDigitalTwin(changeId: string, syncedAt: string): DigitalTwinSyncRecord {
     const current = this.requireChange(changeId);
     if (current.status !== 'approved') throw new Error('only approved track changes can synchronize to the Digital Twin');
+    const verification = this.verificationRecords.get(changeId);
+    if (verification && verification.status !== 'verified') throw new Error('track configuration requires field verification before Digital Twin sync');
     const version = (this.twinVersions.get(current.raceSetup.raceId) ?? 0) + 1;
     this.twinVersions.set(current.raceSetup.raceId, version);
     const record = { twinId: `race-setup:${current.raceSetup.raceId}`, version, changeId, syncedAt, state: { ...current.raceSetup, sectors: current.raceSetup.sectorIds?.map((id) => this.sectors.get(id)), courseLayout: current.raceSetup.courseLayoutId ? this.courseLayouts.get(current.raceSetup.courseLayoutId) : undefined } };
     this.changes.set(changeId, { ...current, status: 'synced' });
     this.audit('digital-twin', 'synchronize-track-configuration', changeId, syncedAt, [`twin-version:${version}`]);
+    void this.publish('track.configuration.digital-twin.sync.requested', { changeId, twinId: record.twinId, version, verified: true }, changeId);
+    void this.publish('digital-twin.state.patch', { twinId: record.twinId, patch: record.state, actor: 'track-configuration-platform', observedAt: syncedAt }, record.twinId);
     return record;
   }
 
@@ -452,6 +669,45 @@ export class TrackConfigurationPlatform {
   }
 
   private audit(actor: string, action: string, changeId: string, timestamp: string, evidence: string[]): void {
-    this.audits.push({ id: `audit-${this.audits.length + 1}`, actor, action, timestamp, changeId, evidence: [...evidence] });
+    const entry = { id: `audit-${this.audits.length + 1}`, actor, action, timestamp, changeId, evidence: [...evidence] };
+    this.audits.push(entry);
+    this.options.auditLog?.append({ id: `audit-track-config-${this.audits.length}`, type: action.includes('approve') ? 'approval' : 'configuration-change', actor, timestamp, payload: { action, changeId, evidence }, subjectId: changeId, severity: 'warning', regulations: ['HISA', 'ARCI', 'StateRacingCommission'], evidenceIds: evidence });
+  }
+
+  private createApprovalRequests(change: TrackConfigurationChange, tenantId: string): ControlledActionRequest[] {
+    const actions = this.controlledActionsFor(change);
+    return actions.map((action) => this.options.approvals!.createRequest({
+      tenantId,
+      action,
+      target: change.id,
+      requestedBy: change.requestedBy,
+      actorType: change.requestedBy.startsWith('ai-') ? 'ai-agent' : 'human',
+      reason: change.reason,
+      evidence: [...change.evidence, `race:${change.raceSetup.raceId}`, `approval-roles:${requiredApprovalsForChange(change).join('|')}`],
+      workflowInstanceId: this.workflowInstances.get(change.id)?.id,
+    }));
+  }
+
+  private controlledActionsFor(change: TrackConfigurationChange): ControlledAction[] {
+    const actions = new Set<ControlledAction>(['race-office-configuration']);
+    if (change.kind === 'race-distance' || change.kind === 'gate-placement' || change.kind === 'race-setup') actions.add('race-distance-configuration');
+    if (change.kind === 'gate-placement' || change.kind === 'race-distance') actions.add('starting-gate-move');
+    return [...actions];
+  }
+
+  private startVerificationWorkflow(change: TrackConfigurationChange, tenantId: string): WorkflowInstance {
+    const definition = trackConfigurationWorkflowDefinition(tenantId, change);
+    this.options.workflow!.register(definition);
+    return this.options.workflow!.start(definition.id, { tenantId, priority: 'high', digitalTwinRefs: [`race-setup:${change.raceSetup.raceId}`, `starting-gate:${change.raceSetup.gatePlacement.gateId}`], payload: { changeId: change.id, raceId: change.raceSetup.raceId, noLiveActuatorControl: true } }, change.requestedBy, change.requestedAt);
+  }
+
+  private registerEventContracts(): void {
+    for (const type of ['track.configuration.change.requested', 'track.configuration.approval.required', 'track.configuration.approval.recorded', 'track.configuration.work-order.issued', 'track.configuration.verified', 'track.configuration.digital-twin.sync.requested']) {
+      this.options.eventBus?.registerEvent({ type, version: 1, description: `Track configuration ${type}`, owner: { service: 'track-configuration-platform', team: 'racetrack-platform', accountableRole: 'track-superintendent' }, payloadFields: ['changeId'], compliance: 'regulated' });
+    }
+  }
+
+  private async publish(type: string, payload: Record<string, unknown>, aggregateId: string): Promise<void> {
+    await this.options.eventBus?.publish({ type, payload, aggregateId, producer: 'track-configuration-platform', metadata: { compliance: 'regulated', team: 'racetrack-platform', accountableRole: 'track-superintendent' } });
   }
 }

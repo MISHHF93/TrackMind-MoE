@@ -25,10 +25,13 @@ test('digital twin graph stores asset relationships and real-time state history'
   graph.upsertNode({ id: 'horse-1', kind: 'biological', labels: ['Horse'], name: 'Sample Horse', state: { stall: 'A1' }, updatedAt: '2026-06-13T00:00:00Z' });
   graph.upsertNode({ id: 'race-1', kind: 'operational', labels: ['Race'], name: 'Race 1', state: { status: 'scheduled' }, updatedAt: '2026-06-13T00:00:00Z' });
   graph.relate({ from: 'horse-1', to: 'race-1', type: 'PARTICIPATES_IN' });
+  graph.relate({ from: 'horse-1', to: 'race-1', type: 'DEPENDS_ON' });
   const updated = graph.applyStateUpdate({ nodeId: 'horse-1', patch: { gps: [38.1, -77.1] }, observedAt: '2026-06-13T00:01:00Z', source: 'gps' });
   assert.deepEqual(updated.state.gps, [38.1, -77.1]);
-  assert.equal(graph.neighborhood('horse-1').relationships.length, 1);
+  assert.equal(graph.neighborhood('horse-1').relationships.length, 2);
   assert.equal(graph.history('horse-1').length, 1);
+  assert.equal(graph.dependencyGraph(['horse-1']).relationships.length, 1);
+  assert.deepEqual(graph.stateAt('horse-1', '2026-06-13T00:01:00Z').gps, [38.1, -77.1]);
 });
 
 test('telemetry engine validates high volume telemetry batches', () => {

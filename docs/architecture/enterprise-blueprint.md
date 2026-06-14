@@ -37,7 +37,7 @@ flowchart LR
 - `ai/` contains MoE routing, expert agents, evaluation harnesses, model cards, and responsible AI controls.
 - `workflows/` contains durable workflow definitions and workers for human-in-the-loop processes.
 - `compliance/` contains control catalogs, evidence collection, policy-as-code mappings, and audit runbooks.
-- `integrations/` contains adapters for HISA, wagering providers, weather, camera systems, IoT, and payment/fan systems.
+- `integrations/` contains adapter-ready patterns for HISA-aligned, wagering, weather, camera, IoT, and payment/fan-system categories; a category mention is not a claim that any external provider is integrated, licensed, or approved.
 - `infra/` contains Azure Bicep/Terraform modules, environment overlays, Azure Policy, managed identities, network, observability, and security baselines.
 - `tests/` contains cross-service contract, end-to-end, performance, and security tests.
 - `deploy/` contains CI/CD templates, release automation, Helm/Kubernetes assets, and operational scripts.

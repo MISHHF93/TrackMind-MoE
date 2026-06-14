@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test tests/*.test.mjs"
+    "test": "npm run build && node ../../scripts/run-node-tests.mjs tests/*.test.mjs"
   },
   "devDependencies": {}
 }

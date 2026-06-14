@@ -1,4 +1,4 @@
-import type { ExpertDomain, ProtectedAction } from '@trackmind/shared';
+import type { ApprovalStatus, ExpertDomain, ProtectedAction } from '@trackmind/shared';
 import { protectedActions } from '@trackmind/shared';
 import type { ApprovalStore } from './approvals.js';
 import { ImmutableAuditLog, type AuditLogEntry } from './auditLog.js';
@@ -11,7 +11,7 @@ export interface ExpertResult {
   requiredApprovals: ProtectedAction[];
 }
 
-export type RecommendationStatus = 'draft' | 'pending-approval' | 'approved' | 'rejected';
+export type RecommendationStatus = Extract<ApprovalStatus, 'draft' | 'pending-approval' | 'approved' | 'rejected'>;
 export type ConflictSeverity = 'low' | 'medium' | 'high';
 export type WorkflowTarget = 'race-control' | 'stewards' | 'veterinary' | 'security' | 'maintenance' | 'weather-desk' | 'finance' | 'executive-briefing' | 'compliance';
 
@@ -113,16 +113,29 @@ const workflowByDomain: Record<ExpertDomain, WorkflowTarget> = {
   RaceOps: 'race-control', Stewarding: 'stewards', EquineSafety: 'veterinary', VetCompliance: 'veterinary', TrackSurface: 'maintenance', WeatherEnvironment: 'weather-desk', WageringIntegrity: 'finance', TicketingFanExperience: 'race-control', SecuritySOC: 'security', FacilitiesIoT: 'maintenance', MaintenanceOps: 'maintenance', FinanceRevenue: 'finance', LegalRegulatory: 'compliance', ExecutiveDecisionSupport: 'executive-briefing', ResponsibleAIGovernor: 'compliance',
 };
 
+export const expertModuleRegistry = Object.freeze((Object.keys(domainKeywords) as ExpertDomain[]).map((domain) => ({
+  domain,
+  workflowTarget: workflowByDomain[domain],
+  keywords: [...domainKeywords[domain]],
+})));
+export const requiredExpertModules = expertModuleRegistry.map((module) => module.domain);
+
 const protectedActionKeywords: Array<[ProtectedAction, RegExp]> = [
   ['race-start', /\b(start|open)\b.*\brace\b|\brace\b.*\bstart\b/i],
   ['race-stop', /\bstop\b.*\brace\b|\brace\b.*\bstop\b|cancel.*race|delay.*race/i],
-  ['official-results', /official result|finali[sz]e result|publish result/i],
+  ['official-results', /official result|finali[sz]e result|publish result|declare winner/i],
+  ['modify-official-results', /modify.*result|change.*result|alter.*placing/i],
   ['scratch-horse', /scratch/i],
   ['medication-decision', /medication|drug|treatment/i],
   ['clear-vet-flag', /clear.*vet.*flag|vet.*flag.*clear/i],
   ['emergency-action', /emergency|evacuation|alert/i],
   ['payout', /payout|settle wager|pay|refund/i],
   ['disciplinary-decision', /disciplinary|suspend|fine/i],
+  ['steward-ruling', /steward.*ruling|issue.*ruling|official.*ruling/i],
+  ['starting-gate-move', /gate move|move.*gate|starting gate.*move|execute.*gate/i],
+  ['track-closure', /close.*track|track.*closure/i],
+  ['track-reopen', /reopen.*track|open.*track/i],
+  ['emergency-personnel-override', /override.*emergency.*personnel|emergency.*personnel.*override/i],
 ];
 
 const makeExpert = (domain: ExpertDomain): ExpertStub => async (request) => {

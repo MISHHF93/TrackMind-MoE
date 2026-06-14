@@ -39,6 +39,7 @@ test('race distance configuration follows approval-gated audit and event pattern
   const request = service.createRaceDistanceDraft({ tenantId: 'track-1', raceId: 'race-7', distanceMeters: 1400, gateSectorId: 'chute', requestedBy: 'secretary-1', reason: 'Race card update', evidence: ['conditions-book-change'] });
   assert.equal(request.action, 'race-distance-configuration');
   service.approve(request.id, { id: 'secretary-1', roles: ['racing-secretary'], human: true }, 'Race office approved', evidence);
+  service.approve(request.id, { id: 'super-1', roles: ['track-superintendent'], human: true }, 'Track operations approved', evidence);
   service.approve(request.id, { id: 'steward-1', roles: ['steward'], human: true }, 'Stewards approved', evidence);
   const token = service.authorize(request.id, 'race-distance-configuration', 'race-7', 'track-1', { id: 'steward-1', roles: ['steward'], human: true });
   const configuration = service.applyApprovedRaceDistance({ token, raceId: 'race-7', distanceMeters: 1400, gateSectorId: 'chute', actor: 'secretary-1' });

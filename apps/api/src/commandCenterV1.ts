@@ -42,6 +42,14 @@ export class TrackMindCommandCenterV1Service {
     return this.nexus.approvals.createRequest({ tenantId: input.tenantId, action: 'race-distance-configuration', target: input.raceId, requestedBy: input.requestedBy, actorType: 'human', reason: input.reason, evidence: [...input.evidence, `distance:${input.distanceMeters}`, `gate-sector:${input.gateSectorId}`] });
   }
 
+  createRailPositionDraft(input: { tenantId: string; raceId: string; railId: string; offsetMeters: number; requestedBy: string; reason: string; evidence: string[] }): ControlledActionRequest {
+    return this.nexus.approvals.createRequest({ tenantId: input.tenantId, action: 'race-office-configuration', target: input.raceId, requestedBy: input.requestedBy, actorType: 'human', reason: input.reason, evidence: [...input.evidence, `rail:${input.railId}`, `offset-meters:${input.offsetMeters}`, 'draft-only:no-live-actuator-control'] });
+  }
+
+  createTurfConfigurationDraft(input: { tenantId: string; raceId: string; lane: string; going: string; requestedBy: string; reason: string; evidence: string[] }): ControlledActionRequest {
+    return this.nexus.approvals.createRequest({ tenantId: input.tenantId, action: 'race-office-configuration', target: input.raceId, requestedBy: input.requestedBy, actorType: 'human', reason: input.reason, evidence: [...input.evidence, `turf-lane:${input.lane}`, `going:${input.going}`, 'draft-only:no-live-actuator-control'] });
+  }
+
   approve(requestId: string, actor: ApprovalActor, reason: string, evidence: string[]) { return this.nexus.approvals.decide(requestId, actor, 'approved', reason, evidence); }
   authorize(requestId: string, action: 'starting-gate-move' | 'race-distance-configuration', target: string, tenantId: string, actor: ApprovalActor): ApprovalToken { return this.nexus.approvals.authorizeExecution({ requestId, action, target, tenantId, actor }); }
 
@@ -50,8 +58,10 @@ export class TrackMindCommandCenterV1Service {
     this.nexus.approvals.assertAuthorized(input.token, 'starting-gate-move', this.gatePosition.gateId, input.token.tenantId);
     this.gatePosition = { gateId: this.gatePosition.gateId, sectorId: input.sectorId, metersFromStart: input.metersFromStart, gpsVerified: true, lastApprovedRequestId: input.token.requestId };
     this.twinVersion += 1;
-    void this.nexus.eventBus.publish({ type: 'digital-twin.state.patch', payload: this.gatePosition, producer: 'trackmind-command-center-v1', metadata: { compliance: 'regulated', team: 'racetrack-platform', accountableRole: 'operations-commander' } });
-    this.nexus.auditLog.append({ id: `audit-gate-${this.twinVersion}`, type: 'configuration-change', actor: input.actor, timestamp: now(), payload: this.gatePosition, severity: 'warning', regulations: ['HISA', 'ARCI'] });
+    const timestamp = now();
+    const twinId = 'twin:main-track:gate-1';
+    const audit = this.nexus.auditLog.append({ id: `audit-gate-${this.twinVersion}`, type: 'configuration-change', actor: input.actor, actorType: 'human', timestamp, action: 'starting-gate.move.approved', actionClass: 'config', subjectId: this.gatePosition.gateId, target: this.gatePosition.gateId, tenantId: input.token.tenantId, correlationId: input.token.requestId, payload: { ...this.gatePosition, approvalRequestId: input.token.requestId, twinId }, severity: 'warning', regulations: ['HISA', 'ARCI'], evidenceIds: [input.token.requestId, twinId] });
+    void this.nexus.eventBus.publish({ type: 'digital-twin.state.patch', payload: { ...this.gatePosition, tenantId: input.token.tenantId, racetrackId: 'main-track', approvalToken: input.token, approvalRef: input.token.requestId, auditRef: audit.id, digitalTwinRef: twinId, evidence: [input.token.requestId, audit.id] }, aggregateId: twinId, correlationId: input.token.requestId, producer: 'trackmind-command-center-v1', tenantId: input.token.tenantId, racetrackId: 'main-track', actor: { id: input.actor, type: 'human' }, subject: { id: twinId, type: 'digital-twin', tenantId: input.token.tenantId }, evidence: [input.token.requestId, audit.id], auditRef: audit.id, digitalTwinRef: twinId, approvalRef: input.token.requestId, metadata: { tenantId: input.token.tenantId, racetrackId: 'main-track', compliance: 'regulated', team: 'racetrack-platform', accountableRole: 'operations-commander', regulations: ['HISA', 'ARCI'] } });
     return this.gatePosition;
   }
 
@@ -60,8 +70,10 @@ export class TrackMindCommandCenterV1Service {
     this.nexus.approvals.assertAuthorized(input.token, 'race-distance-configuration', input.raceId, input.token.tenantId);
     this.raceDistanceConfiguration = { raceId: input.raceId, distanceMeters: input.distanceMeters, gateSectorId: input.gateSectorId, configuredBy: input.actor, approvedRequestId: input.token.requestId };
     this.twinVersion += 1;
-    void this.nexus.eventBus.publish({ type: 'digital-twin.state.patch', payload: this.raceDistanceConfiguration, producer: 'trackmind-command-center-v1', metadata: { compliance: 'regulated', team: 'racetrack-platform', accountableRole: 'racing-secretary' } });
-    this.nexus.auditLog.append({ id: `audit-distance-${this.twinVersion}`, type: 'configuration-change', actor: input.actor, timestamp: now(), payload: this.raceDistanceConfiguration, severity: 'warning', regulations: ['HISA', 'ARCI'] });
+    const timestamp = now();
+    const twinId = `twin:main-track:${input.raceId}`;
+    const audit = this.nexus.auditLog.append({ id: `audit-distance-${this.twinVersion}`, type: 'configuration-change', actor: input.actor, actorType: 'human', timestamp, action: 'race-distance.configuration.approved', actionClass: 'config', subjectId: input.raceId, target: input.raceId, tenantId: input.token.tenantId, correlationId: input.token.requestId, payload: { ...this.raceDistanceConfiguration, approvalRequestId: input.token.requestId, twinId }, severity: 'warning', regulations: ['HISA', 'ARCI'], evidenceIds: [input.token.requestId, twinId] });
+    void this.nexus.eventBus.publish({ type: 'digital-twin.state.patch', payload: { ...this.raceDistanceConfiguration, tenantId: input.token.tenantId, racetrackId: 'main-track', approvalToken: input.token, approvalRef: input.token.requestId, auditRef: audit.id, digitalTwinRef: twinId, evidence: [input.token.requestId, audit.id] }, aggregateId: twinId, correlationId: input.token.requestId, producer: 'trackmind-command-center-v1', tenantId: input.token.tenantId, racetrackId: 'main-track', actor: { id: input.actor, type: 'human' }, subject: { id: twinId, type: 'digital-twin', tenantId: input.token.tenantId }, evidence: [input.token.requestId, audit.id], auditRef: audit.id, digitalTwinRef: twinId, approvalRef: input.token.requestId, metadata: { tenantId: input.token.tenantId, racetrackId: 'main-track', compliance: 'regulated', team: 'racetrack-platform', accountableRole: 'racing-secretary', regulations: ['HISA', 'ARCI'] } });
     return this.raceDistanceConfiguration;
   }
 
@@ -75,8 +87,48 @@ export interface CommandCenterContractSnapshot { assets: AssetMarkerDto[]; races
 export function createCommandCenterContractSnapshot(service = new TrackMindCommandCenterV1Service()): CommandCenterContractSnapshot {
   const snapshot = service.snapshot();
   const assets = snapshot.assets.map((asset): AssetMarkerDto => assertContract('AssetMarkerDto', { ...asset, twinId: asset.id === 'gate-1' ? 'twin:main-track:gate-1' : `twin:main-track:${asset.id}` }, apiContractSchemas.AssetMarkerDto));
-  const approvals = snapshot.pendingApprovals.map((request): ApprovalDto => assertContract('ApprovalDto', { id: request.id, action: request.action, target: request.target, requestedBy: request.requestedBy, status: request.status, createdAt: request.createdAt, expiresAt: request.expiresAt, evidence: request.evidence, mock: false }, apiContractSchemas.ApprovalDto));
-  const auditEvents = snapshot.auditEvents.map((event): AuditEventDto => assertContract('AuditEventDto', { id: event.id, type: event.type, actor: event.actor, timestamp: event.timestamp, subjectId: event.subjectId, severity: event.severity ?? 'info', hash: event.hash, previousHash: event.previousHash, mock: false }, apiContractSchemas.AuditEventDto));
+  const approvals = snapshot.pendingApprovals.map((request): ApprovalDto => assertContract('ApprovalDto', {
+    id: request.id,
+    action: request.action,
+    target: request.target,
+    tenantId: request.tenantId,
+    racetrackId: 'main-track',
+    requestedBy: request.requestedBy,
+    status: request.status,
+    createdAt: request.createdAt,
+    expiresAt: request.expiresAt,
+    evidence: request.evidence,
+    mock: false,
+    queue: request.action.toString().includes('surface') ? 'surface' : request.action === 'race-start' ? 'race-day' : 'operations',
+    priority: request.action === 'race-start' ? 'critical' : 'high',
+    affectedAssets: [request.target],
+    actor: { id: request.requestedBy, displayName: request.requestedBy, role: request.actorType, actorType: request.actorType },
+    requiredRoles: [...new Set(request.decisions.flatMap((decision) => decision.roles))],
+    approvalPolicy: String(request.action),
+    correlationId: request.id,
+    workflowId: request.workflowInstanceId,
+    auditIds: snapshot.auditEvents.filter((event) => event.payload && JSON.stringify(event.payload).includes(request.id)).map((event) => event.id),
+    history: request.decisions.map((decision, index) => ({ id: `${request.id}-decision-${index + 1}`, actor: { id: decision.actorId, displayName: decision.actorId, role: decision.roles.join(', '), actorType: 'human' as const }, decision: decision.decision, reason: decision.reason, evidence: decision.evidence, timestamp: decision.decidedAt })),
+    exportFields: ['id', 'tenantId', 'racetrackId', 'action', 'target', 'status', 'requestedBy', 'createdAt', 'expiresAt', 'correlationId'],
+  }, apiContractSchemas.ApprovalDto));
+  const auditEvents = snapshot.auditEvents.map((event): AuditEventDto => assertContract('AuditEventDto', {
+    id: event.id,
+    type: event.type,
+    actor: event.actor,
+    timestamp: event.timestamp,
+    subjectId: event.subjectId,
+    severity: event.severity ?? 'info',
+    hash: event.hash,
+    previousHash: event.previousHash,
+    mock: false,
+    correlationId: event.correlationId,
+    workflowId: event.workflowId,
+    actorDetails: { id: event.actor, displayName: event.actor, role: event.type, actorType: event.actor === 'system' ? 'system' : 'service' },
+    affectedAssets: event.subjectId ? [event.subjectId] : [],
+    evidenceIds: event.evidenceIds ?? [],
+    retainedUntil: event.retainedUntil,
+    exportFields: ['id', 'type', 'actor', 'timestamp', 'subjectId', 'hash', 'previousHash', 'correlationId'],
+  }, apiContractSchemas.AuditEventDto));
   const digitalTwinState = snapshot.digitalTwinState.map((state): DigitalTwinStateDto => assertContract('DigitalTwinStateDto', { ...state, mock: false }, apiContractSchemas.DigitalTwinStateDto));
   const gatePosition = assertContract('GatePositionDto', { ...snapshot.gatePosition, mock: false }, apiContractSchemas.GatePositionDto);
   const raceDistanceConfiguration = assertContract('RaceDistanceConfigurationDto', { ...snapshot.raceDistanceConfiguration, mock: false }, apiContractSchemas.RaceDistanceConfigurationDto);

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GeospatialOperationsService } from '../dist/index.js';
+import { GeospatialOperationsService } from '../dist/geospatialOperations.js';
+import { buildTrackConfigurationSnapshot } from '../dist/trackConfiguration.js';
 
 const baseAsset = (assetId, assetType, tags, location, maintenance = 'ok') => ({
   assetId, externalIds: [], name: assetId, assetType, domain: 'operations', lifecycleStatus: 'active', riskLevel: 'medium',
@@ -33,4 +34,30 @@ test('geospatial operations renders Digital Twin racetrack map with filters, ove
   assert.ok(map.playback.length >= 3);
   assert.deepEqual(service.render({ layers: ['camera'] }).features.map((feature) => feature.layer), ['camera']);
   assert.equal(service.apiDefinition().basePath, '/api/v1/geospatial');
+});
+
+test('geospatial operations ingests track configuration snapshots for gate, rail, and turf layers', () => {
+  const service = new GeospatialOperationsService({ trackId: 'belmont-main' });
+  const snapshot = buildTrackConfigurationSnapshot(
+    [{ id: 'main-turf', name: 'Main Turf', surface: 'turf', polygon: [{ latitude: 38.0, longitude: -77.0 }, { latitude: 38.0, longitude: -76.9 }, { latitude: 38.1, longitude: -76.9 }, { latitude: 38.1, longitude: -77.0 }] }],
+    [{ id: 'stretch', name: 'Stretch', surface: 'turf', kind: 'straight', centerline: { points: [{ latitude: 38.04, longitude: -76.96 }, { latitude: 38.05, longitude: -76.94 }] }, lengthMeters: 500, widthMeters: 24, restrictions: ['portable-rail-clearance'] }],
+    [],
+    [{
+      raceId: 'race-7',
+      distanceMeters: 1600,
+      surface: 'turf',
+      maxFieldSize: 12,
+      gatePlacement: { gateId: 'gate-a', raceId: 'race-7', distanceMeters: 1600, location: { latitude: 38.05, longitude: -76.95 }, headingDegrees: 92 },
+      railPosition: { railId: 'rail-b', offsetMeters: 6, effectiveFrom: '2026-06-13T17:00:00Z', protectedTurns: ['far-turn'] },
+      turfConfiguration: { lane: 'B', going: 'good', irrigationMillimeters: 2, mowingHeightMillimeters: 110, resting: false },
+      surfaceAllocation: { surface: 'turf', purpose: 'racing', start: '2026-06-13T18:00:00Z', end: '2026-06-13T22:00:00Z' },
+      regulatoryJurisdiction: 'US-HISA-state-racing-commission',
+    }],
+    '2026-06-13T10:00:00Z'
+  );
+  service.ingestTrackConfiguration(snapshot);
+  const map = service.render({}, 16);
+  assert.ok(map.features.some((feature) => feature.id === 'gate:gate-a:race-7' && feature.layer === 'starting-gate'));
+  assert.ok(map.features.some((feature) => feature.id === 'rail:rail-b:race-7' && feature.layer === 'rail'));
+  assert.ok(map.features.some((feature) => feature.id === 'turf:B:race-7' && feature.properties.going === 'good'));
 });

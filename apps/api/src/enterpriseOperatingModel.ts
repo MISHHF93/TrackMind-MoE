@@ -1,5 +1,7 @@
+import type { ApprovalStatus as SharedApprovalStatus } from '@trackmind/shared';
+
 export type Sensitivity = 'public' | 'internal' | 'confidential' | 'restricted';
-export type ApprovalStatus = 'draft' | 'pending-approval' | 'approved' | 'rejected';
+export type ApprovalStatus = Extract<SharedApprovalStatus, 'draft' | 'pending-approval' | 'approved' | 'rejected'>;
 export interface DataSourceDescriptor { id: string; domain: string; system: string; tenantId?: string; sensitivity: Sensitivity; owner: string; regulatoryBoundary?: string }
 export interface OntologyEntity { name: string; description: string; attributes: string[]; relationships: string[] }
 export interface SchemaMapping { sourceId: string; targetEntity: string; fieldMap: Record<string, string>; transformations: string[]; lineage: string[] }

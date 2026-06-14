@@ -40,6 +40,15 @@ export interface FoundationTwin {
   regulatoryRefs: string[];
   health: FoundationHealth;
   riskScore: number;
+  healthIndicators: FoundationHealthIndicator[];
+}
+
+export interface FoundationHealthIndicator {
+  name: string;
+  status: 'ok' | 'watch' | 'critical';
+  value: unknown;
+  rationale: string;
+  updatedAt: string;
 }
 
 export interface FoundationRelationship {
@@ -75,7 +84,7 @@ export class DigitalTwinFoundationPlatform {
   private readonly history = new Map<string, FoundationTwin[]>();
   private readonly auditTrail: FoundationAuditEvent[] = [];
 
-  registerTwin(input: Omit<FoundationTwin, 'version' | 'telemetryBindings' | 'controls' | 'dependencies' | 'regulatoryRefs' | 'health' | 'riskScore'> & Partial<Pick<FoundationTwin, 'version' | 'telemetryBindings' | 'controls' | 'dependencies' | 'regulatoryRefs' | 'health' | 'riskScore'>>): FoundationTwin {
+  registerTwin(input: Omit<FoundationTwin, 'version' | 'telemetryBindings' | 'controls' | 'dependencies' | 'regulatoryRefs' | 'health' | 'riskScore' | 'healthIndicators'> & Partial<Pick<FoundationTwin, 'version' | 'telemetryBindings' | 'controls' | 'dependencies' | 'regulatoryRefs' | 'health' | 'riskScore' | 'healthIndicators'>>): FoundationTwin {
     const existing = this.twins.get(input.id);
     const next: FoundationTwin = {
       ...existing,
@@ -88,6 +97,7 @@ export class DigitalTwinFoundationPlatform {
       regulatoryRefs: [...(input.regulatoryRefs ?? existing?.regulatoryRefs ?? [])],
       health: input.health ?? existing?.health ?? 'healthy',
       riskScore: input.riskScore ?? existing?.riskScore ?? 0,
+      healthIndicators: input.healthIndicators ?? existing?.healthIndicators ?? this.healthIndicators(input.health ?? existing?.health ?? 'healthy', input.riskScore ?? existing?.riskScore ?? 0, input.updatedAt),
     };
     this.persist(next, 'registry', existing?.version, ['twin-registration']);
     return this.clone(next);
@@ -105,7 +115,7 @@ export class DigitalTwinFoundationPlatform {
     if (update.expectedVersion !== undefined && current.version !== update.expectedVersion) throw new Error('Digital Twin version conflict');
     const riskScore = this.scoreRisk(current, update);
     const health: FoundationHealth = riskScore >= 60 ? 'critical' : riskScore >= 35 ? 'degraded' : 'healthy';
-    const next: FoundationTwin = { ...current, state: { ...current.state, ...update.patch }, updatedAt: update.observedAt, version: current.version + 1, riskScore, health };
+    const next: FoundationTwin = { ...current, state: { ...current.state, ...update.patch }, updatedAt: update.observedAt, version: current.version + 1, riskScore, health, healthIndicators: this.healthIndicators(health, riskScore, update.observedAt, update.telemetry?.sensorId) };
     this.persist(next, update.sourceSystem, current.version, update.telemetry ? [`telemetry:${update.telemetry.sensorId}:${update.telemetry.metric}`] : ['state-sync']);
     return this.clone(next);
   }
@@ -142,8 +152,13 @@ export class DigitalTwinFoundationPlatform {
     return this.auditTrail.filter((event) => !twinId || event.twinId === twinId).map((event) => ({ ...event, evidence: [...event.evidence] }));
   }
 
+  healthIndicatorsFor(twinId: string): FoundationHealthIndicator[] {
+    return this.requireTwin(twinId).healthIndicators.map((indicator) => ({ ...indicator }));
+  }
+
   private requireTwin(id: string) { const twin = this.twins.get(id); if (!twin) throw new Error(`Unknown Digital Twin ${id}`); return twin; }
   private persist(twin: FoundationTwin, actor: string, beforeVersion: number | undefined, evidence: string[]) { this.twins.set(twin.id, twin); this.history.set(twin.id, [...(this.history.get(twin.id) ?? []), this.clone(twin)]); this.auditTrail.push({ id: `audit-${this.auditTrail.length + 1}`, twinId: twin.id, actor, action: 'upsert-state', occurredAt: twin.updatedAt, beforeVersion, afterVersion: twin.version, evidence }); }
-  private clone(twin: FoundationTwin): FoundationTwin { return { ...twin, state: { ...twin.state }, geospatial: twin.geospatial ? { ...twin.geospatial } : undefined, telemetryBindings: twin.telemetryBindings.map((b) => ({ ...b })), controls: twin.controls.map((c) => ({ ...c, requiredApprovals: [...c.requiredApprovals] })), dependencies: [...twin.dependencies], regulatoryRefs: [...twin.regulatoryRefs] }; }
+  private clone(twin: FoundationTwin): FoundationTwin { return { ...twin, state: { ...twin.state }, geospatial: twin.geospatial ? { ...twin.geospatial } : undefined, telemetryBindings: twin.telemetryBindings.map((b) => ({ ...b })), controls: twin.controls.map((c) => ({ ...c, requiredApprovals: [...c.requiredApprovals] })), dependencies: [...twin.dependencies], regulatoryRefs: [...twin.regulatoryRefs], healthIndicators: twin.healthIndicators.map((indicator) => ({ ...indicator })) }; }
   private scoreRisk(twin: FoundationTwin, update: FoundationStateUpdate) { const healthPenalty = twin.health === 'critical' ? 30 : twin.health === 'degraded' ? 15 : 0; const sensorPenalty = update.telemetry && !twin.telemetryBindings.some((b) => b.sensorId === update.telemetry?.sensorId && b.metric === update.telemetry?.metric) ? 20 : 0; const numericPenalty = Object.values(update.patch).reduce<number>((sum, value) => typeof value === 'number' && value > 90 ? sum + Math.min(90, (value - 90) * 0.9) : sum, 0); return Math.min(100, Math.max(0, twin.riskScore * 0.5 + healthPenalty + sensorPenalty + numericPenalty)); }
+  private healthIndicators(health: FoundationHealth, riskScore: number, updatedAt: string, telemetrySensorId?: string): FoundationHealthIndicator[] { return [{ name: 'foundation-health', status: health === 'critical' ? 'critical' : health === 'degraded' ? 'watch' : 'ok', value: health, rationale: 'Foundation health derived from risk scoring and synchronized state.', updatedAt }, { name: 'risk-score', status: riskScore >= 60 ? 'critical' : riskScore >= 35 ? 'watch' : 'ok', value: riskScore, rationale: 'Risk score used for foundation health classification.', updatedAt }, { name: 'telemetry-source', status: telemetrySensorId ? 'ok' : 'watch', value: telemetrySensorId ?? 'not-provided', rationale: 'Latest synchronization telemetry provenance.', updatedAt }]; }
 }

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SecurityOperationsService } from '../dist/index.js';
+import { ImmutableAuditLog, RacetrackAssetRegistryService, SecurityOperationsService, UniversalEventBus } from '../dist/index.js';
 
-const fullActor = { id: 'sec-commander', permissions: ['security:read','security:sensitive:read','security:write','security:escalate','security:investigate'] };
+const fullActor = { id: 'sec-commander', roles: ['security'], tenantId: 'trackmind', human: true, permissions: ['security:read','security:sensitive:read','security:write','security:escalate','security:investigate'] };
 
 test('security operations enforces access control and creates auditable events/incidents', () => {
   const service = new SecurityOperationsService(() => '2026-06-14T00:00:00.000Z');
@@ -38,5 +38,45 @@ test('investigations and escalation workflows update dashboard queues and audit 
   assert.equal(workspace.dashboard.investigationQueue, 1);
   assert.equal(workspace.dashboard.cameraHealth.degraded, 1);
   assert.equal(workspace.auditRecords.at(-1).previousHash, workspace.auditRecords.at(-2).hash);
+});
+
+test('security operations mirrors actions to shared audit, events, and twin updates', () => {
+  const auditLog = new ImmutableAuditLog();
+  const eventBus = new UniversalEventBus();
+  const service = new SecurityOperationsService(() => '2026-06-14T00:00:00.000Z', { auditLog, eventBus });
+
+  service.recordAccessEvent(fullActor, { zoneId: 'zone-backstretch-medication', credentialId: 'cred-999', personDisplayName: 'Contractor C', personLegalName: 'Contractor Gamma', decision: 'denied', reason: 'after-hours critical zone access', occurredAt: '2026-06-14T00:00:00.000Z' });
+  const workspace = service.getWorkspace(fullActor);
+
+  assert.ok(workspace.sharedAuditRecords.some((record) => record.type === 'security-event' && record.subjectId === 'security:zone-backstretch-medication'));
+  assert.ok(eventBus.events({ type: 'security.access.checked' }).length >= 1);
+  assert.ok(workspace.events.some((event) => event.type === 'security.incident.created'));
+  assert.ok(workspace.twinUpdates.some((update) => update.twinId === 'twin:zone-backstretch-medication' && update.status === 'published'));
+});
+
+test('approved sensitive access can reveal protected fields and remains audited', () => {
+  const service = new SecurityOperationsService(() => '2026-06-14T00:00:00.000Z');
+  const auditor = { id: 'auditor-1', roles: ['read-only-auditor'], permissions: ['security:read'] };
+
+  service.checkCredential(fullActor, { credentialId: 'cred-sensitive', holderDisplayName: 'Visitor D', holderLegalName: 'Visitor Delta', zoneId: 'zone-grandstand', status: 'valid' });
+  service.requestSensitiveAccess(auditor, { reason: 'Compliance review', evidence: ['manager-ticket'] });
+  service.approveSensitiveAccess({ id: 'approval-sensitive-1', actorId: auditor.id, approver: 'security-manager', timestamp: '2026-06-14T00:00:00.000Z', reason: 'Approved compliance review', evidence: ['manager-ticket'] });
+  const workspace = service.getWorkspace(auditor);
+
+  assert.equal(workspace.credentialChecks[0].credentialId, 'cred-sensitive');
+  assert.ok(workspace.auditRecords.some((record) => record.action === 'sensitive-fields.accessed'));
+});
+
+test('camera assets sync to registry with shared audit evidence', async () => {
+  const auditLog = new ImmutableAuditLog();
+  const eventBus = new UniversalEventBus();
+  const registry = new RacetrackAssetRegistryService({ auditLog, eventBus });
+  const service = new SecurityOperationsService(() => '2026-06-14T00:00:00.000Z', { auditLog, eventBus, assetRegistry: registry });
+
+  const links = await service.syncCameraAssetsToRegistry({ id: 'asset-sync', tenantId: 'trackmind', scopes: ['assets:write','assets:read'] });
+
+  assert.ok(links.length >= 2);
+  assert.ok(registry.query({ domain: 'security' }, { id: 'asset-reader', tenantId: 'trackmind', scopes: ['assets:read'] }).assets.some((asset) => asset.assetType === 'SecurityCamera'));
+  assert.ok(auditLog.all().some((record) => record.type === 'security-event' && record.payload.action === 'security.asset.synced'));
 });
 

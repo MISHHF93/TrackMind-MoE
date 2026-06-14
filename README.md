@@ -18,7 +18,17 @@ The system treats a racetrack as a live digital twin: horses, people, restricted
 
 This repository is structured as the TrackMind Nexus enterprise monorepo: an Azure-first, API-first, event-driven Digital Twin platform for multi-racetrack Thoroughbred operations. The current build intent is documented in `docs/TRACKMIND_BUILD_INTENT.md`, the implementation plan is documented in `docs/TRACKMIND_IMPLEMENTATION_PLAN.md`, and the executable architecture package is documented in `docs/architecture/TRACKMIND_NEXUS_DEFINITION.md` with sequencing in `docs/architecture/IMPLEMENTATION_SEQUENCE.md`; new modules should inherit that intent and plan plus the standards in `docs/architecture/enterprise-blueprint.md`, `docs/engineering/coding-standards.md`, `docs/engineering/branching-strategy.md`, `docs/security/security-baseline.md`, and `templates/service-template`.
 
+The Racing Operating System and TrackMind Standardization Framework are documented in `docs/architecture/racing-operating-system-standardization-framework.md`. That document defines the principle that TrackMind standardizes racetrack operations digitally, not just software modules, while keeping HISA-aligned, ISO 42001, Digital Twin, AI, deployment-mode, and franchise/readiness language clear about what is metadata or operating-model intent versus implemented runtime capability or formal certification.
+
+The TrackMind Universal Artifact Framework is documented in `docs/architecture/universal-artifact-framework.md`. It defines the canonical path from inputs, events, artifacts, Digital Twins, feature metadata, AI models, recommendations, approvals, outputs, and audits while keeping storage, model-training, federation, and certification claims limited to documented contracts and readiness metadata unless production infrastructure exists.
+
+The TrackMind Racing Data API Hub is documented in `docs/architecture/racing-data-api-hub.md`. It defines the provider-agnostic licensed ingestion architecture for racing data, including adapter-ready provider categories, no-scraping and no-public-redistribution assumptions, raw landing, validation, normalization, canonical artifacts, entity resolution, data quality, API surfaces, frontend workspace expectations, Digital Twin/event/audit integration, and AI training restrictions without claiming that external providers are currently integrated or licensed.
+
 Enterprise domains are organized across `services`, `digital-twin`, `ai`, `workflows`, `compliance`, `integrations`, `infra`, `tests`, and `deploy` so future teams can add production modules with consistent tenant isolation, CQRS/event sourcing patterns, observability, compliance evidence, and human-governed AI automation.
+
+## Multi-Track Federation
+
+TrackMind Nexus now declares a read-only federation contract for the long-term Multi-Track Federation OS and Racing Intelligence Network vision. The contract carries `organizationId`, `tenantId`, `racetrackId`, track certification readiness, standard schema versions, governance, data-sharing policy, tenant isolation, consent, and retention boundaries. Cross-track benchmark and industry analytics fields are explicitly anonymized, aggregate-only, permission-governed metadata; no raw cross-track records or execution endpoints are exposed.
 
 ## Equine Intelligence Platform
 

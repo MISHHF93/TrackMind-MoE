@@ -4,6 +4,7 @@ import { CentralizedApprovalService, type ApprovalActor, type ControlledAction }
 import { DigitalTwinRuntime } from './digitalTwinRuntime.js';
 import { EnterpriseServiceRegistry, type ApiServiceDefinition } from './enterpriseApiGateway.js';
 import { UniversalEventBus, bindAuditLogToEvents, type EventContract } from './eventBus.js';
+import { facilitiesMaintenanceApiDefinition } from './facilitiesMaintenance.js';
 import { RacetrackAssetRegistryService, type AssetPrincipal } from './racetrackAssetRegistryService.js';
 import { racetrackAssetControlRegistry } from './racetrackControlRegistry.js';
 
@@ -42,7 +43,7 @@ export class TrackMindNexusFoundation {
     this.auditLog = options.auditLog ?? new ImmutableAuditLog();
     this.approvals = new CentralizedApprovalService({ eventBus: this.eventBus, auditLog: this.auditLog });
     this.assets = new RacetrackAssetRegistryService({ eventBus: this.eventBus, auditLog: this.auditLog });
-    this.twins = new DigitalTwinRuntime({ eventBus: this.eventBus, auditLog: this.auditLog });
+    this.twins = new DigitalTwinRuntime({ eventBus: this.eventBus, auditLog: this.auditLog, approvals: this.approvals });
     this.apiRegistry = new EnterpriseServiceRegistry();
     this.auditUnsubscribe = bindAuditLogToEvents(this.eventBus, this.auditLog, { consumerName: 'nexus-immutable-audit-sink' });
     this.registerNexusEvents();
@@ -50,7 +51,8 @@ export class TrackMindNexusFoundation {
   }
 
   async seedControlRegistry(principal: AssetPrincipal): Promise<number> {
-    for (const asset of racetrackAssetControlRegistry) {
+    const foundationSeedAssets = racetrackAssetControlRegistry.slice(0, 3);
+    for (const asset of foundationSeedAssets) {
       await this.assets.create({
         assetId: asset.assetId, externalIds: [], name: asset.assetType, assetType: asset.assetType, domain: asset.domain, riskLevel: asset.riskLevel,
         maintenance: { status: String((asset.state as Record<string, unknown>).maintenanceStatus ?? 'ok').toLowerCase() === 'out_of_service' ? 'out-of-service' : 'ok' },
@@ -59,7 +61,7 @@ export class TrackMindNexusFoundation {
         approvalPolicyId: asset.riskLevel === 'high' || asset.riskLevel === 'critical' ? 'critical-asset-dual-control' : 'standard-asset-approval', metadata: { azureTwinModel: `dtmi:trackmind:${asset.assetType};1` },
       }, principal);
     }
-    return racetrackAssetControlRegistry.length;
+    return foundationSeedAssets.length;
   }
 
   evaluateAiAction(input: { activity: string; requestedAction?: string; actorType: 'human'|'ai-agent'|'service'; approvalToken?: unknown }): NexusSafetyDecision {
@@ -94,7 +96,7 @@ export class TrackMindNexusFoundation {
   close() { this.auditUnsubscribe(); }
 
   private registerNexusEvents() { ['nexus.ai.recommendation.created','nexus.workflow.requested','nexus.api.invoked','approval.requested','approval.approved','approval.rejected','approval.execution-authorized'].forEach((type) => this.eventBus.registerEvent({ type, version: 1, description: `TrackMind Nexus ${type}`, owner, payloadFields: [], compliance: type.includes('approval') ? 'regulated' : 'internal' } as EventContract)); }
-  private registerApis() { [this.assets.apiDefinition(), this.twins.apiDefinition(), nexusApiDefinition('trackmind-nexus-operations','operations','/api/v1/operations'), nexusApiDefinition('trackmind-nexus-race-office','race-office','/api/v1/race-office'), nexusApiDefinition('trackmind-nexus-governance','governance','/api/v1/governance')].forEach((api) => this.apiRegistry.register(api)); }
+  private registerApis() { [this.assets.apiDefinition(), this.twins.apiDefinition(), facilitiesMaintenanceApiDefinition(), nexusApiDefinition('trackmind-nexus-operations','operations','/api/v1/operations'), nexusApiDefinition('trackmind-nexus-race-office','race-office','/api/v1/race-office'), nexusApiDefinition('trackmind-nexus-governance','governance','/api/v1/governance')].forEach((api) => this.apiRegistry.register(api)); }
 }
 
 function nexusApiDefinition(id: string, domain: string, basePath: string): ApiServiceDefinition { return { id, name: id.split('-').map((p) => p[0].toUpperCase()+p.slice(1)).join(' '), domain, version: 'v1', basePath, description: 'TrackMind Nexus safety-critical Azure-first API surface with approvals, audits, events, and Digital Twin integration.', owner: { team: 'racetrack-platform', productOwner: 'Director of Racing Operations', technicalOwner: 'Nexus Platform Owner', supportChannel: '#trackmind-nexus' }, lifecycle: 'active', auth: ['jwt','oauth2','mtls'], rateLimit: { requests: 600, perSeconds: 60, burst: 100 }, tags: ['nexus','safety-critical','azure'], slo: { availability: 99.95, latencyMs: 250 }, endpoints: [{ method: 'GET', path: '/', summary: 'List operational resources', scopes: ['read:any'] }, { method: 'POST', path: '/workflows', summary: 'Create an approval-gated workflow', scopes: ['ai:approve'] }, { method: 'GET', path: '/audit', summary: 'Review immutable audit evidence', scopes: ['compliance:audit'] }] }; }

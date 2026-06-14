@@ -1,13 +1,14 @@
 import type { ImmutableAuditLog } from './auditLog.js';
 import type { UniversalEventBus } from './eventBus.js';
 import type { ApiServiceDefinition } from './enterpriseApiGateway.js';
+import type { WorkforceReadinessSummary } from './workforceOperations.js';
 
 export type ReadinessDomain = 'track' | 'gate' | 'staffing' | 'veterinary' | 'stewards' | 'emergency' | 'security' | 'weather' | 'facility';
 export type ReadinessStatus = 'ready' | 'watch' | 'blocked';
 export type ReadinessSeverity = 'info' | 'advisory' | 'warning' | 'critical';
 
 export interface ReadinessCheck { domain: ReadinessDomain; label: string; score: number; status: ReadinessStatus; evidence: string[]; blockers: string[]; updatedAt: string; approvalRequired?: boolean; ownerRole: string; }
-export interface RaceDayReadinessInput { raceId: string; trackId: string; postTime: string; evaluatedAt: string; checks: ReadinessCheck[]; }
+export interface RaceDayReadinessInput { raceId: string; trackId: string; postTime: string; evaluatedAt: string; checks: ReadinessCheck[]; workforceReadiness?: WorkforceReadinessSummary; }
 export interface ReadinessEvent { id: string; raceId: string; type: 'readiness.evaluated' | 'readiness.warning' | 'readiness.approval-required' | 'readiness.blocked'; domain?: ReadinessDomain; severity: ReadinessSeverity; message: string; evidence: string[]; timestamp: string; }
 export interface OperationalWarning { id: string; raceId: string; domain: ReadinessDomain; severity: Exclude<ReadinessSeverity, 'info'>; message: string; recommendedAction: string; evidence: string[]; }
 export interface ReadinessApprovalRequirement { id: string; raceId: string; action: string; requiredRoles: string[]; reason: string; evidence: string[]; status: 'pending' | 'satisfied'; }
@@ -26,7 +27,7 @@ export class RaceDayReadinessService {
   constructor(private readonly deps: { eventBus?: UniversalEventBus; auditLog?: ImmutableAuditLog } = {}) {}
 
   evaluate(input: RaceDayReadinessInput, actor = 'readiness-service'): RaceDayReadinessAssessment {
-    const checks = this.normalizeChecks(input.checks, input.evaluatedAt);
+    const checks = this.normalizeChecks(input.workforceReadiness ? this.mergeWorkforceCheck(input.checks, input.workforceReadiness.raceDayCheck) : input.checks, input.evaluatedAt);
     const overallScore = Math.round(checks.reduce((sum, check) => sum + check.score, 0) / checks.length);
     const status: ReadinessStatus = checks.some((c) => c.status === 'blocked') || overallScore < 70 ? 'blocked' : checks.some((c) => c.status === 'watch') || overallScore < 90 ? 'watch' : 'ready';
     const warnings = checks.flatMap((check) => this.warningFor(input.raceId, check));
@@ -55,6 +56,7 @@ export class RaceDayReadinessService {
   apiDefinition(): ApiServiceDefinition { return { id: 'race-day-readiness', name: 'Race Day Readiness', domain: 'race-day', version: 'v1', basePath: '/api/v1/race-day-readiness', description: 'Continuously evaluates race readiness across track, gate, staffing, veterinary, stewards, emergency, security, weather, and facility health.', owner: { team: 'racing-operations', productOwner: 'Race Day Commander', technicalOwner: 'Operations Platform Owner', supportChannel: '#race-day-readiness' }, lifecycle: 'active', auth: ['jwt','oauth2','mtls'], rateLimit: { requests: 900, perSeconds: 60, burst: 150 }, tags: ['race-day','readiness','audit','approvals'], slo: { availability: 99.9, latencyMs: 200 }, endpoints: [{ method: 'POST', path: '/evaluations', summary: 'Evaluate readiness', scopes: ['race:write'] }, { method: 'GET', path: '/evaluations/{raceId}', summary: 'Get readiness assessment', scopes: ['race:read'] }, { method: 'GET', path: '/dashboard', summary: 'Readiness dashboard', scopes: ['race:read'] }, { method: 'GET', path: '/events', summary: 'Readiness events', scopes: ['race:read'] }] }; }
 
   private normalizeChecks(checks: ReadinessCheck[], at: string): ReadinessCheck[] { const byDomain = new Map(checks.map((c) => [c.domain, c])); return requiredDomains.map((domain) => byDomain.get(domain) ?? { domain, label: `${domain} readiness feed missing`, score: 0, status: 'blocked', evidence: [`missing:${domain}`], blockers: ['required readiness input missing'], updatedAt: at, approvalRequired: true, ownerRole: domain === 'veterinary' ? 'veterinarian' : domain === 'stewards' ? 'steward' : 'operations' }); }
+  private mergeWorkforceCheck(checks: ReadinessCheck[], workforceCheck: ReadinessCheck): ReadinessCheck[] { return [...checks.filter((check) => check.domain !== 'staffing'), workforceCheck]; }
   private warningFor(raceId: string, check: ReadinessCheck): OperationalWarning[] { if (check.status === 'ready') return []; const severity = check.status === 'blocked' ? 'critical' : 'warning'; return [{ id: id('warn-ready'), raceId, domain: check.domain, severity, message: `${check.label}: ${check.blockers.join('; ') || 'readiness watch'}`, recommendedAction: `Route ${check.domain} exception to ${check.ownerRole} and require documented clearance before race start.`, evidence: check.evidence }]; }
 }
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EquineIntelligencePlatform } from '../dist/index.js';
+import { CentralizedApprovalService, EquineIntelligencePlatform, ImmutableAuditLog, UniversalEventBus } from '../dist/index.js';
 
 test('equine intelligence platform manages lifecycle, eligibility, audit, privacy, and twin sync', () => {
   const platform = new EquineIntelligencePlatform();
@@ -125,4 +125,44 @@ test('non-veterinarians cannot update veterinary status or impersonate AI risk r
   assert.throws(() => platform.updateVeterinaryStatus('horse-vet-guard', { status: 'cleared', summary: 'Nope', updatedAt: '2026-06-12T15:00:00Z', requiresVeterinarian: true }, registrar), /required role/);
   const recommendation = platform.recordAIRecommendation('horse-vet-guard', { domain: 'health', modelId: 'risk-v1', summary: 'Advisory health risk', confidence: .7, proposedOperationalAction: 'clear-to-race', evidence: ['model'] }, { id: 'ai', roles: ['ai-agent'], tenantId: 'trk-1', human: false });
   assert.throws(() => platform.reviewAIRecommendation('horse-vet-guard', recommendation.id, aiVet, 'approved', 'automated', ['model']), /human veterinarian/);
+});
+
+test('equine intelligence wires barn, race office, approval, audit, event, twin, observability, and tenant boundaries', () => {
+  const auditLog = new ImmutableAuditLog();
+  const eventBus = new UniversalEventBus();
+  const approvalService = new CentralizedApprovalService({ auditLog, eventBus });
+  const platform = new EquineIntelligencePlatform({ auditLog, eventBus, approvalService });
+  const registrar = { id: 'secretary-6', roles: ['racing-secretary'], tenantId: 'trk-1', human: true };
+  const transport = { id: 'transport-1', roles: ['transport-coordinator'], tenantId: 'trk-1', human: true };
+  const aiAgent = { id: 'ai-health-6', roles: ['ai-agent'], tenantId: 'trk-1', human: false };
+
+  platform.createProfile({ horseId: 'horse-integrated', tenantId: 'trk-1', name: 'Integrated Runner', lifecycleStatus: 'active' }, registrar);
+  platform.updateOwnership('horse-integrated', [{ ownerId: 'owner-integrated', ownerName: 'Integrated Stable', effectiveFrom: '2026-01-01', percentage: 100, evidence: ['ownership-registry'] }], registrar);
+  platform.assignTrainer('horse-integrated', { trainerId: 'trainer-integrated', trainerName: 'Integrated Trainer', effectiveFrom: '2026-02-01', licenseStatus: 'active', evidence: ['license-registry'] }, registrar);
+  platform.recordBarnAssignmentFromOperations({ horseId: 'horse-integrated', barnId: 'barn-2', stallId: 'stall-12A', assignedAt: '2026-06-12T12:00:00Z', assignedBy: 'barn-ops', eventId: 'barn.horse.assigned', auditId: 'audit-barn-1', twinId: 'equine:horse-integrated' }, registrar);
+  platform.recordRaceEntryFromRaceOffice('horse-integrated', { raceId: 'race-7', raceDate: '2026-06-13', trackId: 'main-track', trainerId: 'trainer-integrated', ownerId: 'owner-integrated', status: 'entered', evidence: ['race-office-entry'] }, registrar);
+  platform.recordWorkout('horse-integrated', { workoutId: 'work-integrated', date: '2026-06-01', trackId: 'main-track', distanceFurlongs: 4, timeSeconds: 49, surface: 'dirt', source: 'clockers' }, registrar);
+  platform.recordTransportation('horse-integrated', { tripId: 'trip-integrated', from: 'receiving barn', to: 'barn-2', departedAt: '2026-06-12T10:00:00Z', arrivedAt: '2026-06-12T12:00:00Z', transporter: 'licensed-van', welfareChecks: ['watered', 'temperature checked'] }, transport);
+  platform.recordWelfareStatus('horse-integrated', { recordId: 'welfare-integrated', observedAt: '2026-06-12T13:00:00Z', observerId: 'welfare-6', score: 88, notes: 'Calm after transport', interventions: [] }, registrar);
+
+  const recommendation = platform.runAdvisoryRiskAssessment('horse-integrated', aiAgent);
+  assert.equal(recommendation.advisoryOnly, true);
+  assert.equal(recommendation.veterinarianReviewRequired, true);
+  assert.ok(approvalService.allRequests().some((request) => request.action === 'veterinary-clearance' && request.target === 'horse-integrated'));
+
+  const relationshipTypes = platform.relationshipMap('horse-integrated', registrar).map((relationship) => relationship.type);
+  for (const expected of ['owned-by', 'trained-by', 'assigned-to-barn', 'entered-in-race', 'worked-at-track', 'transported-by', 'mirrored-by-digital-twin']) assert.ok(relationshipTypes.includes(expected), `missing ${expected}`);
+  const twin = platform.twinSnapshot('trk-1').find((state) => state.id === 'equine:horse-integrated');
+  assert.equal(twin.state.currentBarn, 'barn-2');
+  assert.equal(twin.state.latestTransportTripId, 'trip-integrated');
+  assert.equal(twin.state.pendingHealthAiReviewCount, 1);
+
+  const observability = platform.observabilitySnapshot('trk-1');
+  assert.equal(observability.pendingVeterinarianReviews, 1);
+  assert.equal(observability.openApprovals, 1);
+  assert.ok(observability.auditRecords >= 8);
+  assert.ok(observability.eventCount >= 8);
+  assert.ok(auditLog.all().every((entry) => entry.tenantId === 'trk-1'));
+  assert.ok(eventBus.events({ aggregateId: 'horse-integrated' }).some((event) => event.type === 'equine.lifecycle.transportation-recorded'));
+  assert.throws(() => platform.viewProfile('horse-integrated', { id: 'other-tenant', roles: ['auditor'], tenantId: 'trk-2' }), /Tenant boundary/);
 });

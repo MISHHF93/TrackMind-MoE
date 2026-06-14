@@ -1,3 +1,5 @@
+import type { NexusOperationalActorType } from '@trackmind/shared';
+
 export type AuditEventType =
   | 'user-action'
   | 'workflow-action'
@@ -14,6 +16,9 @@ export type AuditEventType =
 
 export type AuditSeverity = 'info' | 'warning' | 'critical';
 export type RetentionDisposition = 'retain' | 'eligible-for-disposal' | 'legal-hold';
+export type AuditActorType = NexusOperationalActorType;
+export type AuditDecision = 'allowed' | 'denied' | 'approved' | 'rejected' | 'blocked' | 'executed' | 'observed';
+export type AuditActionClass = 'user' | 'service' | 'workflow' | 'api' | 'ai' | 'approval' | 'config' | 'asset' | 'twin' | 'incident' | 'compliance';
 
 export interface ChainOfCustodyStep {
   actor: string;
@@ -23,11 +28,29 @@ export interface ChainOfCustodyStep {
   reason?: string;
 }
 
+export interface EvidenceReference {
+  id: string;
+  uri?: string;
+  hash?: string;
+  description?: string;
+  source?: string;
+  collectedAt?: string;
+  recordId?: string;
+  legalHold?: boolean;
+}
+
 export interface AuditLogEntry {
   id: string;
   type: AuditEventType;
   actor: string;
+  actorType?: AuditActorType;
   timestamp: string;
+  action?: string;
+  actionClass?: AuditActionClass;
+  target?: string;
+  decision?: AuditDecision;
+  sourceService?: string;
+  apiRoute?: string;
   payload: unknown;
   previousHash: string;
   hash: string;
@@ -38,6 +61,7 @@ export interface AuditLogEntry {
   severity?: AuditSeverity;
   regulations?: string[];
   evidenceIds?: string[];
+  evidence?: EvidenceReference[];
   custody?: ChainOfCustodyStep[];
   retainedUntil?: string;
   legalHold?: boolean;
@@ -45,9 +69,46 @@ export interface AuditLogEntry {
 
 export interface AuditRecordInput extends Omit<AuditLogEntry, 'previousHash' | 'hash'> {}
 export interface RetentionPolicy { id: string; eventTypes: AuditEventType[]; retainForDays: number; regulatoryBasis: string }
-export interface EvidenceItem { id: string; recordId: string; uri: string; hash: string; collectedBy: string; collectedAt: string; description?: string; legalHold?: boolean }
+export interface EvidenceItem extends EvidenceReference { id: string; recordId: string; uri: string; hash: string; collectedBy: string; collectedAt: string; description?: string; legalHold?: boolean }
 export interface AuditVerificationResult { valid: boolean; checked: number; failures: Array<{ id: string; reason: string }> }
-export interface ForensicTimelineStep { sequence: number; id: string; type: AuditEventType; actor: string; timestamp: string; subjectId?: string; workflowId?: string; correlationId?: string; payload: unknown }
+export interface ForensicTimelineStep { sequence: number; id: string; type: AuditEventType; actor: string; timestamp: string; subjectId?: string; workflowId?: string; correlationId?: string; action?: string; actionClass?: AuditActionClass; target?: string; decision?: AuditDecision; evidenceIds: string[]; payload: unknown }
+export interface AuditEvidencePath { recordId: string; actionClass: AuditActionClass; action: string; target?: string; actor: string; timestamp: string; evidenceIds: string[]; evidence: EvidenceReference[]; hash: string; previousHash: string; legalHold: boolean }
+export interface AuditCoverageReport { generatedAt: string; requiredActionClasses: AuditActionClass[]; coveredActionClasses: AuditActionClass[]; gaps: AuditActionClass[]; counts: Record<AuditActionClass, number>; evidenceLinkedRecords: number; totalRecords: number }
+export interface ForensicReconstruction {
+  generatedAt: string;
+  query: AuditLedgerQuery;
+  verified: boolean;
+  recordCount: number;
+  timeline: ForensicTimelineStep[];
+  actors: string[];
+  subjects: string[];
+  workflows: string[];
+  correlations: string[];
+  evidenceIds: string[];
+  legalHolds: Array<{ recordId: string; actor: string; timestamp: string; reason?: string }>;
+  custody: Array<{ recordId: string; steps: ChainOfCustodyStep[] }>;
+  chainFailures: AuditVerificationResult['failures'];
+}
+export interface AuditLedgerQuery { subjectId?: string; workflowId?: string; correlationId?: string; actor?: string; actionClass?: AuditActionClass; evidenceId?: string; regulation?: string; tenantId?: string; sourceService?: string; from?: string; to?: string }
+export interface ComplianceExportOptions extends AuditLedgerQuery { regulation?: string; regulations?: string[]; generatedBy?: string; generatedAt?: string; includePayloads?: boolean; retentionPolicies?: RetentionPolicy[] }
+export interface AuditComplianceExport {
+  exportId: string;
+  generatedAt: string;
+  generatedBy: string;
+  regulations: string[];
+  verified: boolean;
+  chainHead?: string;
+  recordCount: number;
+  records: AuditLogEntry[];
+  evidenceManifest: EvidenceReference[];
+  legalHolds: ForensicReconstruction['legalHolds'];
+  retention: ReturnType<ImmutableAuditLog['retentionDisposition']>;
+  packageHash: string;
+}
+export interface AuditInvestigationDossier { caseId: string; openedBy: string; reason: string; openedAt: string; anchorRecordId?: string; reconstruction: ForensicReconstruction; recommendedNextActions: string[] }
+
+const auditActionClasses: AuditActionClass[] = ['user', 'service', 'workflow', 'api', 'ai', 'approval', 'config', 'asset', 'twin', 'incident', 'compliance'];
+const auditActorTypes = ['human', 'service', 'workflow', 'api', 'ai-agent', 'system'] as const satisfies readonly AuditActorType[];
 
 function stable(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -71,13 +132,86 @@ function digest(value: unknown): string {
   return `sha256:${(h2 >>> 0).toString(16).padStart(8, '0')}${(h1 >>> 0).toString(16).padStart(8, '0')}`;
 }
 
+function getPayloadField(payload: unknown, field: string): unknown {
+  return payload && typeof payload === 'object' ? (payload as Record<string, unknown>)[field] : undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+function unique(values: Array<string | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
+}
+
+function inferAction(log: AuditRecordInput): string {
+  return log.action ?? String(getPayloadField(log.payload, 'action') ?? getPayloadField(log.payload, 'activity') ?? getPayloadField(log.payload, 'type') ?? log.type);
+}
+
+function inferTarget(log: AuditRecordInput): string | undefined {
+  return log.target ?? log.subjectId ?? [getPayloadField(log.payload, 'target'), getPayloadField(log.payload, 'assetId'), getPayloadField(log.payload, 'twinId'), getPayloadField(log.payload, 'raceId'), getPayloadField(log.payload, 'controlId'), getPayloadField(log.payload, 'incidentId')].find((value): value is string => typeof value === 'string');
+}
+
+function inferActorType(log: AuditRecordInput): AuditActorType | undefined {
+  if (log.actorType) return log.actorType;
+  const actorType = getPayloadField(log.payload, 'actorType');
+  if (auditActorTypes.includes(String(actorType) as AuditActorType)) return actorType as AuditActorType;
+  if (log.actor === 'system') return 'system';
+  if (log.type === 'ai-recommendation' || log.type === 'expert-call' || /ai|moe|agent/i.test(log.actor)) return 'ai-agent';
+  if (log.sourceService || /service|runtime|registry|api|bus/i.test(log.actor)) return 'service';
+  return undefined;
+}
+
+function classify(log: Pick<AuditLogEntry, 'type' | 'actor' | 'actionClass' | 'action' | 'sourceService' | 'apiRoute' | 'payload'>): AuditActionClass {
+  if (log.actionClass) return log.actionClass;
+  const action = `${log.action ?? ''} ${String(getPayloadField(log.payload, 'action') ?? '')} ${String(getPayloadField(log.payload, 'type') ?? '')}`.toLowerCase();
+  if (log.apiRoute || action.includes('api.')) return 'api';
+  if (log.type === 'approval' || action.includes('approval.')) return 'approval';
+  if (log.type === 'ai-recommendation' || log.type === 'expert-call' || /ai|moe|agent/i.test(log.actor)) return 'ai';
+  if (log.type === 'workflow-action' || action.includes('workflow') || action.includes('task.')) return 'workflow';
+  if (log.type === 'digital-twin-update' || action.includes('digital-twin') || action.includes('twin')) return 'twin';
+  if (log.type === 'regulatory-activity' || log.type === 'rulebook-citation' || action.includes('compliance') || action.includes('control.')) return 'compliance';
+  if (log.type === 'configuration-change' || action.includes('config')) return 'config';
+  if (log.type === 'security-event' || action.includes('incident')) return 'incident';
+  if (log.type === 'data-change' || action.includes('asset') || action.includes('racetrack.asset')) return 'asset';
+  if (log.type === 'user-action') return 'user';
+  return 'service';
+}
+
+function normalizeEvidence(log: AuditRecordInput): { evidenceIds: string[]; evidence: EvidenceReference[] } {
+  const payloadEvidence = stringArray(getPayloadField(log.payload, 'evidence'));
+  const payloadEvidenceIds = stringArray(getPayloadField(log.payload, 'evidenceIds'));
+  const sourceEventId = typeof getPayloadField(log.payload, 'sourceEventId') === 'string' ? String(getPayloadField(log.payload, 'sourceEventId')) : undefined;
+  const evidence = (log.evidence ?? []).map((item) => ({ ...item, recordId: item.recordId ?? log.id }));
+  const evidenceIds = unique([...(log.evidenceIds ?? []), ...evidence.map((item) => item.id), ...payloadEvidence, ...payloadEvidenceIds, sourceEventId]);
+  const existing = new Set(evidence.map((item) => item.id));
+  return {
+    evidenceIds,
+    evidence: [...evidence, ...evidenceIds.filter((id) => !existing.has(id)).map((id) => ({ id, recordId: log.id }))],
+  };
+}
+
 export class ImmutableAuditLog {
   private readonly logs: Readonly<AuditLogEntry>[] = [];
 
   append(log: AuditRecordInput): AuditLogEntry {
     const previousHash = this.logs.at(-1)?.hash ?? 'genesis';
     const custody = log.custody?.map((step) => ({ ...step })) ?? [{ actor: log.actor, action: 'created' as const, timestamp: log.timestamp }];
-    const unsigned = { ...log, payload: deepClone(log.payload), previousHash, custody, evidenceIds: [...(log.evidenceIds ?? [])], regulations: [...(log.regulations ?? [])] };
+    const evidence = normalizeEvidence(log);
+    const unsigned = {
+      ...log,
+      actorType: inferActorType(log),
+      action: inferAction(log),
+      actionClass: classify({ ...log, action: inferAction(log) }),
+      target: inferTarget(log),
+      payload: deepClone(log.payload),
+      previousHash,
+      custody,
+      evidenceIds: evidence.evidenceIds,
+      evidence: evidence.evidence,
+      regulations: [...(log.regulations ?? [])],
+    };
     const entry = Object.freeze({ ...unsigned, hash: digest(unsigned) });
     this.logs.push(entry);
     return this.clone(entry);
@@ -99,33 +233,127 @@ export class ImmutableAuditLog {
   addCustodyStep(recordId: string, step: ChainOfCustodyStep): AuditLogEntry {
     const current = this.logs.find((entry) => entry.id === recordId);
     if (!current) throw new Error(`Unknown audit record ${recordId}`);
-    return this.append({ ...this.clone(current), id: `${recordId}:custody:${(current.custody?.length ?? 0) + 1}`, type: 'system-event', actor: step.actor, timestamp: step.timestamp, payload: { custodyFor: recordId, action: step.action, reason: step.reason }, custody: [...(current.custody ?? []), { ...step }], subjectId: current.subjectId, correlationId: current.correlationId, workflowId: current.workflowId, tenantId: current.tenantId, severity: current.severity, regulations: current.regulations, evidenceIds: current.evidenceIds, retainedUntil: current.retainedUntil, legalHold: current.legalHold || step.action === 'placed-on-hold' });
+    const { hash: _hash, previousHash: _previousHash, ...base } = this.clone(current);
+    return this.append({ ...base, id: `${recordId}:custody:${(current.custody?.length ?? 0) + 1}`, type: 'system-event', actor: step.actor, actorType: inferActorType({ ...base, actor: step.actor, payload: current.payload }), timestamp: step.timestamp, action: step.action, actionClass: 'compliance', target: recordId, payload: { custodyFor: recordId, action: step.action, reason: step.reason }, custody: [...(current.custody ?? []), { ...step }], subjectId: current.subjectId, correlationId: current.correlationId, workflowId: current.workflowId, tenantId: current.tenantId, severity: current.severity, regulations: current.regulations, evidenceIds: current.evidenceIds, evidence: current.evidence, retainedUntil: current.retainedUntil, legalHold: step.action === 'placed-on-hold' });
   }
 
   placeLegalHold(recordIds: string[], actor: string, timestamp: string, reason: string): AuditLogEntry[] {
     return recordIds.map((recordId) => this.addCustodyStep(recordId, { actor, action: 'placed-on-hold', timestamp, reason }));
   }
 
+  releaseLegalHold(recordIds: string[], actor: string, timestamp: string, reason: string): AuditLogEntry[] {
+    return recordIds.map((recordId) => this.addCustodyStep(recordId, { actor, action: 'released-from-hold', timestamp, reason }));
+  }
+
   forensicTimeline(filter: { subjectId?: string; workflowId?: string; correlationId?: string; actor?: string }): ForensicTimelineStep[] {
-    return this.all().filter((entry) => (!filter.subjectId || entry.subjectId === filter.subjectId) && (!filter.workflowId || entry.workflowId === filter.workflowId) && (!filter.correlationId || entry.correlationId === filter.correlationId) && (!filter.actor || entry.actor === filter.actor)).sort((a, b) => a.timestamp.localeCompare(b.timestamp)).map((entry, index) => ({ sequence: index + 1, id: entry.id, type: entry.type, actor: entry.actor, timestamp: entry.timestamp, subjectId: entry.subjectId, workflowId: entry.workflowId, correlationId: entry.correlationId, payload: entry.payload }));
+    return this.records(filter).sort((a, b) => a.timestamp.localeCompare(b.timestamp)).map((entry, index) => ({ sequence: index + 1, id: entry.id, type: entry.type, actor: entry.actor, timestamp: entry.timestamp, subjectId: entry.subjectId, workflowId: entry.workflowId, correlationId: entry.correlationId, action: entry.action, actionClass: entry.actionClass, target: entry.target, decision: entry.decision, evidenceIds: [...(entry.evidenceIds ?? [])], payload: entry.payload }));
   }
 
   complianceReport(regulation: string) {
     const records = this.all().filter((entry) => entry.regulations?.includes(regulation));
-    return { regulation, recordCount: records.length, evidenceIds: [...new Set(records.flatMap((entry) => entry.evidenceIds ?? []))], legalHoldCount: records.filter((entry) => entry.legalHold).length, verified: this.verify().valid };
+    const holds = this.activeLegalHolds();
+    return { regulation, recordCount: records.length, evidenceIds: [...new Set(records.flatMap((entry) => entry.evidenceIds ?? []))], legalHoldCount: records.filter((entry) => entry.legalHold || holds.has(entry.id)).length, verified: this.verify().valid };
   }
 
   retentionDisposition(now: string, policies: RetentionPolicy[]) {
+    const holds = this.activeLegalHolds();
     return this.all().map((entry) => {
       const policy = policies.find((candidate) => candidate.eventTypes.includes(entry.type));
       const retainedUntil = entry.retainedUntil ?? (policy ? new Date(Date.parse(entry.timestamp) + policy.retainForDays * 86_400_000).toISOString().slice(0, 10) : undefined);
-      const disposition: RetentionDisposition = entry.legalHold ? 'legal-hold' : retainedUntil && retainedUntil < now.slice(0, 10) ? 'eligible-for-disposal' : 'retain';
+      const expired = Boolean(retainedUntil && retainedUntil < now.slice(0, 10));
+      const disposition: RetentionDisposition = expired ? (entry.legalHold || holds.has(entry.id) ? 'legal-hold' : 'eligible-for-disposal') : 'retain';
       return { id: entry.id, policyId: policy?.id, retainedUntil, disposition, regulatoryBasis: policy?.regulatoryBasis };
     });
   }
 
+  evidencePath(query: AuditLedgerQuery = {}): AuditEvidencePath[] {
+    const holds = this.activeLegalHolds();
+    return this.records(query).map((entry) => ({ recordId: entry.id, actionClass: entry.actionClass ?? classify(entry), action: entry.action ?? entry.type, target: entry.target, actor: entry.actor, timestamp: entry.timestamp, evidenceIds: [...(entry.evidenceIds ?? [])], evidence: (entry.evidence ?? []).map((item) => ({ ...item, legalHold: item.legalHold || holds.has(entry.id) })), hash: entry.hash, previousHash: entry.previousHash, legalHold: entry.legalHold || holds.has(entry.id) }));
+  }
+
+  coverageReport(requiredActionClasses: AuditActionClass[] = auditActionClasses, generatedAt = new Date().toISOString()): AuditCoverageReport {
+    const counts = Object.fromEntries(auditActionClasses.map((actionClass) => [actionClass, 0])) as Record<AuditActionClass, number>;
+    for (const entry of this.logs) counts[entry.actionClass ?? classify(entry)] += 1;
+    const coveredActionClasses = requiredActionClasses.filter((actionClass) => counts[actionClass] > 0);
+    return { generatedAt, requiredActionClasses: [...requiredActionClasses], coveredActionClasses, gaps: requiredActionClasses.filter((actionClass) => counts[actionClass] === 0), counts, evidenceLinkedRecords: this.logs.filter((entry) => (entry.evidenceIds?.length ?? 0) > 0 || (entry.evidence?.length ?? 0) > 0).length, totalRecords: this.logs.length };
+  }
+
+  reconstruct(query: AuditLedgerQuery = {}): ForensicReconstruction {
+    const records = this.records(query).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const verification = this.verify();
+    const recordIds = new Set(records.map((entry) => entry.id));
+    const holds = [...this.activeLegalHolds().entries()].filter(([recordId]) => recordIds.has(recordId)).map(([recordId, hold]) => ({ recordId, ...hold }));
+    return {
+      generatedAt: new Date().toISOString(),
+      query: { ...query },
+      verified: verification.valid,
+      recordCount: records.length,
+      timeline: records.map((entry, index) => ({ sequence: index + 1, id: entry.id, type: entry.type, actor: entry.actor, timestamp: entry.timestamp, subjectId: entry.subjectId, workflowId: entry.workflowId, correlationId: entry.correlationId, action: entry.action, actionClass: entry.actionClass, target: entry.target, decision: entry.decision, evidenceIds: [...(entry.evidenceIds ?? [])], payload: deepClone(entry.payload) })),
+      actors: unique(records.map((entry) => entry.actor)),
+      subjects: unique(records.map((entry) => entry.subjectId)),
+      workflows: unique(records.map((entry) => entry.workflowId)),
+      correlations: unique(records.map((entry) => entry.correlationId)),
+      evidenceIds: unique(records.flatMap((entry) => entry.evidenceIds ?? [])),
+      legalHolds: holds,
+      custody: records.filter((entry) => entry.custody?.length).map((entry) => ({ recordId: entry.id, steps: entry.custody!.map((step) => ({ ...step })) })),
+      chainFailures: verification.failures,
+    };
+  }
+
+  exportCompliancePackage(options: ComplianceExportOptions = {}): AuditComplianceExport {
+    const regulations = options.regulations ?? (options.regulation ? [options.regulation] : []);
+    const records = this.records({ ...options, regulation: undefined }).filter((entry) => regulations.length === 0 || regulations.some((regulation) => entry.regulations?.includes(regulation)));
+    const includePayloads = options.includePayloads ?? true;
+    const generatedAt = options.generatedAt ?? new Date().toISOString();
+    const exportRecords = records.map((entry) => includePayloads ? this.clone(entry) : { ...this.clone(entry), payload: { redacted: true } });
+    const legalHolds = this.reconstruct({ ...options, regulation: regulations[0] }).legalHolds.filter((hold) => records.some((entry) => entry.id === hold.recordId));
+    const retention = this.retentionDisposition(generatedAt, options.retentionPolicies ?? []).filter((item) => records.some((entry) => entry.id === item.id));
+    const evidenceManifest = this.evidencePath({ ...options, regulation: undefined }).filter((path) => records.some((entry) => entry.id === path.recordId)).flatMap((path) => path.evidence);
+    const unsigned = { exportId: `audit-export-${digest({ generatedAt, records: exportRecords.map((entry) => entry.id), regulations }).slice(7, 19)}`, generatedAt, generatedBy: options.generatedBy ?? 'audit-ledger', regulations, verified: this.verify().valid, chainHead: records.at(-1)?.hash, recordCount: records.length, records: exportRecords, evidenceManifest, legalHolds, retention };
+    return { ...unsigned, packageHash: digest(unsigned) };
+  }
+
+  investigate(input: { caseId: string; openedBy: string; reason: string; openedAt?: string; query: AuditLedgerQuery; appendAnchor?: boolean }): AuditInvestigationDossier {
+    const openedAt = input.openedAt ?? new Date().toISOString();
+    const anchorRecord = input.appendAnchor ? this.append({ id: `audit-investigation-${input.caseId}`, type: 'system-event', actor: input.openedBy, actorType: 'human', timestamp: openedAt, action: 'investigation.opened', actionClass: 'incident', payload: { caseId: input.caseId, reason: input.reason, query: input.query }, correlationId: input.caseId, severity: 'warning', regulations: ['SOC-2', 'HISA', 'ARCI'] }) : undefined;
+    const reconstruction = this.reconstruct(input.query);
+    const recommendedNextActions = [
+      reconstruction.verified ? 'Ledger hash chain verified for scoped records.' : 'Review chain verification failures before relying on export.',
+      reconstruction.evidenceIds.length ? 'Preserve linked evidence manifest and custody records.' : 'Collect or link supporting evidence references for scoped records.',
+      reconstruction.legalHolds.length ? 'Maintain legal hold until compliance release is recorded.' : 'Place legal hold if this investigation is regulator-facing.',
+    ];
+    return { caseId: input.caseId, openedBy: input.openedBy, reason: input.reason, openedAt, anchorRecordId: anchorRecord?.id, reconstruction, recommendedNextActions };
+  }
+
+  activeLegalHolds(recordId?: string): Map<string, { actor: string; timestamp: string; reason?: string }> {
+    const holds = new Map<string, { actor: string; timestamp: string; reason?: string }>();
+    for (const entry of this.logs) {
+      const custodyFor = getPayloadField(entry.payload, 'custodyFor');
+      const action = getPayloadField(entry.payload, 'action');
+      if (typeof custodyFor === 'string' && action === 'placed-on-hold') holds.set(custodyFor, { actor: entry.actor, timestamp: entry.timestamp, reason: typeof getPayloadField(entry.payload, 'reason') === 'string' ? String(getPayloadField(entry.payload, 'reason')) : undefined });
+      if (typeof custodyFor === 'string' && action === 'released-from-hold') holds.delete(custodyFor);
+      if (entry.legalHold && !String(entry.id).includes(':custody:')) holds.set(entry.id, { actor: entry.actor, timestamp: entry.timestamp });
+    }
+    if (recordId) return new Map([...holds.entries()].filter(([id]) => id === recordId));
+    return holds;
+  }
+
+  private records(query: AuditLedgerQuery = {}): AuditLogEntry[] {
+    return this.all().filter((entry) => (!query.subjectId || entry.subjectId === query.subjectId || entry.target === query.subjectId)
+      && (!query.workflowId || entry.workflowId === query.workflowId)
+      && (!query.correlationId || entry.correlationId === query.correlationId)
+      && (!query.actor || entry.actor === query.actor)
+      && (!query.actionClass || entry.actionClass === query.actionClass)
+      && (!query.evidenceId || entry.evidenceIds?.includes(query.evidenceId))
+      && (!query.regulation || entry.regulations?.includes(query.regulation))
+      && (!query.tenantId || entry.tenantId === query.tenantId)
+      && (!query.sourceService || entry.sourceService === query.sourceService)
+      && (!query.from || entry.timestamp >= query.from)
+      && (!query.to || entry.timestamp <= query.to));
+  }
+
   private clone(entry: Readonly<AuditLogEntry>): AuditLogEntry {
-    return { ...entry, payload: deepClone(entry.payload), regulations: [...(entry.regulations ?? [])], evidenceIds: [...(entry.evidenceIds ?? [])], custody: entry.custody?.map((step) => ({ ...step })) };
+    return { ...entry, payload: deepClone(entry.payload), regulations: [...(entry.regulations ?? [])], evidenceIds: [...(entry.evidenceIds ?? [])], evidence: entry.evidence?.map((item) => ({ ...item })), custody: entry.custody?.map((step) => ({ ...step })) };
   }
 }
 
@@ -137,4 +365,10 @@ export class AuditEvidenceCollectionVault {
     return { ...evidence };
   }
   forRecord(recordId: string): EvidenceItem[] { return [...this.items.values()].filter((item) => item.recordId === recordId).map((item) => ({ ...item })); }
+  forRecords(recordIds: string[]): EvidenceItem[] { const ids = new Set(recordIds); return [...this.items.values()].filter((item) => ids.has(item.recordId)).map((item) => ({ ...item })); }
+  all(): EvidenceItem[] { return [...this.items.values()].map((item) => ({ ...item })); }
+  placeLegalHold(evidenceIds: string[], actor: string, reason: string): EvidenceItem[] { return evidenceIds.map((id) => this.setLegalHold(id, true, actor, reason)); }
+  releaseLegalHold(evidenceIds: string[], actor: string, reason: string): EvidenceItem[] { return evidenceIds.map((id) => this.setLegalHold(id, false, actor, reason)); }
+  manifest(recordIds?: string[]) { const items = recordIds ? this.forRecords(recordIds) : this.all(); const unsigned = { count: items.length, legalHoldCount: items.filter((item) => item.legalHold).length, evidenceIds: items.map((item) => item.id).sort(), hashes: items.map((item) => item.hash).sort() }; return { ...unsigned, manifestHash: digest(unsigned), items }; }
+  private setLegalHold(id: string, legalHold: boolean, actor: string, reason: string): EvidenceItem { const current = this.items.get(id); if (!current) throw new Error(`Unknown evidence item ${id}`); const next = { ...current, legalHold, description: current.description ?? `${legalHold ? 'Placed on' : 'Released from'} legal hold by ${actor}: ${reason}` }; this.items.set(id, next); return { ...next }; }
 }

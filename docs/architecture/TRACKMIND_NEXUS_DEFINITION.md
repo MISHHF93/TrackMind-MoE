@@ -3,6 +3,13 @@
 ## Product vision
 TrackMind Nexus is an Azure-first, event-driven racetrack operating platform that coordinates race operations, equine safety, stewarding, veterinary compliance, track assets, sensors, workflows, Digital Twins, audit evidence, and Responsible AI. The platform must make race-day operations safer and more explainable without replacing authorized officials.
 
+## Racing Operating System standard
+TrackMind Nexus should standardize racetrack operations digitally, not only standardize software services. The Racing Operating System and TrackMind Standardization Framework define ten tiers of operating standards across business objects, assets, Digital Twins, workflows, AI recommendations, compliance evidence, SaaS packaging, certified-track/franchise readiness, the unified data model, and the unified AI machine.
+
+The full operating-model tree is documented in [Racing Operating System and Standardization Framework](racing-operating-system-standardization-framework.md). That document is a standardization and readiness reference; it does not claim completed production provisioning, live external integrations, formal HISA certification, ISO certification, or autonomous safety-critical runtime capability.
+
+The shared Nexus upgrade package now tracks route-aligned metadata for Operations OS, Safety OS, Compliance OS, AI OS, Digital Twin OS, Command Center OS, Accreditation OS, Multi-Track Federation OS, and the Racing Intelligence Network. These records cover Universal Schema entity, event, workflow, approval, twin, AI, audit, and compliance dimensions; SaaS tier alignment; certified-track readiness; unified data model; intelligence core; federation; observability; and safety controls. Status values are limited to `implemented`, `partial`, `readiness-metadata`, and `placeholder` so package metadata cannot imply production certification, cross-tenant provisioning, or live safety-critical execution.
+
 ## Core safety rule
 AI may recommend, simulate, summarize, classify, forecast, and create draft actions, but AI must never independently start a race, stop a race, declare official results, modify official results, scratch a horse, clear a veterinary flag, issue steward rulings, trigger payouts, override emergency personnel, or execute safety-critical controls without explicit authorized human approval.
 
@@ -47,6 +54,10 @@ APIs are REST or event-consumer contracts with OpenAPI 3.1, stable IDs, tenant i
 ## Data model standards
 Use stable string IDs or UUIDs, ISO-8601 timestamps, explicit tenant IDs, typed statuses, evidence arrays, and source references. Regulated records must be append-only or versioned; updates that alter official state require an audit event and approval record.
 
+Tier 9 adds a read-only unified data model metadata layer for canonical store descriptors and lineage contracts. TUS asset, twin, domain, event, audit, feature, workflow, approval, and AI recommendation records map to Data Lake, Feature Store, Knowledge Graph, Digital Twin Graph, Event Store, and Audit Store descriptors without adding real database dependencies. Details live in [Tier 9 Unified Data Model](unified-data-model.md).
+
+The TrackMind Racing Data API Hub defines the provider-agnostic licensed ingestion path for racing data before records become TUS artifacts, feature metadata, Digital Twin context, compliance evidence, or AI inputs. Details live in [TrackMind Racing Data API Hub](racing-data-api-hub.md), and external providers should be described as adapter-ready examples unless a deployment separately proves licensing, credentials, acceptance, and operational integration.
+
 ## Audit requirements
 Audit entries must capture actor, actor type, action, target, timestamp, decision, evidence, correlation ID, previous hash where available, and source service. Audit stores are append-only. Safety denials by AI governance are auditable events, not silent validation failures.
 
@@ -56,20 +67,41 @@ AI-generated actions start as recommendations or drafts. A protected action can 
 ## AI safety boundaries
 Permitted AI activities are recommendation, simulation, summarization, classification, forecasting, anomaly detection, and draft action preparation. Prohibited autonomous activities are race start, race stop, official result declaration or modification, horse scratch, veterinary flag clearance, steward ruling, payout trigger, emergency personnel override, and safety-critical control execution.
 
+## Unified AI/ML Machine
+The AI Control Plane is defined as `Inputs -> Feature Store -> Model Registry -> Expert Models -> AI Governor -> Approved Outputs`.
+
+Inputs are tenant-scoped operational, telemetry, compliance, audit, event, and Digital Twin context. Feature Store metadata captures lineage, evidence, input quality, and stale-input flags. The Model Registry captures model owners, intended use, prohibited use, risk, evaluations, approvals, and rollback evidence. Expert Models provide domain-specific advisory recommendations only. The AI Governor enforces protected-action policy, confidence calibration, approval requirements, safety blocking, audit events, and explainability records. Approved Outputs are still backend-governed: operational execution requires authorized human approval, immutable audit evidence, event records, and any queued Digital Twin impact record.
+
+Detailed control-plane documentation lives in [TrackMind Unified AI/ML Control Plane](unified-ai-ml-control-plane.md).
+
 ## Compliance mappings
 | Requirement | Mapping |
 | --- | --- |
 | HISA/ARCI | Human authority for veterinary, stewarding, eligibility, and official results decisions |
-| NIST AI RMF | Govern/map/measure/manage through model registry, risk assessment, monitoring, and human oversight |
-| ISO 42001 | AI management system, intended/prohibited use, lifecycle approval, audit evidence |
+| NIST AI RMF | Trustworthy AI risk management through govern/map/measure/manage, model registry, risk assessment, observability, blocking controls, approvals, and human oversight |
+| ISO/IEC 42001 | AI management system, accountable ownership, intended/prohibited use, lifecycle approval, management review, continuous monitoring, and audit evidence |
 | ISO 27001/SOC 2 | Access control, change control, audit logging, monitoring, incident response |
 | PCI-DSS | Payout and payment workflows are protected actions with finance approval boundaries |
 
 ## Observability standards
 Every service emits structured logs, metrics, traces, health/readiness endpoints, event lag, approval latency, safety-denial counts, audit-write failures, and protected-action execution attempts. Dashboards must separate advisory AI output from authorized human execution.
 
+AI Control Plane observability also tracks AI input throughput, feature build count, model selection count, recommendation count, blocked action count, approval-required count, adjusted confidence distribution, stale/low-quality input count, and event/audit/twin sync status.
+
 ## Azure deployment assumptions
-The target platform uses Azure API Management, Container Apps or AKS, Event Hubs or Service Bus, Event Grid, PostgreSQL, Cosmos DB where appropriate, Azure Digital Twins, Azure Monitor/Application Insights/Log Analytics, Key Vault, Managed Identity, Microsoft Entra ID, Azure AI Search, Azure OpenAI/AI Foundry, and Microsoft Sentinel.
+The target platform uses Azure API Management, Container Apps or AKS, Event Hubs or Service Bus, Event Grid, PostgreSQL, Cosmos DB where appropriate, Azure Digital Twins, Azure Monitor/Application Insights/Log Analytics, Key Vault, Managed Identity, Microsoft Entra ID, Azure AI Search, Azure OpenAI/AI Foundry, and Microsoft Sentinel. Azure Digital Twins is the suitable modeling and synchronization target for Nexus Digital Twin abstractions; this definition does not claim a completed production Azure deployment.
+
+## Tier 7 SaaS model
+TrackMind OS defines TrackMind Cloud tiers in shared metadata, not billing or provisioning code:
+
+| Tier | Entitlements |
+| --- | --- |
+| Starter | Race Office, Entries, Scheduling, Approvals |
+| Professional | Digital Twins, Surface Intelligence, Asset Registry, Compliance |
+| Enterprise | AI Governance, Executive Intelligence, Command Center |
+| National | Multi-Track Federation, Benchmarking, Industry Analytics |
+
+Supported deployable modes are SaaS, private cloud, managed service, and franchise/certified-track. Each tier declares feature entitlements, required controls, deployment assumptions, tenant isolation posture, and upgrade path. The metadata explicitly keeps billing, metering, cloud provisioning, and franchise certification workflows out of scope until implementation patterns exist.
 
 ## Phased implementation order
 1. Foundation: docs, shared domain types, protected action policy, schemas, tests.

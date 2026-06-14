@@ -32,16 +32,19 @@ test('frontend and backend share schemas for assets, races, approvals, audit eve
   for (const recommendation of contract.aiRecommendations) assertValid('AIRecommendationDto', recommendation);
   assertValid('GatePositionDto', contract.gatePosition);
   assertValid('RaceDistanceConfigurationDto', contract.raceDistanceConfiguration);
+  assert.ok(contract.approvals.every((approval) => approval.correlationId && approval.affectedAssets.length > 0 && approval.exportFields.includes('correlationId')));
+  assert.ok(contract.auditEvents.every((event) => event.exportFields.includes('hash') && Array.isArray(event.affectedAssets)));
 });
 
 test('contract metadata covers authorization, audit records, event emissions, and consistent errors', () => {
   const byOperation = new Map(apiEndpointContracts.map((endpoint) => [endpoint.operationId, endpoint]));
-  for (const op of ['listAssets','listRaces','listApprovals','listAuditEvents','listDigitalTwinState','listSurfaceMeasurements','getGatePosition','createDraftRequest','listAIRecommendations']) {
+  for (const op of ['listAssets','listRaces','listApprovals','listAuditEvents','listDigitalTwinState','listSurfaceMeasurements','getGatePosition','getTrackConfigurationMap','createDraftRequest','createTrackConfigurationDraftRequest','listAIRecommendations']) {
     assert.ok(byOperation.has(op), `${op} must have OpenAPI metadata`);
     assert.ok(byOperation.get(op).audits.length > 0, `${op} must declare audit metadata`);
   }
   assert.deepEqual(byOperation.get('listAuditEvents').roles, ['compliance-officer','read-only-auditor','admin']);
   assert.deepEqual(byOperation.get('createDraftRequest').emits, ['approval.requested']);
+  assert.deepEqual(byOperation.get('createTrackConfigurationDraftRequest').emits, ['track.configuration.change.requested','approval.requested']);
   assert.deepEqual(createCommandCenterContractSnapshot().errors.notAuthorized, { ok: false, error: { code: 'forbidden', message: 'Actor is not authorized for this TrackMind API operation' } });
 });
 

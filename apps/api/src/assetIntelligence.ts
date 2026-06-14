@@ -1,4 +1,4 @@
-export type MaintainableAssetType = 'irrigation' | 'gate' | 'camera' | 'lighting' | 'generator' | 'emergency-equipment';
+export type MaintainableAssetType = 'irrigation' | 'gate' | 'camera' | 'lighting' | 'generator' | 'emergency-equipment' | 'hvac' | 'elevator' | 'vehicle' | 'communications' | 'security';
 export interface MaintenanceSignal { assetId: string; type: MaintainableAssetType; ageDays: number; faultCount30d: number; runtimeHours: number; criticality: number }
 export function predictMaintenance(signal: MaintenanceSignal) {
   const risk = Math.min(100, Math.round(signal.ageDays / 20 + signal.faultCount30d * 12 + signal.runtimeHours / 250 + signal.criticality * 8));

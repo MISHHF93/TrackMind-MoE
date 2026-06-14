@@ -3,13 +3,15 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test tests/*.test.mjs"
+    "build": "npm --prefix ../../packages/shared run build && tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "test": "npm run build && node ../../scripts/run-node-tests.mjs tests/*.test.mjs"
   },
   "dependencies": {
     "@trackmind/shared": "file:../../packages/shared",
     "@types/react": "^18.3.3",
-    "react": "^18.3.1"
-  },
-  "devDependencies": {}
+    "@types/react-dom": "^18.3.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
 }

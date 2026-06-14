@@ -144,6 +144,75 @@ export const racetrackAssetControlRegistry: RacetrackControlAsset[] = [
     approvalPolicy: controlCategoryPolicies.C_HUMAN_CONTROLLED.defaultApprovalPolicy,
     lastUpdated: '2026-06-13T10:00:00Z',
   },
+  {
+    assetId: 'GRANDSTAND_HVAC_01',
+    assetType: 'HVACSystem',
+    domain: 'facilities',
+    ownerAgent: 'TrackSurface',
+    location: { facility: 'grandstand', zone: 'clubhouse', floor: 'mechanical-penthouse' },
+    state: { operatingMode: 'occupied', loadPercent: 82, runtimeHours: 18420, filterDeltaPressure: 68, readinessStatus: 'WATCH', maintenanceStatus: 'DUE', lastInspection: '2026-06-12T13:30:00Z' },
+    controls: [
+      { name: 'adjust-hvac-setpoint', category: 'B_AI_RECOMMENDED', description: 'Recommend patron-area HVAC setpoint changes; facilities supervisor approval is required before execution.', requiresApprovalFrom: ['FacilitiesSupervisor'], executionMode: 'recommendation-only' },
+      { name: 'return-to-service', category: 'C_HUMAN_CONTROLLED', description: 'Return patron-facing HVAC equipment to service after repair and readiness checks.', requiresApprovalFrom: ['FacilitiesSupervisor', 'OperationsDirector'], protectedAction: 'facility-maintenance-execution', executionMode: 'human-only' },
+    ],
+    sensors: [
+      { id: 'hvac-01-load', type: 'power-load', verifies: ['loadPercent', 'runtimeHours'], required: true },
+      { id: 'hvac-01-filter', type: 'pressure', verifies: ['filterDeltaPressure'], required: true },
+    ],
+    regulations: [
+      { authority: 'OSHA', reference: 'Mechanical equipment lockout and workplace safety procedure', appliesTo: ['return-to-service'] },
+      { authority: 'TrackPolicy', reference: 'Patron-area comfort and race-day readiness checklist', appliesTo: ['adjust-hvac-setpoint', 'return-to-service'] },
+    ],
+    riskLevel: 'medium',
+    approvalPolicy: controlCategoryPolicies.B_AI_RECOMMENDED.defaultApprovalPolicy,
+    lastUpdated: '2026-06-13T10:00:00Z',
+  },
+  {
+    assetId: 'BACKUP_GENERATOR_A',
+    assetType: 'BackupGenerator',
+    domain: 'facilities',
+    ownerAgent: 'SecuritySOC',
+    location: { facility: 'utilities-yard', circuit: 'life-safety-a' },
+    state: { fuelPercent: 74, runtimeHours: 9620, transferSwitchReady: true, readinessStatus: 'READY', maintenanceStatus: 'OK', lastInspection: '2026-06-13T07:15:00Z' },
+    controls: [
+      { name: 'schedule-load-test', category: 'B_AI_RECOMMENDED', description: 'Recommend generator load-test windows based on event schedule and readiness risk.', requiresApprovalFrom: ['FacilitiesSupervisor'], executionMode: 'recommendation-only' },
+      { name: 'life-safety-power-transfer', category: 'C_HUMAN_CONTROLLED', description: 'Human-controlled transfer to life-safety backup power remains approval and audit gated.', requiresApprovalFrom: ['IncidentCommander', 'FacilitiesSupervisor'], protectedAction: 'emergency-action', executionMode: 'human-only' },
+    ],
+    sensors: [
+      { id: 'generator-a-fuel', type: 'fuel-level', verifies: ['fuelPercent'], required: true },
+      { id: 'generator-a-switch', type: 'transfer-switch', verifies: ['transferSwitchReady'], required: true },
+    ],
+    regulations: [
+      { authority: 'EmergencyManagement', reference: 'Life-safety power continuity plan', appliesTo: ['life-safety-power-transfer'] },
+      { authority: 'OSHA', reference: 'Generator maintenance and lockout procedures', appliesTo: ['schedule-load-test'] },
+    ],
+    riskLevel: 'high',
+    approvalPolicy: controlCategoryPolicies.C_HUMAN_CONTROLLED.defaultApprovalPolicy,
+    lastUpdated: '2026-06-13T10:00:00Z',
+  },
+  {
+    assetId: 'PATRON_ELEVATOR_A',
+    assetType: 'Elevator',
+    domain: 'facilities',
+    ownerAgent: 'RaceOps',
+    location: { facility: 'grandstand', bank: 'A', floorsServed: ['concourse', 'clubhouse', 'suite-level'] },
+    state: { cycleCount: 128400, doorFaults30d: 3, readinessStatus: 'WATCH', maintenanceStatus: 'DUE', lastInspection: '2026-06-10T09:00:00Z' },
+    controls: [
+      { name: 'create-elevator-work-order', category: 'B_AI_RECOMMENDED', description: 'Recommend elevator preventive maintenance based on door faults and cycle count.', requiresApprovalFrom: ['FacilitiesSupervisor'], executionMode: 'recommendation-only' },
+      { name: 'remove-from-service', category: 'C_HUMAN_CONTROLLED', description: 'Taking patron elevator service offline affects operations and requires human approval.', requiresApprovalFrom: ['FacilitiesSupervisor', 'OperationsDirector'], protectedAction: 'facility-maintenance-execution', executionMode: 'human-only' },
+    ],
+    sensors: [
+      { id: 'elevator-a-cycle-counter', type: 'cycle-counter', verifies: ['cycleCount'], required: true },
+      { id: 'elevator-a-door-monitor', type: 'door-fault', verifies: ['doorFaults30d'], required: true },
+    ],
+    regulations: [
+      { authority: 'LocalLaw', reference: 'Elevator inspection and public access requirements', appliesTo: ['create-elevator-work-order', 'remove-from-service'] },
+      { authority: 'TrackPolicy', reference: 'Accessible patron route readiness policy', appliesTo: ['remove-from-service'] },
+    ],
+    riskLevel: 'high',
+    approvalPolicy: controlCategoryPolicies.C_HUMAN_CONTROLLED.defaultApprovalPolicy,
+    lastUpdated: '2026-06-13T10:00:00Z',
+  },
 ];
 
 export function findControlAsset(assetId: string): RacetrackControlAsset | undefined {

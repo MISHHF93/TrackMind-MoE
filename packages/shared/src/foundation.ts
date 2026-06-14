@@ -25,9 +25,12 @@ export interface DigitalTwinReference extends DomainReference {
   sourceEntityId: EntityId;
 }
 
+export type NexusActorType = 'human' | 'ai-agent' | 'service' | 'system';
+export type NexusOperationalActorType = NexusActorType | 'workflow' | 'api';
+
 export interface NexusActor {
   id: EntityId;
-  type: 'human' | 'ai-agent' | 'service' | 'system';
+  type: NexusActorType;
   roles?: string[];
 }
 
@@ -55,7 +58,7 @@ export interface AuditEvent {
   tenantId: TenantId;
   eventType: string;
   actorId: EntityId;
-  actorType: 'human' | 'ai-agent' | 'service' | 'system';
+  actorType: NexusActorType;
   action: string;
   target: string | NexusSubjectReference;
   occurredAt: ISODateTime;
@@ -96,7 +99,7 @@ export interface WorkflowInstance extends DomainReference {
   approvals: ApprovalDecision[];
 }
 
-export const aiAllowedActivities = ['recommend', 'simulate', 'summarize', 'classify', 'forecast', 'create-draft-action'] as const;
+export const aiAllowedActivities = ['recommend', 'simulate', 'summarize', 'classify', 'prioritize', 'forecast', 'create-draft-action', 'detect-anomaly', 'draft-work-order', 'create-recommendation', 'notify-humans', 'generate-report', 'update-dashboard'] as const;
 export type AIAllowedActivity = typeof aiAllowedActivities[number];
 
 export const protectedAIAutonomyActions = [
@@ -105,11 +108,20 @@ export const protectedAIAutonomyActions = [
   'declare-official-results',
   'modify-official-results',
   'scratch-horse',
+  'make-medication-decision',
   'clear-veterinary-flag',
   'issue-steward-ruling',
+  'issue-disciplinary-decision',
   'trigger-payout',
+  'execute-gate-move',
+  'close-track',
+  'reopen-track',
+  'declare-winner',
+  'modify-result',
+  'execute-emergency-action',
   'override-emergency-personnel',
   'execute-safety-critical-control',
+  'approve-compliance-filing',
 ] as const;
 export type ProtectedAIAutonomyAction = typeof protectedAIAutonomyActions[number];
 
@@ -119,11 +131,20 @@ export const protectedActionIntentMap = {
   'declare-official-results': 'official-results',
   'modify-official-results': 'modify-official-results',
   'scratch-horse': 'scratch-horse',
+  'make-medication-decision': 'medication-decision',
   'clear-veterinary-flag': 'clear-vet-flag',
   'issue-steward-ruling': 'steward-ruling',
+  'issue-disciplinary-decision': 'disciplinary-decision',
   'trigger-payout': 'payout',
+  'execute-gate-move': 'starting-gate-move',
+  'close-track': 'track-closure',
+  'reopen-track': 'track-reopen',
+  'declare-winner': 'official-results',
+  'modify-result': 'modify-official-results',
+  'execute-emergency-action': 'emergency-action',
   'override-emergency-personnel': 'emergency-personnel-override',
   'execute-safety-critical-control': 'safety-critical-control',
+  'approve-compliance-filing': 'compliance-filing-approval',
 } as const;
 export type ProtectedActionIntent = keyof typeof protectedActionIntentMap;
 export type NormalizedProtectedAction = typeof protectedActionIntentMap[ProtectedActionIntent];
@@ -163,11 +184,20 @@ export function createApprovalRequirement(action: ProtectedAIAutonomyAction): Ap
     'declare-official-results': ['steward'],
     'modify-official-results': ['steward'],
     'scratch-horse': ['steward', 'racing-secretary', 'veterinarian'],
+    'make-medication-decision': ['veterinarian'],
     'clear-veterinary-flag': ['veterinarian'],
     'issue-steward-ruling': ['steward'],
+    'issue-disciplinary-decision': ['steward'],
     'trigger-payout': ['finance', 'steward'],
+    'execute-gate-move': ['steward', 'racing-secretary', 'track-superintendent'],
+    'close-track': ['steward', 'track-superintendent'],
+    'reopen-track': ['steward', 'track-superintendent'],
+    'declare-winner': ['steward'],
+    'modify-result': ['steward'],
+    'execute-emergency-action': ['emergency-commander'],
     'override-emergency-personnel': ['emergency-commander'],
     'execute-safety-critical-control': ['operations-admin', 'emergency-commander'],
+    'approve-compliance-filing': ['compliance-officer'],
   };
   return { protectedAction: action, requiredRoles: roleByAction[action], minimumApprovals: 1, evidenceRequired: ['human-approval-record', 'reason'] };
 }
@@ -175,8 +205,9 @@ export function createApprovalRequirement(action: ProtectedAIAutonomyAction): Ap
 export function validateAIRecommendation(recommendation: AIRecommendation): SafetyValidationResult {
   if (!aiAllowedActivities.includes(recommendation.activity)) return { allowed: false, reason: 'AI activity is outside the advisory boundary' };
   if (recommendation.confidence < 0 || recommendation.confidence > 1) return { allowed: false, reason: 'AI confidence must be between 0 and 1' };
-  if (recommendation.requestedAction && isProtectedAIAutonomyAction(recommendation.requestedAction)) {
-    return { allowed: true, reason: 'AI may only create an advisory recommendation or draft for this protected action', requiredApproval: createApprovalRequirement(recommendation.requestedAction) };
+  const protectedAction = recommendation.requestedAction ? canonicalProtectedAutonomyAction(recommendation.requestedAction) : undefined;
+  if (protectedAction) {
+    return { allowed: true, reason: 'AI may only create an advisory recommendation or draft for this protected action', requiredApproval: createApprovalRequirement(protectedAction) };
   }
   return { allowed: true, reason: 'AI advisory activity is permitted' };
 }
@@ -194,7 +225,7 @@ export function validateProtectedActionExecution(input: { action: string; recomm
   const approvalAction = canonicalProtectedAutonomyAction(approval.protectedAction) ?? approval.protectedAction;
   const matches = approval.status === 'approved' && approval.tenantId === input.tenantId && approval.recommendationId === input.recommendationId && approvalAction === canonicalAction && approval.target === input.target;
   if (!matches) return { allowed: false, reason: 'Approval does not match protected action execution request', requiredApproval };
-  if (!approval.approverId || !hasRequiredRole) return { allowed: false, reason: 'Approval must be granted by an authorized human role', requiredApproval };
+  if (!approval.approverId || isNonHumanApprovalActor(approval.approverId) || !hasRequiredRole) return { allowed: false, reason: 'Approval must be granted by an authorized human role', requiredApproval };
   if (!hasEvidence) return { allowed: false, reason: 'Approval is missing reason or required evidence', requiredApproval };
   if (!notExpired) return { allowed: false, reason: 'Approval has expired', requiredApproval };
   return { allowed: true, reason: 'Protected action has explicit authorized human approval', approvalId: approval.id };
@@ -204,6 +235,10 @@ export function canonicalProtectedAutonomyAction(action: string): ProtectedAIAut
   if (isProtectedAIAutonomyAction(action)) return action;
   const match = Object.entries(protectedActionIntentMap).find(([, normalized]) => normalized === action);
   return match?.[0] as ProtectedAIAutonomyAction | undefined;
+}
+
+function isNonHumanApprovalActor(actorId: string): boolean {
+  return /^(ai|bot|service|system)(-|:|$)/i.test(actorId) || /(-|:)(ai|bot|service)$/i.test(actorId);
 }
 
 export function validateNexusEventEnvelope(event: NexusEventEnvelope): SafetyValidationResult {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runSurfaceIntelligenceSystem, analyzeSurfaceSection, buildSurfaceHeatmap, runSurfaceManagementDomain, buildSurfaceIntelligenceWorkspace, requestSurfaceOperationalAction } from '../dist/index.js';
+import { runSurfaceIntelligenceSystem, analyzeSurfaceSection, buildSurfaceHeatmap, runSurfaceManagementDomain, buildSurfaceIntelligenceWorkspace, requestSurfaceOperationalAction, runIntegratedSurfaceIntelligence, InMemoryEventBus, ImmutableAuditLog, CentralizedApprovalService, PlatformObservabilityService } from '../dist/index.js';
 
 const input = {
   trackId: 'track-a',
@@ -48,9 +48,14 @@ test('surface management domain ingests all sources and gates operational action
   assert.ok(domain.measurements.some((item) => item.kind === 'inspection'));
   assert.ok(domain.measurements.some((item) => item.kind === 'manual-observation'));
   assert.ok(domain.anomalies.length > 0);
+  assert.ok(domain.anomalies.every((item) => item.event.type === 'surface.anomaly.detected' && item.auditRecord.type === 'anomaly'));
   assert.ok(domain.forecasts.length >= 3);
+  assert.ok(domain.forecasts.every((forecast) => forecast.advisoryOnly && typeof forecast.predictedCompaction === 'number' && typeof forecast.predictedCushionDepth === 'number' && typeof forecast.predictedDrainageRate === 'number'));
+  assert.ok(domain.sectionAnalytics.some((section) => section.drainage.status === 'restricted'));
   assert.ok(domain.digitalTwinSync.every((sync) => sync.status === 'queued-for-human-approved-sync'));
   assert.ok(domain.maintenanceRecommendations.every((item) => item.requiresHumanApproval && item.executionState === 'approval-required'));
+  assert.ok(domain.events.some((event) => event.type === 'surface.anomaly.detected'));
+  assert.ok(domain.auditRecords.some((record) => record.type === 'anomaly'));
   assert.ok(domain.events.length >= domain.measurements.length + domain.digitalTwinSync.length);
   assert.ok(domain.auditRecords.length >= domain.events.length);
   assert.equal(domain.operationalActionsRequireHumanApproval, true);
@@ -60,7 +65,15 @@ test('surface intelligence workspace exposes heatmap-ready UI data and approval-
   const workspace = buildSurfaceIntelligenceWorkspace(input);
   assert.equal(workspace.operationalActionsRequireHumanApproval, true);
   assert.ok(workspace.statusCards.length >= 4);
+  assert.ok(workspace.conditionScorecards.length >= 2);
+  assert.ok(workspace.metricPanels.some((panel) => panel.factor === 'cushion-depth'));
+  assert.ok(workspace.drainageAnalysis.some((item) => item.status === 'restricted'));
+  assert.ok(workspace.maintenanceRecords.length >= 1);
+  assert.ok(workspace.forecasts.every((forecast) => forecast.advisoryOnly));
   assert.ok(workspace.timeline.every((point) => point.eventId && point.auditId));
+  assert.equal(workspace.inspectionTimeline[0].eventId, workspace.timeline.find((point) => point.kind === 'inspection' && point.sectorId === 'turn-1').eventId);
+  assert.ok(workspace.anomalies.every((anomaly) => anomaly.eventId && anomaly.auditId));
+  assert.ok(workspace.heatmapSectors.every((sector) => sector.cellIds.length > 0));
   assert.ok(workspace.heatmap.every((cell) => typeof cell.latitude === 'number' && typeof cell.riskIndex === 'number'));
   assert.ok(workspace.recommendations.every((item) => item.requiresHumanApproval && item.executionState === 'approval-required'));
   assert.ok(workspace.digitalTwinSync.every((sync) => sync.status === 'queued-for-human-approved-sync'));
@@ -70,4 +83,21 @@ test('surface intelligence workspace exposes heatmap-ready UI data and approval-
     assert.equal(draft.executionAllowed, false);
     assert.equal(draft.event.requiresHumanApproval, true);
   }
+});
+
+test('surface platform integration publishes events, audit records, approval requests, and observability without mutating twins before approval', async () => {
+  const eventBus = new InMemoryEventBus();
+  const auditLog = new ImmutableAuditLog();
+  const approvals = new CentralizedApprovalService({ auditLog, eventBus });
+  const observability = new PlatformObservabilityService({ eventBus, auditLog, approvals });
+  const result = await runIntegratedSurfaceIntelligence(input, { eventBus, auditLog, approvals, observability, tenantId: 'tenant-track-a' });
+
+  assert.equal(result.unresolvedDependencies.includes('digitalTwinRuntime'), true);
+  assert.ok(result.publishedEvents.length >= result.domain.events.length);
+  assert.ok(eventBus.events({ type: 'surface.recommendation.generated' }).length >= 1);
+  assert.ok(result.auditEntries.some((entry) => entry.type === 'ai-recommendation'));
+  assert.ok(result.approvalRequests.some((request) => request.action === 'surface-harrowing' || request.action === 'surface-track-closure-recommendation'));
+  assert.ok(result.approvalRequests.every((request) => request.status === 'pending'));
+  assert.ok(result.twinUpdates.every((update) => update.status === 'queued'));
+  assert.ok(result.observabilitySignals.some((signal) => signal.name === 'api.request.latency'));
 });

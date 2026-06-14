@@ -95,3 +95,7 @@ RACR now treats every registered object as an authoritative inventory record acr
 The registry exposes command-oriented APIs for listing, creating, updating, telemetry binding, maintenance recording, approvals, state transitions, soft deletes, and rollback. Every accepted command appends a new immutable version, writes an audit entry, and publishes an event stream message so Digital Twin, CQRS projection, command-center, compliance, and AI-governance consumers can synchronize from the registry rather than maintaining parallel inventories.
 
 Governance controls are enforced with role-based access control, critical-asset approval requirements, lifecycle entry and exit criteria, soft-delete preservation, version rollback, compliance mappings, and immutable audit evidence. The supported type catalog includes starting gates, irrigation systems, surface sectors, lighting systems, cameras, vehicles, emergency resources, horses, race events, regulatory records, AI agents, workflows, and a reserved future asset category for controlled expansion.
+
+## Multi-racetrack tenant isolation
+
+The API asset registry assigns every created asset to the caller's `tenantId` and rejects mismatched tenant requests. Reads, searches, and cache keys are tenant-scoped so one racetrack cannot observe another racetrack's asset inventory through shared in-memory projections. Asset events carry the tenant context into Digital Twin synchronization, and synchronized twins preserve that tenant for query filtering and audit evidence.
