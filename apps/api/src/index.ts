@@ -23,6 +23,7 @@ export * from './integrityAndVision.js';
 export * from './iot.js';
 export * from './moeRouter.js';
 export * from './operationsCenter.js';
+export * from './platformObservability.js';
 export * from './raceOperationsPlatform.js';
 export * from './raceDayReadiness.js';
 export * from './racetrackControlRegistry.js';
