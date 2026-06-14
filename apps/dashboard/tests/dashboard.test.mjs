@@ -347,3 +347,24 @@ test('AI Governance workspace renders governed recommendations, blocked actions,
   assert.match(textFrom(tree), /Responsible AI workspace/);
   assert.match(textFrom(tree), /AI cannot execute protected race-start actions/);
 });
+
+test('Platform Health workspace renders service, event, audit, approval, AI, twin, latency, and frontend degraded status', async () => {
+  const data = await loadCommandCenter(createMockClient());
+  const tree = CommandCenter({ data, roles: ['admin'], authenticated: true });
+  const labels = collect(tree, (node) => Boolean(node.props?.['aria-label'])).map((node) => node.props['aria-label']);
+  for (const label of ['Platform Health workspace','Service health and dependencies','Event bus health','Audit health','Approval engine health','AI governance health','Digital Twin health','Workflow status','API latency metrics','Frontend error reporting']) assert.ok(labels.includes(label), `missing ${label}`);
+  assert.match(textFrom(tree), /Frontend degraded state active/);
+  assert.match(textFrom(tree), /queued sync\s+5/);
+});
+
+test('frontend platform health client uses live health endpoint and mock degraded state', async () => {
+  const mock = await createMockClient().getPlatformHealth();
+  assert.equal(mock.frontend.degradedMode, true);
+  assert.equal(mock.telemetrySchema.consistent, true);
+  const original = globalThis.fetch;
+  let requested;
+  globalThis.fetch = async (url) => { requested = url; return { ok:true, json: async () => mock }; };
+  await createLiveClient('https://api.example.test/api/v1').getPlatformHealth();
+  assert.equal(requested, 'https://api.example.test/api/v1/platform/health');
+  globalThis.fetch = original;
+});

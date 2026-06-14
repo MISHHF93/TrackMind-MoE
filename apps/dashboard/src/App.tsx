@@ -25,7 +25,7 @@ const commandCenterWorkspaces = [
 const startingGateWorkflow = ['Change Distance', 'Move Gate', 'Approve', 'Work Order', 'Verify GPS', 'Activate'];
 
 export async function loadCommandCenter(client: NexusApiClient) {
-  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations, emergencyOperations, complianceLibrary, aiGovernance] = await Promise.all([
+  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations, emergencyOperations, complianceLibrary, aiGovernance, platformHealth] = await Promise.all([
     client.listApprovals(),
     client.listAuditEvents(),
     client.getTrackMap(),
@@ -43,8 +43,9 @@ export async function loadCommandCenter(client: NexusApiClient) {
     client.getEmergencyOperations(),
     client.getComplianceLibrary(),
     client.getAIGovernanceWorkspace(),
+    client.getPlatformHealth(),
   ]);
-  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations, emergencyOperations, complianceLibrary, aiGovernance, streamUrl: client.eventStreamUrl(), mode: client.mode };
+  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, stewardCenter, securityOperations, emergencyOperations, complianceLibrary, aiGovernance, platformHealth, streamUrl: client.eventStreamUrl(), mode: client.mode };
 }
 
 export function isSafetyCriticalEnabled(args: { authenticated: boolean; hasApprovalToken: boolean; backendMode: 'live' | 'mock' }) {
@@ -101,6 +102,21 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
         <section aria-label="Live event streaming"><h3>Live event streaming</h3><p>Subscribed to <code>{data.streamUrl}</code></p><EventTimeline events={data.operations.liveEvents.map((event) => ({ time: event.timestamp, label: `${event.domain}: ${event.summary}`, tone: event.severity }))} /></section>
         <section aria-label="AI recommendations"><h3>AI recommendations</h3>{data.operations.aiRecommendations.map((item) => <article key={item.id}><strong>{item.recommendation}</strong><p>Confidence {Math.round(item.confidence * 100)}%; approval required: {String(item.requiresApproval)}; action: <a href={item.actionPath}>{item.actionPath}</a></p><p>Evidence: {item.evidence.join(', ')}</p></article>)}</section>
         <section aria-label="Data lineage"><h3>Data lineage</h3>{data.operations.dataLineage.map((lineage) => <p key={`${lineage.domain}-${lineage.reference}`}>{lineage.domain}: {lineage.source} via <code>{lineage.reference}</code></p>)}</section>
+      </section>
+
+
+      <section aria-label="Platform Health workspace">
+        <h2>Platform Health</h2>
+        <p>Overall platform status: <strong>{data.platformHealth.overallStatus}</strong>. OpenTelemetry-aligned logs, metrics, traces, and frontend error reports share schema {data.platformHealth.telemetrySchema.version}.</p>
+        <section aria-label="Service health and dependencies"><h3>Service health</h3>{data.platformHealth.services.map((service: any) => <article key={service.serviceId} data-status={service.status}><strong>{service.serviceId}: {service.status}</strong><p>Latency {service.latencyMs}ms; dependencies {service.dependencies.map((dep: any) => `${dep.id}:${dep.status}${dep.required ? ':required' : ''}`).join(', ') || 'none'}; checked {service.lastCheckedAt}</p></article>)}</section>
+        <section aria-label="Event bus health"><h3>Event bus health</h3><KpiTile label="Events per minute" value={String(data.platformHealth.eventBus.eventsPerMinute)} trend={`${data.platformHealth.eventBus.publishedEvents} published; ${data.platformHealth.eventBus.deadLetters} dead letters`} /><p>Schemas {data.platformHealth.eventBus.schemas}; capacity {data.platformHealth.eventBus.throughputCapacity}; backpressure {String(data.platformHealth.eventBus.backpressure)}.</p></section>
+        <section aria-label="Audit health"><h3>Audit health</h3><p>Ledger valid {String(data.platformHealth.audit.validLedger)}; records {data.platformHealth.audit.records}; critical records {data.platformHealth.audit.criticalRecords}.</p></section>
+        <section aria-label="Approval engine health"><h3>Approval engine health</h3><p>Pending {data.platformHealth.approvalEngine.pending}; approved {data.platformHealth.approvalEngine.approved}; escalated {data.platformHealth.approvalEngine.escalated}; rejected {data.platformHealth.approvalEngine.rejected}; expired {data.platformHealth.approvalEngine.expired}.</p></section>
+        <section aria-label="AI governance health"><h3>AI governance health</h3><p>Active agents {data.platformHealth.aiGovernance.activeAgents}; pending reviews {data.platformHealth.aiGovernance.pendingReviews}; blocked actions {data.platformHealth.aiGovernance.blockedActions}; drift breaches {data.platformHealth.aiGovernance.driftBreaches}.</p></section>
+        <section aria-label="Digital Twin health"><h3>Digital Twin health</h3><p>Total twins {data.platformHealth.digitalTwin.totalTwins}; healthy {data.platformHealth.digitalTwin.healthy}; degraded {data.platformHealth.digitalTwin.degraded}; critical {data.platformHealth.digitalTwin.critical}; queued sync {data.platformHealth.digitalTwin.queuedSync}; last sync {data.platformHealth.digitalTwin.lastSyncAt}</p></section>
+        <section aria-label="Workflow status"><h3>Workflow status</h3><p>Active {data.platformHealth.workflows.active}; completed {data.platformHealth.workflows.completed}; failed {data.platformHealth.workflows.failed}.</p></section>
+        <section aria-label="API latency metrics"><h3>API latency metrics</h3><p>p50 {data.platformHealth.apiLatency.p50Ms}ms; p95 {data.platformHealth.apiLatency.p95Ms}ms; budget {data.platformHealth.apiLatency.budgetMs}ms.</p></section>
+        <section aria-label="Frontend error reporting"><h3>Frontend error reporting</h3><p>Reported errors {data.platformHealth.frontend.reportedErrors}; degraded mode {String(data.platformHealth.frontend.degradedMode)}; last error {data.platformHealth.frontend.lastErrorAt ?? 'none'}.</p>{data.platformHealth.frontend.degradedMode && <p role="status">Frontend degraded state active: cached read-only workspace remains available while controls stay locked.</p>}</section>
       </section>
 
       <section aria-label="AI Governance workspace">
