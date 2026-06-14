@@ -38,7 +38,7 @@ export class ApprovalStore {
   allApprovals(): HumanApprovalRecord[] { return [...this.approvals.values()]; }
 }
 
-export type ControlledAction = ProtectedAction | 'race-cancellation' | 'veterinary-clearance' | 'steward-decision' | 'starting-gate-move' | 'race-distance-configuration';
+export type ControlledAction = ProtectedAction | 'race-cancellation' | 'veterinary-clearance' | 'steward-decision' | 'starting-gate-move' | 'race-distance-configuration' | 'race-office-scratch' | 'race-status-change' | 'race-office-configuration';
 export type ApprovalRequestStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'escalated';
 
 export interface ApprovalStepRequirement { id: string; roles: Role[]; minimumApprovals: number; evidenceRequired: string[]; }
@@ -64,6 +64,9 @@ export function defaultApprovalPolicies(): ApprovalPolicy[] {
     { action: 'emergency-action', chain: [{ id: 'security', roles: ['security'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 5, escalationRules: [{ afterMinutes: 2, escalateToRoles: ['admin'], reason: 'emergency action approval pending' }] },
     { action: 'official-results', chain: [{ id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'finance', roles: ['finance'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 20, escalationRules: [{ afterMinutes: 10, escalateToRoles: ['admin'], reason: 'official results approval pending' }] },
     { action: 'starting-gate-move', chain: [{ id: 'race-office', roles: ['racing-secretary'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'operations', roles: ['track-superintendent'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 15, escalationRules: [{ afterMinutes: 8, escalateToRoles: ['admin'], reason: 'starting gate move approval pending' }] },
+    { action: 'race-office-scratch', chain: [{ id: 'veterinary', roles: ['veterinarian'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 30, escalationRules: [{ afterMinutes: 15, escalateToRoles: ['admin'], reason: 'race scratch approval pending' }] },
+    { action: 'race-status-change', chain: [{ id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 20, escalationRules: [{ afterMinutes: 10, escalateToRoles: ['admin'], reason: 'race status change approval pending' }] },
+    { action: 'race-office-configuration', chain: [{ id: 'race-office', roles: ['racing-secretary'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 60, escalationRules: [{ afterMinutes: 30, escalateToRoles: ['admin'], reason: 'race office configuration approval pending' }] },
     { action: 'race-distance-configuration', chain: [{ id: 'race-office', roles: ['racing-secretary'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 20, escalationRules: [{ afterMinutes: 10, escalateToRoles: ['admin'], reason: 'race distance configuration approval pending' }] },
   ];
 }
