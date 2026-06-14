@@ -25,14 +25,17 @@ const commandCenterWorkspaces = [
 const startingGateWorkflow = ['Change Distance', 'Move Gate', 'Approve', 'Work Order', 'Verify GPS', 'Activate'];
 
 export async function loadCommandCenter(client: NexusApiClient) {
-  const [approvals, auditEvents, trackMap, operations, readiness] = await Promise.all([
+  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState] = await Promise.all([
     client.listApprovals(),
     client.listAuditEvents(),
     client.getTrackMap(),
     client.getOperationsCommandCenter(),
     client.getRaceDayReadinessDashboard(),
+    client.getGatePosition(),
+    client.getRaceDistanceConfiguration(),
+    client.listDigitalTwinState(),
   ]);
-  return { approvals, auditEvents, trackMap, operations, readiness, streamUrl: client.eventStreamUrl(), mode: client.mode };
+  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, streamUrl: client.eventStreamUrl(), mode: client.mode };
 }
 
 export function isSafetyCriticalEnabled(args: { authenticated: boolean; hasApprovalToken: boolean; backendMode: 'live' | 'mock' }) {
@@ -101,6 +104,20 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
         <section aria-label="Readiness approval requirements"><h3>Approval requirements</h3>{data.readiness.approvals.map((approval) => <article key={approval.id}><ApprovalChip status={approval.status === 'satisfied' ? 'approved' : 'pending-approval'} /><strong>{approval.action}</strong><p>{approval.reason}; roles: {approval.requiredRoles.join(', ')}</p><p>Evidence: {approval.evidence.join(', ')}</p></article>)}</section>
         <section aria-label="Readiness events"><h3>Readiness events</h3><EventTimeline events={data.readiness.events.map((event) => ({ time: event.timestamp, label: `${event.type}: ${event.message}`, tone: event.severity }))} /></section>
         <section aria-label="Readiness audit records"><h3>Audit records</h3>{data.readiness.auditRecords.map((record) => <article key={record.id}><code>{record.summaryHash}</code><p>{record.actor} scored {record.score} for {record.raceId}; previous hash {record.previousHash}; evidence {record.evidence.join(', ')}.</p></article>)}</section>
+      </section>
+
+      <section aria-label="Digital Twin workspace shell">
+        <h2>Digital Twin Workspace</h2>
+        <p>Shared typed client source: <code>{data.mode}</code>; Digital Twin updates are read-only until an approved backend execution path emits the patch event.</p>
+        {data.digitalTwinState.map((state) => <article key={state.twinId}><h3>{state.twinId}</h3><p>{state.assetId} · {state.health} · version {state.version} · {state.mock ? 'MOCK DATA' : 'LIVE DATA'}</p></article>)}
+      </section>
+      <section aria-label="Starting Gate Control workspace">
+        <h2>Starting Gate Control Workspace</h2>
+        <p>Current gate: {data.gatePosition.gateId} in {data.gatePosition.sectorId} at {data.gatePosition.metersFromStart}m; GPS verified: {String(data.gatePosition.gpsVerified)}; {data.gatePosition.mock ? 'MOCK DATA - no live motion command is available.' : 'LIVE DATA'}.</p>
+        <p>Race distance configuration: {data.raceDistanceConfiguration.raceId} is {data.raceDistanceConfiguration.distanceMeters}m from {data.raceDistanceConfiguration.gateSectorId}; {data.raceDistanceConfiguration.mock ? 'MOCK DATA' : 'LIVE DATA'}.</p>
+        <button type="button" disabled aria-label="Draft starting gate move request">Draft move request requires approval</button>
+        <button type="button" disabled aria-label="Draft race distance configuration request">Draft distance change requires approval</button>
+        <p>State-changing controls are disabled in the shell; submit a draft request through the shared API client, then execute only after the live backend returns an approval token.</p>
       </section>
       <TrackMapPanel map={data.trackMap} />
       <TrackMap map={data.trackMap} />

@@ -41,3 +41,5 @@ export type { EvidenceItem } from './auditLog.js';
 export type { RiskAssessment, RiskLevel } from './responsibleAiGovernor.js';
 export type { ApprovalState } from './raceOperationsPlatform.js';
 export * from './trackmindNexus.js';
+
+export * from './commandCenterV1.js';

@@ -38,7 +38,7 @@ export class ApprovalStore {
   allApprovals(): HumanApprovalRecord[] { return [...this.approvals.values()]; }
 }
 
-export type ControlledAction = ProtectedAction | 'race-cancellation' | 'veterinary-clearance' | 'steward-decision';
+export type ControlledAction = ProtectedAction | 'race-cancellation' | 'veterinary-clearance' | 'steward-decision' | 'starting-gate-move' | 'race-distance-configuration';
 export type ApprovalRequestStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'escalated';
 
 export interface ApprovalStepRequirement { id: string; roles: Role[]; minimumApprovals: number; evidenceRequired: string[]; }
@@ -63,6 +63,8 @@ export function defaultApprovalPolicies(): ApprovalPolicy[] {
     { action: 'payout', chain: [{ id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'finance', roles: ['finance'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 20, escalationRules: [{ afterMinutes: 10, escalateToRoles: ['admin'], reason: 'payout approval pending' }] },
     { action: 'emergency-action', chain: [{ id: 'security', roles: ['security'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 5, escalationRules: [{ afterMinutes: 2, escalateToRoles: ['admin'], reason: 'emergency action approval pending' }] },
     { action: 'official-results', chain: [{ id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'finance', roles: ['finance'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 20, escalationRules: [{ afterMinutes: 10, escalateToRoles: ['admin'], reason: 'official results approval pending' }] },
+    { action: 'starting-gate-move', chain: [{ id: 'race-office', roles: ['racing-secretary'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'operations', roles: ['track-superintendent'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 15, escalationRules: [{ afterMinutes: 8, escalateToRoles: ['admin'], reason: 'starting gate move approval pending' }] },
+    { action: 'race-distance-configuration', chain: [{ id: 'race-office', roles: ['racing-secretary'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 20, escalationRules: [{ afterMinutes: 10, escalateToRoles: ['admin'], reason: 'race distance configuration approval pending' }] },
   ];
 }
 
