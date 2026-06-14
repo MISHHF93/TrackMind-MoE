@@ -333,3 +333,17 @@ test('Compliance Control Library live client uses endpoint contract', async () =
   assert.equal(requestUrl, 'https://api.example.test/api/v1/compliance/control-library');
   globalThis.fetch = original;
 });
+
+test('AI Governance workspace renders governed recommendations, blocked actions, evidence packages, approvals, and audit trails', async () => {
+  const data = await loadCommandCenter(createMockClient());
+  assert.equal(data.aiGovernance.activeAgents[0].status, 'active');
+  assert.ok(data.aiGovernance.recommendationQueue.every((rec) => rec.evidence.length > 0 && rec.confidence > 0 && rec.affectedAssets.length > 0 && rec.approvalPolicy && rec.lineage.length >= 3));
+  assert.ok(data.aiGovernance.safetyBlockedActions.some((blocked) => blocked.action === 'race-start'));
+  const tree = CommandCenter({ data, roles: ['admin'], authenticated: true, path: '/ai-governance' });
+  const labels = collect(tree, (node) => Boolean(node.props?.['aria-label'])).map((node) => node.props['aria-label']);
+  for (const required of ['AI Governance workspace', 'Active AI agents', 'AI recommendation queue', 'Safety-blocked AI actions', 'AI evaluation status', 'AI evidence packages', 'AI approval requirements', 'AI audit trails']) {
+    assert.ok(labels.includes(required), `missing ${required}`);
+  }
+  assert.match(textFrom(tree), /Responsible AI workspace/);
+  assert.match(textFrom(tree), /AI cannot execute protected race-start actions/);
+});

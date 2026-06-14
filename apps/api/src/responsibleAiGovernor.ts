@@ -6,6 +6,19 @@ export type ModelCriticality = 'low' | 'medium' | 'high' | 'safety-critical';
 export type ModelLifecycleStatus = 'registered' | 'evaluating' | 'pending-approval' | 'approved' | 'deployed' | 'suspended' | 'retired' | 'rolled-back';
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
 
+
+export type AIGovernanceEventType = 'ai.agent.registered' | 'ai.prompt.published' | 'ai.recommendation.recorded' | 'ai.recommendation.blocked' | 'ai.override.recorded' | 'ai.rollback.recorded' | 'ai.metric.observed';
+export type GovernanceRecommendationStatus = 'queued' | 'approved' | 'safety-blocked' | 'executed' | 'overridden' | 'rolled-back';
+export type GovernanceApprovalPolicy = 'none' | 'single-human' | 'two-person' | 'governance-board' | 'veterinarian' | 'steward';
+
+export interface AIAgent { id: string; name: string; owner: string; modelVersionId: string; promptTemplateId: string; status: 'active' | 'paused' | 'retired'; allowedActions: string[]; restrictedActions: string[]; }
+export interface PromptTemplate { id: string; name: string; version: string; owner: string; template: string; evidence: string[]; status: 'draft' | 'approved' | 'retired'; }
+export interface EvidencePackage { id: string; recommendationId?: string; evidence: string[]; lineage: string[]; createdAt: string; hash: string; }
+export interface RecommendationRecord { id: string; agentId: string; modelVersionId: string; promptTemplateId: string; action: string; target: string; recommendation: string; confidence: number; affectedAssets: string[]; evidence: string[]; lineage: string[]; approvalPolicy: GovernanceApprovalPolicy; riskLevel: RiskLevel; status?: GovernanceRecommendationStatus; createdAt: string; }
+export interface OverrideRecord { id: string; recommendationId: string; actor: string; reason: string; evidence: string[]; createdAt: string; }
+export interface RollbackRecord { id: string; recommendationId: string; actor: string; reason: string; restoredVersionId: string; evidence: string[]; createdAt: string; }
+export interface AIGovernanceEvent { id: string; type: AIGovernanceEventType; subjectId: string; actor: string; timestamp: string; evidence: string[]; lineage: string[]; }
+
 export interface GovernanceDecision {
   allowed: boolean;
   action: string;
@@ -97,7 +110,46 @@ export class ResponsibleAIGovernancePlatform {
   private readonly evaluations: ModelEvaluation[] = [];
   private readonly risks: RiskAssessment[] = [];
   private readonly monitoring: MonitoringSignal[] = [];
+  private readonly agents = new Map<string, AIAgent>();
+  private readonly prompts = new Map<string, PromptTemplate>();
+  private readonly recommendations = new Map<string, RecommendationRecord & { status: GovernanceRecommendationStatus }>();
+  private readonly evidencePackages: EvidencePackage[] = [];
+  private readonly overrides: OverrideRecord[] = [];
+  private readonly rollbacks: RollbackRecord[] = [];
+  private readonly events: AIGovernanceEvent[] = [];
   private readonly auditTrail: Array<{ id: string; timestamp: string; actor: string; action: string; subject: string; evidence: string[] }> = [];
+
+
+  registerAgent(agent: AIAgent) { this.requireModel(agent.modelVersionId); this.agents.set(agent.id, { ...agent, allowedActions: [...agent.allowedActions], restrictedActions: [...agent.restrictedActions] }); this.emit('ai.agent.registered', agent.id, agent.owner, [], [agent.modelVersionId, agent.promptTemplateId]); return this.agents.get(agent.id)!; }
+
+  publishPromptTemplate(prompt: PromptTemplate) { if (prompt.status === 'approved' && prompt.evidence.length === 0) throw new Error('Approved prompt templates require evidence'); this.prompts.set(prompt.id, { ...prompt, evidence: [...prompt.evidence] }); this.emit('ai.prompt.published', prompt.id, prompt.owner, prompt.evidence, [prompt.version]); return this.prompts.get(prompt.id)!; }
+
+  recordRecommendation(input: RecommendationRecord) {
+    const agent = this.agents.get(input.agentId); if (!agent) throw new Error(`Unknown AI agent ${input.agentId}`);
+    if (!this.prompts.has(input.promptTemplateId)) throw new Error(`Unknown prompt template ${input.promptTemplateId}`);
+    this.requireModel(input.modelVersionId);
+    const missing = this.recommendationGaps(input);
+    if (missing.length) throw new Error(`AI recommendation governance gaps: ${missing.join(', ')}`);
+    const restricted = protectedActions.includes(input.action as ProtectedAction) || agent.restrictedActions.includes(input.action);
+    const status: GovernanceRecommendationStatus = restricted && input.approvalPolicy === 'none' ? 'safety-blocked' : 'queued';
+    const record = { ...input, affectedAssets: [...input.affectedAssets], evidence: [...input.evidence], lineage: [...input.lineage], status };
+    this.recommendations.set(record.id, record);
+    this.evidencePackages.push({ id: `evidence-${record.id}`, recommendationId: record.id, evidence: [...record.evidence], lineage: [...record.lineage], createdAt: record.createdAt, hash: `sha256:${record.id}:${record.evidence.join('|')}` });
+    this.emit(status === 'safety-blocked' ? 'ai.recommendation.blocked' : 'ai.recommendation.recorded', record.id, agent.id, record.evidence, record.lineage, record.createdAt);
+    return { ...record };
+  }
+
+  executeRecommendation(recommendationId: string, actor: string) {
+    const recommendation = this.requireRecommendation(recommendationId);
+    const protectedOrApproval = protectedActions.includes(recommendation.action as ProtectedAction) || recommendation.approvalPolicy !== 'none';
+    if (protectedOrApproval || recommendation.status === 'safety-blocked') { recommendation.status = 'safety-blocked'; this.emit('ai.recommendation.blocked', recommendationId, actor, recommendation.evidence, recommendation.lineage); return { executed: false, reason: 'AI execution blocked; required human approval policy must be fulfilled by controlled workflow' }; }
+    recommendation.status = 'executed'; this.audit('ai-recommendation-executed', actor, recommendationId, recommendation.evidence); return { executed: true };
+  }
+
+  recordOverride(record: OverrideRecord) { const rec = this.requireRecommendation(record.recommendationId); rec.status = 'overridden'; this.overrides.push({ ...record, evidence: [...record.evidence] }); this.emit('ai.override.recorded', record.id, record.actor, record.evidence, rec.lineage, record.createdAt); return record; }
+  recordRollback(record: RollbackRecord) { const rec = this.requireRecommendation(record.recommendationId); rec.status = 'rolled-back'; this.rollbacks.push({ ...record, evidence: [...record.evidence] }); this.emit('ai.rollback.recorded', record.id, record.actor, record.evidence, [record.restoredVersionId, ...rec.lineage], record.createdAt); return record; }
+
+  governanceWorkspace() { const recs = [...this.recommendations.values()]; return { activeAgents: [...this.agents.values()].filter((a) => a.status === 'active'), recommendationQueue: recs.filter((r) => r.status === 'queued'), safetyBlockedActions: recs.filter((r) => r.status === 'safety-blocked'), evaluationStatus: [...this.models.values()].map((m) => ({ modelVersionId: m.id, status: m.status, readiness: this.readiness(m.id) })), auditTrails: this.auditLog(), evidencePackages: this.evidencePackages.map((p) => ({ ...p, evidence: [...p.evidence], lineage: [...p.lineage] })), overrides: this.overrides, rollbackRecords: this.rollbacks, monitoringMetrics: [...this.monitoring], events: this.events }; }
 
   registerModel(model: ModelRegistration) {
     const registered = { ...model, status: model.status ?? 'registered' };
@@ -173,6 +225,9 @@ export class ResponsibleAIGovernancePlatform {
   auditLog() { return this.auditTrail.map((entry) => ({ ...entry, evidence: [...entry.evidence] })); }
   getModel(modelId: string) { const model = this.models.get(modelId); return model ? { ...model, intendedUse: [...model.intendedUse], prohibitedUse: [...model.prohibitedUse], lineage: [...model.lineage], evidence: [...model.evidence] } : undefined; }
 
+  private recommendationGaps(input: RecommendationRecord) { const gaps: string[] = []; if (input.evidence.length === 0) gaps.push('evidence required'); if (input.confidence <= 0 || input.confidence > 1) gaps.push('confidence must be between 0 and 1'); if (input.affectedAssets.length === 0) gaps.push('affected assets required'); if (!input.approvalPolicy) gaps.push('approval policy required'); if (input.lineage.length < 3) gaps.push('traceable lineage requires agent, model, and prompt'); return gaps; }
+  private requireRecommendation(id: string) { const rec = this.recommendations.get(id); if (!rec) throw new Error(`Unknown AI recommendation ${id}`); return rec; }
+  private emit(type: AIGovernanceEventType, subjectId: string, actor: string, evidence: string[], lineage: string[], timestamp = new Date().toISOString()) { this.events.push({ id: `ai-event-${this.events.length + 1}`, type, subjectId, actor, timestamp, evidence: [...evidence], lineage: [...lineage] }); this.audit(type, actor, subjectId, evidence, timestamp); }
   private requireModel(modelId: string) { const model = this.models.get(modelId); if (!model) throw new Error(`Unknown model ${modelId}`); return model; }
   private latestEvaluation(modelId: string) { return this.evaluations.filter((item) => item.modelId === modelId).sort((a, b) => b.evaluatedAt.localeCompare(a.evaluatedAt))[0]; }
   private latestRisk(modelId: string) { return this.risks.filter((item) => item.modelId === modelId).sort((a, b) => b.assessedAt.localeCompare(a.assessedAt))[0]; }
