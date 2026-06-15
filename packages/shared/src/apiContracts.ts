@@ -12,7 +12,8 @@ export interface ContractRule { path: string; required?: boolean; type?: Contrac
 export interface EndpointContract { method: 'GET'|'POST'; path: string; operationId: string; response: string; roles: NexusRole[]|'authenticated'; emits: string[]; audits: string[]; description: string }
 export const nexusApiBasePath = '/api/v1';
 
-const get = (obj: unknown, path: string): unknown => path.split('.').reduce((acc: any, key) => acc?.[key], obj as any);
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+const get = (obj: unknown, path: string): unknown => path.split('.').reduce<unknown>((acc, key) => (isRecord(acc) ? acc[key] : undefined), obj);
 export function validateContract(name: string, value: unknown, rules: readonly ContractRule[]): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
   for (const rule of rules) {

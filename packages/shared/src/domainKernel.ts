@@ -94,7 +94,8 @@ export const domainSchemas = {
   'audit-record': schema('audit-record', [{ path: 'actorId', required: true, type: 'string' }, { path: 'target', required: true, type: 'object' }, { path: 'evidence', required: true, type: 'array' }]),
 } satisfies Record<DomainEntityKind, DomainSchema>;
 
-const get = (obj: unknown, path: string): unknown => path.split('.').reduce((acc: any, key) => acc?.[key], obj as any);
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+const get = (obj: unknown, path: string): unknown => path.split('.').reduce<unknown>((acc, key) => (isRecord(acc) ? acc[key] : undefined), obj);
 const hasApprovedRef = (refs: readonly ApprovalRef[] | undefined, protectedAction?: string): boolean => Boolean(refs?.some((ref) => ref.status === 'approved' && (!protectedAction || ref.protectedAction === protectedAction)));
 const tenantMatches = (entity: DomainEntity, reference?: EntityReference): boolean => !reference || reference.tenantId === entity.tenantId;
 
