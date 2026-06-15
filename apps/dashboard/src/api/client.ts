@@ -1,16 +1,93 @@
 import { apiEndpointContracts, createRacingDataApiHubServiceMetadata, createTrackMindNexusUpgradePackage, nexusApiBasePath } from '@trackmind/shared';
-import type { ActionResultDto, AdapterMode, ApprovalDto, AuditEventDto, CommandCenterModelDto, DraftActionDto, DigitalTwinStateDto, GatePositionDto, OperationsCommandCenterDto, RaceDayReadinessDashboardDto, RaceDistanceConfigurationDto, SurfaceIntelligenceDto, TrackMapDto, EquineIntelligenceDto, RaceOfficeWorkspaceDto, BarnOperationsDto, StewardCenterDto, SecurityOperationsDto, EmergencyOperationsDto, ComplianceControlLibraryDto, PlatformHealthWorkspaceDto, AIGovernanceWorkspaceDto, AIControlPlaneDraftResultDto, AIControlPlaneModelRegistryDto, AIControlPlanePolicyDto, AIControlPlaneRecommendationDto, AIControlPlaneWorkspaceDto, ComplianceFrameworkIdDto, NexusUpgradePackageDto, FacilitiesMaintenanceDto, WorkforceOperationsDto, StreamingDataSourceDto, TrackCertificationCandidateDto, TUSAssetStandardDto, TUSTwinStandardDto, TUSStandardizationWorkspaceDto, UniversalArtifactFrameworkDto, UniversalArtifactRegistrationDraftDto, UniversalArtifactRegistrationDraftResultDto, UniversalArtifactRegistryDto, UniversalArtifactSchemaDto, UniversalArtifactStorageDto, UniversalArtifactTrainingDto } from '../types.js';
+import type { ActionResultDto, AdapterMode, ApprovalDto, AuditEventDto, CommandCenterModelDto, DraftActionDto, DigitalTwinStateDto, GatePositionDto, OperationsCommandCenterDto, RaceDayReadinessDashboardDto, RaceDistanceConfigurationDto, SurfaceIntelligenceDto, TrackMapDto, EquineIntelligenceDto, RaceOfficeWorkspaceDto, BarnOperationsDto, StewardCenterDto, SecurityOperationsDto, EmergencyOperationsDto, ComplianceControlLibraryDto, PlatformHealthWorkspaceDto, AIGovernanceWorkspaceDto, AIControlPlaneDraftResultDto, AIControlPlaneModelRegistryDto, AIControlPlanePolicyDto, AIControlPlaneRecommendationDto, AIControlPlaneWorkspaceDto, ComplianceFrameworkIdDto, NexusUpgradePackageDto, FacilitiesMaintenanceDto, WorkforceOperationsDto, StreamingDataSourceDto, TrackCertificationCandidateDto, TUSAssetStandardDto, TUSTwinStandardDto, TUSStandardizationWorkspaceDto, UniversalArtifactFrameworkDto, UniversalArtifactRegistrationDraftDto, UniversalArtifactRegistrationDraftResultDto, UniversalArtifactRegistryDto, UniversalArtifactSchemaDto, UniversalArtifactStorageDto, UniversalArtifactTrainingDto, FederationWorkspaceDto } from '../types.js';
 import type { RacingDataApiHubWorkspaceDto, RacingDataCanonicalEntryDto, RacingDataCanonicalEnvelopeDto, RacingDataCanonicalHorseDto, RacingDataCanonicalRaceCardDto, RacingDataCanonicalRaceDto, RacingDataCanonicalResultDto, RacingDataDigitalTwinSyncDescriptorDto, RacingDataEntityResolutionDto, RacingDataExportControlDto, RacingDataExportDraftRequestDto, RacingDataExportDraftResultDto, RacingDataExportManifestDto, RacingDataIngestionJobDraftRequestDto, RacingDataIngestionJobDto, RacingDataLicenseDto, RacingDataLicensePolicyDto, RacingDataLineageDto, RacingDataLineageReportDto, RacingDataNormalizationMappingDto, RacingDataProviderConnectorDto, RacingDataProviderDto, RacingDataProviderStatusDto, RacingDataQualityReportDto, RacingDataRawPayloadReviewDto, RacingDataRetentionPolicyDto, RacingDataUsagePolicyCenterDto } from '../types.js';
 import type { CollaborationActivityDto, CollaborationAssignmentDto, CollaborationCreateAssignmentDto, CollaborationCreateCommentDto, CollaborationCreateDecisionDto, CollaborationDecisionRecordDto, CollaborationThreadDto, CollaborationWorkspaceDto } from '../types.js';
 
 import type { RosCertifiedTrackDto, RosDataModelDto, RosFederationDto, RosIntelligenceCoreDto, RosSaasTiersDto, RosStandardizationFrameworkDto, RosUniversalSchemaDto } from '../types.js';
 
-export interface NexusApiClient { readonly mode: AdapterMode; listApprovals(): Promise<ApprovalDto[]>; listAuditEvents(): Promise<AuditEventDto[]>; getTrackMap(): Promise<TrackMapDto>; getOperationsCommandCenter(): Promise<OperationsCommandCenterDto>; getRaceDayReadinessDashboard(): Promise<RaceDayReadinessDashboardDto>; getAssets(): Promise<CommandCenterModelDto['assets']>; getTrackSectors(): Promise<CommandCenterModelDto['trackSectors']>; getGatePosition(): Promise<GatePositionDto>; getRaceDistanceConfiguration(): Promise<RaceDistanceConfigurationDto>; listDigitalTwinState(): Promise<DigitalTwinStateDto[]>; listTUSAssets?(): Promise<TUSAssetStandardDto[]>; listTUSTwins?(): Promise<TUSTwinStandardDto[]>; getTUSStandardization?(): Promise<TUSStandardizationWorkspaceDto>; getUniversalArtifactFramework?(): Promise<UniversalArtifactFrameworkDto>; getUniversalArtifactSchema?(): Promise<UniversalArtifactSchemaDto>; getUniversalArtifactRegistry?(): Promise<UniversalArtifactRegistryDto>; getUniversalArtifactTraining?(): Promise<UniversalArtifactTrainingDto>; getUniversalArtifactStorage?(): Promise<UniversalArtifactStorageDto>; requestUniversalArtifactRegistrationDraft?(input: UniversalArtifactRegistrationDraftDto): Promise<UniversalArtifactRegistrationDraftResultDto>; createDraftRequest(input: DraftActionDto): Promise<ActionResultDto>; createTrackConfigurationDraft?(input: DraftActionDto): Promise<ActionResultDto>; requestControlledAction(input: { action: string; target: string; reason: string; actor: string }): Promise<ActionResultDto>; getRaceOffice(): Promise<RaceOfficeWorkspaceDto>; getSurfaceIntelligence(): Promise<SurfaceIntelligenceDto>; getEquineIntelligence(horseId?: string): Promise<EquineIntelligenceDto>; getBarnOperations(): Promise<BarnOperationsDto>; getFacilitiesMaintenance?(): Promise<FacilitiesMaintenanceDto>; getStewardCenter(): Promise<StewardCenterDto>; getSecurityOperations(): Promise<SecurityOperationsDto>; getEmergencyOperations(): Promise<EmergencyOperationsDto>; getWorkforceOperations?(): Promise<WorkforceOperationsDto>; getComplianceLibrary(): Promise<ComplianceControlLibraryDto>; getAIGovernanceWorkspace(): Promise<AIGovernanceWorkspaceDto>; getAIControlPlaneWorkspace?(): Promise<AIControlPlaneWorkspaceDto>; getAIControlPlanePolicy?(): Promise<AIControlPlanePolicyDto>; getAIControlPlaneModels?(): Promise<AIControlPlaneModelRegistryDto>; listAIControlPlaneRecommendations?(): Promise<AIControlPlaneRecommendationDto[]>; createAIControlPlaneRecommendationDraft?(input: Record<string, unknown>): Promise<AIControlPlaneDraftResultDto>; evaluateAIControlPlaneRecommendationDraft?(input: Record<string, unknown>): Promise<AIControlPlaneDraftResultDto>; listAIControlPlaneBlockedActions?(): Promise<AIControlPlaneRecommendationDto[]>; listAIControlPlaneEvents?(): Promise<AIGovernanceWorkspaceDto['events']>; getRacingDataApiHub?(): Promise<RacingDataApiHubWorkspaceDto>; listRacingDataProviders?(): Promise<RacingDataProviderDto[]>; listRacingDataProviderStatuses?(): Promise<RacingDataProviderStatusDto[]>; getRacingDataProvider?(providerId: string): Promise<RacingDataProviderDto>; listRacingDataConnectors?(): Promise<RacingDataProviderConnectorDto[]>; listRacingDataNormalizationMappings?(): Promise<RacingDataNormalizationMappingDto[]>; listRacingDataIngestionJobs?(): Promise<RacingDataIngestionJobDto[]>; getRacingDataIngestionJob?(jobId: string): Promise<RacingDataIngestionJobDto>; createRacingDataIngestionJobDraft?(input: RacingDataIngestionJobDraftRequestDto): Promise<RacingDataExportDraftResultDto>; listRacingDataRawPayloadReviews?(): Promise<RacingDataRawPayloadReviewDto[]>; getRacingDataRawPayloadReview?(payloadId: string): Promise<RacingDataRawPayloadReviewDto>; listRacingDataCanonicalRaceCards?(): Promise<RacingDataCanonicalRaceCardDto[]>; listRacingDataCanonicalRaces?(): Promise<RacingDataCanonicalRaceDto[]>; listRacingDataCanonicalHorses?(): Promise<RacingDataCanonicalHorseDto[]>; listRacingDataCanonicalEntries?(): Promise<RacingDataCanonicalEntryDto[]>; listRacingDataCanonicalResults?(): Promise<RacingDataCanonicalResultDto[]>; getRacingDataEntityResolution?(): Promise<RacingDataEntityResolutionDto>; listRacingDataQualityReports?(): Promise<RacingDataQualityReportDto[]>; getRacingDataLineage?(): Promise<RacingDataLineageReportDto>; listRacingDataLicensePolicies?(): Promise<RacingDataLicensePolicyDto[]>; requestRacingDataFeatureStoreExport?(input: RacingDataExportDraftRequestDto): Promise<RacingDataExportDraftResultDto>; requestRacingDataDataLakeExport?(input: RacingDataExportDraftRequestDto): Promise<RacingDataExportDraftResultDto>; getRacingDataDigitalTwinSyncDescriptor?(): Promise<RacingDataDigitalTwinSyncDescriptorDto>; getPlatformHealth(): Promise<PlatformHealthWorkspaceDto>; getNexusUpgradePackage?(): Promise<NexusUpgradePackageDto>; getRosUniversalSchema?(): Promise<RosUniversalSchemaDto>; getRosStandardizationFramework?(): Promise<RosStandardizationFrameworkDto>; getRosSaasTiers?(): Promise<RosSaasTiersDto>; getRosCertifiedTrack?(): Promise<RosCertifiedTrackDto>; getRosDataModel?(): Promise<RosDataModelDto>; getRosIntelligenceCore?(): Promise<RosIntelligenceCoreDto>; getRosFederation?(): Promise<RosFederationDto>; eventStream(): StreamingDataSourceDto; eventStreamUrl(): string }
-
-export interface NexusApiClient { getUniversalArtifactSchemas?(): Promise<UniversalArtifactSchemaDto>; getUniversalArtifactTrainingInputs?(): Promise<UniversalArtifactTrainingDto>; getUniversalArtifactStorageMap?(): Promise<UniversalArtifactStorageDto>; createUniversalArtifactDraftRegistration?(input: Record<string, unknown>): Promise<UniversalArtifactRegistrationDraftResultDto> }
-
 export interface NexusApiClient {
-  getCollaborationWorkspace(): Promise<CollaborationWorkspaceDto>;
+  readonly mode: AdapterMode;
+  listApprovals(): Promise<ApprovalDto[]>;
+  listAuditEvents(): Promise<AuditEventDto[]>;
+  getTrackMap(): Promise<TrackMapDto>;
+  getOperationsCommandCenter(): Promise<OperationsCommandCenterDto>;
+  getRaceDayReadinessDashboard(): Promise<RaceDayReadinessDashboardDto>;
+  getAssets(): Promise<CommandCenterModelDto['assets']>;
+  getTrackSectors(): Promise<CommandCenterModelDto['trackSectors']>;
+  getGatePosition(): Promise<GatePositionDto>;
+  getRaceDistanceConfiguration(): Promise<RaceDistanceConfigurationDto>;
+  listDigitalTwinState(): Promise<DigitalTwinStateDto[]>;
+  listTUSAssets?(): Promise<TUSAssetStandardDto[]>;
+  listTUSTwins?(): Promise<TUSTwinStandardDto[]>;
+  getTUSStandardization?(): Promise<TUSStandardizationWorkspaceDto>;
+  getUniversalArtifactFramework?(): Promise<UniversalArtifactFrameworkDto>;
+  getUniversalArtifactSchema?(): Promise<UniversalArtifactSchemaDto>;
+  getUniversalArtifactSchemas?(): Promise<UniversalArtifactSchemaDto>;
+  getUniversalArtifactRegistry?(): Promise<UniversalArtifactRegistryDto>;
+  getUniversalArtifactTraining?(): Promise<UniversalArtifactTrainingDto>;
+  getUniversalArtifactTrainingInputs?(): Promise<UniversalArtifactTrainingDto>;
+  getUniversalArtifactStorage?(): Promise<UniversalArtifactStorageDto>;
+  getUniversalArtifactStorageMap?(): Promise<UniversalArtifactStorageDto>;
+  requestUniversalArtifactRegistrationDraft?(input: UniversalArtifactRegistrationDraftDto): Promise<UniversalArtifactRegistrationDraftResultDto>;
+  createUniversalArtifactDraftRegistration?(input: UniversalArtifactRegistrationDraftDto): Promise<UniversalArtifactRegistrationDraftResultDto>;
+  createDraftRequest(input: DraftActionDto): Promise<ActionResultDto>;
+  createTrackConfigurationDraft?(input: DraftActionDto): Promise<ActionResultDto>;
+  requestControlledAction(input: { action: string; target: string; reason: string; actor: string }): Promise<ActionResultDto>;
+  getRaceOffice(): Promise<RaceOfficeWorkspaceDto>;
+  getSurfaceIntelligence(): Promise<SurfaceIntelligenceDto>;
+  getEquineIntelligence(horseId?: string): Promise<EquineIntelligenceDto>;
+  getBarnOperations(): Promise<BarnOperationsDto>;
+  getFacilitiesMaintenance?(): Promise<FacilitiesMaintenanceDto>;
+  getStewardCenter(): Promise<StewardCenterDto>;
+  getSecurityOperations(): Promise<SecurityOperationsDto>;
+  getEmergencyOperations(): Promise<EmergencyOperationsDto>;
+  getWorkforceOperations?(): Promise<WorkforceOperationsDto>;
+  getComplianceLibrary(): Promise<ComplianceControlLibraryDto>;
+  getAIGovernanceWorkspace(): Promise<AIGovernanceWorkspaceDto>;
+  getAIControlPlaneWorkspace?(): Promise<AIControlPlaneWorkspaceDto>;
+  getAIControlPlanePolicy?(): Promise<AIControlPlanePolicyDto>;
+  getAIControlPlaneModels?(): Promise<AIControlPlaneModelRegistryDto>;
+  listAIControlPlaneRecommendations?(): Promise<AIControlPlaneRecommendationDto[]>;
+  createAIControlPlaneRecommendationDraft?(input: Record<string, unknown>): Promise<AIControlPlaneDraftResultDto>;
+  evaluateAIControlPlaneRecommendationDraft?(input: Record<string, unknown>): Promise<AIControlPlaneDraftResultDto>;
+  listAIControlPlaneBlockedActions?(): Promise<AIControlPlaneRecommendationDto[]>;
+  listAIControlPlaneEvents?(): Promise<AIGovernanceWorkspaceDto['events']>;
+  getRacingDataApiHub?(): Promise<RacingDataApiHubWorkspaceDto>;
+  listRacingDataProviders?(): Promise<RacingDataProviderDto[]>;
+  listRacingDataProviderStatuses?(): Promise<RacingDataProviderStatusDto[]>;
+  getRacingDataProvider?(providerId: string): Promise<RacingDataProviderDto>;
+  listRacingDataConnectors?(): Promise<RacingDataProviderConnectorDto[]>;
+  listRacingDataNormalizationMappings?(): Promise<RacingDataNormalizationMappingDto[]>;
+  listRacingDataIngestionJobs?(): Promise<RacingDataIngestionJobDto[]>;
+  getRacingDataIngestionJob?(jobId: string): Promise<RacingDataIngestionJobDto>;
+  createRacingDataIngestionJobDraft?(input: RacingDataIngestionJobDraftRequestDto): Promise<RacingDataExportDraftResultDto>;
+  listRacingDataRawPayloadReviews?(): Promise<RacingDataRawPayloadReviewDto[]>;
+  getRacingDataRawPayloadReview?(payloadId: string): Promise<RacingDataRawPayloadReviewDto>;
+  listRacingDataCanonicalRaceCards?(): Promise<RacingDataCanonicalRaceCardDto[]>;
+  listRacingDataCanonicalRaces?(): Promise<RacingDataCanonicalRaceDto[]>;
+  listRacingDataCanonicalHorses?(): Promise<RacingDataCanonicalHorseDto[]>;
+  listRacingDataCanonicalEntries?(): Promise<RacingDataCanonicalEntryDto[]>;
+  listRacingDataCanonicalResults?(): Promise<RacingDataCanonicalResultDto[]>;
+  getRacingDataEntityResolution?(): Promise<RacingDataEntityResolutionDto>;
+  listRacingDataQualityReports?(): Promise<RacingDataQualityReportDto[]>;
+  getRacingDataLineage?(): Promise<RacingDataLineageReportDto>;
+  listRacingDataLicensePolicies?(): Promise<RacingDataLicensePolicyDto[]>;
+  requestRacingDataFeatureStoreExport?(input: RacingDataExportDraftRequestDto): Promise<RacingDataExportDraftResultDto>;
+  requestRacingDataDataLakeExport?(input: RacingDataExportDraftRequestDto): Promise<RacingDataExportDraftResultDto>;
+  getRacingDataDigitalTwinSyncDescriptor?(): Promise<RacingDataDigitalTwinSyncDescriptorDto>;
+  getPlatformHealth(): Promise<PlatformHealthWorkspaceDto>;
+  getNexusUpgradePackage?(): Promise<NexusUpgradePackageDto>;
+  getRosUniversalSchema?(): Promise<RosUniversalSchemaDto>;
+  getRosStandardizationFramework?(): Promise<RosStandardizationFrameworkDto>;
+  getRosSaasTiers?(): Promise<RosSaasTiersDto>;
+  getRosCertifiedTrack?(): Promise<RosCertifiedTrackDto>;
+  getRosDataModel?(): Promise<RosDataModelDto>;
+  getRosIntelligenceCore?(): Promise<RosIntelligenceCoreDto>;
+  getRosFederation?(): Promise<RosFederationDto>;
+  getFederationWorkspace?(): Promise<FederationWorkspaceDto>;
+  eventStream(): StreamingDataSourceDto;
+  eventStreamUrl(): string;
+  getCollaborationWorkspace?(): Promise<CollaborationWorkspaceDto>;
   listCollaborationThreads(): Promise<CollaborationThreadDto[]>;
   listCollaborationActivity(): Promise<CollaborationActivityDto[]>;
   createCollaborationComment(input: CollaborationCreateCommentDto): Promise<CollaborationThreadDto['comments'][number]>;
@@ -54,7 +131,6 @@ const apiRoutes = {
   createTrackConfigurationDraft: sharedRoute('createTrackConfigurationDraftRequest', '/track-configuration/draft-requests'),
   requestControlledAction: sharedRoute('requestControlledAction', '/approvals/controlled-actions'),
   getEventStream: sharedRoute('getEventStream', '/events/stream'),
-  getUniversalArtifactFramework: sharedRoute('getUniversalArtifactRegistry', '/artifacts/registry'),
   getUniversalArtifactSchema: sharedRoute('getUniversalArtifactSchemas', '/artifacts/schemas'),
   getUniversalArtifactRegistry: sharedRoute('getUniversalArtifactRegistry', '/artifacts/registry'),
   getUniversalArtifactTraining: sharedRoute('getUniversalArtifactTrainingInputs', '/artifacts/training-inputs'),
@@ -80,21 +156,22 @@ const apiRoutes = {
   racingDataFeatureStoreExports: sharedRoute('createRacingDataFeatureStoreExportDraft', '/racing-data/exports/feature-store'),
   racingDataDataLakeExports: sharedRoute('createRacingDataDataLakeExportDraft', '/racing-data/exports/data-lake'),
   racingDataDigitalTwinSyncDescriptor: '/racing-data/digital-twin/sync-descriptor',
-  collaborationWorkspace: '/collaboration/workspace',
   collaborationThreads: '/collaboration/threads',
   collaborationActivity: '/collaboration/activity',
   collaborationComments: '/collaboration/comments',
   collaborationAssignments: '/collaboration/assignments',
   collaborationDecisions: '/collaboration/decisions',
+  federationWorkspace: sharedRoute('getFederationWorkspace', '/federation/workspace'),
 };
 
 function defaultRolesForProtectedAction(action: string): string[] {
-  if (/scratch/i.test(action)) return ['racing-secretary', 'veterinarian'];
+  if (/scratch/i.test(action)) return ['veterinarian', 'steward'];
   if (/vet|veterinary/i.test(action)) return ['veterinarian'];
   if (/steward|discipline|official-results|modify-official/i.test(action)) return ['steward'];
   if (/payout/i.test(action)) return ['finance'];
   if (/security|emergency/i.test(action)) return ['security'];
-  if (/gate|distance|configuration|race-start|race-stop/i.test(action)) return ['racing-secretary', 'track-superintendent'];
+  if (/race-start|race-stop/i.test(action)) return ['racing-secretary', 'steward', 'veterinarian'];
+  if (/gate|distance|configuration/i.test(action)) return ['racing-secretary', 'track-superintendent'];
   if (/surface|track-closure|track-reopen|irrigation|harrow|rolling/i.test(action)) return ['track-superintendent'];
   if (/compliance/i.test(action)) return ['compliance-officer'];
   return ['admin'];
@@ -299,13 +376,9 @@ export function createLiveClient(baseUrl = nexusApiBasePath, context: NexusApiCl
     listTUSAssets: () => request('/assets/standard'),
     listTUSTwins: () => request('/digital-twin/standard'),
     getTUSStandardization: () => request('/tus/standardization'),
-    getUniversalArtifactFramework: () => request(apiRoutes.getUniversalArtifactFramework),
-    getUniversalArtifactSchema: () => request(apiRoutes.getUniversalArtifactSchema),
     getUniversalArtifactSchemas: () => request(apiRoutes.getUniversalArtifactSchema),
     getUniversalArtifactRegistry: () => request(apiRoutes.getUniversalArtifactRegistry),
-    getUniversalArtifactTraining: () => request(apiRoutes.getUniversalArtifactTraining),
     getUniversalArtifactTrainingInputs: () => request(apiRoutes.getUniversalArtifactTraining),
-    getUniversalArtifactStorage: () => request(apiRoutes.getUniversalArtifactStorage),
     getUniversalArtifactStorageMap: () => request(apiRoutes.getUniversalArtifactStorage),
     requestUniversalArtifactRegistrationDraft: (input) => request(apiRoutes.requestUniversalArtifactRegistrationDraft, { method: 'POST', body: JSON.stringify(input) }),
     createUniversalArtifactDraftRegistration: (input) => request(apiRoutes.requestUniversalArtifactRegistrationDraft, { method: 'POST', body: JSON.stringify(input) }),
@@ -354,7 +427,6 @@ export function createLiveClient(baseUrl = nexusApiBasePath, context: NexusApiCl
     requestRacingDataFeatureStoreExport: (input) => request(apiRoutes.racingDataFeatureStoreExports, { method: 'POST', body: JSON.stringify(input) }),
     requestRacingDataDataLakeExport: (input) => request(apiRoutes.racingDataDataLakeExports, { method: 'POST', body: JSON.stringify(input) }),
     getRacingDataDigitalTwinSyncDescriptor: () => request(apiRoutes.racingDataDigitalTwinSyncDescriptor),
-    getCollaborationWorkspace: () => request(apiRoutes.collaborationWorkspace),
     listCollaborationThreads: () => request(apiRoutes.collaborationThreads),
     listCollaborationActivity: () => request(apiRoutes.collaborationActivity),
     createCollaborationComment: (input) => request(apiRoutes.collaborationComments, { method: 'POST', body: JSON.stringify(input) }),
@@ -369,6 +441,7 @@ export function createLiveClient(baseUrl = nexusApiBasePath, context: NexusApiCl
     getRosDataModel: () => request('/ros/data-model'),
     getRosIntelligenceCore: () => request('/ros/intelligence-core'),
     getRosFederation: () => request('/ros/federation'),
+    getFederationWorkspace: () => request(apiRoutes.federationWorkspace),
     eventStream: () => stream,
     eventStreamUrl: () => stream.url,
   };

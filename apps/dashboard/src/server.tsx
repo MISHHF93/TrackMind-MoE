@@ -206,13 +206,15 @@ async function renderDashboard(path = '/operations', requestId = createRequestId
     racetrackId: process.env.TRACKMIND_RACETRACK_ID ?? 'main-track',
     authToken: process.env.TRACKMIND_API_AUTH_TOKEN,
   };
+  const authenticated = process.env.TRACKMIND_AUTHENTICATED !== 'false';
+  const tenantId = clientContext.racetrackId;
   try {
     const data = await loadCommandCenter(createNexusClient(true, apiBase, clientContext));
-    return html(renderToStaticMarkup(<CommandCenter data={data} roles={roles} path={path} serviceState="online" />), 'live');
+    return html(renderToStaticMarkup(<CommandCenter data={data} roles={roles} authenticated={authenticated} tenantId={tenantId} path={path} serviceState="online" />), 'live');
   } catch (error) {
     structuredLog('warning', 'dashboard.render.degraded', { requestId, path, apiBase, message: errorMessage(error) });
     const data = await loadCommandCenter(createNexusClient(false));
-    return html(renderToStaticMarkup(<CommandCenter data={data} roles={roles} path={path} serviceState="degraded" />), `mock fallback (live data unavailable; request ${requestId})`);
+    return html(renderToStaticMarkup(<CommandCenter data={data} roles={roles} authenticated={authenticated} tenantId={tenantId} path={path} serviceState="degraded" />), `mock fallback (live data unavailable; request ${requestId})`);
   }
 }
 

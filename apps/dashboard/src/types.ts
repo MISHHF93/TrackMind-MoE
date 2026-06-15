@@ -39,6 +39,7 @@ import type {
   TrackMapDto as SharedTrackMapDto,
   TrackSectorDto as SharedTrackSectorDto,
   DigitalTwinStateDto as SharedDigitalTwinStateDto,
+  FederationWorkspaceDto as SharedFederationWorkspaceDto,
 } from '@trackmind/shared';
 
 export type NexusRole = Role;
@@ -99,6 +100,7 @@ export type RaceOfficeApprovalControlDto = SharedRaceOfficeApprovalControlDto;
 export type RaceOfficeWorkspaceDto = SharedRaceOfficeWorkspaceDto;
 
 export type ActionResultDto = SharedActionResultDto;
+export type FederationWorkspaceDto = SharedFederationWorkspaceDto;
 
 export interface CollaborationActorDto { id: string; displayName: string; role: string; actorType: 'human' | 'ai-agent' | 'service' }
 export interface CollaborationTargetArtifactDto { id: string; type: 'race' | 'approval' | 'audit-record' | 'evidence-package' | 'incident' | 'asset' | 'digital-twin' | 'work-order' | 'workspace' | string; label: string }

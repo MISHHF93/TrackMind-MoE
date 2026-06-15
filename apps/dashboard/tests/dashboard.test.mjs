@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createMockClient, createLiveClient, createNexusClient, NexusApiError } from '../dist/api/client.js';
 import { calculateRequiredGatePosition, loadCommandCenter, isSafetyCriticalEnabled, requestRaceStartApproval, requestRaceOfficeApproval, requestStartingGateMoveDraft, requestTrackConfigurationDraft, commandCenterApprovalActions } from '../dist/App.js';
-import { activeNavItem, apiHubDeepLinks, canonicalPathForRoute, canonicalRouteMap, groupHasActiveItem, groupedVisibleNavItems, isKnownRoutePath, isNavItemActive, legacyRouteAliases, navItems, navLinkState, navSections, routeAliasForPath, routeBadgesForItem, visibleNavItems } from '../dist/shell/navigation.js';
+import { activeNavItem, apiHubDeepLinks, canonicalLocationForRoute, canonicalPathForRoute, canonicalRouteMap, groupHasActiveItem, groupedVisibleNavItems, isKnownRoutePath, isNavItemActive, legacyRouteAliases, navItems, navLinkState, navSections, routeAliasForPath, routeBadgesForItem, visibleNavItems } from '../dist/shell/navigation.js';
 import { domainScreens } from '../dist/shell/domains.js';
 
 test('routing exposes all command-center domain screens with role visibility', () => { const admin = visibleNavItems(['admin']).map((i)=>i.id); assert.ok(admin.includes('operations')); assert.ok(admin.includes('ai-governance')); assert.ok(admin.includes('api-hub')); assert.ok(admin.includes('track-configuration')); assert.ok(admin.includes('workforce')); assert.ok(admin.includes('platform-health')); assert.ok(admin.includes('safety')); const auditor = visibleNavItems(['read-only-auditor']).map((i)=>i.id); assert.ok(auditor.includes('operations')); assert.ok(auditor.includes('workforce')); assert.ok(auditor.includes('api-hub')); assert.ok(auditor.includes('platform-health')); assert.ok(auditor.includes('safety')); assert.equal(auditor.includes('starting-gate'), false); assert.equal(auditor.includes('security'), false); assert.equal(auditor.includes('emergency'), false); });
@@ -212,7 +212,9 @@ test('live controlled actions POST to the approval-aware backend path with JSON 
     assert.equal(result.audited, true);
     assert.equal(request.url, 'https://api.example.test/api/v1/approvals/controlled-actions');
     assert.equal(request.init.method, 'POST');
-    assert.equal(JSON.parse(request.init.body).action, 'race-start');
+    const body = JSON.parse(request.init.body);
+    assert.equal(body.action, 'race-start');
+    assert.deepEqual(body.roles, ['racing-secretary', 'steward', 'veterinarian']);
   } finally {
     globalThis.fetch = original;
   }
@@ -912,6 +914,7 @@ test('active navigation helpers handle exact routes and deep links consistently'
   assert.equal(canonicalPathForRoute('/command-center'), '/operations');
   assert.equal(canonicalPathForRoute('/safety-center/readiness'), '/safety/readiness');
   assert.equal(canonicalPathForRoute('/racing-data-api-hub/providers'), '/api-hub/providers');
+  assert.equal(canonicalLocationForRoute('/surface-intelligence/sectors/far-turn?panel=moisture#heatmap'), '/surface/sectors/far-turn?panel=moisture#heatmap');
   const deprecatedLegacyDashboard = routeAliasForPath('/legacy-one-page-dashboard');
   assert.equal(deprecatedLegacyDashboard?.status, 'deprecated');
   assert.ok(deprecatedLegacyDashboard);
@@ -975,6 +978,8 @@ test('canonical route registry covers every required Nexus shell path', () => {
     assert.equal(canonicalPathForRoute(path), path, `${path} should already be canonical`);
   }
   assert.deepEqual(canonicalById.get('api-hub').aliases.sort(), ['/api-hub-dashboard', '/data-api-hub', '/racing-data-api-hub']);
+  assert.ok(canonicalById.get('platform-health').deepLinks.some((link) => link.path === '/platform-health/services'));
+  assert.ok(canonicalById.get('platform-health').deepLinks.some((link) => link.path === '/platform-health/frontend'));
   assert.ok(canonicalById.get('operations').aliases.includes('/command-center'));
   assert.ok(canonicalById.get('ai-governance').aliases.includes('/responsible-ai'));
   const canonicalAliases = canonicalRouteMap.flatMap((entry) => entry.aliases);

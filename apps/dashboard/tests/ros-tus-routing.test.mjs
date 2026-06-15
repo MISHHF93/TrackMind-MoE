@@ -68,11 +68,12 @@ test('live client exposes implemented ROS/TUS metadata endpoints through stable 
     await live.getComplianceLibrary();
     await live.getAIControlPlaneWorkspace?.();
     await live.getPlatformHealth();
+    await live.getFederationWorkspace?.();
     assert.equal(live.executeUniversalArtifact, undefined);
     await live.getUniversalArtifactRegistry?.();
-    await live.getUniversalArtifactSchema?.();
-    await live.getUniversalArtifactTraining?.();
-    await live.getUniversalArtifactStorage?.();
+    await live.getUniversalArtifactSchemas?.();
+    await live.getUniversalArtifactTrainingInputs?.();
+    await live.getUniversalArtifactStorageMap?.();
     await live.requestUniversalArtifactRegistrationDraft?.({ artifact: { artifactId: 'artifact-draft-ui', schemaVersion: 'trackmind.universal-artifact.v1', kind: 'registry-record', name: 'Draft UI artifact', description: 'Draft only', tenantId: 'track-1', racetrackId: 'main-track', uri: 'draft://artifact', contentType: 'application/json', checksum: 'sha256:draft', tags: [], metadata: {}, lineage: { producedBy: 'dashboard-test', upstreamArtifactIds: [], downstreamArtifactIds: [], eventIds: [], digitalTwinRefs: [], correlationId: 'corr-artifact-draft' } }, reason: 'Dashboard route test', requestedBy: 'compliance-officer', evidence: ['test'], approvalPolicy: 'artifact-registration', safetyCritical: true });
 
     assert.deepEqual(requests, [
@@ -80,6 +81,7 @@ test('live client exposes implemented ROS/TUS metadata endpoints through stable 
       'https://api.example.test/api/v1/compliance/control-library',
       'https://api.example.test/api/v1/ai-control-plane/workspace',
       'https://api.example.test/api/v1/platform/health',
+      'https://api.example.test/api/v1/federation/workspace',
       'https://api.example.test/api/v1/artifacts/registry',
       'https://api.example.test/api/v1/artifacts/schemas',
       'https://api.example.test/api/v1/artifacts/training-inputs',

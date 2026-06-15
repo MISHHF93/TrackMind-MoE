@@ -59,15 +59,17 @@ test('Universal Artifact Framework live client uses configured backend base path
 
   try {
     const live = createLiveClient('https://api.example.test/api/v1');
-    await live.getUniversalArtifactFramework();
-    await live.getUniversalArtifactSchema();
+    assert.equal(live.getUniversalArtifactFramework, undefined);
+    assert.equal(live.getUniversalArtifactSchema, undefined);
+    assert.equal(live.getUniversalArtifactTraining, undefined);
+    assert.equal(live.getUniversalArtifactStorage, undefined);
+    await live.getUniversalArtifactSchemas();
     await live.getUniversalArtifactRegistry();
-    await live.getUniversalArtifactTraining();
-    await live.getUniversalArtifactStorage();
+    await live.getUniversalArtifactTrainingInputs();
+    await live.getUniversalArtifactStorageMap();
     await live.requestUniversalArtifactRegistrationDraft(registrationDraft);
 
     assert.deepEqual(calls.map((call) => [call.method, call.url]), [
-      ['GET', 'https://api.example.test/api/v1/artifacts/registry'],
       ['GET', 'https://api.example.test/api/v1/artifacts/schemas'],
       ['GET', 'https://api.example.test/api/v1/artifacts/registry'],
       ['GET', 'https://api.example.test/api/v1/artifacts/training-inputs'],
@@ -85,7 +87,7 @@ test('Universal Artifact Framework errors retain typed API metadata', async () =
   globalThis.fetch = async () => ({ ok: false, status: 503, statusText: 'Unavailable', json: async () => ({ error: { code: 'uaf_unavailable', message: 'artifact storage unavailable', details: ['storage'] } }) });
 
   try {
-    await assert.rejects(() => createLiveClient('https://api.example.test/api/v1').getUniversalArtifactStorage(), (error) => {
+    await assert.rejects(() => createLiveClient('https://api.example.test/api/v1').getUniversalArtifactStorageMap(), (error) => {
       assert.ok(error instanceof NexusApiError);
       assert.equal(error.status, 503);
       assert.equal(error.path, '/artifacts/storage-map');

@@ -87,6 +87,13 @@ export const apiHubDeepLinks: NavDeepLink[] = [
   { id: 'data-lake-exports', label: 'Data Lake Exports', path: '/api-hub/data-lake-exports', keywords: ['api hub data lake exports', 'lakehouse export', 'retention exports'] },
 ];
 
+export const platformHealthDeepLinks: NavDeepLink[] = [
+  { id: 'services', label: 'Services', path: '/platform-health/services', keywords: ['platform health services', 'service dependencies', 'service latency'] },
+  { id: 'events', label: 'Events', path: '/platform-health/events', keywords: ['platform health events', 'event throughput', 'event bus'] },
+  { id: 'workflows', label: 'Workflows', path: '/platform-health/workflows', keywords: ['platform health workflows', 'workflow metrics', 'approval engine'] },
+  { id: 'frontend', label: 'Frontend', path: '/platform-health/frontend', keywords: ['platform health frontend', 'frontend degraded state', 'reported errors'] },
+];
+
 const baseNavItems: BaseNavItem[] = [
   { id: 'operations', label: 'Operations Command', path: '/operations', iconKey: 'operations-command', required: ['read:any'], eventReady: true, mockAllowed: true, section: 'operations', dynamicBadgeSources: ['operations:alerts'], safetyCritical: true },
   { id: 'race-office', label: 'Race Office', path: '/race-office', iconKey: 'race-office', required: ['race:request-start'], eventReady: true, mockAllowed: true, section: 'operations', safetyCritical: true },
@@ -100,16 +107,16 @@ const baseNavItems: BaseNavItem[] = [
   { id: 'security', label: 'Security', path: '/security', iconKey: 'security-operations', required: ['security:manage'], eventReady: true, mockAllowed: true, section: 'safety', dynamicBadgeSources: ['security:alerts'], safetyCritical: true },
   { id: 'emergency', label: 'Emergency Ops', path: '/emergency', iconKey: 'emergency-ops', required: ['incident:manage'], eventReady: true, mockAllowed: true, section: 'safety', dynamicBadgeSources: ['emergency:events'], safetyCritical: true },
   { id: 'assets', label: 'Asset Registry', path: '/assets', iconKey: 'asset-registry', required: ['read:any'], eventReady: true, mockAllowed: true, section: 'facilities', safetyCritical: true },
-  { id: 'digital-twin', label: 'Digital Twin View', path: '/digital-twin', iconKey: 'digital-twin', required: ['read:any'], eventReady: true, mockAllowed: true, section: 'facilities', safetyCritical: true },
+  { id: 'digital-twin', label: 'Digital Twin View', path: '/digital-twin', iconKey: 'digital-twin', required: ['read:any'], eventReady: true, mockAllowed: true, section: 'intelligence', safetyCritical: true },
   { id: 'facilities', label: 'Facilities', path: '/facilities', iconKey: 'facilities', required: ['read:any'], eventReady: true, mockAllowed: true, section: 'facilities', safetyCritical: true },
   { id: 'workforce', label: 'Workforce', path: '/workforce', iconKey: 'workforce', required: ['read:any'], eventReady: true, mockAllowed: true, section: 'facilities', safetyCritical: true },
   { id: 'approvals', label: 'Approvals', path: '/approvals', iconKey: 'approvals', required: ['ai:approve'], eventReady: true, mockAllowed: false, section: 'governance', dynamicBadgeSources: ['approvals:pending'], safetyPosture: 'approval-gated' },
   { id: 'audit', label: 'Audit Ledger', path: '/audit', iconKey: 'audit-ledger', required: ['compliance:audit'], eventReady: true, mockAllowed: false, section: 'governance', safetyPosture: 'read-only' },
   { id: 'compliance', label: 'Compliance', path: '/compliance', iconKey: 'compliance', required: ['compliance:audit'], eventReady: true, mockAllowed: true, section: 'governance', safetyCritical: true },
-  { id: 'ai-governance', label: 'AI Governance', path: '/ai-governance', iconKey: 'ai-governance', required: ['ai:approve'], eventReady: true, mockAllowed: true, section: 'intelligence', safetyCritical: true },
+  { id: 'ai-governance', label: 'AI Governance', path: '/ai-governance', iconKey: 'ai-governance', required: ['ai:approve'], eventReady: true, mockAllowed: true, section: 'governance', safetyCritical: true },
   { id: 'api-hub', label: 'Racing Data API Hub', path: '/api-hub', iconKey: 'api-hub', required: ['read:any'], eventReady: true, mockAllowed: true, section: 'platform-admin', deepLinks: apiHubDeepLinks, safetyPosture: 'read-only' },
   { id: 'executive', label: 'Executive Center', path: '/executive', iconKey: 'executive-center', required: ['read:any'], eventReady: true, mockAllowed: true, section: 'executive', safetyPosture: 'read-only' },
-  { id: 'platform-health', label: 'Platform Health', path: '/platform-health', iconKey: 'platform-health', required: ['read:any'], eventReady: true, mockAllowed: true, section: 'platform-admin', dynamicBadgeSources: ['platform-health:frontend'], safetyPosture: 'read-only' },
+  { id: 'platform-health', label: 'Platform Health', path: '/platform-health', iconKey: 'platform-health', required: ['read:any'], eventReady: true, mockAllowed: true, section: 'platform-admin', deepLinks: platformHealthDeepLinks, dynamicBadgeSources: ['platform-health:frontend'], safetyPosture: 'read-only' },
 ];
 
 function roleVisibilityForPermissions(required?: Permission[]): RouteRoleVisibility {
@@ -200,6 +207,9 @@ export const legacyRouteAliases: LegacyRouteAlias[] = [
   { from: '/responsible-ai', to: '/ai-governance', status: 'redirect', reason: 'AI Control Plane owns responsible AI controls.' },
   { from: '/executive-center', to: '/executive', status: 'redirect', reason: 'Executive Center uses the canonical /executive route.' },
   { from: '/executive-intelligence', to: '/executive', status: 'redirect', reason: 'Executive Center uses the canonical /executive route.' },
+  { from: '/federation', to: '/executive', status: 'redirect', reason: 'Federation analytics render inside the read-only Executive Center.' },
+  { from: '/federation-dashboard', to: '/executive', status: 'redirect', reason: 'Federation analytics render inside the read-only Executive Center.' },
+  { from: '/multi-track-federation', to: '/executive', status: 'redirect', reason: 'Multi-track federation is part of Executive Center rollups.' },
   { from: '/platform-observability', to: '/platform-health', status: 'redirect', reason: 'Platform Health owns observability and frontend degraded state.' },
   { from: '/racing-data-api-hub', to: '/api-hub', status: 'redirect', reason: 'API Hub uses the canonical /api-hub route.' },
   { from: '/data-api-hub', to: '/api-hub', status: 'redirect', reason: 'API Hub uses the canonical /api-hub route.' },
@@ -231,6 +241,16 @@ export function canonicalPathForRoute(path: string): string {
   const alias = routeAliasForPath(current);
   if (!alias || alias.status !== 'redirect') return current;
   return `${alias.to}${current.slice(alias.from.length)}`;
+}
+
+export function canonicalLocationForRoute(path: string): string {
+  const hashIndex = path.indexOf('#');
+  const beforeHash = hashIndex >= 0 ? path.slice(0, hashIndex) : path;
+  const hash = hashIndex >= 0 ? path.slice(hashIndex) : '';
+  const queryIndex = beforeHash.indexOf('?');
+  const pathname = queryIndex >= 0 ? beforeHash.slice(0, queryIndex) : beforeHash;
+  const query = queryIndex >= 0 ? beforeHash.slice(queryIndex) : '';
+  return `${canonicalPathForRoute(pathname)}${query}${hash}`;
 }
 
 export function canViewNavItem(roles: Role[], item: NavItem): boolean {

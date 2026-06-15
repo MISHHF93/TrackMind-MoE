@@ -17,7 +17,7 @@ import { TrackMap } from './domains/track-map/TrackMap.js';
 import { domainScreens } from './shell/domains.js';
 import { breadcrumbForPath, filterCommandPalette, selectTenant, serviceBanner, tenants, type ServiceState, type TenantOption, type UserProfile } from './shell/experience.js';
 import { apiHubDeepLinks, canonicalPathForRoute, groupedVisibleNavItems, groupHasActiveItem, legacyRouteAliases, navLinkState, routeAliasForPath, routeBadgesForItem, visibleNavItems, type NavBadge, type NavBadgeMap, type NavGroup } from './shell/navigation.js';
-import type { ApprovalDto, CollaborationActorDto, CollaborationContextDto, CollaborationCreateAssignmentDto, CollaborationCreateCommentDto, CollaborationCreateDecisionDto, CollaborationWorkspaceDto, DraftActionDto, EquineIntelligenceDto, FacilitiesMaintenanceDto, PlatformHealthWorkspaceDto, RaceOfficeApprovalActionDto, RacingDataApiHubWorkspaceDto, RacingDataClassDto, RacingDataExportManifestDto, RacingDataLicenseDto, TrackCertificationCandidateDto, TUSStandardizationWorkspaceDto, WorkforceOperationsDto } from './types.js';
+import type { ApprovalDto, CollaborationActorDto, CollaborationContextDto, CollaborationCreateAssignmentDto, CollaborationCreateCommentDto, CollaborationCreateDecisionDto, CollaborationWorkspaceDto, DraftActionDto, EquineIntelligenceDto, FacilitiesMaintenanceDto, FederationWorkspaceDto, PlatformHealthWorkspaceDto, RaceOfficeApprovalActionDto, RacingDataApiHubWorkspaceDto, RacingDataClassDto, RacingDataExportManifestDto, RacingDataLicenseDto, TrackCertificationCandidateDto, TUSStandardizationWorkspaceDto, WorkforceOperationsDto } from './types.js';
 
 export { calculateRequiredGatePosition };
 
@@ -231,7 +231,7 @@ function hydrateRacingDataApiHubWorkspace(workspace: RacingDataApiHubWorkspaceDt
 }
 
 export async function loadCommandCenter(client: NexusApiClient) {
-  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, tusStandardization, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, facilitiesMaintenance, stewardCenter, securityOperations, emergencyOperations, workforceOperations, complianceLibrary, aiGovernance, racingDataApiHub, collaborationWorkspace, platformHealth, nexusUpgrade] = await Promise.all([
+  const [approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, tusStandardization, raceOffice, surfaceIntelligence, equineIntelligence, barnOperations, facilitiesMaintenance, stewardCenter, securityOperations, emergencyOperations, workforceOperations, complianceLibrary, aiGovernance, racingDataApiHub, collaborationWorkspace, federationWorkspace, platformHealth, nexusUpgrade] = await Promise.all([
     client.listApprovals(),
     client.listAuditEvents(),
     client.getTrackMap(),
@@ -254,6 +254,7 @@ export async function loadCommandCenter(client: NexusApiClient) {
     client.getAIGovernanceWorkspace(),
     optionalClientData(() => client.getRacingDataApiHub?.(), () => fallbackRacingDataApiHub(true)),
     optionalClientData(() => client.getCollaborationWorkspace?.(), () => fallbackCollaborationWorkspace(true)),
+    optionalClientData<FederationWorkspaceDto | undefined>(() => client.getFederationWorkspace?.(), () => undefined),
     client.getPlatformHealth(),
     client.getNexusUpgradePackage?.() ?? Promise.resolve(createTrackMindNexusUpgradePackage()),
   ]);
@@ -270,7 +271,7 @@ export async function loadCommandCenter(client: NexusApiClient) {
         : 'POST /api/v1/approvals/controlled-actions',
     })),
   };
-  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, tusStandardization, raceOffice: raceOfficeGoverned, surfaceIntelligence, equineIntelligence: normalizeEquineIntelligence(equineIntelligence), barnOperations, facilitiesMaintenance, stewardCenter, securityOperations, emergencyOperations: emergencyWithWorkforce, workforceOperations: workforceWorkspace, complianceLibrary, aiGovernance, racingDataApiHub: racingDataApiHubWorkspace, collaborationWorkspace, platformHealth, nexusUpgrade, stream: client.eventStream(), streamUrl: client.eventStreamUrl(), mode: client.mode };
+  return { approvals, auditEvents, trackMap, operations, readiness, gatePosition, raceDistanceConfiguration, digitalTwinState, tusStandardization, raceOffice: raceOfficeGoverned, surfaceIntelligence, equineIntelligence: normalizeEquineIntelligence(equineIntelligence), barnOperations, facilitiesMaintenance, stewardCenter, securityOperations, emergencyOperations: emergencyWithWorkforce, workforceOperations: workforceWorkspace, complianceLibrary, aiGovernance, racingDataApiHub: racingDataApiHubWorkspace, collaborationWorkspace, federationWorkspace, platformHealth, nexusUpgrade, stream: client.eventStream(), streamUrl: client.eventStreamUrl(), mode: client.mode };
 }
 
 export function isSafetyCriticalEnabled(args: { authenticated: boolean; hasApprovalToken: boolean; backendMode: 'live' | 'mock' }) {
@@ -1382,6 +1383,23 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
     { id: 'ai', area: 'AI control plane safety', status: data.platformHealth.aiGovernance.status, value: `${data.platformHealth.aiGovernance.modelSelectionCount} model selections / ${data.platformHealth.aiGovernance.blockedActionCount} blocked actions`, route: '/ai-governance', source: 'PlatformHealthWorkspaceDto.aiGovernance' },
     { id: 'revenue', area: 'Revenue KPI', status: 'not connected', value: 'No wagering, attendance, finance, or revenue DTO loaded', route: '/executive', source: 'Explicit placeholder - unavailable in current contract' },
   ];
+  const federationWorkspace = data.federationWorkspace;
+  const federationTrackRows = federationWorkspace?.tracks.map((track) => ({
+    id: `${track.tenantId}:${track.racetrackId}`,
+    track: track.displayName,
+    tenant: `${track.tenantId} / ${track.racetrackId}`,
+    certification: track.certificationStatus,
+    sharing: track.sharingScope,
+    residency: track.dataResidency,
+  })) ?? [];
+  const federationBenchmarkRows = federationWorkspace?.crossTrackBenchmarking.metrics.map((metric) => ({
+    id: metric.metricId,
+    metric: metric.label,
+    category: metric.category,
+    value: `${metric.value} ${metric.unit}`,
+    benchmark: `${metric.benchmarkValue} ${metric.unit}`,
+    policy: `${metric.aggregation}; min cohort ${metric.minCohortSize}; raw data exposed ${String(metric.rawTrackDataExposed)}`,
+  })) ?? [];
   const stewardInquiries = data.stewardCenter.inquiries;
   const stewardOpenObjections = stewardInquiries.flatMap((inq) => inq.objections).filter((objection) => !['dismissed', 'upheld'].includes(objection.status)).length;
   const activeRace = data.readiness.races[0];
@@ -1617,7 +1635,7 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
         {showWorkspace('track-configuration', 'starting-gate', 'digital-twin') && <a href="#track-map-region">Track map</a>}
         {showWorkspace('approvals') && <a href="#approvals-region">Approvals</a>}
         {showWorkspace('audit') && <a href="#audit-ledger-region">Audit ledger</a>}
-        <a href="#safety-controls">Safety controls</a>
+        {showWorkspace('starting-gate') && <a href="#safety-controls">Safety controls</a>}
       </nav>
       <section id="emergency-banner-zone" aria-label="Emergency banner zone" role={activeEmergencyCritical ? 'alert' : 'status'}><h2>Emergency Ops</h2><p>Active emergency status: <strong>{data.emergencyOperations.activeEmergencyStatus}</strong></p><p>Guardrail: {data.emergencyOperations.emergencyActions.reason} AI may block actions: {String(data.emergencyOperations.emergencyActions.aiMayBlock)}.</p></section>
       <CommandPanel id="command-palette" title="Command Palette" label="Quick-access command palette"><FilterBar label="Command palette filters" summary="Filter role-aware commands across the Nexus shell."><input aria-label="Command palette query" aria-controls="command-palette-results" defaultValue={paletteQuery} /><ul id="command-palette-results" aria-label="Command palette results">{paletteItems.map((item) => <li key={item.id} data-workspace-group={item.workspaceGroup}><a href={item.path} data-icon-key={item.iconKey} data-breadcrumb-label={item.breadcrumbLabel} data-data-state={item.dataState.mode} data-safety-posture={item.safetyPosture.posture}>{item.label}</a></li>)}</ul></FilterBar></CommandPanel>
@@ -1982,6 +2000,33 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
             { key: 'route', header: 'Drill-down', render: (row) => <a href={row.route}>{row.route}</a> },
             { key: 'source', header: 'Source / coverage', render: (row) => row.source },
           ]} />
+        </section>
+        <section aria-label="Executive federation dashboard">
+          <h3>Federation Dashboard</h3>
+          {federationWorkspace ? <>
+            <RecordSourceLabel mock={federationWorkspace.mock} label="FederationWorkspaceDto" />
+            <MetricStrip items={[
+              { label: 'Organization', value: federationWorkspace.organization.name, detail: federationWorkspace.organization.governanceModel },
+              { label: 'Tenant isolation', value: federationWorkspace.tenantIsolation.mode, detail: `Raw cross-tenant access ${String(federationWorkspace.tenantIsolation.rawCrossTenantAccessAllowed)}` },
+              { label: 'Tracks', value: String(federationWorkspace.tracks.length), detail: `Sharing policy ${federationWorkspace.dataSharingPolicy.policyId}` },
+              { label: 'Benchmarks', value: String(federationWorkspace.crossTrackBenchmarking.metrics.length), detail: `Min cohort ${federationWorkspace.crossTrackBenchmarking.minCohortSize}; raw data exposed ${String(federationWorkspace.crossTrackBenchmarking.rawTrackDataExposed)}` },
+            ]} />
+            <DataTable label="Federation tenant and racetrack rows" rows={federationTrackRows} getRowKey={(row) => row.id} columns={[
+              { key: 'track', header: 'Track', render: (row) => row.track },
+              { key: 'tenant', header: 'Tenant / racetrack', render: (row) => row.tenant },
+              { key: 'certification', header: 'Certification', render: (row) => row.certification },
+              { key: 'sharing', header: 'Sharing scope', render: (row) => row.sharing },
+              { key: 'residency', header: 'Data residency', render: (row) => row.residency },
+            ]} />
+            <DataTable label="Federation benchmark metrics" rows={federationBenchmarkRows} getRowKey={(row) => row.id} columns={[
+              { key: 'metric', header: 'Metric', render: (row) => row.metric },
+              { key: 'category', header: 'Category', render: (row) => row.category },
+              { key: 'value', header: 'Value', render: (row) => row.value },
+              { key: 'benchmark', header: 'Benchmark', render: (row) => row.benchmark },
+              { key: 'policy', header: 'Policy', render: (row) => row.policy },
+            ]} />
+            <p role="note">Federation analytics are read-only and anonymized; raw cross-track joins and cross-boundary execution are not exposed from the dashboard.</p>
+          </> : <p role="status">Federation workspace unavailable. The live federation workspace contract was not returned; Executive Center remains read-only and no stale mock federation dashboard is mounted.</p>}
         </section>
         <section aria-label="Executive briefing cards">
           {data.operations.aiRecommendations.map((recommendation) => <WorkspacePanel key={recommendation.id} title={recommendation.recommendation} eyebrow="Executive decision cue"><p>Confidence {Math.round(recommendation.confidence * 100)}%; approval required {String(recommendation.requiresApproval)}; evidence {recommendation.evidence.join(', ')}.</p></WorkspacePanel>)}

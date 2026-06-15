@@ -42,6 +42,7 @@ test('live collaboration adapter calls typed paths', async () => {
   globalThis.fetch = fetchStub([], calls);
   try {
     const client = createLiveClient('https://trackmind.test/api/v1');
+    assert.equal(client.getCollaborationWorkspace, undefined);
     await client.listCollaborationThreads();
     await client.listCollaborationActivity();
   } finally {

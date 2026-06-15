@@ -73,6 +73,31 @@ test('dashboard runtime server preserves role-filtered navigation during SSR fal
   }
 });
 
+test('dashboard runtime server honors unauthenticated runtime configuration during SSR fallback', async () => {
+  const originalApiBase = process.env.TRACKMIND_API_BASE_URL;
+  const originalAuthenticated = process.env.TRACKMIND_AUTHENTICATED;
+  process.env.TRACKMIND_API_BASE_URL = 'http://127.0.0.1:1/api/v1';
+  process.env.TRACKMIND_AUTHENTICATED = 'false';
+  const server = createTrackMindDashboardServer();
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const address = server.address();
+    const port = typeof address === 'object' && address ? address.port : 0;
+    const response = await fetch(`http://127.0.0.1:${port}/operations`);
+    const body = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(body, /Sign In Required/);
+    assert.match(body, /Please sign in to continue/);
+    assert.doesNotMatch(body, /Unified Operations Command Center/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    if (originalApiBase === undefined) delete process.env.TRACKMIND_API_BASE_URL;
+    else process.env.TRACKMIND_API_BASE_URL = originalApiBase;
+    if (originalAuthenticated === undefined) delete process.env.TRACKMIND_AUTHENTICATED;
+    else process.env.TRACKMIND_AUTHENTICATED = originalAuthenticated;
+  }
+});
+
 test('dashboard runtime server redirects legacy workspace routes to canonical shell paths', async () => {
   const server = createTrackMindDashboardServer();
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -85,6 +110,7 @@ test('dashboard runtime server redirects legacy workspace routes to canonical sh
       ['/security-operations/incidents', '/security/incidents'],
       ['/emergency-operations/plans', '/emergency/plans'],
       ['/racing-data-api-hub/providers', '/api-hub/providers'],
+      ['/federation/benchmarks', '/executive/benchmarks'],
     ];
     for (const [from, to] of redirects) {
       const response = await fetch(`http://127.0.0.1:${port}${from}`, { redirect: 'manual' });

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Role } from '@trackmind/shared';
 import { loadCommandCenter } from '../App.js';
 import { loadDashboardWithFallback } from '../api/typedApi.js';
-import { canonicalPathForRoute } from './navigation.js';
+import { canonicalLocationForRoute } from './navigation.js';
 import { DEFAULT_DENSITY_LEVEL, DEFAULT_THEME_MODE, type DensityLevelId, type ThemeModeId } from '../theme/tokens.js';
 import { RouteRenderer } from '../routes/RouteRenderer.js';
 
@@ -38,7 +38,7 @@ function rolesFromConfig(config: BrowserRuntimeConfig): Role[] {
 
 function currentPath() {
   if (typeof window === 'undefined') return '/operations';
-  return canonicalPathForRoute(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+  return canonicalLocationForRoute(`${window.location.pathname}${window.location.search}${window.location.hash}`);
 }
 
 export function AppShell({ config = runtimeConfig() }: { config?: BrowserRuntimeConfig }) {
