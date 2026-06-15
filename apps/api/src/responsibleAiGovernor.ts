@@ -913,5 +913,27 @@ export class ResponsibleAIGovernancePlatform {
     ];
   }
   private cloneGovernorReview(record: AIGovernorReviewRecord) { return { ...record, evidence: [...record.evidence], policyEvidence: [...(record.policyEvidence ?? [])], requiredApproverRoles: [...(record.requiredApproverRoles ?? [])], digitalTwinRefs: [...(record.digitalTwinRefs ?? [])] }; }
-  private cloneRecommendation(record: RecommendationRecord & { status: GovernanceRecommendationStatus; confidenceScore: ConfidenceScore; explainability: ExplainabilityRecord }) { const governorReview = this.governorReviews.find((review) => review.recommendationId === record.id); return { ...record, affectedAssets: [...record.affectedAssets], evidence: [...record.evidence], lineage: [...record.lineage], digitalTwinRefs: [...(record.digitalTwinRefs ?? [])], confidenceScore: { ...record.confidenceScore, drivers: [...record.confidenceScore.drivers] }, explainability: { ...record.explainability, citedEvidence: [...record.explainability.citedEvidence], limitations: [...record.explainability.limitations] }, governorReview: governorReview ? this.cloneGovernorReview(governorReview) : undefined, digitalTwinImpacts: record.digitalTwinImpacts?.map((impact) => ({ ...impact, patch: { ...impact.patch } })) }; }
+  private cloneRecommendation(record: RecommendationRecord & { status: GovernanceRecommendationStatus; confidenceScore: ConfidenceScore; explainability: ExplainabilityRecord }) {
+    const governorReview = this.governorReviews.find((review) => review.recommendationId === record.id);
+    const approval = this.approvalRequirements.find((requirement) => requirement.recommendationId === record.id);
+    const auditIds = this.auditTrail.filter((audit) => audit.subject === record.id).map((audit) => audit.immutableAuditId ?? audit.id);
+    const eventIds = this.events.filter((event) => event.subjectId === record.id).map((event) => event.id);
+    const digitalTwinRefs = [...new Set([...(record.digitalTwinRefs ?? []), ...this.digitalTwinImpacts.filter((impact) => impact.recommendationId === record.id).map((impact) => impact.twinId)])];
+    return {
+      ...record,
+      recommendationId: record.id,
+      modelVersion: record.modelVersionId,
+      generatedAt: record.createdAt,
+      approvalRequirement: { required: Boolean(approval) || record.approvalPolicy !== 'none', policy: approval?.policy ?? record.approvalPolicy, requirementId: approval?.id, workflowId: approval?.workflowRecordId ?? approval?.approvalRequestId },
+      auditReference: { auditIds, eventIds, digitalTwinRefs, approvalReference: approval?.approvalRequestId ?? approval?.id },
+      affectedAssets: [...record.affectedAssets],
+      evidence: [...record.evidence],
+      lineage: [...record.lineage],
+      digitalTwinRefs,
+      confidenceScore: { ...record.confidenceScore, drivers: [...record.confidenceScore.drivers] },
+      explainability: { ...record.explainability, citedEvidence: [...record.explainability.citedEvidence], limitations: [...record.explainability.limitations] },
+      governorReview: governorReview ? this.cloneGovernorReview(governorReview) : undefined,
+      digitalTwinImpacts: record.digitalTwinImpacts?.map((impact) => ({ ...impact, patch: { ...impact.patch } })),
+    };
+  }
 }

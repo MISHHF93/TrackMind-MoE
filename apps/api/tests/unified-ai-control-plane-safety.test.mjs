@@ -247,6 +247,9 @@ test('AI control-plane API endpoints return safe DTOs and no execute endpoint ex
   const workspace = await handleApiRequest('GET', '/api/v1/ai-control-plane/workspace');
   assert.equal(workspace.status, 200);
   assert.deepEqual(validateContract('AIControlPlaneWorkspaceDto', workspace.body, apiContractSchemas.AIControlPlaneWorkspaceDto), { valid: true, errors: [] });
+  for (const recommendation of [...workspace.body.recommendations, ...workspace.body.blockedActions]) {
+    assert.deepEqual(validateContract('AIControlPlaneRecommendationDto', recommendation, apiContractSchemas.AIControlPlaneRecommendationDto), { valid: true, errors: [] });
+  }
   assert.equal(workspace.body.policy.executionEndpointsAvailable, false);
   assert.equal(workspace.body.policy.draftOnlyStateChanges, true);
   assert.ok(workspace.body.blockedActions.every((action) => action.governorDecision.allowed === false && action.governorDecision.approvalRequired));

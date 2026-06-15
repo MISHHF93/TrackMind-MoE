@@ -493,7 +493,9 @@ test('runtime API facade exposes seeded responsible AI governance workspace', as
   assert.ok(response.body.modelVersions.some((model) => model.id === 'model-surface-advisor-v2'));
   assert.ok(response.body.promptTemplates.some((prompt) => prompt.id === 'prompt-surface-v4'));
   assert.ok(response.body.recommendationQueue.some((rec) => rec.confidenceScore && rec.explainability));
+  assert.ok(response.body.recommendationQueue.every((rec) => rec.recommendationId === rec.id && rec.modelVersion && rec.generatedAt && rec.approvalRequirement?.required === true && rec.auditReference?.auditIds?.length > 0));
   assert.ok(response.body.safetyBlockedActions.some((blocked) => blocked.action === 'race-start'));
+  assert.ok(response.body.safetyBlockedActions.every((blocked) => blocked.recommendationId === blocked.id && blocked.approvalRequirement?.required === true && blocked.auditReference?.eventIds?.length > 0));
   assert.ok(response.body.approvalRequirements.length > 0);
   assert.ok(response.body.safetyPolicies[0].allowedActivities.includes('prioritize'));
   assert.ok(response.body.digitalTwinImpacts.some((impact) => impact.approvalRequired));
@@ -527,11 +529,13 @@ test('runtime API facade exposes protected recommendations as approval-required 
   assert.ok(recommendations.body.every((rec) => rec.approvalWorkflow?.draftOnly === true));
   assert.ok(recommendations.body.every((rec) => rec.confidence.raw >= 0 && rec.confidence.calibrated <= 1));
   assert.ok(recommendations.body.every((rec) => rec.evidence.length > 0 && rec.affectedAssets.length > 0));
+  assert.ok(recommendations.body.every((rec) => rec.recommendationId === rec.id && rec.modelVersion === rec.modelVersionId && rec.generatedAt && rec.approvalRequirement.required === true && rec.auditReference.auditIds.length > 0));
 
   const blocked = await handleApiRequest('GET', '/api/v1/ai-control-plane/blocked-actions');
   assert.equal(blocked.status, 200);
   assert.ok(blocked.body.some((rec) => rec.action === 'race-start' && rec.status === 'safety-blocked'));
   assert.ok(blocked.body.every((rec) => rec.governorDecision.allowed === false));
+  assert.ok(blocked.body.every((rec) => rec.auditReference.eventIds.length > 0 && rec.approvalRequirement.required === true));
 });
 
 test('runtime API facade only creates AI recommendation drafts and exposes no execution path', async () => {

@@ -52,6 +52,12 @@ test('restricted actions cannot be executed by AI', () => {
   assert.equal(result.executed, false);
   assert.match(result.reason, /blocked/i);
   assert.equal(p.governanceWorkspace().safetyBlockedActions[0].id, rec.id);
+  const blocked = p.governanceWorkspace().safetyBlockedActions[0];
+  assert.equal(blocked.recommendationId, rec.id);
+  assert.equal(blocked.modelVersion, model.id);
+  assert.equal(blocked.generatedAt, rec.createdAt);
+  assert.equal(blocked.approvalRequirement.required, true);
+  assert.ok(blocked.auditReference.auditIds.length > 0);
 });
 
 test('AI safety policy allows advisory activities only and blocks ungoverned protected actions', () => {
@@ -189,6 +195,12 @@ test('approval-required AI recommendation adapts to Recommendation Insight and F
 
   assert.equal(rec.status, 'pending-approval');
   assert.ok(ws.approvalRequirements.some((req) => req.recommendationId === rec.id && req.status === 'pending'));
+  const queued = ws.recommendationQueue.find((item) => item.id === rec.id);
+  assert.equal(queued.recommendationId, rec.id);
+  assert.equal(queued.modelVersion, model.id);
+  assert.equal(queued.generatedAt, rec.createdAt);
+  assert.equal(queued.approvalRequirement.required, true);
+  assert.ok(queued.auditReference.eventIds.length > 0);
   for (const artifact of [recommendation, insight, forecast]) {
     assert.deepEqual(validateAIOutputArtifact(artifact), { valid: true, errors: [] });
     assert.equal(artifact.approvalRequired, true);

@@ -60,6 +60,40 @@ function structuredLog(level: 'info' | 'error', event: string, fields: Record<st
   else console.log(entry);
 }
 
+type AIApprovalRecord = { id?: string; policy?: string; approvalRequestId?: string; workflowRecordId?: string };
+
+function aiRecommendationGovernanceMetadata(input: {
+  id: string;
+  modelVersionId?: string;
+  fallbackModelVersion: string;
+  createdAt?: string;
+  fallbackGeneratedAt: string;
+  approvalPolicy?: string;
+  approval?: AIApprovalRecord;
+  auditIds: string[];
+  eventIds: string[];
+  digitalTwinRefs: string[];
+}) {
+  const approvalReference = input.approval?.approvalRequestId ?? input.approval?.id;
+  return {
+    recommendationId: input.id,
+    modelVersion: input.modelVersionId ?? input.fallbackModelVersion,
+    generatedAt: input.createdAt ?? input.fallbackGeneratedAt,
+    approvalRequirement: {
+      required: Boolean(input.approval) || (input.approvalPolicy ?? 'none') !== 'none',
+      policy: input.approval?.policy ?? input.approvalPolicy ?? 'none',
+      requirementId: input.approval?.id,
+      workflowId: input.approval?.workflowRecordId ?? input.approval?.approvalRequestId,
+    },
+    auditReference: {
+      auditIds: [...input.auditIds],
+      eventIds: [...input.eventIds],
+      digitalTwinRefs: [...input.digitalTwinRefs],
+      approvalReference,
+    },
+  };
+}
+
 function createSurfaceFacadeInput(timestamp: string): SurfaceIntelligenceInput {
   return {
     trackId: 'main-track',
@@ -99,10 +133,19 @@ function createSeededAIGovernanceWorkspace(timestamp: string, mock: boolean): Js
   platform.recordRollback({ id:'rollback-1', recommendationId:rec.id, actor:'ai-governance-board', reason:'Prompt drift review', restoredVersionId:'prompt-surface-v3', evidence:['drift:metric-9'], createdAt:timestamp });
   platform.ingestMonitoring({ modelId:model.id, observedAt:timestamp, metric:'drift', value:.12, threshold:.2, evidence:['monitor:drift-window-1'] });
   const workspace = platform.governanceWorkspace();
+  const enrichRecommendation = (rec: any) => {
+    const agent = workspace.activeAgents.find((item) => item.id === rec.agentId) ?? workspace.activeAgents[0];
+    const approval = workspace.approvalRequirements.find((item) => item.recommendationId === rec.id);
+    const audits = workspace.auditTrails.filter((audit) => audit.subject === rec.id).map((audit) => audit.id);
+    const events = workspace.events.filter((event) => event.subjectId === rec.id).map((event) => event.id);
+    const digitalTwinRefs = (workspace.digitalTwinImpacts ?? []).filter((impact) => impact.recommendationId === rec.id).map((impact) => impact.twinId);
+    return { ...rec, ...aiRecommendationGovernanceMetadata({ id: rec.id, modelVersionId: rec.modelVersionId, fallbackModelVersion: agent.modelVersionId, createdAt: rec.createdAt, fallbackGeneratedAt: timestamp, approvalPolicy: rec.approvalPolicy, approval, auditIds: audits, eventIds: events, digitalTwinRefs }) };
+  };
   return {
     generatedAt: timestamp,
     ...workspace,
-    safetyBlockedActions: workspace.safetyBlockedActions.map((blocked) => ({ ...blocked, reason: blocked.explainability.limitations.join(' ') })),
+    recommendationQueue: workspace.recommendationQueue.map(enrichRecommendation),
+    safetyBlockedActions: workspace.safetyBlockedActions.map((blocked) => ({ ...enrichRecommendation(blocked), reason: blocked.explainability.limitations.join(' ') })),
     unifiedAIControlPlane: {
       modelRegistry: listExpertModelRegistry(),
       agentRegistry: listAIAgentRegistryRecords(timestamp),
@@ -140,9 +183,13 @@ function createSeededAIControlPlaneWorkspace(timestamp: string, mock: boolean): 
     const events = ai.events.filter((event: any) => event.subjectId === rec.id);
     const audits = ai.auditTrails.filter((audit: any) => audit.subject === rec.id);
     const twins = (ai.digitalTwinImpacts ?? []).filter((impact: any) => impact.recommendationId === rec.id);
+    const auditIds = audits.map((audit: any) => audit.id);
+    const eventIds = events.map((event: any) => event.id);
+    const digitalTwinRefs = twins.map((impact: any) => impact.twinId);
     const calibrated = rec.confidenceScore?.calibrated ?? rec.confidence;
     return {
       id: rec.id,
+      ...aiRecommendationGovernanceMetadata({ id: rec.id, modelVersionId: rec.modelVersionId, fallbackModelVersion: agent.modelVersionId, createdAt: rec.createdAt, fallbackGeneratedAt: timestamp, approvalPolicy: rec.approvalPolicy, approval, auditIds, eventIds, digitalTwinRefs }),
       agentId: rec.agentId ?? agent.id,
       modelVersionId: rec.modelVersionId ?? agent.modelVersionId,
       promptTemplateId: rec.promptTemplateId ?? agent.promptTemplateId,
@@ -157,7 +204,7 @@ function createSeededAIControlPlaneWorkspace(timestamp: string, mock: boolean): 
       risk: { level: blocked ? 'critical' : rec.riskLevel, drivers: [rec.action ?? 'protected-action', rec.approvalPolicy, ...(rec.affectedAssets ?? [])], humanReviewRequired: true },
       governorDecision: { allowed: false, reason: blocked ? rec.reason : 'Human approval required before any protected or operational action.', approvalRequired: true, approvalPolicy: rec.approvalPolicy, approvalRequirementId: approval?.id },
       approvalWorkflow: approval ? { id: approval.id, requiredRoles: approval.requiredRoles, status: approval.status, evidence: approval.evidence, draftOnly: true } : undefined,
-      references: { auditIds: audits.map((audit: any) => audit.id), eventIds: events.map((event: any) => event.id), digitalTwinRefs: twins.map((impact: any) => impact.twinId), evidencePackageId: evidencePackage?.id },
+      references: { auditIds, eventIds, digitalTwinRefs, evidencePackageId: evidencePackage?.id },
       mock,
     };
   };
@@ -234,10 +281,14 @@ function createAIControlPlaneFacade(aiGovernance: JsonBody): AIControlPlaneWorks
     const audits = ai.auditTrails.filter((audit) => audit.subject === rec.id);
     const events = ai.events.filter((event) => event.subjectId === rec.id);
     const twinImpacts = ai.digitalTwinImpacts.filter((impact) => impact.recommendationId === rec.id);
+    const auditIds = audits.map((audit) => audit.id);
+    const eventIds = events.map((event) => event.id);
+    const digitalTwinRefs = twinImpacts.map((impact) => impact.twinId);
     const calibrated = rec.confidenceScore?.calibrated ?? rec.confidence;
     const approvalRequired = Boolean(approval) || blocked || rec.approvalPolicy !== 'none' || Boolean(rec.explainability?.humanReviewRequired);
     return {
       id: rec.id,
+      ...aiRecommendationGovernanceMetadata({ id: rec.id, modelVersionId: rec.modelVersionId, fallbackModelVersion: agent.modelVersionId, createdAt: rec.createdAt, fallbackGeneratedAt: ai.generatedAt, approvalPolicy: rec.approvalPolicy, approval, auditIds, eventIds, digitalTwinRefs }),
       agentId: rec.agentId ?? agent.id,
       modelVersionId: rec.modelVersionId ?? agent.modelVersionId,
       promptTemplateId: rec.promptTemplateId ?? agent.promptTemplateId,
@@ -252,7 +303,7 @@ function createAIControlPlaneFacade(aiGovernance: JsonBody): AIControlPlaneWorks
       risk: { level: blocked ? 'critical' : rec.riskLevel, drivers: unique([rec.action, rec.approvalPolicy, ...(rec.affectedAssets ?? [])]), humanReviewRequired: approvalRequired },
       governorDecision: { allowed: false, reason: blocked ? (rec.reason ?? 'AI safety policy blocked autonomous protected action.') : 'AI recommendation requires human approval workflow before any operational control can execute.', approvalRequired, approvalPolicy: rec.approvalPolicy, approvalRequirementId: approval?.id },
       approvalWorkflow: approval ? { id: approval.id, requiredRoles: [...approval.requiredRoles], status: approval.status, evidence: [...approval.evidence], draftOnly: true } : undefined,
-      references: { auditIds: audits.map((audit) => audit.id), eventIds: events.map((event) => event.id), digitalTwinRefs: twinImpacts.map((impact) => impact.twinId), evidencePackageId: evidencePackage?.id },
+      references: { auditIds, eventIds, digitalTwinRefs, evidencePackageId: evidencePackage?.id },
       mock: ai.mock,
     };
   };
@@ -663,7 +714,7 @@ export function createApiFacadeState(): ApiFacadeState {
       savedLayouts: [{ id: 'race-day-commander', name: 'Race Day Commander', role: 'admin', widgetIds: ['race-readiness','surface-conditions','weather-status','active-incidents','pending-approvals','steward-inquiries','asset-health','workforce-readiness','emergency-resources','facility-readiness','ai-recommendations','audit-activity','event-timeline'] }, { id: 'steward-view', name: 'Steward Inquiry View', role: 'steward', widgetIds: ['race-readiness','steward-inquiries','pending-approvals','event-timeline'] }, { id: 'facilities-view', name: 'Facilities and Maintenance', role: 'track-superintendent', widgetIds: ['facility-readiness','asset-health','workforce-readiness','emergency-resources'] }],
       liveEvents: [{ id: 'evt-live-api', timestamp, type: 'nexus.api.facade.started', domain: 'platform', summary: 'Runtime API facade is serving command-center contracts.', severity: 'info', source: 'event-stream' }, { id: 'evt-surface-live', timestamp, type: 'surface.reading.updated', domain: 'surface', summary: `Surface score ${surfaceWorkspace.overallScore}; weather forecast ${surfaceWorkspace.weatherObservation.forecastRainMm}mm rain.`, severity: surfaceWorkspace.weatherObservation.forecastRainMm > 10 ? 'warning' : 'info', source: 'service' }, { id: 'evt-security-live', timestamp, type: 'security.incident.summary', domain: 'security', summary: `${security.incidents.length} security incidents loaded for command center.`, severity: security.incidents.length ? 'warning' : 'info', source: 'service' }, { id: 'evt-workforce-live', timestamp, type: 'workforce.readiness.evaluated', domain: 'operations', summary: `Workforce readiness ${workforce.readiness.status} at ${workforce.readiness.score}.`, severity: workforce.readiness.status === 'blocked' ? 'critical' : workforce.readiness.status === 'watch' ? 'warning' : 'info', source: 'service' }, { id: 'evt-facility-readiness', timestamp, type: 'facilities.readiness.evaluated', domain: 'facilities', summary: `Facilities readiness ${facilitiesMaintenance.readiness.score}% with approval-gated work orders.`, severity: 'warning', source: 'service' }],
       alerts: [{ id: 'alert-approval', title: 'Protected actions remain approval-gated', severity: 'advisory', acknowledged: false, actionPath: '/approvals', evidence: ['centralized-approval-service'] }, { id: 'alert-security', title: 'Security incident watch', severity: security.incidents.length ? 'warning' : 'advisory', acknowledged: false, actionPath: '/security', evidence: security.incidents.flatMap((incident: any) => incident.eventIds) }, { id: 'alert-facilities', title: 'Facilities maintenance watch', severity: 'warning', acknowledged: false, actionPath: '/facilities', evidence: ['facilities-maintenance', 'racr:GRANDSTAND_HVAC_01'] }],
-      aiRecommendations: contract.aiRecommendations.map((rec) => ({ id: rec.id, recommendation: rec.recommendation, confidence: rec.confidence, evidence: rec.evidence, requiresApproval: rec.requiresApproval, actionPath: rec.actionPath })),
+      aiRecommendations: contract.aiRecommendations.map((rec) => ({ id: rec.id, recommendationId: rec.recommendationId, recommendation: rec.recommendation, confidence: rec.confidence, evidence: rec.evidence, modelVersion: rec.modelVersion, generatedAt: rec.generatedAt, approvalRequirement: rec.approvalRequirement, auditReference: rec.auditReference, requiresApproval: rec.requiresApproval, actionPath: rec.actionPath })),
       dataLineage: [{ domain: 'readiness', source: 'service', reference: '/api/v1/race-day-readiness/dashboard' }, { domain: 'surface-weather', source: 'service', reference: '/api/v1/surface-intelligence/workspace' }, { domain: 'security-incidents', source: 'service', reference: '/api/v1/security-operations/workspace' }, { domain: 'approvals', source: 'service', reference: '/api/v1/approvals/requests' }, { domain: 'stewards', source: 'service', reference: '/api/v1/stewarding/inquiries' }, { domain: 'assets', source: 'digital-twin', reference: '/api/v1/digital-twin/state' }, { domain: 'workforce', source: 'service', reference: '/api/v1/workforce-operations/workspace' }, { domain: 'emergency', source: 'approved-mock-adapter', reference: '/api/v1/emergency-operations/workspace' }, { domain: 'facilities', source: 'service', reference: '/api/v1/facilities-maintenance/workspace' }, { domain: 'ai', source: 'service', reference: '/api/v1/ai-governance/workspace' }, { domain: 'audit', source: 'service', reference: '/api/v1/audit/events' }, { domain: 'events', source: 'event-stream', reference: '/api/v1/events/stream' }],
       mock: false,
     },
