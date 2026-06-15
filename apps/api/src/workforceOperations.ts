@@ -273,6 +273,7 @@ export class WorkforceOperationsService {
     const assignment = this.requireAssignment(assignmentId);
     const request = this.deps.approvals?.createRequest({
       tenantId: assignment.tenantId,
+      racetrackId: assignment.raceId ?? assignment.zoneId,
       action: 'emergency-personnel-override',
       target: assignment.id,
       requestedBy,

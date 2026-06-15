@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { createTrackMindIntelligenceCoreMetadata, createTrackMindNexusUpgradePackage, createUnifiedDataModelWorkspace, hasPermission, nexusApiBasePath, protectedActions, type AIControlPlaneDraftResultDto, type AIControlPlaneWorkspaceDto, type Permission, type Role, type RosFacadeStateDto, type TrackCertificationCandidateDto, type TrackMindIntelligenceCoreDto, type TrackMindNexusUpgradePackage, type TUSTwinStandardDto } from '@trackmind/shared';
 import { listAIAgentRegistryRecords, listExpertModelRegistry } from './aiControlPlane.js';
 import { createApiHubEventCatalog } from './apiHubAdapters.js';
-import { CentralizedApprovalService } from './approvals.js';
+import { CentralizedApprovalService, type ApprovalActor, type ApprovalToken, type ControlledAction } from './approvals.js';
 import { createUniversalArtifactDraftRegistrationResult, createUniversalArtifactFrameworkState, type UniversalArtifactFrameworkState } from './artifacts.js';
 import { ImmutableAuditLog, type RetentionPolicy } from './auditLog.js';
 import { createSeededBarnOperationsService } from './barnOperations.js';
@@ -12,7 +12,7 @@ import { CollaborationService, type CollaborationActivityQuery, type Collaborati
 import { seededComplianceLibrary } from './complianceControlLibrary.js';
 import { createComplianceReportingController, type ComplianceReportingController } from './compliance/index.js';
 import { createMockEmergencyOperationsWorkspace } from './emergencyOperations.js';
-import { createCqrsCommandHandler, type CqrsCommandHandler } from './events/index.js';
+import { createCqrsCommandHandler, type CqrsCommandHandler, type RaceStartCommandBody, type SafetyCriticalCommandBody } from './events/index.js';
 import { createNexusEventCatalog } from './eventBus.js';
 import { createMockFacilitiesMaintenanceWorkspace } from './facilitiesMaintenance.js';
 import { createFederationWorkspace } from './federation.js';
@@ -446,6 +446,7 @@ export interface ApiFacadeState {
   artifacts: UniversalArtifactFrameworkState;
   collaboration: CollaborationService;
   apex: ApexDomainControllers;
+  approvalService: CentralizedApprovalService;
   cqrs: CqrsCommandHandler;
   complianceReporting: ComplianceReportingController;
   equinePrivacy: EquineIntelligenceController;
@@ -485,6 +486,7 @@ export function createApiFacadeState(): ApiFacadeState {
   const nexusUpgrade = createTrackMindNexusUpgradePackage(timestamp);
   const federation = createFederationWorkspace(timestamp, false);
   const ros = createRosMetadataFacade(timestamp, nexusUpgrade, aiControlPlane as AIControlPlaneWorkspaceDto, tusStandardization, trackCertification);
+  const approvalService = new CentralizedApprovalService();
   const apex = createApexDomainControllers();
   const cqrs = createCqrsCommandHandler();
   const complianceReporting = createComplianceReportingController();
@@ -683,6 +685,7 @@ export function createApiFacadeState(): ApiFacadeState {
     artifacts,
     collaboration: new CollaborationService(),
     apex,
+    approvalService,
     cqrs,
     complianceReporting,
     equinePrivacy,
@@ -790,34 +793,19 @@ function actorRoles(input: Record<string, unknown>): Role[] {
   return stringArray(input.roles).filter((role): role is Role => ['admin','steward','veterinarian','track-superintendent','security','ticketing-manager','finance','racing-secretary','compliance-officer','read-only-auditor'].includes(role));
 }
 
-function lightweightApprovalDraft(body: unknown, eventType: string, message: string): { status: number; body: JsonBody } | undefined {
-  if (!isRecord(body)) return undefined;
-  const action = stringValue(body.action);
-  const target = stringValue(body.target);
-  const governanceFields = ['tenantId', 'racetrackId', 'reason', 'actor', 'actorId', 'actorType', 'roles', 'evidence'];
-  if (!action || !target || governanceFields.some((field) => field in body)) return undefined;
-  return {
-    status: 202,
-    body: {
-      accepted: true,
-      approvalId: `approval-${Date.now()}`,
-      eventType,
-      audited: true,
-      action: action === 'execute-gate-move' ? 'starting-gate-move' : action,
-      target,
-      message,
-      mock: false,
-    },
-  };
+function actorTypeFrom(input: Record<string, unknown>): 'human' | 'ai-agent' | 'service' {
+  const actorType = stringValue(input.actorType) ?? 'human';
+  if (actorType === 'ai-agent' || actorType === 'service') return actorType;
+  return 'human';
 }
 
-function validateProtectedApprovalBoundary(body: unknown, options: { requireHumanActor: boolean; fallbackEventType: string; message: string }): { status: number; body: JsonBody } {
+function validateProtectedApprovalBoundary(body: unknown, approvalService: CentralizedApprovalService, options: { requireHumanActor: boolean; fallbackEventType: string; message: string }): { status: number; body: JsonBody } {
   const context = approvalBoundaryContext(body);
   if (context.error) return context.error;
   const input = context.input!;
   const actor = stringValue(input.actorId) ?? stringValue(input.actor);
   if (!actor) return badRequest('Approval boundary context missing: actorId');
-  const actorType = stringValue(input.actorType) ?? 'human';
+  const actorType = actorTypeFrom(input);
   if (options.requireHumanActor && actorType !== 'human') return forbidden('Controlled action requests require an authenticated human actor; AI agents and services may create drafts only.');
   const action = stringValue(input.action)!;
   const normalizedAction = action === 'execute-gate-move' ? 'starting-gate-move' : action;
@@ -829,20 +817,75 @@ function validateProtectedApprovalBoundary(body: unknown, options: { requireHuma
   if (!roles.some((role) => requiredPermissions.some((permission) => hasPermission(role, permission)))) {
     return forbidden(`Actor lacks required role permission for ${normalizedAction}`);
   }
+  let request;
+  try {
+    request = approvalService.createRequest({
+      tenantId: stringValue(input.tenantId)!,
+      racetrackId: stringValue(input.racetrackId)!,
+      action: normalizedAction as ControlledAction,
+      target: stringValue(input.target)!,
+      requestedBy: actor,
+      actorType,
+      reason: stringValue(input.reason)!,
+      evidence: stringArray(input.evidence),
+    });
+  } catch (error) {
+    return badRequest(error instanceof Error ? error.message : 'Approval request could not be created');
+  }
   return {
     status: 202,
     body: {
       accepted: true,
-      approvalId: `approval-${Date.now()}`,
+      approvalId: request.id,
       eventType: options.fallbackEventType,
       audited: true,
-      tenantId: stringValue(input.tenantId),
-      racetrackId: stringValue(input.racetrackId),
-      action: normalizedAction,
-      target: stringValue(input.target),
+      tenantId: request.tenantId,
+      racetrackId: request.racetrackId,
+      action: request.action,
+      target: request.target,
+      status: request.status,
+      expiresAt: request.expiresAt,
       message: options.message,
       mock: false,
     },
+  };
+}
+
+function isApprovalToken(value: unknown): value is ApprovalToken {
+  return isRecord(value)
+    && Boolean(stringValue(value.requestId))
+    && Boolean(stringValue(value.action))
+    && Boolean(stringValue(value.target))
+    && Boolean(stringValue(value.tenantId))
+    && Boolean(stringValue(value.racetrackId))
+    && Boolean(stringValue(value.issuedAt))
+    && Boolean(stringValue(value.expiresAt))
+    && Array.isArray(value.approvedBy);
+}
+
+function approvalFailure(message: string): { status: number; body: JsonBody } {
+  return { status: 403, body: { accepted: false, blockedReason: message } };
+}
+
+function verifiedCqrsCommandBody<T extends Record<string, unknown>>(body: unknown, approvalService: CentralizedApprovalService, action: ControlledAction, target: string, requiredFields: string[]): { input?: T; error?: { status: number; body: JsonBody } } {
+  if (!isRecord(body)) return { error: badRequest('JSON object body is required') };
+  const missing = ['tenantId', 'racetrackId', ...requiredFields].filter((field) => !stringValue(body[field]));
+  if (missing.length > 0) return { error: badRequest(`Safety-critical command missing: ${missing.join(', ')}`) };
+  if (!isApprovalToken(body.approvalToken)) return { error: approvalFailure('Safety-critical command requires verified approvalToken') };
+  try {
+    approvalService.assertAuthorized(body.approvalToken, action, target, stringValue(body.tenantId)!, stringValue(body.racetrackId)!);
+  } catch (error) {
+    return { error: approvalFailure(error instanceof Error ? error.message : 'Approval token verification failed') };
+  }
+  const approverId = body.approvalToken.issuedTo ?? body.approvalToken.approvedBy[body.approvalToken.approvedBy.length - 1] ?? 'approved-human';
+  return {
+    input: {
+      ...body,
+      approval_id: body.approvalToken.requestId,
+      approver_id: approverId,
+      approval_timestamp: body.approvalToken.issuedAt,
+      evidence_links: unique([...stringArray(body.evidence_links), `approval://${body.approvalToken.requestId}`]),
+    } as unknown as T,
   };
 }
 
@@ -1215,29 +1258,39 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   const raceStartMatch = path.match(/^\/races\/([^/]+)\/start$/);
   if (method === 'POST' && raceStartMatch) {
     const raceId = decodeURIComponent(raceStartMatch[1]);
-    const input = (body ?? {}) as Record<string, any>;
-    const result = await state.cqrs.startRace(raceId, input as any, { tenantId: input.tenantId, racetrackId: input.racetrackId, actorId: input.actorId ?? input.starterId });
+    const verified = verifiedCqrsCommandBody<RaceStartCommandBody & Record<string, unknown>>(body, state.approvalService, 'race-start', raceId, ['starterId']);
+    if (verified.error) return verified.error;
+    const input = verified.input!;
+    const result = await state.cqrs.startRace(raceId, input, { tenantId: stringValue(input.tenantId), racetrackId: stringValue(input.racetrackId), actorId: stringValue(input.actorId) ?? stringValue(input.starterId) });
     return { status: result.accepted ? 202 : 403, body: result };
   }
   const raceStopMatch = path.match(/^\/races\/([^/]+)\/stop$/);
   if (method === 'POST' && raceStopMatch) {
     const raceId = decodeURIComponent(raceStopMatch[1]);
-    const input = (body ?? {}) as Record<string, any>;
-    const result = await state.cqrs.stopRace(raceId, input as any, { tenantId: input.tenantId, racetrackId: input.racetrackId, actorId: input.actorId });
+    const verified = verifiedCqrsCommandBody<SafetyCriticalCommandBody & Record<string, unknown>>(body, state.approvalService, 'race-stop', raceId, ['actorId', 'reason']);
+    if (verified.error) return verified.error;
+    const input = verified.input!;
+    const result = await state.cqrs.stopRace(raceId, input, { tenantId: stringValue(input.tenantId), racetrackId: stringValue(input.racetrackId), actorId: stringValue(input.actorId) });
     return { status: result.accepted ? 202 : 403, body: result };
   }
   const raceScratchMatch = path.match(/^\/races\/([^/]+)\/scratches$/);
   if (method === 'POST' && raceScratchMatch) {
     const raceId = decodeURIComponent(raceScratchMatch[1]);
-    const input = (body ?? {}) as Record<string, any>;
-    const result = await state.cqrs.scratchHorse(raceId, input as any, { tenantId: input.tenantId, racetrackId: input.racetrackId, actorId: input.actorId });
+    const inputBody = isRecord(body) ? body : {};
+    const horseId = stringValue(inputBody.horseId);
+    const verified = verifiedCqrsCommandBody<SafetyCriticalCommandBody & Record<string, unknown>>(body, state.approvalService, 'scratch-horse', horseId ?? raceId, ['actorId', 'horseId', 'reason']);
+    if (verified.error) return verified.error;
+    const input = verified.input!;
+    const result = await state.cqrs.scratchHorse(raceId, input, { tenantId: stringValue(input.tenantId), racetrackId: stringValue(input.racetrackId), actorId: stringValue(input.actorId) });
     return { status: result.accepted ? 202 : 403, body: result };
   }
   const horseMedicationMatch = path.match(/^\/horses\/([^/]+)\/medications\/administer$/);
   if (method === 'POST' && horseMedicationMatch) {
     const horseId = decodeURIComponent(horseMedicationMatch[1]);
-    const input = (body ?? {}) as Record<string, any>;
-    const result = await state.cqrs.administerMedication(horseId, input as any, { tenantId: input.tenantId, racetrackId: input.racetrackId, actorId: input.actorId });
+    const verified = verifiedCqrsCommandBody<SafetyCriticalCommandBody & Record<string, unknown>>(body, state.approvalService, 'medication-decision', horseId, ['actorId', 'medication', 'dose', 'reason']);
+    if (verified.error) return verified.error;
+    const input = verified.input!;
+    const result = await state.cqrs.administerMedication(horseId, input, { tenantId: stringValue(input.tenantId), racetrackId: stringValue(input.racetrackId), actorId: stringValue(input.actorId) });
     return { status: result.accepted ? 202 : 403, body: result };
   }
   if (method === 'GET' && path === '/events/cqrs') return { status: 200, body: state.cqrs.events() };
@@ -1437,7 +1490,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'POST' && path === '/track-configuration/draft-requests') {
     const eventType = 'track.configuration.change.requested';
     const message = 'Track configuration draft accepted. Work orders, verification, and Digital Twin sync remain locked until authorized human approvals are complete; no live actuator command was issued.';
-    return lightweightApprovalDraft(body, eventType, message) ?? validateProtectedApprovalBoundary(body, { requireHumanActor: false, fallbackEventType: eventType, message });
+    return validateProtectedApprovalBoundary(body, state.approvalService, { requireHumanActor: false, fallbackEventType: eventType, message });
   }
   if (method === 'POST' && (path === '/ai-control-plane/recommendations/draft' || path === '/ai-control-plane/recommendations/evaluate')) return { status: 202, body: createAIControlPlaneDraftResult(path, body) };
   if (method === 'POST' && (path === '/racing-data/license-policies/check' || path === '/data-usage-policies/check')) {
@@ -1471,16 +1524,16 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     } catch (error) { return collaborationError(error); }
   }
   if (method === 'POST' && path === '/artifacts/registry/draft-registrations') return { status: 202, body: createUniversalArtifactDraftRegistrationResult(body) };
-  if (method === 'POST' && path === '/assets/safety-critical-changes') return validateProtectedApprovalBoundary(body, { requireHumanActor: true, fallbackEventType: 'racetrack.asset.approval-requested', message: 'Safety-critical asset change accepted for approval review. Execution remains locked until authorized.' });
+  if (method === 'POST' && path === '/assets/safety-critical-changes') return validateProtectedApprovalBoundary(body, state.approvalService, { requireHumanActor: true, fallbackEventType: 'racetrack.asset.approval-requested', message: 'Safety-critical asset change accepted for approval review. Execution remains locked until authorized.' });
   if (method === 'POST' && path === '/approvals/draft-requests') {
     const eventType = 'approval.requested';
     const message = 'Approval draft request accepted. Execution remains locked until authorized.';
-    return lightweightApprovalDraft(body, eventType, message) ?? validateProtectedApprovalBoundary(body, { requireHumanActor: false, fallbackEventType: eventType, message });
+    return validateProtectedApprovalBoundary(body, state.approvalService, { requireHumanActor: false, fallbackEventType: eventType, message });
   }
   if (method === 'POST' && path === '/approvals/controlled-actions') {
     const eventType = 'approval.requested';
     const message = 'Approval request accepted. Execution remains locked until authorized.';
-    return lightweightApprovalDraft(body, eventType, message) ?? validateProtectedApprovalBoundary(body, { requireHumanActor: true, fallbackEventType: eventType, message });
+    return validateProtectedApprovalBoundary(body, state.approvalService, { requireHumanActor: true, fallbackEventType: eventType, message });
   }
   return { status: 404, headers: { 'x-trackmind-request-id': requestId }, body: apiErrorBody({ code: 'not_found', message: `No TrackMind API route for ${method} ${pathname}`, path, requestId }) };
 }

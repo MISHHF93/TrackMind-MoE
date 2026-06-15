@@ -57,6 +57,7 @@ export interface AuditLogEntry {
   hash: string;
   subjectId?: string;
   tenantId?: string;
+  racetrackId?: string;
   workflowId?: string;
   correlationId?: string;
   severity?: AuditSeverity;
@@ -93,7 +94,7 @@ export interface ForensicReconstruction {
   custody: Array<{ recordId: string; steps: ChainOfCustodyStep[] }>;
   chainFailures: AuditVerificationResult['failures'];
 }
-export interface AuditLedgerQuery { subjectId?: string; workflowId?: string; correlationId?: string; actor?: string; actionClass?: AuditActionClass; evidenceId?: string; regulation?: string; tenantId?: string; sourceService?: string; from?: string; to?: string }
+export interface AuditLedgerQuery { subjectId?: string; workflowId?: string; correlationId?: string; actor?: string; actionClass?: AuditActionClass; evidenceId?: string; regulation?: string; tenantId?: string; racetrackId?: string; sourceService?: string; from?: string; to?: string }
 export interface ComplianceExportOptions extends AuditLedgerQuery { regulation?: string; regulations?: string[]; generatedBy?: string; generatedAt?: string; includePayloads?: boolean; retentionPolicies?: RetentionPolicy[] }
 export interface AuditComplianceExport {
   exportId: string;
@@ -358,6 +359,7 @@ export class ImmutableAuditLog {
       && (!query.evidenceId || entry.evidenceIds?.includes(query.evidenceId))
       && (!query.regulation || entry.regulations?.includes(query.regulation))
       && (!query.tenantId || entry.tenantId === query.tenantId)
+      && (!query.racetrackId || entry.racetrackId === query.racetrackId)
       && (!query.sourceService || entry.sourceService === query.sourceService)
       && (!query.from || entry.timestamp >= query.from)
       && (!query.to || entry.timestamp <= query.to));

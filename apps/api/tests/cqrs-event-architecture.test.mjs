@@ -2,6 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createApiFacadeState, createCqrsCommandHandler, handleApiRequest, InMemoryEventHubPublisher, EventSourcedStore } from '../dist/index.js';
 
+const human = (id, roles) => ({ id, roles, human: true });
+
+function approveToken(state, action, target, approvers, now = new Date().toISOString(), tenantId = 'tenant-1', racetrackId = 'main-track') {
+  const request = state.approvalService.createRequest({ tenantId, racetrackId, action, target, requestedBy: 'runtime-test', actorType: 'human', reason: `Approve ${action}`, evidence: ['human-approval-record'], now });
+  approvers.forEach(([id, roles], index) => state.approvalService.decide(request.id, human(id, roles), 'approved', `Approval step ${index + 1}`, ['human-approval-record'], new Date(Date.parse(now) + (index + 1) * 1000).toISOString()));
+  return state.approvalService.authorizeExecution({ requestId: request.id, action, target, tenantId, racetrackId, actor: human('executor-1', ['admin']), now: new Date(Date.parse(now) + (approvers.length + 1) * 1000).toISOString() });
+}
+
 test('race start command requires approval metadata before emitting RaceStartedEvent', async () => {
   const state = createApiFacadeState();
   const blocked = await handleApiRequest('POST', '/api/v1/races/race-7/start', {
@@ -14,18 +22,18 @@ test('race start command requires approval metadata before emitting RaceStartedE
   }, state);
 
   assert.equal(blocked.status, 403);
-  assert.match(blocked.body.blockedReason, /approval_id/);
+  assert.match(blocked.body.blockedReason, /approvalToken/);
 
+  const approvalToken = approveToken(state, 'race-start', 'race-7', [['secretary-1', ['racing-secretary']], ['steward-1', ['steward']], ['vet-1', ['veterinarian']]]);
   const accepted = await handleApiRequest('POST', '/api/v1/races/race-7/start', {
     starterId: 'starter-1',
+    actorId: 'starter-1',
     tenantId: 'tenant-1',
     racetrackId: 'main-track',
-    approval_id: 'approval-race-start-1',
-    approver_id: 'steward-1',
-    approval_timestamp: '2026-06-14T18:00:00.000Z',
+    approvalToken,
     model_id: 'model-race-readiness-v1',
     confidence: 0.91,
-    evidence_links: ['readiness://race-7', 'approval://approval-race-start-1'],
+    evidence_links: ['readiness://race-7'],
     annex_iv_uri: 'https://trackmind.example/ai-act/annex-iv/race-readiness',
   }, state);
 
@@ -33,8 +41,8 @@ test('race start command requires approval metadata before emitting RaceStartedE
   assert.equal(accepted.body.event.eventType, 'RaceStartedEvent');
   assert.equal(accepted.body.event.category, 'safety-critical');
   assert.equal(accepted.body.event.previousEventHash, 'genesis');
-  assert.equal(accepted.body.event.governance.approval_id, 'approval-race-start-1');
-  assert.equal(accepted.body.event.governance.approver_id, 'steward-1');
+  assert.equal(accepted.body.event.governance.approval_id, approvalToken.requestId);
+  assert.equal(accepted.body.event.governance.approver_id, 'executor-1');
   assert.equal(accepted.body.event.ai.model_id, 'model-race-readiness-v1');
   assert.equal(accepted.body.projection.currentRaceState[0].status, 'running');
 

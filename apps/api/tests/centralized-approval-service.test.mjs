@@ -13,7 +13,7 @@ test('central approval service enforces chained race start approvals with audit 
   const auditLog = new ImmutableAuditLog();
   const eventBus = new InMemoryEventBus();
   const service = new CentralizedApprovalService({ auditLog, eventBus });
-  const request = service.createRequest({ id: 'approval-race-start', tenantId: 'tenant-1', action: 'race-start', target: 'race-approval-1', requestedBy: 'ai-race-agent', actorType: 'ai-agent', reason: 'AI recommends race is ready', evidence: ['telemetry-ok'], now: '2026-06-13T17:45:00Z' });
+  const request = service.createRequest({ id: 'approval-race-start', tenantId: 'tenant-1', racetrackId: 'trk-1', action: 'race-start', target: 'race-approval-1', requestedBy: 'ai-race-agent', actorType: 'ai-agent', reason: 'AI recommends race is ready', evidence: ['telemetry-ok'], now: '2026-06-13T17:45:00Z' });
 
   assert.equal(request.status, 'pending');
   assert.throws(() => service.decide(request.id, ai, 'approved', 'unsafe autonomous approval', ['human-approval-record'], '2026-06-13T17:46:00Z'), /AI agents and services cannot approve/);
@@ -23,7 +23,7 @@ test('central approval service enforces chained race start approvals with audit 
   const approved = service.decide(request.id, human('vet-1', ['veterinarian']), 'approved', 'all runners cleared', ['human-approval-record'], '2026-06-13T17:49:00Z');
   assert.equal(approved.status, 'approved');
 
-  const token = service.authorizeExecution({ requestId: request.id, action: 'race-start', target: 'race-approval-1', tenantId: 'tenant-1', actor: human('starter-1', ['steward']), now: '2026-06-13T17:50:00Z' });
+  const token = service.authorizeExecution({ requestId: request.id, action: 'race-start', target: 'race-approval-1', tenantId: 'tenant-1', racetrackId: 'trk-1', actor: human('starter-1', ['steward']), now: '2026-06-13T17:50:00Z' });
   const platform = new RaceOperationsPlatform(service, 'tenant-1');
   platform.scheduleRace(raceInput());
   platform.addEntry('race-approval-1', { id: 'entry-1', horseId: 'horse-1', trainerId: 'trainer-1', ownerId: 'owner-1' });
@@ -50,16 +50,16 @@ test('controlled race actions cannot execute with missing, mismatched, expired, 
 
   assert.throws(() => platform.startRace('race-2', undefined, '2026-06-13T18:00:00Z'), /requires approval token/);
 
-  const request = service.createRequest({ id: 'approval-results', tenantId: 'tenant-1', action: 'official-results', target: 'race-2', requestedBy: 'results-service', actorType: 'service', reason: 'finish order ready', evidence: ['photo-finish'], now: '2026-06-13T18:05:00Z' });
-  assert.throws(() => service.authorizeExecution({ requestId: request.id, action: 'official-results', target: 'race-2', tenantId: 'tenant-1', actor: ai, now: '2026-06-13T18:06:00Z' }), /AI agents cannot execute/);
+  const request = service.createRequest({ id: 'approval-results', tenantId: 'tenant-1', racetrackId: 'trk-1', action: 'official-results', target: 'race-2', requestedBy: 'results-service', actorType: 'service', reason: 'finish order ready', evidence: ['photo-finish'], now: '2026-06-13T18:05:00Z' });
+  assert.throws(() => service.authorizeExecution({ requestId: request.id, action: 'official-results', target: 'race-2', tenantId: 'tenant-1', racetrackId: 'trk-1', actor: ai, now: '2026-06-13T18:06:00Z' }), /AI agents cannot execute/);
 
   service.decide(request.id, human('steward-1', ['steward']), 'approved', 'official order verified', ['human-approval-record'], '2026-06-13T18:07:00Z');
   const partial = service.getRequest(request.id);
   assert.equal(partial.status, 'pending');
-  assert.throws(() => service.authorizeExecution({ requestId: request.id, action: 'official-results', target: 'race-2', tenantId: 'tenant-1', actor: human('steward-1', ['steward']), now: '2026-06-13T18:08:00Z' }), /requires explicit authorized approval/);
+  assert.throws(() => service.authorizeExecution({ requestId: request.id, action: 'official-results', target: 'race-2', tenantId: 'tenant-1', racetrackId: 'trk-1', actor: human('steward-1', ['steward']), now: '2026-06-13T18:08:00Z' }), /requires explicit authorized approval/);
 
   service.decide(request.id, human('finance-1', ['finance']), 'approved', 'payout funding locked', ['human-approval-record'], '2026-06-13T18:09:00Z');
-  const token = service.authorizeExecution({ requestId: request.id, action: 'official-results', target: 'race-2', tenantId: 'tenant-1', actor: human('steward-1', ['steward']), now: '2026-06-13T18:10:00Z' });
+  const token = service.authorizeExecution({ requestId: request.id, action: 'official-results', target: 'race-2', tenantId: 'tenant-1', racetrackId: 'trk-1', actor: human('steward-1', ['steward']), now: '2026-06-13T18:10:00Z' });
   assert.throws(() => platform.startRace('race-2', token, '2026-06-13T18:11:00Z'), /does not match controlled action/);
   assert.throws(() => platform.publishOfficialResults('race-2', token, '2026-06-13T18:30:01Z'), /expired/);
 });
@@ -67,16 +67,16 @@ test('controlled race actions cannot execute with missing, mismatched, expired, 
 test('approval delegation, expiration, escalation, and workflow references are tracked centrally', () => {
   const service = new CentralizedApprovalService();
   service.delegate('steward-chair', 'alternate-steward', ['steward'], '2026-06-13T20:00:00Z', 'chair assigned alternate for inquiry');
-  const delegated = service.createRequest({ id: 'approval-steward-decision', tenantId: 'tenant-1', action: 'steward-decision', target: 'inquiry-1', requestedBy: 'workflow-engine', actorType: 'service', workflowInstanceId: 'wf-123', reason: 'objection review complete', evidence: ['video'], now: '2026-06-13T18:00:00Z' });
+  const delegated = service.createRequest({ id: 'approval-steward-decision', tenantId: 'tenant-1', racetrackId: 'trk-1', action: 'steward-decision', target: 'inquiry-1', requestedBy: 'workflow-engine', actorType: 'service', workflowInstanceId: 'wf-123', reason: 'objection review complete', evidence: ['video'], now: '2026-06-13T18:00:00Z' });
   const approved = service.decide(delegated.id, human('alternate-steward', []), 'approved', 'delegated steward ruling', ['human-approval-record'], '2026-06-13T18:01:00Z');
   assert.equal(approved.status, 'approved');
   assert.equal(approved.workflowInstanceId, 'wf-123');
   assert.equal(approved.decisions[0].delegatedFor, 'steward-chair');
 
-  const expiring = service.createRequest({ id: 'approval-vet-expire', tenantId: 'tenant-1', action: 'veterinary-clearance', target: 'horse-1', requestedBy: 'vet-ai', actorType: 'ai-agent', reason: 'clear flag recommendation', evidence: ['exam'], now: '2026-06-13T18:00:00Z' });
+  const expiring = service.createRequest({ id: 'approval-vet-expire', tenantId: 'tenant-1', racetrackId: 'trk-1', action: 'veterinary-clearance', target: 'horse-1', requestedBy: 'vet-ai', actorType: 'ai-agent', reason: 'clear flag recommendation', evidence: ['exam'], now: '2026-06-13T18:00:00Z' });
   assert.equal(service.expire(expiring.id, '2026-06-13T18:31:00Z').status, 'expired');
 
-  const slow = service.createRequest({ id: 'approval-emergency-escalate', tenantId: 'tenant-1', action: 'emergency-action', target: 'gate-1', requestedBy: 'incident-bot', actorType: 'ai-agent', reason: 'gate alarm', evidence: ['alarm'], now: '2026-06-13T18:00:00Z' });
+  const slow = service.createRequest({ id: 'approval-emergency-escalate', tenantId: 'tenant-1', racetrackId: 'trk-1', action: 'emergency-action', target: 'gate-1', requestedBy: 'incident-bot', actorType: 'ai-agent', reason: 'gate alarm', evidence: ['alarm'], now: '2026-06-13T18:00:00Z' });
   const escalated = service.evaluateEscalations('2026-06-13T18:03:00Z').find((item) => item.id === slow.id);
   assert.equal(escalated.status, 'escalated');
   assert.ok(escalated.escalatedToRoles.includes('admin'));
@@ -84,13 +84,13 @@ test('approval delegation, expiration, escalation, and workflow references are t
 
 test('escalated approvals can be completed by escalation roles but still expire', () => {
   const service = new CentralizedApprovalService();
-  const request = service.createRequest({ id: 'approval-escalated-admin', tenantId: 'tenant-1', action: 'emergency-action', target: 'gate-2', requestedBy: 'incident-bot', actorType: 'ai-agent', reason: 'gate fault', evidence: ['alarm'], now: '2026-06-13T18:00:00Z' });
+  const request = service.createRequest({ id: 'approval-escalated-admin', tenantId: 'tenant-1', racetrackId: 'trk-1', action: 'emergency-action', target: 'gate-2', requestedBy: 'incident-bot', actorType: 'ai-agent', reason: 'gate fault', evidence: ['alarm'], now: '2026-06-13T18:00:00Z' });
   assert.equal(service.evaluateEscalations('2026-06-13T18:03:00Z')[0].status, 'escalated');
 
   const approved = service.decide(request.id, human('ops-admin-1', ['admin']), 'approved', 'incident commander accepts escalation', ['human-approval-record'], '2026-06-13T18:04:00Z');
   assert.equal(approved.status, 'approved');
 
-  const expiring = service.createRequest({ id: 'approval-escalated-expiry', tenantId: 'tenant-1', action: 'emergency-action', target: 'gate-3', requestedBy: 'incident-bot', actorType: 'ai-agent', reason: 'gate fault', evidence: ['alarm'], now: '2026-06-13T18:00:00Z' });
+  const expiring = service.createRequest({ id: 'approval-escalated-expiry', tenantId: 'tenant-1', racetrackId: 'trk-1', action: 'emergency-action', target: 'gate-3', requestedBy: 'incident-bot', actorType: 'ai-agent', reason: 'gate fault', evidence: ['alarm'], now: '2026-06-13T18:00:00Z' });
   service.evaluateEscalations('2026-06-13T18:03:00Z');
   assert.equal(service.expire(expiring.id, '2026-06-13T18:06:00Z').status, 'expired');
   assert.throws(() => service.decide(expiring.id, human('ops-admin-1', ['admin']), 'approved', 'late approval', ['human-approval-record'], '2026-06-13T18:06:30Z'), /expired/);
@@ -98,7 +98,7 @@ test('escalated approvals can be completed by escalation roles but still expire'
 
 test('terminal approval requests and legacy approval records cannot be bypassed by AI actors', () => {
   const service = new CentralizedApprovalService();
-  const rejected = service.createRequest({ id: 'approval-rejected-terminal', tenantId: 'tenant-1', action: 'steward-ruling', target: 'inquiry-2', requestedBy: 'workflow-engine', actorType: 'service', reason: 'ruling review', evidence: ['video'], now: '2026-06-13T18:00:00Z' });
+  const rejected = service.createRequest({ id: 'approval-rejected-terminal', tenantId: 'tenant-1', racetrackId: 'trk-1', action: 'steward-ruling', target: 'inquiry-2', requestedBy: 'workflow-engine', actorType: 'service', reason: 'ruling review', evidence: ['video'], now: '2026-06-13T18:00:00Z' });
   service.decide(rejected.id, human('steward-1', ['steward']), 'rejected', 'insufficient evidence', ['human-approval-record'], '2026-06-13T18:01:00Z');
   assert.throws(() => service.decide(rejected.id, human('steward-2', ['steward']), 'approved', 'second attempt', ['human-approval-record'], '2026-06-13T18:02:00Z'), /rejected/);
 

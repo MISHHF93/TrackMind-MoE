@@ -560,6 +560,10 @@ test('runtime API facade only creates AI recommendation drafts and exposes no ex
 test('runtime API facade keeps protected actions approval-only', async () => {
   const state = createApiFacadeState();
   const before = await handleApiRequest('GET', '/api/v1/starting-gate/position', undefined, state);
+  const minimalBypass = await handleApiRequest('POST', '/api/v1/approvals/controlled-actions', { action: 'race-start', target: 'race-7' }, state);
+  assert.equal(minimalBypass.status, 400);
+  assert.match(minimalBypass.body.error.message, /tenantId, racetrackId, reason, evidence/);
+
   const response = await handleApiRequest('POST', '/api/v1/approvals/controlled-actions', { tenantId: 'trackmind', racetrackId: 'main-track', action: 'race-start', target: 'race-7', reason: 'readiness approval test', actorId: 'steward-1', actorType: 'human', roles: ['steward'], evidence: ['readiness-watch'] }, state);
   assert.equal(response.status, 202);
   assert.equal(response.body.accepted, true);

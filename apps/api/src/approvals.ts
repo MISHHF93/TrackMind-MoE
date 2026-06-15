@@ -57,8 +57,8 @@ export interface EscalationRule { afterMinutes: number; escalateToRoles: Role[];
 export interface ApprovalPolicy { action: ControlledAction; chain: ApprovalStepRequirement[]; expiresInMinutes: number; escalationRules: EscalationRule[]; }
 export interface ApprovalActor { id: string; roles: Role[]; human: boolean; delegatesFor?: string[]; }
 export interface ApprovalDecisionRecord { stepId: string; actorId: string; roles: Role[]; decision: 'approved' | 'rejected'; reason: string; evidence: string[]; decidedAt: string; delegatedFor?: string; }
-export interface ControlledActionRequest { id: string; tenantId: string; action: ControlledAction; target: string; requestedBy: string; actorType: 'human' | 'ai-agent' | 'service'; reason: string; evidence: string[]; createdAt: string; expiresAt: string; status: ApprovalRequestStatus; workflowInstanceId?: string; workflowTaskId?: string; decisions: ApprovalDecisionRecord[]; escalatedToRoles: Role[]; }
-export interface ApprovalToken { requestId: string; action: ControlledAction; target: string; tenantId: string; issuedAt: string; expiresAt: string; approvedBy: string[]; issuedTo?: string; issuedToRoles?: Role[]; }
+export interface ControlledActionRequest { id: string; tenantId: string; racetrackId: string; action: ControlledAction; target: string; requestedBy: string; actorType: 'human' | 'ai-agent' | 'service'; reason: string; evidence: string[]; createdAt: string; expiresAt: string; status: ApprovalRequestStatus; workflowInstanceId?: string; workflowTaskId?: string; decisions: ApprovalDecisionRecord[]; escalatedToRoles: Role[]; }
+export interface ApprovalToken { requestId: string; action: ControlledAction; target: string; tenantId: string; racetrackId: string; issuedAt: string; expiresAt: string; approvedBy: string[]; issuedTo?: string; issuedToRoles?: Role[]; }
 export interface ApprovalDelegationRecord { principalId: string; delegateId: string; roles: Role[]; expiresAt: string; reason: string; createdAt: string; revokedAt?: string; }
 export type ApprovalArtifactStatus = ApprovalRequestStatus;
 export interface ApprovalArtifactStep {
@@ -170,7 +170,7 @@ export function buildApprovalArtifact(request: ControlledActionRequest, options:
     action: request.action,
     target: request.target,
     tenantId: request.tenantId,
-    racetrackId: options.racetrackId ?? request.tenantId,
+    racetrackId: options.racetrackId ?? request.racetrackId,
     status: normalizeApprovalArtifactStatus(request.status),
     sourceStatus: request.status,
     requestedBy: request.requestedBy,
@@ -203,6 +203,7 @@ export class CentralizedApprovalService {
 
   createRequest(input: Omit<ControlledActionRequest, 'id'|'createdAt'|'expiresAt'|'status'|'decisions'|'escalatedToRoles'> & { id?: string; now?: string }): ControlledActionRequest {
     const policy = this.policy(input.action); const now = input.now ?? new Date().toISOString();
+    if (!input.racetrackId) throw new Error('Controlled action approval requests require racetrackId');
     const request: ControlledActionRequest = { ...input, id: input.id ?? id('approval'), createdAt: now, expiresAt: addMinutes(now, policy.expiresInMinutes), status: 'pending', decisions: [], escalatedToRoles: [] };
     this.requests.set(request.id, request); const auditRef = this.audit('approval.requested', request.requestedBy, request, now); void this.publish('approval.requested', { ...request, auditRef }); this.notifyWorkflow('approval.requested', request, now); return clone(request);
   }
@@ -224,18 +225,22 @@ export class CentralizedApprovalService {
     const auditRef = this.audit(`approval.${decision}`, actor.id, request, now); void this.publish(`approval.${decision}`, { ...request, auditRef }); this.notifyWorkflow(`approval.${decision}`, request, now); return clone(request);
   }
 
-  authorizeExecution(input: { requestId: string; action: ControlledAction; target: string; tenantId: string; actor: ApprovalActor; now?: string }): ApprovalToken {
+  authorizeExecution(input: { requestId: string; action: ControlledAction; target: string; tenantId: string; racetrackId: string; actor: ApprovalActor; now?: string }): ApprovalToken {
     const now = input.now ?? new Date().toISOString(); const request = this.expire(input.requestId, now);
     if (!input.actor.human || isNonHumanActorId(input.actor.id)) throw new Error('AI agents cannot execute controlled actions; execution requires an authorized human-controlled workflow');
     if (request.status !== 'approved') throw new Error(`Controlled action ${input.action} requires explicit authorized approval`);
-    if (request.action !== input.action || request.target !== input.target || request.tenantId !== input.tenantId) throw new Error('Approval does not match controlled action execution request');
-    const token = { requestId: request.id, action: request.action, target: request.target, tenantId: request.tenantId, issuedAt: now, expiresAt: request.expiresAt, approvedBy: request.decisions.filter((d) => d.decision === 'approved').map((d) => d.actorId), issuedTo: input.actor.id, issuedToRoles: [...input.actor.roles] };
+    if (request.action !== input.action || request.target !== input.target || request.tenantId !== input.tenantId || request.racetrackId !== input.racetrackId) throw new Error('Approval does not match controlled action execution request');
+    const token = { requestId: request.id, action: request.action, target: request.target, tenantId: request.tenantId, racetrackId: request.racetrackId, issuedAt: now, expiresAt: request.expiresAt, approvedBy: request.decisions.filter((d) => d.decision === 'approved').map((d) => d.actorId), issuedTo: input.actor.id, issuedToRoles: [...input.actor.roles] };
     const auditRef = this.audit('approval.execution-authorized', input.actor.id, { ...request, token }, now); void this.publish('approval.execution-authorized', { ...token, tenantId: request.tenantId, auditRef, approvalRef: request.id }); this.notifyWorkflow('approval.execution-authorized', request, now); return token;
   }
 
-  assertAuthorized(token: ApprovalToken | undefined, action: ControlledAction, target: string, tenantId: string, now = new Date().toISOString()): void {
+  assertAuthorized(token: ApprovalToken | undefined, action: ControlledAction, target: string, tenantId: string, racetrackId?: string, now = new Date().toISOString()): void {
     if (!token) throw new Error(`Controlled action ${action} requires approval token`);
     if (token.action !== action || token.target !== target || token.tenantId !== tenantId) throw new Error('Approval token does not match controlled action');
+    if (racetrackId && token.racetrackId !== racetrackId) throw new Error('Approval token does not match racetrack scope');
+    const request = this.requests.get(token.requestId);
+    if (!request || request.status !== 'approved') throw new Error('Approval token does not reference an approved request');
+    if (request.action !== token.action || request.target !== token.target || request.tenantId !== token.tenantId || request.racetrackId !== token.racetrackId) throw new Error('Approval token does not match stored approval request');
     if (token.expiresAt <= now) throw new Error('Approval token has expired');
     if (token.issuedTo && isNonHumanActorId(token.issuedTo)) throw new Error('Approval token was not issued to an authorized human actor');
   }
@@ -249,8 +254,8 @@ export class CentralizedApprovalService {
   private require(id: string): ControlledActionRequest { const request = this.requests.get(id); if (!request) throw new Error(`Unknown approval request ${id}`); return request; }
   private stepSatisfied(request: ControlledActionRequest, step: ApprovalStepRequirement): boolean { return new Set(request.decisions.filter((d) => d.stepId === step.id && d.decision === 'approved').map(approvalPrincipal)).size >= step.minimumApprovals; }
   private delegatedPrincipal(actorId: string, roles: Role[], now: string): { principalId: string; roles: Role[] } | undefined { for (const [principalId, entries] of this.delegations) { const hit = entries.find((entry) => entry.delegateId === actorId && !entry.revokedAt && entry.expiresAt > now && entry.roles.some((role) => roles.includes(role))); if (hit) return { principalId, roles: hit.roles }; } return undefined; }
-  private audit(action: string, actor: string, payload: unknown, timestamp = new Date().toISOString()): string | undefined { const scoped = payload && typeof payload === 'object' ? payload as Partial<ControlledActionRequest> : {}; return this.deps.auditLog?.append({ id: id('audit-approval'), type: 'approval', actor, actorType: scoped.actorType ?? (actor === 'system' ? 'system' : isNonHumanActorId(actor) ? 'service' : 'human'), timestamp, action, actionClass: 'approval', payload, subjectId: scoped.target, target: scoped.target, tenantId: scoped.tenantId, workflowId: scoped.workflowInstanceId, correlationId: scoped.id, severity: action === 'approval.execution-authorized' ? 'critical' : 'warning', regulations: ['HISA', 'ARCI'], evidenceIds: Array.isArray(scoped.evidence) ? scoped.evidence : [] }).id; }
-  private async publish(type: string, payload: unknown): Promise<void> { const scoped = payload && typeof payload === 'object' ? payload as Partial<ControlledActionRequest> & Partial<ApprovalDelegationRecord> & Partial<ApprovalToken> & { auditRef?: string; approvalRef?: string } : {}; await this.deps.eventBus?.publish({ type, payload, aggregateId: scoped.target ?? scoped.requestId ?? scoped.principalId, correlationId: scoped.id ?? scoped.requestId, producer: 'centralized-approval-service', tenantId: scoped.tenantId, actor: { id: 'centralized-approval-service', type: 'service' }, subject: scoped.target ? { id: scoped.target, type: 'approval-target', tenantId: scoped.tenantId ?? 'unknown-tenant' } : undefined, evidence: Array.isArray((scoped as Partial<ControlledActionRequest>).evidence) ? (scoped as Partial<ControlledActionRequest>).evidence as string[] : [], auditRef: scoped.auditRef, approvalRef: scoped.approvalRef ?? scoped.id ?? scoped.requestId, metadata: { tenantId: scoped.tenantId, auditRef: scoped.auditRef, approvalRef: scoped.approvalRef ?? scoped.id ?? scoped.requestId, compliance: 'regulated', team: 'platform-controls', accountableRole: 'compliance-officer' } }); }
+  private audit(action: string, actor: string, payload: unknown, timestamp = new Date().toISOString()): string | undefined { const scoped = payload && typeof payload === 'object' ? payload as Partial<ControlledActionRequest> & Partial<ApprovalToken> : {}; return this.deps.auditLog?.append({ id: id('audit-approval'), type: 'approval', actor, actorType: scoped.actorType ?? (actor === 'system' ? 'system' : isNonHumanActorId(actor) ? 'service' : 'human'), timestamp, action, actionClass: 'approval', payload, subjectId: scoped.target, target: scoped.target, tenantId: scoped.tenantId, racetrackId: scoped.racetrackId, workflowId: scoped.workflowInstanceId, correlationId: scoped.id ?? scoped.requestId, severity: action === 'approval.execution-authorized' ? 'critical' : 'warning', regulations: ['HISA', 'ARCI'], evidenceIds: Array.isArray(scoped.evidence) ? scoped.evidence : [] }).id; }
+  private async publish(type: string, payload: unknown): Promise<void> { const scoped = payload && typeof payload === 'object' ? payload as Partial<ControlledActionRequest> & Partial<ApprovalDelegationRecord> & Partial<ApprovalToken> & { auditRef?: string; approvalRef?: string } : {}; await this.deps.eventBus?.publish({ type, payload, aggregateId: scoped.target ?? scoped.requestId ?? scoped.principalId, correlationId: scoped.id ?? scoped.requestId, producer: 'centralized-approval-service', tenantId: scoped.tenantId, racetrackId: scoped.racetrackId, actor: { id: 'centralized-approval-service', type: 'service' }, subject: scoped.target ? { id: scoped.target, type: 'approval-target', tenantId: scoped.tenantId ?? 'unknown-tenant' } : undefined, evidence: Array.isArray((scoped as Partial<ControlledActionRequest>).evidence) ? (scoped as Partial<ControlledActionRequest>).evidence as string[] : [], auditRef: scoped.auditRef, approvalRef: scoped.approvalRef ?? scoped.id ?? scoped.requestId, metadata: { tenantId: scoped.tenantId, racetrackId: scoped.racetrackId, auditRef: scoped.auditRef, approvalRef: scoped.approvalRef ?? scoped.id ?? scoped.requestId, compliance: 'regulated', team: 'platform-controls', accountableRole: 'compliance-officer' } }); }
   private notifyWorkflow(type: string, request: ControlledActionRequest, now: string): void { if (!request.workflowInstanceId) return; this.deps.workflow?.emit({ type, tenantId: request.tenantId, instanceId: request.workflowInstanceId, payload: { approvalRequestId: request.id, action: request.action, target: request.target, status: request.status, decisions: request.decisions, workflowTaskId: request.workflowTaskId } }, now); }
 }
 

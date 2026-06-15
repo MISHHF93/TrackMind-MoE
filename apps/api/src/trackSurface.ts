@@ -464,14 +464,14 @@ export async function runIntegratedSurfaceIntelligence(input: SurfaceIntelligenc
   if (!deps.auditLog) unresolvedDependencies.push('auditLog');
   else {
     for (const record of domain.auditRecords) {
-      auditEntries.push(deps.auditLog.append({ id: record.id, type: auditType(record.type), actor: record.actor, timestamp: record.timestamp, payload: record.payload, subjectId: record.subjectId, tenantId, severity: record.type === 'approval-gate' || record.type === 'recommendation' ? 'warning' : 'info', regulations: ['HISA', 'ARCI'], evidenceIds: record.type === 'recommendation' ? ['surface-telemetry', 'surface-inspection', 'surface-weather'] : [] }));
+      auditEntries.push(deps.auditLog.append({ id: record.id, type: auditType(record.type), actor: record.actor, timestamp: record.timestamp, payload: record.payload, subjectId: record.subjectId, tenantId, racetrackId: input.trackId, severity: record.type === 'approval-gate' || record.type === 'recommendation' ? 'warning' : 'info', regulations: ['HISA', 'ARCI'], evidenceIds: record.type === 'recommendation' ? ['surface-telemetry', 'surface-inspection', 'surface-weather'] : [] }));
     }
   }
 
   if (!deps.approvals) unresolvedDependencies.push('approvals');
   else {
     for (const recommendation of [...domain.maintenanceRecommendations, ...domain.irrigationRecommendations]) {
-      approvalRequests.push(deps.approvals.createRequest({ id: `${recommendation.id}:approval`, tenantId, action: actionForRecommendation(recommendation), target: `${input.trackId}:${recommendation.sectionId}`, requestedBy, actorType: 'service', reason: recommendation.recommendation, evidence: ['human-approval-record', ...recommendation.rationale, recommendation.event.id, recommendation.auditRecord.id], now: input.generatedAt }));
+      approvalRequests.push(deps.approvals.createRequest({ id: `${recommendation.id}:approval`, tenantId, racetrackId: input.trackId, action: actionForRecommendation(recommendation), target: `${input.trackId}:${recommendation.sectionId}`, requestedBy, actorType: 'service', reason: recommendation.recommendation, evidence: ['human-approval-record', ...recommendation.rationale, recommendation.event.id, recommendation.auditRecord.id], now: input.generatedAt }));
     }
   }
 

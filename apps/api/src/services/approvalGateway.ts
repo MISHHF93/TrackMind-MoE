@@ -106,6 +106,7 @@ export class ApexApprovalGateway {
     const createdAt = input.context.now ?? new Date().toISOString();
     const request = this.approvals.createRequest({
       tenantId: input.context.tenantId,
+      racetrackId: input.context.racetrackId,
       action: input.action,
       target: input.target,
       requestedBy: input.context.actor,
@@ -145,7 +146,7 @@ export class ApexApprovalGateway {
     pending.record.status = decided.status === 'approved' ? 'approved' : 'approval_required';
     this.records.set(input.approvalRequestId, clone(pending.record));
     if (decided.status !== 'approved') return { request: decided, record: clone(pending.record), executed: false, audit };
-    const token = this.approvals.authorizeExecution({ requestId: input.approvalRequestId, action: pending.record.action, target: pending.record.target, tenantId: pending.context.tenantId, actor: input.actor, now: input.now });
+    const token = this.approvals.authorizeExecution({ requestId: input.approvalRequestId, action: pending.record.action, target: pending.record.target, tenantId: pending.context.tenantId, racetrackId: pending.context.racetrackId, actor: input.actor, now: input.now });
     const result = await pending.execute(token);
     pending.record.status = 'executed';
     const event = await this.publish(`${pending.record.service}.${pending.record.operation}.executed`, pending.record.service, pending.record.target, { approvalRequestId: input.approvalRequestId, token, result }, pending.context, audit.id, input.approvalRequestId);
@@ -218,6 +219,7 @@ export class ApexApprovalGateway {
       payload: { service, operation, target, evidence, approvalRef, approvals },
       subjectId: target,
       tenantId: context.tenantId,
+      racetrackId: context.racetrackId,
       correlationId: approvalRef,
       severity,
       regulations: ['HISA', 'ARCI', 'SOC-2'],

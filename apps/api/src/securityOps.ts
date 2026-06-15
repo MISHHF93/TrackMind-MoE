@@ -571,7 +571,7 @@ export class SecurityOperationsService {
   private requestEscalationApproval(actor: SecurityActor, incident: SecurityIncident): string | undefined {
     if (incident.severity !== 'critical' || !this.options.approvals) return undefined;
     try {
-      return this.options.approvals.createRequest({ tenantId: actor.tenantId ?? 'trackmind', action: 'emergency-action', target: incident.id, requestedBy: actor.id, actorType: actor.human === false ? 'service' : 'human', reason: `Escalate critical security incident: ${incident.title}`, evidence: incident.eventIds }).id;
+      return this.options.approvals.createRequest({ tenantId: actor.tenantId ?? 'trackmind', racetrackId: this.zones.get(incident.zoneId)?.id ?? incident.zoneId, action: 'emergency-action', target: incident.id, requestedBy: actor.id, actorType: actor.human === false ? 'service' : 'human', reason: `Escalate critical security incident: ${incident.title}`, evidence: incident.eventIds }).id;
     } catch {
       const gate: SecurityApprovalGate = { id: `gate-${this.approvalGates.length + 1}`, action: 'security-incident-escalation', target: incident.id, status: 'pending', requestedBy: actor.id, evidence: incident.eventIds, reason: `Escalate critical security incident: ${incident.title}` };
       this.approvalGates.push(gate);

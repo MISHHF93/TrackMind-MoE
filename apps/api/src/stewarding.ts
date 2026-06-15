@@ -235,9 +235,9 @@ export function saveDecisionDraft(inquiry: StewardInquiry, draft: Omit<StewardDe
   return saved;
 }
 
-export function requestStewardFinalApproval(inquiry: StewardInquiry, input: { tenantId: string; requestedBy: string; actorType: 'human' | 'ai-agent' | 'service'; reason: string; evidence: string[]; now?: string; workflowInstanceId?: string; id?: string }, deps: StewardCenterIntegrations): ControlledActionRequest {
+export function requestStewardFinalApproval(inquiry: StewardInquiry, input: { tenantId: string; racetrackId?: string; requestedBy: string; actorType: 'human' | 'ai-agent' | 'service'; reason: string; evidence: string[]; now?: string; workflowInstanceId?: string; id?: string }, deps: StewardCenterIntegrations): ControlledActionRequest {
   const now = input.now ?? new Date().toISOString();
-  const request = deps.approvals?.createRequest({ id: input.id, tenantId: input.tenantId, action: 'steward-decision', target: inquiry.id, requestedBy: input.requestedBy, actorType: input.actorType, reason: input.reason, evidence: input.evidence, workflowInstanceId: input.workflowInstanceId, now });
+  const request = deps.approvals?.createRequest({ id: input.id, tenantId: input.tenantId, racetrackId: input.racetrackId ?? inquiry.raceId, action: 'steward-decision', target: inquiry.id, requestedBy: input.requestedBy, actorType: input.actorType, reason: input.reason, evidence: input.evidence, workflowInstanceId: input.workflowInstanceId, now });
   if (!request) throw new Error('Steward final approval requires centralized approval service integration');
   inquiry.status = 'pending-final-approval';
   inquiry.integrations.approvalRequestIds.push(request.id);
@@ -246,14 +246,14 @@ export function requestStewardFinalApproval(inquiry: StewardInquiry, input: { te
   return request;
 }
 
-export function issueFinalRuling(inquiry: StewardInquiry, ruling: StewardFinalRuling, options: { approvalToken?: ApprovalToken; approvalService?: Pick<CentralizedApprovalService, 'assertAuthorized'>; tenantId?: string; now?: string; deps?: StewardCenterIntegrations } = {}): StewardFinalRuling {
+export function issueFinalRuling(inquiry: StewardInquiry, ruling: StewardFinalRuling, options: { approvalToken?: ApprovalToken; approvalService?: Pick<CentralizedApprovalService, 'assertAuthorized'>; tenantId?: string; racetrackId?: string; now?: string; deps?: StewardCenterIntegrations } = {}): StewardFinalRuling {
   if (!finalRulingRoles.includes(ruling.issuedByRole) || String(ruling.issuedByRole) === 'ai-agent') {
     audit(inquiry, { at: ruling.issuedAt, actorId: ruling.issuedBy, actorRole: ruling.issuedByRole, action: 'access.denied', subjectId: inquiry.id, evidenceIds: ruling.evidenceIds, ruleIds: ruling.ruleIds }, options.deps);
     throw new Error('official steward rulings require an authorized human steward role');
   }
   if (ruling.officialResultsModified !== false) throw new Error('steward center may not modify official results');
   requireKnownEvidenceAndRules(inquiry, ruling.evidenceIds, ruling.ruleIds);
-  if (options.approvalService) options.approvalService.assertAuthorized(options.approvalToken, 'steward-decision', inquiry.id, options.tenantId ?? 'track-1', options.now ?? ruling.issuedAt);
+  if (options.approvalService) options.approvalService.assertAuthorized(options.approvalToken, 'steward-decision', inquiry.id, options.tenantId ?? 'track-1', options.racetrackId ?? inquiry.raceId, options.now ?? ruling.issuedAt);
   inquiry.finalRuling = { ...ruling, evidenceIds: [...ruling.evidenceIds], ruleIds: [...ruling.ruleIds], officialResultsModified: false };
   inquiry.status = 'finalized';
   audit(inquiry, { at: ruling.issuedAt, actorId: ruling.issuedBy, actorRole: ruling.issuedByRole, action: 'final-ruling.recorded', subjectId: ruling.id, evidenceIds: ruling.evidenceIds, ruleIds: ruling.ruleIds }, options.deps);

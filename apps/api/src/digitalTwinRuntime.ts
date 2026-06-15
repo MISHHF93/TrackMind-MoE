@@ -156,8 +156,9 @@ export class DigitalTwinRuntime {
   }
 
   requestStateChangeApproval(input: { twinId: string; tenantId: string; requestedBy: string; actorType: 'human' | 'ai-agent' | 'service'; reason: string; evidence: string[]; action?: ControlledAction; now?: string }): ControlledActionRequest {
-    this.assertTenant(input.tenantId, this.requireTwin(input.twinId));
-    return this.approvals.createRequest({ tenantId: input.tenantId, action: input.action ?? 'safety-critical-control', target: input.twinId, requestedBy: input.requestedBy, actorType: input.actorType, reason: input.reason, evidence: input.evidence, now: input.now });
+    const twin = this.requireTwin(input.twinId);
+    this.assertTenant(input.tenantId, twin);
+    return this.approvals.createRequest({ tenantId: input.tenantId, racetrackId: twinRacetrackRef(twin), action: input.action ?? 'safety-critical-control', target: input.twinId, requestedBy: input.requestedBy, actorType: input.actorType, reason: input.reason, evidence: input.evidence, now: input.now });
   }
 
   replayHistory(twinId: string, atOrBefore?: string): TwinHistoryEvent[] {
@@ -403,7 +404,7 @@ export class DigitalTwinRuntime {
     const tenantId = input.tenantId ?? current.tenantId;
     try {
       if (!tenantId) throw new Error('tenantId is required for approved twin commands');
-      this.approvals.assertAuthorized(input.approvalToken, action, current.twinId, tenantId, now);
+      this.approvals.assertAuthorized(input.approvalToken, action, current.twinId, tenantId, twinRacetrackRef(current), now);
       return input.approvalToken;
     } catch (error) {
       this.auditCommandRejected(current, input, error instanceof Error ? error.message : String(error), now);
@@ -414,7 +415,7 @@ export class DigitalTwinRuntime {
   private auditCommandRejected(twin: DigitalTwinRuntimeTwin, input: TwinStatePatch, reason: string, timestamp: string): void {
     const racetrackId = twinRacetrackRef(twin);
     const evidence = [...new Set([...(input.evidence ?? []), input.sourceEventId, input.approvalToken?.requestId].filter((item): item is string => Boolean(item)))];
-    const audit = this.auditLog.append({ id: id('audit'), type: 'digital-twin-update', actor: input.actor, actorType: 'human', timestamp, action: 'digital-twin.command.rejected', actionClass: 'twin', payload: { action: 'digital-twin.command.rejected', twinId: twin.twinId, assetId: twin.assetId, racetrackId, reason, patch: input.patch, sourceEventId: input.sourceEventId, approvalRequestId: input.approvalToken?.requestId }, subjectId: twin.twinId, target: twin.twinId, tenantId: twin.tenantId, correlationId: input.sourceEventId ?? input.approvalToken?.requestId ?? `${twin.twinId}:rejected`, severity: 'warning', regulations: ['HISA', 'ARCI'], evidenceIds: evidence });
+    const audit = this.auditLog.append({ id: id('audit'), type: 'digital-twin-update', actor: input.actor, actorType: 'human', timestamp, action: 'digital-twin.command.rejected', actionClass: 'twin', payload: { action: 'digital-twin.command.rejected', twinId: twin.twinId, assetId: twin.assetId, racetrackId, reason, patch: input.patch, sourceEventId: input.sourceEventId, approvalRequestId: input.approvalToken?.requestId }, subjectId: twin.twinId, target: twin.twinId, tenantId: twin.tenantId, racetrackId, correlationId: input.sourceEventId ?? input.approvalToken?.requestId ?? `${twin.twinId}:rejected`, severity: 'warning', regulations: ['HISA', 'ARCI'], evidenceIds: evidence });
     void this.eventBus.publish({ type: 'digital-twin.command.rejected', payload: { twinId: twin.twinId, tenantId: twin.tenantId, racetrackId, actor: input.actor, reason, auditRef: audit.id, digitalTwinRef: twin.twinId, evidence }, aggregateId: twin.twinId, correlationId: audit.correlationId, producer: 'digital-twin-runtime', tenantId: twin.tenantId, racetrackId, actor: { id: input.actor, type: 'human' }, subject: { id: twin.twinId, type: 'digital-twin', tenantId: twin.tenantId ?? 'unknown-tenant' }, evidence, auditRef: audit.id, digitalTwinRef: twin.twinId, approvalRef: input.approvalToken?.requestId, metadata: { tenantId: twin.tenantId, racetrackId, compliance: 'regulated', team: 'racetrack-platform', accountableRole: 'digital-twin-runtime-owner', regulations: ['HISA', 'ARCI'] } });
   }
 
@@ -453,11 +454,11 @@ function stringMetadata(value: unknown): string | undefined {
   return typeof value === 'string' && value ? value : undefined;
 }
 
-function twinRacetrackRef(twin: DigitalTwinRuntimeTwin): string | undefined {
+function twinRacetrackRef(twin: DigitalTwinRuntimeTwin): string {
   const location = twin.state.location;
   if (location && typeof location === 'object' && !Array.isArray(location)) {
     const record = location as Record<string, unknown>;
-    return stringMetadata(record.racetrackId) ?? stringMetadata(record.trackId) ?? stringMetadata(record.track) ?? twin.tenantId;
+    return stringMetadata(record.racetrackId) ?? stringMetadata(record.trackId) ?? stringMetadata(record.track) ?? twin.tenantId ?? 'unknown-racetrack';
   }
-  return twin.tenantId;
+  return twin.tenantId ?? 'unknown-racetrack';
 }

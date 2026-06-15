@@ -103,6 +103,10 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const id = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const addDays = (iso: string, days: number) => new Date(Date.parse(iso) + days * 86_400_000).toISOString();
 const clampScore = (score: number) => Math.max(0, Math.min(100, Math.round(score)));
+const assetRacetrackId = (asset: RegistryAsset): string => {
+  const value = asset.location.racetrackId ?? asset.location.trackId ?? asset.location.track;
+  return typeof value === 'string' && value.length > 0 ? value : asset.tenantId;
+};
 const riskPenalty: Record<AssetRiskLevel, number> = { low: 4, medium: 10, high: 18, critical: 30 };
 const maintenancePenalty: Record<MaintenanceStatus, number> = { ok: 0, due: 12, overdue: 24, 'out-of-service': 45 };
 
@@ -188,9 +192,9 @@ export class FacilitiesMaintenanceService {
       await this.assetRegistry.inspect(asset.assetId, { inspector: input.inspectedBy, status: maintenanceStatus, nextInspectionDueAt: record.nextInspectionDueAt, notes: input.findings.join('; ') }, principal, { approvalToken: input.approvalToken, reason: `Facility inspection ${record.id}` });
     } catch (error) {
       if (!(error instanceof Error) || !/requires approval token/.test(error.message)) throw error;
-      this.approvals.createRequest({ tenantId: asset.tenantId, action: 'safety-critical-control', target: asset.assetId, requestedBy: input.inspectedBy, actorType: 'human', reason: `Approve RACR maintenance-state update for inspection ${record.id}`, evidence: ['human-approval-record', record.id, ...record.findings] });
+      this.approvals.createRequest({ tenantId: asset.tenantId, racetrackId: assetRacetrackId(asset), action: 'safety-critical-control', target: asset.assetId, requestedBy: input.inspectedBy, actorType: 'human', reason: `Approve RACR maintenance-state update for inspection ${record.id}`, evidence: ['human-approval-record', record.id, ...record.findings] });
     }
-    this.auditLog.append({ id: auditId, type: 'workflow-action', actor: input.inspectedBy, timestamp: inspectedAt, payload: record, subjectId: asset.assetId, tenantId: asset.tenantId, severity: status === 'failed' ? 'critical' : status === 'watch' ? 'warning' : 'info', regulations: asset.regulations.map((item) => item.authority), evidenceIds: record.findings });
+    this.auditLog.append({ id: auditId, type: 'workflow-action', actor: input.inspectedBy, timestamp: inspectedAt, payload: record, subjectId: asset.assetId, tenantId: asset.tenantId, racetrackId: assetRacetrackId(asset), severity: status === 'failed' ? 'critical' : status === 'watch' ? 'warning' : 'info', regulations: asset.regulations.map((item) => item.authority), evidenceIds: record.findings });
     await this.patchTwin(asset, { latestFacilityInspection: record, facilityHealthScore: record.score, maintenanceStatus }, input.inspectedBy, eventId);
     await this.publish('facilities.inspection.recorded', asset.assetId, { assetId: asset.assetId, tenantId: asset.tenantId, actor: input.inspectedBy, inspection: record });
     return clone(record);
@@ -211,7 +215,7 @@ export class FacilitiesMaintenanceService {
     const requiresApproval = input.operationalImpact !== 'read-only';
     this.workflows.register(facilitiesMaintenanceWorkflow(asset.tenantId));
     const workflow = this.workflows.start('facilities-maintenance-work-order', { tenantId: asset.tenantId, priority: input.priority, digitalTwinRefs: asset.digitalTwin?.twinId ? [asset.digitalTwin.twinId] : [], payload: { assetId: asset.assetId, operationalImpact: input.operationalImpact } }, input.requestedBy, now);
-    const approval = requiresApproval ? this.approvals.createRequest({ tenantId: asset.tenantId, action: 'facility-maintenance-execution', target: asset.assetId, requestedBy: input.requestedBy, actorType: 'human', reason: input.title, evidence: ['human-approval-record', ...input.evidence], workflowInstanceId: workflow.id }) : undefined;
+    const approval = requiresApproval ? this.approvals.createRequest({ tenantId: asset.tenantId, racetrackId: assetRacetrackId(asset), action: 'facility-maintenance-execution', target: asset.assetId, requestedBy: input.requestedBy, actorType: 'human', reason: input.title, evidence: ['human-approval-record', ...input.evidence], workflowInstanceId: workflow.id }) : undefined;
     const order: FacilityWorkOrder = {
       id: id('wo'),
       assetId: asset.assetId,
@@ -241,7 +245,7 @@ export class FacilitiesMaintenanceService {
   async completeWorkOrder(input: { workOrderId: string; completedBy: string; evidence: string[]; approvalToken?: ApprovalToken; assetApprovalToken?: ApprovalToken }, principal: AssetPrincipal): Promise<FacilityWorkOrder> {
     const order = this.requireWorkOrder(input.workOrderId);
     const asset = this.assetRegistry.get(order.assetId, this.readPrincipal(principal));
-    if (order.operationalImpact !== 'read-only') this.approvals.assertAuthorized(input.approvalToken, 'facility-maintenance-execution', asset.assetId, asset.tenantId);
+    if (order.operationalImpact !== 'read-only') this.approvals.assertAuthorized(input.approvalToken, 'facility-maintenance-execution', asset.assetId, asset.tenantId, assetRacetrackId(asset));
     const completed: FacilityWorkOrder = { ...order, status: 'completed', completedAt: new Date().toISOString(), completedBy: input.completedBy, evidence: [...new Set([...order.evidence, ...input.evidence])] };
     await this.assetRegistry.inspect(asset.assetId, { inspector: input.completedBy, status: 'ok', workOrderId: completed.id, notes: `Completed ${completed.title}` }, principal, { approvalToken: input.assetApprovalToken, reason: `Return ${completed.id} to service` });
     this.workOrders.set(completed.id, completed);
@@ -364,5 +368,5 @@ export function createMockFacilitiesMaintenanceWorkspace(timestamp = new Date().
   const preventiveMaintenance: PreventiveMaintenancePlan[] = assets.map((asset) => ({ id: `pm-${asset.assetId.toLowerCase()}`, assetId: asset.assetId, cadenceDays: asset.riskLevel === 'high' ? 7 : 14, checklist: ['verify required telemetry', 'inspect safety controls', 'confirm approval path'], nextDueAt: asset.nextInspectionDueAt ?? timestamp, approvalRequiredForExecution: true, predictiveHooks: ['runtime-hours', 'fault-count-30d', 'required-telemetry'] }));
   const predictiveHooks = assets.map((asset) => ({ assetId: asset.assetId, type: asset.assetType === 'Elevator' ? 'elevator' as const : asset.assetType === 'BackupGenerator' ? 'generator' as const : 'hvac' as const, failureProbability: asset.predictedFailureRisk / 100, priority: asset.predictivePriority, evidence: [`${asset.assetId}:health=${asset.healthScore}`, `${asset.assetId}:maintenance=${asset.maintenanceStatus}`] }));
   const readiness = { score: 78, status: 'watch' as const, ready: 1, watch: 2, blocked: 0, evidence: assets.flatMap((asset) => [`${asset.assetId}:health=${asset.healthScore}`, `${asset.assetId}:twin=${asset.twinId}`]) };
-  return { generatedAt: timestamp, readiness, assets, inspections, preventiveMaintenance, workOrders, predictiveHooks, approvals: [{ id: 'approval-facility-hvac', tenantId: 'saratoga', action: 'facility-maintenance-execution', target: 'GRANDSTAND_HVAC_01', requestedBy: 'facilities-supervisor', actorType: 'human', reason: 'Replace filters before patron load increases', evidence: ['human-approval-record', 'inspection-hvac-1'], createdAt: timestamp, expiresAt: '2026-06-14T20:45:00.000Z', status: 'pending', decisions: [], escalatedToRoles: [], workflowInstanceId: 'facilities-maintenance-work-order-1' }], audit: [], events: [], twins: [], observability: { serviceId: 'facilities-maintenance', metrics: [{ name: 'facility_readiness_score', value: readiness.score, unit: 'score' }, { name: 'facility_open_work_orders', value: workOrders.length, unit: 'count' }, { name: 'facility_predictive_urgent', value: 0, unit: 'count' }], commandCenterWidgetIds: ['facility-status', 'facility-readiness', 'asset-health'] }, operationalActionsRequireApproval: true, integrations: { assetRegistry: true, digitalTwinRuntime: true, approvals: true, workflows: true, audit: true, eventBus: true, observability: true }, mock: true };
+  return { generatedAt: timestamp, readiness, assets, inspections, preventiveMaintenance, workOrders, predictiveHooks, approvals: [{ id: 'approval-facility-hvac', tenantId: 'saratoga', racetrackId: 'main-track', action: 'facility-maintenance-execution', target: 'GRANDSTAND_HVAC_01', requestedBy: 'facilities-supervisor', actorType: 'human', reason: 'Replace filters before patron load increases', evidence: ['human-approval-record', 'inspection-hvac-1'], createdAt: timestamp, expiresAt: '2026-06-14T20:45:00.000Z', status: 'pending', decisions: [], escalatedToRoles: [], workflowInstanceId: 'facilities-maintenance-work-order-1' }], audit: [], events: [], twins: [], observability: { serviceId: 'facilities-maintenance', metrics: [{ name: 'facility_readiness_score', value: readiness.score, unit: 'score' }, { name: 'facility_open_work_orders', value: workOrders.length, unit: 'count' }, { name: 'facility_predictive_urgent', value: 0, unit: 'count' }], commandCenterWidgetIds: ['facility-status', 'facility-readiness', 'asset-health'] }, operationalActionsRequireApproval: true, integrations: { assetRegistry: true, digitalTwinRuntime: true, approvals: true, workflows: true, audit: true, eventBus: true, observability: true }, mock: true };
 }

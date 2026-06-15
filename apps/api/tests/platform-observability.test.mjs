@@ -34,7 +34,7 @@ test('platform observability derives event throughput, approval queue, audit led
   await eventBus.publish({ type:'platform.health.checked', payload:{ subjectId:'platform' }, producer:'test' });
   const auditLog = new ImmutableAuditLog();
   const approvals = new CentralizedApprovalService({ auditLog, eventBus });
-  approvals.createRequest({ tenantId:'tenant-1', action:'race-start', target:'race-1', requestedBy:'agent', actorType:'ai-agent', reason:'readiness', evidence:['readiness'] });
+  approvals.createRequest({ tenantId:'tenant-1', racetrackId:'tenant-1', action:'race-start', target:'race-1', requestedBy:'agent', actorType:'ai-agent', reason:'readiness', evidence:['readiness'] });
   const obs = new PlatformObservabilityService({ eventBus, auditLog, approvals });
   obs.recordApiLatency('api-gateway', '/api/v1/platform/health', 640, 200);
   const health = obs.health();

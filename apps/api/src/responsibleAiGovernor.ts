@@ -870,6 +870,7 @@ export class ResponsibleAIGovernancePlatform {
     return approvalService.createRequest({
       id: `approval-${record.id}-${action}`,
       tenantId: record.tenantId ?? agent.tenantId ?? 'trackmind',
+      racetrackId: record.racetrackId ?? record.tenantId ?? agent.tenantId ?? 'trackmind',
       action,
       target: record.target,
       requestedBy: agent.id,

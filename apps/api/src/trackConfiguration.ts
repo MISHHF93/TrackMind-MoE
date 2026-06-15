@@ -84,6 +84,7 @@ export interface SurfaceAllocation {
 
 export interface RaceSetupParameters {
   raceId: string;
+  racetrackId?: string;
   distanceMeters: number;
   advertisedDistanceMeters?: number;
   surface: RacingSurface;
@@ -671,13 +672,15 @@ export class TrackConfigurationPlatform {
   private audit(actor: string, action: string, changeId: string, timestamp: string, evidence: string[]): void {
     const entry = { id: `audit-${this.audits.length + 1}`, actor, action, timestamp, changeId, evidence: [...evidence] };
     this.audits.push(entry);
-    this.options.auditLog?.append({ id: `audit-track-config-${this.audits.length}`, type: action.includes('approve') ? 'approval' : 'configuration-change', actor, timestamp, payload: { action, changeId, evidence }, subjectId: changeId, severity: 'warning', regulations: ['HISA', 'ARCI', 'StateRacingCommission'], evidenceIds: evidence });
+    const change = this.changes.get(changeId);
+    this.options.auditLog?.append({ id: `audit-track-config-${this.audits.length}`, type: action.includes('approve') ? 'approval' : 'configuration-change', actor, timestamp, payload: { action, changeId, evidence }, subjectId: changeId, racetrackId: change?.raceSetup.racetrackId ?? change?.raceSetup.raceId, severity: 'warning', regulations: ['HISA', 'ARCI', 'StateRacingCommission'], evidenceIds: evidence });
   }
 
   private createApprovalRequests(change: TrackConfigurationChange, tenantId: string): ControlledActionRequest[] {
     const actions = this.controlledActionsFor(change);
     return actions.map((action) => this.options.approvals!.createRequest({
       tenantId,
+      racetrackId: change.raceSetup.racetrackId ?? change.raceSetup.raceId,
       action,
       target: change.id,
       requestedBy: change.requestedBy,

@@ -8,7 +8,7 @@ const condition = { surface:'dirt', distanceFurlongs:6, classLevel:'Allowance', 
 const human = (id, roles) => ({ id, roles, human:true });
 const approveRequest = (approvalService, request, action, target, approvers, now = '2026-06-14T17:30:00Z') => {
   approvers.forEach(([id, roles], index) => approvalService.decide(request.id, human(id, roles), 'approved', `approved step ${index + 1}`, ['human-approval-record'], `2026-06-14T17:${31 + index}:00Z`));
-  return approvalService.authorizeExecution({ requestId:request.id, action, target, tenantId:'tenant-1', actor:human('executor', ['admin']), now });
+  return approvalService.authorizeExecution({ requestId:request.id, action, target, tenantId:'tenant-1', racetrackId:'trk-1', actor:human('executor', ['admin']), now });
 };
 
 test('race office vertical slice persists meet day card and emits audit/events for lifecycle', async () => {
@@ -43,11 +43,11 @@ test('race office validates roles and approval-required scratch/config/status ac
   const req = platform.requestSafetyCriticalAction('race-office-scratch', 'race-2', 'Vet scratch', { id:'secretary', roles:['racing-secretary'] });
   approvalService.decide(req.id, { id:'vet-1', roles:['veterinarian'], human:true }, 'approved', 'exam complete', ['human-approval-record']);
   approvalService.decide(req.id, { id:'steward-1', roles:['steward'], human:true }, 'approved', 'panel approved', ['human-approval-record']);
-  const token = approvalService.authorizeExecution({ requestId:req.id, action:'race-office-scratch', target:'race-2', tenantId:'tenant-1', actor:{ id:'steward-1', roles:['steward'], human:true } });
+  const token = approvalService.authorizeExecution({ requestId:req.id, action:'race-office-scratch', target:'race-2', tenantId:'tenant-1', racetrackId:'trk-1', actor:{ id:'steward-1', roles:['steward'], human:true } });
   assert.equal(platform.scratchEntryWithApproval('race-2', 'entry-2', 'vet', token).entries[0].scratched, true);
   const cancelReq = platform.requestSafetyCriticalAction('race-cancellation', 'race-2', 'weather', { id:'steward-1', roles:['steward'] });
   approvalService.decide(cancelReq.id, { id:'steward-1', roles:['steward'], human:true }, 'approved', 'unsafe weather', ['human-approval-record']);
-  const cancelToken = approvalService.authorizeExecution({ requestId:cancelReq.id, action:'race-cancellation', target:'race-2', tenantId:'tenant-1', actor:{ id:'steward-1', roles:['steward'], human:true } });
+  const cancelToken = approvalService.authorizeExecution({ requestId:cancelReq.id, action:'race-cancellation', target:'race-2', tenantId:'tenant-1', racetrackId:'trk-1', actor:{ id:'steward-1', roles:['steward'], human:true } });
   assert.equal(platform.changeRaceStatus('race-2', 'cancelled', cancelToken).status, 'cancelled');
 });
 

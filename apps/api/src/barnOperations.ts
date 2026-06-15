@@ -354,7 +354,7 @@ export class CoordinatedBarnOperationsService {
   }
 
   private assertSafetyApproval(token: ApprovalToken | undefined, target: string, actor: BarnActor, at: string): void {
-    this.approvals.assertAuthorized(token, 'safety-critical-control', target, actor.tenantId, at);
+    this.approvals.assertAuthorized(token, 'safety-critical-control', target, actor.tenantId, undefined, at);
   }
 
   private audit(action: string, actor: BarnActor, subjectId: string, payload: unknown, type: AuditEventType, severity: AuditSeverity = 'warning') {

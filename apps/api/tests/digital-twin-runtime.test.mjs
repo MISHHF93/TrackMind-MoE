@@ -16,7 +16,7 @@ const assetInput = {
   riskLevel: 'high',
   maintenance: { status: 'ok', lastInspectionAt: '2026-06-13T08:00:00Z' },
   ownership: { ownerAgent: 'RaceOps', stewardTeam: 'gate-crew' },
-  location: { railPositionMeters: 1600 },
+  location: { racetrackId: 'trk-1', railPositionMeters: 1600 },
   state: { batteryStatus: 80, locked: true },
   controls: [{ name: 'lock-status', category: 'C_HUMAN_CONTROLLED', description: 'Confirm lock before start.', requiresApprovalFrom: ['Starter'], executionMode: 'human-only' }],
   sensors: [{ id: 'gate-battery-runtime-01', type: 'battery', verifies: ['batteryStatus'], required: true }],
@@ -73,7 +73,7 @@ test('digital twin runtime auto-creates asset twins, applies stream updates, exp
   const request = runtime.requestStateChangeApproval({ twinId: created.twinId, tenantId: 'trk-1', requestedBy: 'ops-user', actorType: 'human', reason: 'manual lock state correction', evidence: ['operator-report'] });
   approvals.decide(request.id, { id: 'super-1', roles: ['track-superintendent'], human: true }, 'approved', 'track ops approved', ['human-approval-record']);
   approvals.decide(request.id, { id: 'steward-1', roles: ['steward'], human: true }, 'approved', 'steward approved', ['human-approval-record']);
-  const token = approvals.authorizeExecution({ requestId: request.id, action: 'safety-critical-control', target: created.twinId, tenantId: 'trk-1', actor: { id: 'super-1', roles: ['track-superintendent'], human: true } });
+  const token = approvals.authorizeExecution({ requestId: request.id, action: 'safety-critical-control', target: created.twinId, tenantId: 'trk-1', racetrackId: 'trk-1', actor: { id: 'super-1', roles: ['track-superintendent'], human: true } });
   const commanded = runtime.updateState({ twinId: created.twinId, tenantId: 'trk-1', patch: { locked: false }, actor: 'ops-user', approvalToken: token, command: true });
   assert.equal(commanded.state.locked, false);
   assert.equal(runtime.replayHistory(created.twinId).at(-1).approvalRequestId, request.id);

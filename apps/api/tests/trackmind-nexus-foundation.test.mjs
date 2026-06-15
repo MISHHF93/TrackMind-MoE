@@ -27,25 +27,25 @@ test('TrackMind Nexus foundation wires assets, events, twins, APIs, approvals, a
   assert.equal(intentDecision.requiresHumanApproval, true);
   assert.equal(intentDecision.protectedAction, 'race-start');
 
-  const request = nexus.requestProtectedExecution({ tenantId: 'track-1', requestedAction: 'race-start', target: 'race-7', requestedBy: 'ai-copilot', actorType: 'ai-agent', reason: 'AI readiness recommendation', evidence: ['readiness-report'] });
+  const request = nexus.requestProtectedExecution({ tenantId: 'track-1', racetrackId: 'track-1', requestedAction: 'race-start', target: 'race-7', requestedBy: 'ai-copilot', actorType: 'ai-agent', reason: 'AI readiness recommendation', evidence: ['readiness-report'] });
   assert.equal(request.status, 'pending');
-  assert.throws(() => nexus.approvals.authorizeExecution({ requestId: request.id, action: 'race-start', target: 'race-7', tenantId: 'track-1', actor: { id: 'ai-copilot', roles: ['steward'], human: false } }), /AI agents cannot execute/);
+  assert.throws(() => nexus.approvals.authorizeExecution({ requestId: request.id, action: 'race-start', target: 'race-7', tenantId: 'track-1', racetrackId: 'track-1', actor: { id: 'ai-copilot', roles: ['steward'], human: false } }), /AI agents cannot execute/);
 
   nexus.approvals.decide(request.id, { id: 'secretary-1', roles: ['racing-secretary'], human: true }, 'approved', 'Race office ready', ['human-approval-record']);
   nexus.approvals.decide(request.id, { id: 'steward-1', roles: ['steward'], human: true }, 'approved', 'Stewards ready', ['human-approval-record']);
   nexus.approvals.decide(request.id, { id: 'vet-1', roles: ['veterinarian'], human: true }, 'approved', 'Veterinary clear', ['human-approval-record']);
-  const token = nexus.approvals.authorizeExecution({ requestId: request.id, action: 'race-start', target: 'race-7', tenantId: 'track-1', actor: { id: 'steward-1', roles: ['steward'], human: true } });
+  const token = nexus.approvals.authorizeExecution({ requestId: request.id, action: 'race-start', target: 'race-7', tenantId: 'track-1', racetrackId: 'track-1', actor: { id: 'steward-1', roles: ['steward'], human: true } });
   assert.equal(token.action, 'race-start');
   assert.equal(nexus.auditLog.verify().valid, true);
 });
 
 test('TrackMind Nexus normalizes protected AI intent verbs before approval policy lookup', () => {
   const nexus = new TrackMindNexusFoundation();
-  const scratch = nexus.requestProtectedExecution({ tenantId: 'track-1', requestedAction: 'scratch-horse', target: 'horse-9', requestedBy: 'ai-copilot', actorType: 'ai-agent', reason: 'Draft scratch recommendation', evidence: ['vet-observation'] });
+  const scratch = nexus.requestProtectedExecution({ tenantId: 'track-1', racetrackId: 'track-1', requestedAction: 'scratch-horse', target: 'horse-9', requestedBy: 'ai-copilot', actorType: 'ai-agent', reason: 'Draft scratch recommendation', evidence: ['vet-observation'] });
   assert.equal(scratch.action, 'scratch-horse');
-  assert.throws(() => nexus.approvals.authorizeExecution({ requestId: scratch.id, action: 'scratch-horse', target: 'horse-9', tenantId: 'track-1', actor: { id: 'ai-copilot', roles: ['steward'], human: false } }), /AI agents cannot execute/);
+  assert.throws(() => nexus.approvals.authorizeExecution({ requestId: scratch.id, action: 'scratch-horse', target: 'horse-9', tenantId: 'track-1', racetrackId: 'track-1', actor: { id: 'ai-copilot', roles: ['steward'], human: false } }), /AI agents cannot execute/);
 
-  const clearFlag = nexus.requestProtectedExecution({ tenantId: 'track-1', requestedAction: 'clear-veterinary-flag', target: 'horse-9', requestedBy: 'vet-workflow', actorType: 'human', reason: 'Clearance request', evidence: ['exam-notes'] });
+  const clearFlag = nexus.requestProtectedExecution({ tenantId: 'track-1', racetrackId: 'track-1', requestedAction: 'clear-veterinary-flag', target: 'horse-9', requestedBy: 'vet-workflow', actorType: 'human', reason: 'Clearance request', evidence: ['exam-notes'] });
   assert.equal(clearFlag.action, 'clear-vet-flag');
   nexus.close();
 });

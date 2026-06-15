@@ -619,6 +619,7 @@ export class WorkflowOrchestrationEngine {
     const request = this.deps.approvalService.createRequest({
       id: step.approval.requestId,
       tenantId: instance.tenantId,
+      racetrackId: racetrackFor(instance.tenantId, instance.context.payload),
       action: step.approval.action,
       target: String(target),
       requestedBy: step.approval.requestedBy ?? actor,

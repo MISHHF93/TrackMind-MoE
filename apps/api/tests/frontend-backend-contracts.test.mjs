@@ -11,7 +11,7 @@ const assertValid = (name, value) => {
 
 test('frontend and backend share schemas for assets, races, approvals, audit events, twins, surface measurements, gate controls, and AI recommendations', () => {
   const service = new TrackMindCommandCenterV1Service();
-  const request = service.createGateMoveDraft({ tenantId: 'track-1', targetSectorId: 'chute', targetMetersFromStart: 120, requestedBy: 'secretary-1', reason: 'Contract test draft', evidence: ['human-approval-record'] });
+  const request = service.createGateMoveDraft({ tenantId: 'track-1', racetrackId: 'main-track', targetSectorId: 'chute', targetMetersFromStart: 120, requestedBy: 'secretary-1', reason: 'Contract test draft', evidence: ['human-approval-record'] });
   assert.equal(request.status, 'pending');
 
   const contract = createCommandCenterContractSnapshot(service);

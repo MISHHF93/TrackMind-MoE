@@ -67,14 +67,14 @@ test('safety-critical gate move approval artifacts preserve workflow and approva
 
 test('approval artifact builder normalizes pending approved and rejected statuses', () => {
   const service = new CentralizedApprovalService();
-  const pending = service.createRequest({ id: 'approval-gate-pending', tenantId: 'tenant-1', action: 'starting-gate-move', target: 'gate-1', requestedBy: 'workflow-engine', actorType: 'service', reason: 'gate move', evidence: ['human-approval-record'], now: '2026-06-14T12:00:00.000Z' });
+  const pending = service.createRequest({ id: 'approval-gate-pending', tenantId: 'tenant-1', racetrackId: 'trk-1', action: 'starting-gate-move', target: 'gate-1', requestedBy: 'workflow-engine', actorType: 'service', reason: 'gate move', evidence: ['human-approval-record'], now: '2026-06-14T12:00:00.000Z' });
   assert.equal(buildApprovalArtifact(pending).status, 'pending');
 
   service.decide(pending.id, human('secretary-1', ['racing-secretary']), 'approved', 'office approved', ['human-approval-record'], '2026-06-14T12:01:00.000Z');
   const approved = service.decide(pending.id, human('surface-1', ['track-superintendent']), 'approved', 'surface approved', ['human-approval-record'], '2026-06-14T12:02:00.000Z');
   assert.equal(buildApprovalArtifact(approved).status, 'approved');
 
-  const rejectable = service.createRequest({ id: 'approval-gate-rejected', tenantId: 'tenant-1', action: 'starting-gate-move', target: 'gate-2', requestedBy: 'workflow-engine', actorType: 'service', reason: 'gate move', evidence: ['human-approval-record'], now: '2026-06-14T12:03:00.000Z' });
+  const rejectable = service.createRequest({ id: 'approval-gate-rejected', tenantId: 'tenant-1', racetrackId: 'trk-1', action: 'starting-gate-move', target: 'gate-2', requestedBy: 'workflow-engine', actorType: 'service', reason: 'gate move', evidence: ['human-approval-record'], now: '2026-06-14T12:03:00.000Z' });
   const rejected = service.decide(rejectable.id, human('secretary-2', ['racing-secretary']), 'rejected', 'insufficient GPS evidence', ['human-approval-record'], '2026-06-14T12:04:00.000Z');
   assert.equal(buildApprovalArtifact(rejected).status, 'rejected');
 });
@@ -91,7 +91,7 @@ test('artifact adapters are server-authored snapshots without frontend local mut
   assert.deepEqual(buildWorkflowArtifact(definition).approvals.find((approval) => approval.stepId === 'approve-gate-move').requiredApprovers, ['racing-secretary', 'track-superintendent']);
 
   const service = new CentralizedApprovalService();
-  const request = service.createRequest({ id: 'approval-snapshot', tenantId: 'tenant-1', action: 'starting-gate-move', target: 'gate-1', requestedBy: 'workflow-engine', actorType: 'service', reason: 'gate move', evidence: ['human-approval-record'], now: '2026-06-14T12:00:00.000Z' });
+  const request = service.createRequest({ id: 'approval-snapshot', tenantId: 'tenant-1', racetrackId: 'trk-1', action: 'starting-gate-move', target: 'gate-1', requestedBy: 'workflow-engine', actorType: 'service', reason: 'gate move', evidence: ['human-approval-record'], now: '2026-06-14T12:00:00.000Z' });
   const approvalArtifact = buildApprovalArtifact(request);
   assert.equal(approvalArtifact.mutationPolicy.localMutationAllowed, false);
   approvalArtifact.evidence.push('frontend-only-evidence');

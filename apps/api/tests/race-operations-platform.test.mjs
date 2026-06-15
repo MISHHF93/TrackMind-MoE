@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { CentralizedApprovalService, RaceOperationsPlatform, raceOperationsControlMatrix } from '../dist/index.js';
 
 const human = (id, roles) => ({ id, roles, human: true });
-function approveToken(service, action, target, approvers, now = '2026-06-13T17:45:00Z') {
-  const request = service.createRequest({ id: `approval-${action}-${target}`, tenantId: 'tenant-1', action, target, requestedBy: 'test-human', actorType: 'human', reason: `approve ${action}`, evidence: ['human-approval-record'], now });
+function approveToken(service, action, target, approvers, now = '2026-06-13T17:45:00Z', racetrackId = 'trk-1') {
+  const request = service.createRequest({ id: `approval-${action}-${target}`, tenantId: 'tenant-1', racetrackId, action, target, requestedBy: 'test-human', actorType: 'human', reason: `approve ${action}`, evidence: ['human-approval-record'], now });
   approvers.forEach(([id, roles], index) => service.decide(request.id, human(id, roles), 'approved', `approve step ${index + 1}`, ['human-approval-record'], `2026-06-13T17:${46 + index}:00Z`));
-  return service.authorizeExecution({ requestId: request.id, action, target, tenantId: 'tenant-1', actor: human('executor', ['admin']), now: '2026-06-13T17:55:00Z' });
+  return service.authorizeExecution({ requestId: request.id, action, target, tenantId: 'tenant-1', racetrackId, actor: human('executor', ['admin']), now: '2026-06-13T17:55:00Z' });
 }
 
 

@@ -71,14 +71,14 @@ export class TrackMindNexusFoundation {
     return { allowed: true, reason: 'Advisory AI activity permitted with event and audit capture.', requiresHumanApproval: false };
   }
 
-  requestProtectedExecution(input: { tenantId: string; requestedAction: string; target: string; requestedBy: string; actorType: 'human'|'ai-agent'|'service'; reason: string; evidence: string[] }) {
+  requestProtectedExecution(input: { tenantId: string; racetrackId: string; requestedAction: string; target: string; requestedBy: string; actorType: 'human'|'ai-agent'|'service'; reason: string; evidence: string[] }) {
     const action = controlledActionByIntent[input.requestedAction] ?? normalizeProtectedActionIntent(input.requestedAction) as ControlledAction;
-    return this.approvals.createRequest({ tenantId: input.tenantId, action, target: input.target, requestedBy: input.requestedBy, actorType: input.actorType, reason: input.reason, evidence: input.evidence });
+    return this.approvals.createRequest({ tenantId: input.tenantId, racetrackId: input.racetrackId, action, target: input.target, requestedBy: input.requestedBy, actorType: input.actorType, reason: input.reason, evidence: input.evidence });
   }
 
-  approveAndAuthorize(requestId: string, actor: ApprovalActor, reason: string, evidence: string[], request: { action: ControlledAction; target: string; tenantId: string }) {
+  approveAndAuthorize(requestId: string, actor: ApprovalActor, reason: string, evidence: string[], request: { action: ControlledAction; target: string; tenantId: string; racetrackId: string }) {
     this.approvals.decide(requestId, actor, 'approved', reason, evidence);
-    return this.approvals.authorizeExecution({ requestId, action: request.action, target: request.target, tenantId: request.tenantId, actor });
+    return this.approvals.authorizeExecution({ requestId, action: request.action, target: request.target, tenantId: request.tenantId, racetrackId: request.racetrackId, actor });
   }
 
   dashboards(): NexusDashboardPanel[] { return [
