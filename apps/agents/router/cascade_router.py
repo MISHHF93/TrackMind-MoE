@@ -95,8 +95,15 @@ class SinkhornRouter:
     temperature: float = 0.7
 
     def route(self, scores: Sequence[Vector]) -> SinkhornResult:
+        if not self.expert_ids:
+            raise ValueError("expert_ids must not be empty")
+        if self.top_k < 1 or self.top_k > len(self.expert_ids):
+            raise ValueError("top_k must be between 1 and number of experts")
         if not scores:
             return SinkhornResult([], [], {expert_id: 0 for expert_id in self.expert_ids}, self.iterations, [])
+        for row in scores:
+            if len(row) != len(self.expert_ids):
+                raise ValueError("each score row must have one value per expert")
         matrix = [[math.exp(float(value) / max(self.temperature, 1e-6)) for value in row] for row in scores]
         for _ in range(self.iterations):
             for row in matrix:
@@ -203,7 +210,7 @@ class CascadingMoERouter:
         self.rmoe = RMoEGRURouter(RMoEGRUConfig(n_features=config.n_features, expert_ids=config.expert_ids, top_k=config.top_k))
         self.sinkhorn = SinkhornRouter(config.expert_ids, top_k=config.top_k, iterations=config.sinkhorn_iterations)
 
-    def route(self, features: Sequence[Vector], sequence: Sequence[Vector] | None = None, extra_loads: dict[str, int] | None = None) -> CascadeRouteResult:
+    def route(self, features: Sequence[Vector], sequence: Sequence[Vector] | None = None, extra_loads: dict[str, int] | None = None, record_utilization: bool = True) -> CascadeRouteResult:
         utilization = self.monitor.health(extra_loads)
         learned = self.learned.route(features)
         learned_confidence = max(learned.confidence, default=0.0)
@@ -212,16 +219,19 @@ class CascadingMoERouter:
             and learned_confidence >= self.config.primary_confidence_threshold
             and learned.auxiliary_loss <= self.config.primary_aux_loss_threshold
         ):
-            self.monitor.extend(expert for assignment in learned.assignments for expert in assignment)
+            if record_utilization:
+                self.monitor.extend(expert for assignment in learned.assignments for expert in assignment)
             return CascadeRouteResult("learned", learned.assignments, learned.probabilities, learned.loads, learned.confidence, "primary learned router accepted", utilization)
 
         recurrent = self.rmoe.route(sequence or features)
         recurrent_confidence = max(recurrent.confidence, default=0.0)
         if not utilization.collapsed and recurrent_confidence >= self.config.secondary_confidence_threshold:
-            self.monitor.extend(expert for assignment in recurrent.assignments for expert in assignment)
+            if record_utilization:
+                self.monitor.extend(expert for assignment in recurrent.assignments for expert in assignment)
             return CascadeRouteResult("rmoe_gru", recurrent.assignments, recurrent.probabilities, recurrent.loads, recurrent.confidence, "secondary recurrent MoE router accepted", utilization)
 
         sinkhorn = self.sinkhorn.route(features)
-        self.monitor.extend(expert for assignment in sinkhorn.assignments for expert in assignment)
+        if record_utilization:
+            self.monitor.extend(expert for assignment in sinkhorn.assignments for expert in assignment)
         reason = "router collapse detected; Sinkhorn balancing applied" if utilization.collapsed else "confidence below learned and recurrent thresholds; Sinkhorn balancing applied"
         return CascadeRouteResult("sinkhorn", sinkhorn.assignments, sinkhorn.probabilities, sinkhorn.loads, sinkhorn.confidence, reason, utilization)

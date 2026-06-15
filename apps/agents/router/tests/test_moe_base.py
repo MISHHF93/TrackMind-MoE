@@ -31,6 +31,13 @@ class LearnedMoERouterTests(unittest.TestCase):
         self.assertGreater(result["total_loss"], 0)
         self.assertEqual(result["route"].evidence_links, ["labels://router"])
 
+    def test_router_z_loss_is_stable_for_large_logits(self):
+        router = LearnedMoERouter(
+            MoERouterConfig(n_features=1, expert_ids=["a", "b"], top_k=1, z_loss_weight=1.0),
+            weights=[[1000.0], [999.0]],
+        )
+        self.assertGreater(router.router_z_loss([[1.0]]), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

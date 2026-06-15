@@ -109,7 +109,8 @@ class LearnedMoERouter:
         total = 0.0
         for feature in features:
             logits = [_dot(row, feature) + self.bias[idx] for idx, row in enumerate(self.weights)]
-            log_z = math.log(sum(math.exp(value) for value in logits))
+            pivot = max(logits)
+            log_z = pivot + math.log(sum(math.exp(value - pivot) for value in logits))
             total += log_z * log_z
         return total / len(features)
 

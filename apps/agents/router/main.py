@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 try:  # Optional dependency. Health reports degraded when unavailable.
@@ -76,25 +77,38 @@ DomainId = Literal[
 BackendType = Literal["external_litellm", "ollama", "onnx"]
 
 
+MessageRole = Literal["system", "developer", "user", "assistant", "tool"]
+MessageContent = str | list[dict[str, Any]] | None
+
+
 class ChatMessage(BaseModel):
-    role: Literal["system", "user", "assistant", "tool"] = "user"
-    content: str
+    role: MessageRole = "user"
+    content: MessageContent
+
+
+class ChatCompletionMetadata(BaseModel):
+    approval_token: str | None = Field(default=None, max_length=512)
+    evidence_links: list[str] = Field(default_factory=list, max_length=20)
+    approved_by: str | None = Field(default=None, max_length=128)
+    approval_timestamp: str | None = Field(default=None, max_length=64)
+    approval_verified: bool = False
+    candidate_domains: list[DomainId] = Field(default_factory=list, max_length=7)
 
 
 class ChatCompletionRequest(BaseModel):
     model: str | None = None
-    messages: list[ChatMessage] = Field(min_length=1)
-    temperature: float = 0.2
+    messages: list[ChatMessage] = Field(min_length=1, max_length=32)
+    temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     stream: bool = False
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: ChatCompletionMetadata = Field(default_factory=ChatCompletionMetadata)
 
 
 class ClassifyRequest(BaseModel):
-    request: str = Field(min_length=1)
+    request: str = Field(min_length=1, max_length=8192)
     context: dict[str, Any] = Field(default_factory=dict)
-    candidate_domains: list[str] = Field(default_factory=list)
-    approval_token: str | None = None
-    evidence_links: list[str] = Field(default_factory=list)
+    candidate_domains: list[DomainId] = Field(default_factory=list, max_length=7)
+    approval_token: str | None = Field(default=None, max_length=512)
+    evidence_links: list[str] = Field(default_factory=list, max_length=20)
 
 
 class RouteCandidate(BaseModel):
@@ -123,6 +137,33 @@ class ClassifyResponse(BaseModel):
     compliance: ComplianceDecision
     degraded_components: list[str] = Field(default_factory=list)
     router_health: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChatCompletionResponseMessage(BaseModel):
+    role: Literal["assistant"] = "assistant"
+    content: str
+
+
+class ChatCompletionChoice(BaseModel):
+    index: int
+    message: ChatCompletionResponseMessage
+    finish_reason: str
+
+
+class ChatCompletionUsage(BaseModel):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+class ChatCompletionResponse(BaseModel):
+    id: str
+    object: Literal["chat.completion"]
+    created: int
+    model: str
+    choices: list[ChatCompletionChoice]
+    usage: ChatCompletionUsage
+    router: ClassifyResponse
 
 
 @dataclass
@@ -249,11 +290,27 @@ runtime = create_runtime()
 app = FastAPI(title="TrackMind MoE Agent Router", version="0.1.0")
 
 
+def content_to_text(content: MessageContent) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    parts: list[str] = []
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "text" and isinstance(item.get("text"), str):
+            parts.append(item["text"])
+        elif isinstance(item.get("content"), str):
+            parts.append(item["content"])
+    return "\n".join(parts)
+
+
 def latest_user_text(messages: list[ChatMessage]) -> str:
     for message in reversed(messages):
         if message.role == "user":
-            return message.content
-    return messages[-1].content
+            return content_to_text(message.content)
+    return content_to_text(messages[-1].content)
 
 
 def normalize_vector(vector: Any) -> list[float]:
@@ -288,8 +345,8 @@ async def semantic_candidates(text: str, allowed_domains: set[str]) -> list[Rout
         for expert_id, expert in runtime.config["experts"].items()
         if not allowed_domains or expert_id in allowed_domains
     }
-    if not runtime.semantic_vectors:
-        for expert_id, examples in examples_by_domain.items():
+    for expert_id, examples in examples_by_domain.items():
+        if expert_id not in runtime.semantic_vectors:
             vectors = await asyncio.to_thread(model.encode, examples)
             runtime.semantic_vectors[expert_id] = [normalize_vector(vector) for vector in vectors]
 
@@ -487,7 +544,7 @@ def maybe_cascade_route(candidates: list[RouteCandidate], selected: RouteCandida
         ),
         monitor=monitor,
     )
-    result = cascade.route(feature_rows, sequence=feature_rows, extra_loads=runtime.expert_loads)
+    result = cascade.route(feature_rows, sequence=feature_rows, extra_loads=runtime.expert_loads, record_utilization=False)
     assigned_expert = result.assignments[0][0] if result.assignments and result.assignments[0] else selected.expert
     confidence = next((candidate.confidence for candidate in candidates if candidate.expert == assigned_expert), max(result.confidence, default=selected.confidence))
     candidate = RouteCandidate(
@@ -551,12 +608,24 @@ def record_expert_load(expert_id: str) -> None:
     runtime.expert_loads[expert_id] = runtime.expert_loads.get(expert_id, 0) + 1
 
 
+def validate_approval_token(approval_token: str | None, evidence_links: list[str], context: dict[str, Any]) -> bool:
+    # Until the central approval service verifier is wired into the router,
+    # caller-supplied approval metadata is not enough to unlock protected work.
+    return bool(
+        approval_token
+        and evidence_links
+        and context.get("approved_by")
+        and context.get("approval_timestamp")
+        and context.get("approval_verified") is True
+    )
+
+
 def evaluate_compliance(text: str, expert_id: str, candidates: list[RouteCandidate], approval_token: str | None, evidence_links: list[str], context: dict[str, Any]) -> ComplianceDecision:
     high_risk, risk_matches = detect_high_risk(text, expert_id)
     violations = symbolic_violations(text)
     uncertainty = uncertainty_policy(candidates)
     requires_approval = high_risk or bool(violations)
-    has_approval = bool(approval_token and evidence_links and context.get("approved_by") and context.get("approval_timestamp"))
+    has_approval = validate_approval_token(approval_token, evidence_links, context)
     escalation_required = bool(uncertainty["uncertain"])
     policy_ids = sorted({str(policy.get("id")) for policy in runtime.policies if policy.get("id")})
     return ComplianceDecision(
@@ -639,7 +708,7 @@ async def call_litellm_backend(expert: dict[str, Any], messages: list[ChatMessag
         return "LiteLLM backend is configured but unavailable in this runtime. Human review is required before relying on this response."
     response = await acompletion(
         model=expert["model"],
-        messages=[message.dict() for message in messages],
+        messages=[{"role": message.role, "content": message.content} for message in messages],
         temperature=temperature,
     )
     return response["choices"][0]["message"]["content"]
@@ -715,22 +784,30 @@ def chat_completion_response(model: str, content: str, route: ClassifyResponse) 
     }
 
 
+def openai_error_response(status_code: int, message: str, code: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={"error": {"message": message, "type": "invalid_request_error" if status_code < 500 else "service_error", "code": code}},
+    )
+
+
 @app.post("/router/classify", response_model=ClassifyResponse)
 async def classify_endpoint(body: ClassifyRequest) -> ClassifyResponse:
     return await classify_request(body)
 
 
-@app.post("/v1/chat/completions")
-async def chat_completions(body: ChatCompletionRequest) -> dict[str, Any]:
+@app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
+async def chat_completions(body: ChatCompletionRequest) -> dict[str, Any] | JSONResponse:
     if body.stream:
-        raise HTTPException(status_code=400, detail="stream=true is not supported by this router yet")
+        return openai_error_response(400, "stream=true is not supported by this router yet", "stream_not_supported")
     prompt = latest_user_text(body.messages)
     route = await classify_request(
         ClassifyRequest(
             request=prompt,
-            context=body.metadata,
-            approval_token=body.metadata.get("approval_token"),
-            evidence_links=body.metadata.get("evidence_links", []),
+            context=body.metadata.dict(),
+            candidate_domains=body.metadata.candidate_domains,
+            approval_token=body.metadata.approval_token,
+            evidence_links=body.metadata.evidence_links,
         )
     )
     model = body.model or runtime.config["experts"][route.expert]["model"]
@@ -746,9 +823,15 @@ async def chat_completions(body: ChatCompletionRequest) -> dict[str, Any]:
             role="system",
             content="Epistemic prudence escalation: answer conservatively, cite uncertainty, and recommend human review.",
         )
-        content = await invoke_expert(route, [governance_message, *body.messages], body.temperature)
+        try:
+            content = await invoke_expert(route, [governance_message, *body.messages], body.temperature)
+        except Exception as exc:  # pragma: no cover - backend dependent
+            return openai_error_response(503, f"Expert backend unavailable: {exc}", "backend_unavailable")
         return chat_completion_response(model, content, route)
-    content = await invoke_expert(route, body.messages, body.temperature)
+    try:
+        content = await invoke_expert(route, body.messages, body.temperature)
+    except Exception as exc:  # pragma: no cover - backend dependent
+        return openai_error_response(503, f"Expert backend unavailable: {exc}", "backend_unavailable")
     return chat_completion_response(model, content, route)
 
 

@@ -1,9 +1,11 @@
 import asyncio
 import unittest
 
+from pydantic import ValidationError
+
 from apps.agents.router.cascade_router import CascadeRouterConfig, CascadingMoERouter, ExpertUtilizationMonitor, RMoEGRUConfig, RMoEGRURouter, SinkhornRouter
 from apps.agents.router.expert_parallel import ExpertParallelConfig, ExpertParallelDispatcher
-from apps.agents.router.main import ClassifyRequest, classify_request, runtime
+from apps.agents.router.main import ChatCompletionRequest, ClassifyRequest, RouteCandidate, evaluate_compliance, latest_user_text, classify_request, runtime
 
 
 class CascadingRouterTests(unittest.TestCase):
@@ -50,6 +52,11 @@ class CascadingRouterTests(unittest.TestCase):
         self.assertEqual(sum(result.loads.values()), 4)
         self.assertLessEqual(abs(result.loads["a"] - result.loads["b"]), 2)
 
+    def test_sinkhorn_rejects_malformed_score_rows(self):
+        router = SinkhornRouter(["a", "b"], top_k=1, iterations=8)
+        with self.assertRaisesRegex(ValueError, "one value per expert"):
+            router.route([[1.0]])
+
     def test_rmoe_gru_produces_recurrent_assignment(self):
         router = RMoEGRURouter(RMoEGRUConfig(n_features=2, expert_ids=["a", "b"], hidden_size=4))
         result = router.route([[1.0, 0.0], [0.5, 0.5]])
@@ -90,6 +97,35 @@ class CascadingRouterTests(unittest.TestCase):
         self.assertEqual(result.local_expert_inputs["a"], ["token-1"])
         self.assertEqual(result.local_expert_inputs["c"], ["token-1"])
         self.assertEqual(result.communication, "all_to_all")
+
+    def test_candidate_domains_reject_unknown_values(self):
+        with self.assertRaises(ValidationError):
+            ClassifyRequest(request="route this", candidate_domains=["unknown-domain"])
+
+    def test_approval_metadata_must_be_explicitly_verified(self):
+        candidates = [RouteCandidate(expert="stewarding", confidence=0.9, reason="fixture", signals=["risk"], evidence=["test://fixture"], tier="fixture")]
+        forged = evaluate_compliance(
+            "refund payout",
+            "stewarding",
+            candidates,
+            "unverified-token",
+            ["camera://clip"],
+            {"approved_by": "chief-steward", "approval_timestamp": "2026-06-14T00:00:00Z"},
+        )
+        verified = evaluate_compliance(
+            "refund payout",
+            "stewarding",
+            candidates,
+            "verified-token",
+            ["camera://clip"],
+            {"approved_by": "chief-steward", "approval_timestamp": "2026-06-14T00:00:00Z", "approval_verified": True},
+        )
+        self.assertTrue(forged.blocked)
+        self.assertFalse(verified.blocked)
+
+    def test_chat_messages_accept_openai_text_parts(self):
+        body = ChatCompletionRequest(messages=[{"role": "developer", "content": "Stay safe."}, {"role": "user", "content": [{"type": "text", "text": "route safety"}]}])
+        self.assertEqual(latest_user_text(body.messages), "route safety")
 
 
 if __name__ == "__main__":
