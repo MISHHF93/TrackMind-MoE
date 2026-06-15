@@ -359,28 +359,6 @@ export interface CollaborationEventContract<TType extends CollaborationEventType
   requiredMetadata: readonly string[];
 }
 
-const baseRequiredFields = [
-  'schemaVersion',
-  'objectType',
-  'id',
-  'tenantId',
-  'racetrackId',
-  'targetArtifactId',
-  'targetArtifactType',
-  'authorId',
-  'participants',
-  'createdAt',
-  'updatedAt',
-  'status',
-  'visibility',
-  'permissions',
-  'auditRefs',
-  'eventRefs',
-  'attachments',
-  'evidenceRefs',
-  'retention',
-] as const;
-
 const baseRules: readonly CollaborationValidationRule[] = [
   { path: 'schemaVersion', required: true, type: 'string', values: [collaborationSchemaVersion] },
   { path: 'objectType', required: true, type: 'string' },

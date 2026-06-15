@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { createTrackMindIntelligenceCoreMetadata, createTrackMindNexusUpgradePackage, createUnifiedDataModelWorkspace, hasPermission, nexusApiBasePath, protectedActions, type AIControlPlaneDraftResultDto, type AIControlPlaneModelRegistryDto, type AIControlPlanePolicyDto, type AIControlPlaneRecommendationDto, type AIControlPlaneWorkspaceDto, type Permission, type Role, type RosFacadeStateDto, type TrackCertificationCandidateDto, type TrackMindIntelligenceCoreDto, type TrackMindNexusUpgradePackage, type TUSTwinStandardDto } from '@trackmind/shared';
+import { createTrackMindIntelligenceCoreMetadata, createTrackMindNexusUpgradePackage, createUnifiedDataModelWorkspace, hasPermission, nexusApiBasePath, protectedActions, type AIControlPlaneDraftResultDto, type AIControlPlaneWorkspaceDto, type Permission, type Role, type RosFacadeStateDto, type TrackCertificationCandidateDto, type TrackMindIntelligenceCoreDto, type TrackMindNexusUpgradePackage, type TUSTwinStandardDto } from '@trackmind/shared';
 import { listAIAgentRegistryRecords, listExpertModelRegistry } from './aiControlPlane.js';
 import { createApiHubEventCatalog } from './apiHubAdapters.js';
 import { CentralizedApprovalService } from './approvals.js';
@@ -226,112 +226,8 @@ function createSeededAIControlPlaneWorkspace(timestamp: string, mock: boolean): 
   };
 }
 
-type AIGovernanceWorkspaceShape = {
-  generatedAt: string;
-  activeAgents: Array<{ id: string; name: string; owner: string; modelVersionId: string; promptTemplateId: string; allowedActions: string[]; restrictedActions: string[]; allowedActivities?: string[]; digitalTwinRefs?: string[] }>;
-  modelVersions: Array<{ id: string; name: string; version: string; status: string; riskLevel: 'low' | 'medium' | 'high' | 'critical'; evidence: string[]; lineage: string[]; intendedUse?: string[]; prohibitedUse?: string[] }>;
-  promptTemplates: Array<{ id: string; name: string; version: string; status: string; evidence: string[]; allowedActivities?: string[]; safetyPolicyId?: string }>;
-  recommendationQueue: Array<Record<string, any>>;
-  safetyBlockedActions: Array<Record<string, any>>;
-  evaluationStatus: AIControlPlaneModelRegistryDto['evaluations'];
-  riskClassifications: Array<{ subjectId: string; level: string; drivers: string[] }>;
-  approvalRequirements: Array<{ id: string; recommendationId: string; action?: string; policy: string; requiredRoles: string[]; status: string; evidence: string[] }>;
-  safetyPolicies: Array<Omit<AIControlPlanePolicyDto, 'policyId' | 'executionEndpointsAvailable' | 'draftOnlyStateChanges' | 'governanceMapping' | 'mock'> & { id: string }>;
-  digitalTwinImpacts: Array<{ twinId: string; assetId: string; approvalRequired: boolean; recommendationId: string; eventType: string; auditId?: string }>;
-  evidencePackages: Array<{ id: string; recommendationId: string; evidence: string[]; lineage: string[]; hash: string }>;
-  auditTrails: Array<{ id: string; action: string; actor: string; subject: string; evidence: string[]; timestamp: string }>;
-  events: Array<{ id: string; type: string; subjectId: string; actor?: string; timestamp: string; evidence?: string[]; lineage?: string[] }>;
-  mock: boolean;
-};
-
 function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
-}
-
-function createAIControlPlaneFacade(aiGovernance: JsonBody): AIControlPlaneWorkspaceDto {
-  const ai = aiGovernance as AIGovernanceWorkspaceShape;
-  const policySource = ai.safetyPolicies[0];
-  const allRecommendations = [...ai.recommendationQueue, ...ai.safetyBlockedActions];
-  const featureStore = {
-    datasets: unique(ai.modelVersions.flatMap((model) => model.lineage.filter((item) => item.startsWith('dataset:')))),
-    telemetryStreams: unique(allRecommendations.flatMap((rec) => [...(rec.lineage ?? []), ...(rec.evidence ?? [])].filter((item) => item.includes('.') || item.includes('telemetry') || item.includes('sensor')))),
-    lineageRefs: unique(allRecommendations.flatMap((rec) => rec.lineage ?? [])),
-    evidenceRefs: unique([...ai.evidencePackages.flatMap((pkg) => pkg.evidence), ...allRecommendations.flatMap((rec) => rec.evidence ?? [])]),
-  };
-  const policy: AIControlPlanePolicyDto = {
-    policyId: policySource.id,
-    allowedActivities: [...policySource.allowedActivities],
-    protectedActions: [...policySource.protectedActions],
-    prohibitedAutonomousActions: [...policySource.prohibitedAutonomousActions],
-    requiredEvidence: [...policySource.requiredEvidence],
-    humanApprovalRequiredFor: [...policySource.humanApprovalRequiredFor],
-    executionEndpointsAvailable: false,
-    draftOnlyStateChanges: true,
-    governanceMapping: [
-      { framework: 'ISO-42001', controls: ['AI management system', 'impact assessment', 'model lifecycle control', 'human oversight'], evidence: unique([...ai.evidencePackages.map((pkg) => pkg.id), ...ai.auditTrails.map((audit) => audit.id)]) },
-      { framework: 'NIST-AI-RMF', controls: ['govern', 'map', 'measure', 'manage'], evidence: unique([...ai.events.map((event) => event.id), ...featureStore.evidenceRefs]) },
-    ],
-    mock: ai.mock,
-  };
-  const expertModules = ai.activeAgents.map((agent) => ({ id: agent.id, name: agent.name, owner: agent.owner, modelVersionId: agent.modelVersionId, promptTemplateId: agent.promptTemplateId, allowedActivities: [...(agent.allowedActivities ?? policy.allowedActivities)], restrictedActions: [...agent.restrictedActions], digitalTwinRefs: [...(agent.digitalTwinRefs ?? [])] }));
-  const toRecommendation = (rec: Record<string, any>, blocked: boolean): AIControlPlaneRecommendationDto => {
-    const agent = ai.activeAgents.find((item) => item.id === rec.agentId) ?? ai.activeAgents[0];
-    const approval = ai.approvalRequirements.find((item) => item.recommendationId === rec.id);
-    const evidencePackage = ai.evidencePackages.find((pkg) => pkg.recommendationId === rec.id);
-    const audits = ai.auditTrails.filter((audit) => audit.subject === rec.id);
-    const events = ai.events.filter((event) => event.subjectId === rec.id);
-    const twinImpacts = ai.digitalTwinImpacts.filter((impact) => impact.recommendationId === rec.id);
-    const auditIds = audits.map((audit) => audit.id);
-    const eventIds = events.map((event) => event.id);
-    const digitalTwinRefs = twinImpacts.map((impact) => impact.twinId);
-    const calibrated = rec.confidenceScore?.calibrated ?? rec.confidence;
-    const approvalRequired = Boolean(approval) || blocked || rec.approvalPolicy !== 'none' || Boolean(rec.explainability?.humanReviewRequired);
-    return {
-      id: rec.id,
-      ...aiRecommendationGovernanceMetadata({ id: rec.id, modelVersionId: rec.modelVersionId, fallbackModelVersion: agent.modelVersionId, createdAt: rec.createdAt, fallbackGeneratedAt: ai.generatedAt, approvalPolicy: rec.approvalPolicy, approval, auditIds, eventIds, digitalTwinRefs }),
-      agentId: rec.agentId ?? agent.id,
-      modelVersionId: rec.modelVersionId ?? agent.modelVersionId,
-      promptTemplateId: rec.promptTemplateId ?? agent.promptTemplateId,
-      action: rec.action,
-      target: rec.target,
-      recommendation: rec.recommendation,
-      status: blocked ? 'safety-blocked' : rec.status,
-      activity: rec.activity,
-      confidence: { raw: rec.confidence, calibrated, band: rec.confidenceScore?.band ?? (calibrated >= 0.8 ? 'high' : calibrated >= 0.55 ? 'medium' : 'low'), drivers: [...(rec.confidenceScore?.drivers ?? [`raw:${rec.confidence}`])] },
-      evidence: [...(rec.evidence ?? [])],
-      affectedAssets: [...(rec.affectedAssets ?? [])],
-      risk: { level: blocked ? 'critical' : rec.riskLevel, drivers: unique([rec.action, rec.approvalPolicy, ...(rec.affectedAssets ?? [])]), humanReviewRequired: approvalRequired },
-      governorDecision: { allowed: false, reason: blocked ? (rec.reason ?? 'AI safety policy blocked autonomous protected action.') : 'AI recommendation requires human approval workflow before any operational control can execute.', approvalRequired, approvalPolicy: rec.approvalPolicy, approvalRequirementId: approval?.id },
-      approvalWorkflow: approval ? { id: approval.id, requiredRoles: [...approval.requiredRoles], status: approval.status, evidence: [...approval.evidence], draftOnly: true } : undefined,
-      references: { auditIds, eventIds, digitalTwinRefs, evidencePackageId: evidencePackage?.id },
-      mock: ai.mock,
-    };
-  };
-  const recommendations = ai.recommendationQueue.map((rec) => toRecommendation(rec, false));
-  const blockedActions = ai.safetyBlockedActions.map((rec) => toRecommendation(rec, true));
-  return {
-    generatedAt: ai.generatedAt,
-    inputsSummary: {
-      telemetryStreams: featureStore.telemetryStreams,
-      evidenceRefs: featureStore.evidenceRefs,
-      affectedAssets: unique(allRecommendations.flatMap((rec) => rec.affectedAssets ?? [])),
-      protectedIntents: policy.protectedActions,
-    },
-    featureStoreSummary: featureStore,
-    modelRegistry: { models: ai.modelVersions, evaluations: ai.evaluationStatus, expertModules, featureStore, mock: ai.mock },
-    expertModules,
-    recommendations,
-    blockedActions,
-    policy,
-    approvalRequiredWorkflows: [...recommendations, ...blockedActions].flatMap((rec) => rec.approvalWorkflow ? [rec.approvalWorkflow] : []),
-    auditEventTwinReferences: {
-      auditIds: ai.auditTrails.map((audit) => audit.id),
-      eventIds: ai.events.map((event) => event.id),
-      digitalTwinRefs: unique(ai.digitalTwinImpacts.map((impact) => impact.twinId)),
-    },
-    events: ai.events,
-    mock: ai.mock,
-  };
 }
 
 function createAIControlPlaneDraftResult(path: string, body: unknown): AIControlPlaneDraftResultDto {

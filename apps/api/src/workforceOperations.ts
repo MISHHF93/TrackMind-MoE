@@ -285,7 +285,7 @@ export class WorkforceOperationsService {
     return request ? clone(request) : undefined;
   }
 
-  readiness(now = new Date().toISOString(), raceId = 'race-day'): WorkforceReadinessSummary {
+  readiness(now = new Date().toISOString(), _raceId = 'race-day'): WorkforceReadinessSummary {
     const shifts = [...this.shifts.values()];
     const assignments = [...this.assignments.values()];
     const demand = shifts.reduce((sum, shift) => sum + this.shiftDemand(shift), 0);

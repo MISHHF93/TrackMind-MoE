@@ -244,7 +244,7 @@ export class InMemoryApiHubPublisher {
   readonly eventBus: UniversalEventBus;
   readonly auditLog: ImmutableAuditLog;
 
-  constructor(private readonly options: ApiHubPublisherOptions = {}) {
+  constructor(options: ApiHubPublisherOptions = {}) {
     this.eventBus = options.eventBus ?? new UniversalEventBus();
     this.auditLog = options.auditLog ?? new ImmutableAuditLog();
     this.registerEventSchemas();

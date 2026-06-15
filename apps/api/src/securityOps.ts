@@ -3,7 +3,7 @@ import type { CentralizedApprovalService } from './approvals.js';
 import { ApprovalStore, type HumanApprovalRecord } from './approvals.js';
 import { ImmutableAuditLog, type AuditLogEntry } from './auditLog.js';
 import type { DigitalTwinRuntime, TwinStatePatch } from './digitalTwinRuntime.js';
-import { UniversalEventBus, type RaceDayEvent } from './eventBus.js';
+import { UniversalEventBus } from './eventBus.js';
 import type { PlatformObservabilityService, PlatformTelemetrySignal } from './platformObservability.js';
 import { controlCategoryPolicies, type AssetRiskLevel } from './racetrackControlRegistry.js';
 import { RacetrackAssetRegistryService, type AssetCreateInput, type AssetPrincipal } from './racetrackAssetRegistryService.js';

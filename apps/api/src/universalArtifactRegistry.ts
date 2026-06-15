@@ -176,7 +176,7 @@ export class UniversalArtifactRegistryService {
   readonly auditLog: ImmutableAuditLog;
   readonly logger: ArtifactRegistryLogger;
 
-  constructor(private readonly options: { repository?: ArtifactRepository; eventBus?: UniversalEventBus; auditLog?: ImmutableAuditLog; logger?: ArtifactRegistryLogger } = {}) {
+  constructor(options: { repository?: ArtifactRepository; eventBus?: UniversalEventBus; auditLog?: ImmutableAuditLog; logger?: ArtifactRegistryLogger } = {}) {
     this.repository = options.repository ?? new InMemoryArtifactRepository();
     this.eventBus = options.eventBus ?? new UniversalEventBus();
     this.auditLog = options.auditLog ?? new ImmutableAuditLog();

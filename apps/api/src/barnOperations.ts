@@ -3,7 +3,7 @@ import { ImmutableAuditLog, type AuditEventType, type AuditSeverity } from './au
 import { type ApprovalToken, CentralizedApprovalService, type ControlledActionRequest } from './approvals.js';
 import { DigitalTwinRuntime, type DigitalTwinRuntimeTwin } from './digitalTwinRuntime.js';
 import { EquineIntelligencePlatform, type EquineActor } from './equineIntelligencePlatform.js';
-import { UniversalEventBus, type ComplianceClassification, type EventName, type RaceDayEvent } from './eventBus.js';
+import { UniversalEventBus, type ComplianceClassification, type RaceDayEvent } from './eventBus.js';
 import { RacetrackAssetRegistryService, type AssetPrincipal, type RegistryAsset } from './racetrackAssetRegistryService.js';
 import type { AssetDomain, AssetRiskLevel, ControlDefinition, RegulationDefinition } from './racetrackControlRegistry.js';
 import { WorkflowOrchestrationEngine, type WorkflowDefinition, type WorkflowInstance } from './workflowEngine.js';
@@ -444,7 +444,7 @@ export class CoordinatedBarnOperationsService {
   private evaluateAndPublishReadiness(barnId: string, actor: BarnActor, reason: string): void {
     const readiness = this.readiness().find((item) => item.barnId === barnId);
     if (!readiness) return;
-    this.publish('barn.facility-readiness.evaluated', { readiness, reason }, barnId, readiness.status === 'restricted' ? 'restricted' : 'regulated', 'track-superintendent');
+    this.publish('barn.facility-readiness.evaluated', { readiness, reason, actorId: actor.id }, barnId, readiness.status === 'restricted' ? 'restricted' : 'regulated', 'track-superintendent');
   }
 
   private startRestrictedWorkflowIfNeeded(actor: BarnActor, movement: HorseMovementRecord, restricted: boolean): void {

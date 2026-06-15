@@ -1,4 +1,4 @@
-import { CentralizedApprovalService, type ApprovalActor, type ApprovalDecisionRecord, type ApprovalPolicy, type ApprovalRequestStatus, type ApprovalToken, type ControlledAction, type ControlledActionRequest } from '../approvals.js';
+import { CentralizedApprovalService, type ApprovalActor, type ApprovalDecisionRecord, type ApprovalPolicy, type ApprovalToken, type ControlledAction, type ControlledActionRequest } from '../approvals.js';
 import { ImmutableAuditLog, type AuditLogEntry } from '../auditLog.js';
 import { UniversalEventBus, type RaceDayEvent } from '../eventBus.js';
 

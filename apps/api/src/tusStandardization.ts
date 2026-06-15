@@ -7,8 +7,6 @@ import type { RegistryAsset } from './racetrackAssetRegistryService.js';
 type TusHealth = TUSAssetStandardDto['health']['status'];
 type TusRisk = TUSAssetStandardDto['risk']['level'];
 type TusTwinType = TUSTwinStandardDto['twinType'];
-type ApprovalView = TUSAssetStandardDto['approvals'][number];
-type AuditView = TUSAssetStandardDto['audit'][number];
 
 const riskScore: Record<TusRisk, number> = { low: 15, medium: 35, high: 65, critical: 90 };
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;

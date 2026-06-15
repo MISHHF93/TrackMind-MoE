@@ -101,7 +101,7 @@ export class ProviderRegistryService {
   readonly eventBus: UniversalEventBus;
   readonly auditLog: ImmutableAuditLog;
 
-  constructor(private readonly options: { eventBus?: UniversalEventBus; auditLog?: ImmutableAuditLog } = {}) {
+  constructor(options: { eventBus?: UniversalEventBus; auditLog?: ImmutableAuditLog } = {}) {
     this.eventBus = options.eventBus ?? new UniversalEventBus();
     this.auditLog = options.auditLog ?? new ImmutableAuditLog();
     this.registerEventSchemas();

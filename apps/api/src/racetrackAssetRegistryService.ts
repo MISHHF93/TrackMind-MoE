@@ -122,7 +122,7 @@ export class AssetRegistryCache {
 
 export class RacetrackAssetRegistryService {
   private readonly policies = new Map<string, AssetApprovalPolicy>();
-  constructor(private readonly options: { repository?: AssetRepository; cache?: AssetRegistryCache; eventBus?: UniversalEventBus; auditLog?: ImmutableAuditLog; approvalStore?: ApprovalStore; approvalService?: CentralizedApprovalService; logger?: RegistryLogger } = {}) {
+  constructor(options: { repository?: AssetRepository; cache?: AssetRegistryCache; eventBus?: UniversalEventBus; auditLog?: ImmutableAuditLog; approvalStore?: ApprovalStore; approvalService?: CentralizedApprovalService; logger?: RegistryLogger } = {}) {
     this.repository = options.repository ?? new InMemoryAssetRepository();
     this.cache = options.cache ?? new AssetRegistryCache();
     this.eventBus = options.eventBus ?? new UniversalEventBus();

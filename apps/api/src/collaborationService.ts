@@ -1,7 +1,7 @@
 import type { NexusOperationalActorType } from '@trackmind/shared';
 import { ImmutableAuditLog, type AuditLogEntry, type EvidenceReference } from './auditLog.js';
 import type { ApiServiceDefinition } from './enterpriseApiGateway.js';
-import { UniversalEventBus, type EventName, type RaceDayEvent } from './eventBus.js';
+import { UniversalEventBus, type RaceDayEvent } from './eventBus.js';
 
 export type CollaborationArtifactKind = 'thread' | 'comment' | 'assignment' | 'decision' | 'handoff' | 'evidence-packet' | 'incident-room';
 export type CollaborationActorType = NexusOperationalActorType;

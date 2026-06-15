@@ -6,7 +6,7 @@ import { type ApiServiceDefinition } from './enterpriseApiGateway.js';
 import { UniversalEventBus, type RaceDayEvent } from './eventBus.js';
 import { RacetrackAssetRegistryService, type AssetPrincipal, type MaintenanceStatus, type RegistryAsset } from './racetrackAssetRegistryService.js';
 import { racetrackAssetControlRegistry, type AssetRiskLevel } from './racetrackControlRegistry.js';
-import { WorkflowOrchestrationEngine, type WorkflowDefinition, type WorkflowInstance } from './workflowEngine.js';
+import { WorkflowOrchestrationEngine, type WorkflowDefinition } from './workflowEngine.js';
 
 export type FacilityReadinessStatus = 'ready' | 'watch' | 'blocked';
 export type FacilityInspectionStatus = 'passed' | 'watch' | 'failed';

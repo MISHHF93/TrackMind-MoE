@@ -15,7 +15,6 @@ export interface NexusDashboardPanel { area: NexusCapabilityArea; title: string;
 export interface NexusSafetyDecision { allowed: boolean; reason: string; requiresHumanApproval: boolean; protectedAction?: ProtectedAction | string; }
 
 const owner = { service: 'trackmind-nexus', team: 'racetrack-platform', accountableRole: 'nexus-platform-owner' };
-const id = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const controlledActionByIntent: Record<string, ControlledAction> = {
   'start-race': 'race-start',
   'stop-race': 'race-stop',

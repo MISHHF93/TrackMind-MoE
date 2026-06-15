@@ -480,8 +480,6 @@ export const racingArtifactSchemas = {
   ]),
 } satisfies Record<RacingArtifactKind, RacingArtifactSchemaEntry>;
 
-const racingArtifactKindSet = new Set<string>(racingArtifactKinds);
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
