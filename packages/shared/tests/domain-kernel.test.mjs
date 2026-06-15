@@ -8,6 +8,8 @@ test('domain kernel registers schemas for all core TrackMind Nexus entities', ()
   assert.deepEqual(Object.keys(domainSchemas), ['racetrack','race-meet','race-day','race','horse','jockey','trainer','owner','veterinarian','steward','barn','stall','track-sector','facility','asset','starting-gate','sensor','vehicle','incident','workflow','ai-recommendation','approval','audit-event','audit-record']);
   assert.equal(domainSchemas.horse.schemaVersion, domainKernelSchemaVersion);
   assert.ok(domainSchemas['ai-recommendation'].rules.some((rule) => rule.path === 'confidence'));
+  assert.ok(domainSchemas['ai-recommendation'].rules.some((rule) => rule.path === 'modelVersion'));
+  assert.ok(domainSchemas['ai-recommendation'].rules.some((rule) => rule.path === 'auditReference.auditIds'));
 });
 
 test('domain kernel validates metadata, ownership, versioning, lifecycle, and entity specific constraints', () => {
@@ -79,12 +81,20 @@ test('domain kernel keeps protected AI recommendations and workflows approval-ga
   const target = { id: 'race-7', kind: 'race', tenantId: 'track-001' };
   const recommendation = {
     ...createDomainEntityBase('ai-recommendation', { id: 'rec-1', tenantId: 'track-001', displayName: 'Race start readiness draft', ownerId: 'ai-governance', createdBy: 'agent-1', now, classification: 'regulated' }),
-    activity: 'create-draft-action', target, summary: 'Draft race-start request only.', confidence: 0.88, evidence: ['readiness-check'], requestedAction: 'race-start', requiredApprovals: [{ approvalId: 'approval-1', status: 'pending-approval', protectedAction: 'race-start' }], advisoryOnly: true,
+    activity: 'create-draft-action', target, summary: 'Draft race-start request only.', recommendationId: 'rec-1', confidence: 0.88, evidence: ['readiness-check'], modelVersion: 'model:readiness:v1', generatedAt: now, approvalRequirement: { required: true, policy: 'single-human', requirementId: 'approval-1' }, auditReference: { auditIds: ['audit-rec-1'], eventIds: ['ai.recommendation.created.v1'], digitalTwinRefs: ['twin:race:race-7'], approvalReference: 'approval-1' }, requestedAction: 'race-start', requiredApprovals: [{ approvalId: 'approval-1', status: 'pending-approval', protectedAction: 'race-start' }], advisoryOnly: true,
   };
   assert.deepEqual(validateDomainEntity(recommendation), { valid: true, errors: [] });
 
   const autonomous = { ...recommendation, advisoryOnly: undefined };
   assert.ok(validateDomainEntity(autonomous).errors.includes('AI recommendation requesting protected action must be advisoryOnly'));
+
+  const legacyRecommendation = { ...recommendation };
+  delete legacyRecommendation.modelVersion;
+  delete legacyRecommendation.auditReference;
+  const legacyResult = validateDomainEntity(legacyRecommendation);
+  assert.equal(legacyResult.valid, false);
+  assert.ok(legacyResult.errors.includes('modelVersion is required'));
+  assert.ok(legacyResult.errors.includes('auditReference is required'));
 
   const executedWithoutApproval = {
     ...createDomainEntityBase('workflow', { id: 'workflow-1', tenantId: 'track-001', displayName: 'Race start workflow', ownerId: 'race-office', createdBy: 'steward-1', now, lifecycleState: 'active', classification: 'regulated' }),

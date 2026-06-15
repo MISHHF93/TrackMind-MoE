@@ -75,11 +75,20 @@ test('TUS validates required Tier 1 object contracts', () => {
     { ...base('inspection', 'inspection-1', 'passed'), inspectionType: 'surface', inspectedSubjectRef: ref('asset', 'asset-gate-release'), inspectedAt: now, inspectedByRef: employeeRef, findings: ['nominal'] },
     { ...base('approval', 'approval-1', 'pending-approval', { actor }), protectedAction: 'race-start', targetRef: raceRef, requestedBy: { ...actor, tenantId: 'tenant-east', racetrackId: 'track-001' }, approverRefs: [], evidenceRefs: ['ev-approval'] },
     { ...base('audit-event', 'audit-event-1', 'recorded', { actor }), eventType: 'audit.event.recorded.v1', action: 'approval.requested', targetRef: raceRef, occurredAt: now, evidenceRefs: ['ev-audit'], correlationId: 'corr-1' },
-    { ...base('ai-recommendation', 'ai-rec-1', 'review-required'), activity: 'create-draft-action', targetRef: raceRef, summary: 'Draft race start only.', confidence: 0.82, evidenceRefs: ['ev-ai'], advisoryOnly: true, approvalRefs: [ref('approval', 'approval-1')], modelLineageRefs: ['model:readiness:v1'] },
+    { ...base('ai-recommendation', 'ai-rec-1', 'review-required'), activity: 'create-draft-action', targetRef: raceRef, summary: 'Draft race start only.', recommendationId: 'ai-rec-1', confidence: 0.82, evidenceRefs: ['ev-ai'], modelVersion: 'model:readiness:v1', generatedAt: now, approvalRequirement: { required: true, policy: 'single-human', requirementId: 'approval-1' }, auditReference: { auditIds: ['audit-ai-rec-1'], eventIds: ['ai.recommendation.created.v1'], digitalTwinRefs: ['twin:race:race-7'], approvalReference: 'approval-1' }, advisoryOnly: true, approvalRefs: [ref('approval', 'approval-1')], modelLineageRefs: ['model:readiness:v1'] },
   ];
 
   for (const entity of entities) assert.deepEqual(validateTusEntity(entity), { valid: true, errors: [] }, entity.kind);
   assert.deepEqual(validateTusEntitySet(entities), { valid: true, errors: [] });
+
+  const aiRecommendation = entities.find((entity) => entity.kind === 'ai-recommendation');
+  const legacyRecommendation = { ...aiRecommendation };
+  delete legacyRecommendation.modelVersion;
+  delete legacyRecommendation.auditReference;
+  const legacyResult = validateTusEntity(legacyRecommendation);
+  assert.equal(legacyResult.valid, false);
+  assert.ok(legacyResult.errors.includes('modelVersion is required'));
+  assert.ok(legacyResult.errors.includes('auditReference is required'));
 });
 
 test('TUS stable global identifiers are deterministic and racetrack scoped', () => {

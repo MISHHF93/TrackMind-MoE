@@ -24,6 +24,8 @@ export interface DigitalTwinRef { twinId: `twin:${string}:${string}`; modelId: s
 export interface ApprovalRef { approvalId: EntityId; status: 'pending-approval' | 'approved' | 'rejected' | 'expired' | 'overridden'; protectedAction?: string; approvedBy?: EntityId; approvedAt?: ISODateTime; evidence?: string[] }
 export interface EventRef { eventId: EntityId; eventType: `${string}.${string}.${string}.v${number}` | string; occurredAt: ISODateTime; streamName?: string; auditId?: EntityId; digitalTwinId?: string }
 export interface ObservabilityRef { traceId?: string; spanId?: string; metricNames: string[]; logEventIds: string[] }
+export interface AIApprovalRequirement { required: boolean; policy: string; requirementId?: string; workflowId?: string }
+export interface AIAuditReference { auditIds: string[]; eventIds: string[]; digitalTwinRefs: string[]; approvalReference?: string }
 
 export interface DomainEntityBase<K extends DomainEntityKind> {
   id: EntityId; kind: K; tenantId: TenantId; displayName: string; lifecycleState: LifecycleState;
@@ -51,7 +53,7 @@ export interface SensorEntity extends DomainEntityBase<'sensor'> { assetId: Enti
 export interface VehicleEntity extends DomainEntityBase<'vehicle'> { racetrackId: EntityId; vehicleType: 'ambulance' | 'starting-gate-tractor' | 'maintenance' | 'security' | 'transport'; callSign?: string; assetId?: EntityId }
 export interface IncidentEntity extends DomainEntityBase<'incident'> { severity: 'low' | 'medium' | 'high' | 'critical'; status: 'open' | 'contained' | 'resolved' | 'closed'; subject: EntityReference; evidence: string[] }
 export interface WorkflowEntity extends DomainEntityBase<'workflow'> { workflowType: string; state: LifecycleState; subject: EntityReference; approvalRefs: ApprovalRef[]; protectedAction?: string; auditEventRefs?: EntityId[] }
-export interface AIRecommendationEntity extends DomainEntityBase<'ai-recommendation'> { activity: string; target: EntityReference; summary: string; confidence: number; evidence: string[]; requestedAction?: string; requiredApprovals: ApprovalRef[]; advisoryOnly?: true; modelLineage?: string[]; affectedAssets?: EntityReference[] }
+export interface AIRecommendationEntity extends DomainEntityBase<'ai-recommendation'> { activity: string; target: EntityReference; summary: string; recommendationId: string; confidence: number; evidence: string[]; modelVersion: string; generatedAt: ISODateTime; approvalRequirement: AIApprovalRequirement; auditReference: AIAuditReference; requestedAction?: string; requiredApprovals: ApprovalRef[]; advisoryOnly?: true; modelLineage?: string[]; affectedAssets?: EntityReference[] }
 export interface ApprovalEntity extends DomainEntityBase<'approval'> { recommendationId?: EntityId; protectedAction: string; target: EntityReference; status: ApprovalRef['status']; approverId?: EntityId; approverRoles: string[]; reason?: string; evidence: string[]; decidedAt?: ISODateTime; expiresAt?: ISODateTime }
 export interface AuditEventEntity extends DomainEntityBase<'audit-event'> { eventType: `${string}.${string}.${string}.v${number}`; actorId: EntityId; actorType: NexusActorType; action: string; target: EntityReference; occurredAt: ISODateTime; decision?: 'allowed' | 'denied' | 'approved' | 'rejected' | 'blocked' | 'executed'; evidence: string[]; correlationId: string; sourceService: string; previousHash?: string; hash?: string }
 export interface AuditRecordEntity extends DomainEntityBase<'audit-record'> { actorId: EntityId; actorType: NexusActorType; action: string; target: EntityReference; occurredAt: ISODateTime; evidence: string[]; previousHash?: string; hash?: string }
@@ -88,7 +90,7 @@ export const domainSchemas = {
   vehicle: schema('vehicle', [{ path: 'racetrackId', required: true, type: 'string' }, { path: 'vehicleType', required: true, type: 'string' }]),
   incident: schema('incident', [{ path: 'severity', required: true, type: 'string' }, { path: 'subject', required: true, type: 'object' }, { path: 'evidence', required: true, type: 'array' }]),
   workflow: schema('workflow', [{ path: 'subject', required: true, type: 'object' }, { path: 'approvalRefs', required: true, type: 'array' }]),
-  'ai-recommendation': schema('ai-recommendation', [{ path: 'target', required: true, type: 'object' }, { path: 'summary', required: true, type: 'string' }, { path: 'confidence', required: true, type: 'number', min: 0, max: 1 }, { path: 'evidence', required: true, type: 'array' }, { path: 'requiredApprovals', required: true, type: 'array' }]),
+  'ai-recommendation': schema('ai-recommendation', [{ path: 'target', required: true, type: 'object' }, { path: 'summary', required: true, type: 'string' }, { path: 'recommendationId', required: true, type: 'string' }, { path: 'confidence', required: true, type: 'number', min: 0, max: 1 }, { path: 'evidence', required: true, type: 'array' }, { path: 'modelVersion', required: true, type: 'string' }, { path: 'generatedAt', required: true, type: 'string' }, { path: 'approvalRequirement', required: true, type: 'object' }, { path: 'approvalRequirement.required', required: true, type: 'boolean' }, { path: 'approvalRequirement.policy', required: true, type: 'string' }, { path: 'auditReference', required: true, type: 'object' }, { path: 'auditReference.auditIds', required: true, type: 'array' }, { path: 'auditReference.eventIds', required: true, type: 'array' }, { path: 'auditReference.digitalTwinRefs', required: true, type: 'array' }, { path: 'requiredApprovals', required: true, type: 'array' }]),
   approval: schema('approval', [{ path: 'target', required: true, type: 'object' }, { path: 'status', required: true, type: 'string' }, { path: 'approverRoles', required: true, type: 'array' }, { path: 'evidence', required: true, type: 'array' }]),
   'audit-event': schema('audit-event', [{ path: 'eventType', required: true, type: 'string' }, { path: 'actorId', required: true, type: 'string' }, { path: 'target', required: true, type: 'object' }, { path: 'occurredAt', required: true, type: 'string' }, { path: 'evidence', required: true, type: 'array' }, { path: 'correlationId', required: true, type: 'string' }, { path: 'sourceService', required: true, type: 'string' }]),
   'audit-record': schema('audit-record', [{ path: 'actorId', required: true, type: 'string' }, { path: 'target', required: true, type: 'object' }, { path: 'evidence', required: true, type: 'array' }]),
@@ -131,9 +133,12 @@ export function validateDomainEntity(entity: unknown): { valid: boolean; errors:
   }
   if (kind === 'ai-recommendation') {
     const recommendation = domainEntity as AIRecommendationEntity;
+    if (recommendation.recommendationId !== recommendation.id) errors.push('AI recommendation recommendationId must match id');
     if (recommendation.requestedAction && !recommendation.requiredApprovals.length) errors.push('AI recommendation requesting a protected action requires approval refs');
     if (recommendation.requestedAction && recommendation.advisoryOnly !== true) errors.push('AI recommendation requesting protected action must be advisoryOnly');
-    if (recommendation.evidence.length === 0) errors.push('AI recommendation requires evidence');
+    if ((recommendation.evidence ?? []).length === 0) errors.push('AI recommendation requires evidence');
+    if ((recommendation.auditReference?.auditIds ?? []).length === 0) errors.push('AI recommendation requires auditReference.auditIds');
+    if ((recommendation.auditReference?.eventIds ?? []).length === 0) errors.push('AI recommendation requires auditReference.eventIds');
   }
   if (kind === 'approval') {
     const approval = domainEntity as ApprovalEntity;
