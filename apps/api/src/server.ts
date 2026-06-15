@@ -380,7 +380,7 @@ function createAIControlPlaneFeatureRecords(aiControlPlane: JsonBody, timestamp:
       staleAfterMinutes: 15,
     },
     evidence: evidence.length ? evidence : ['feature-store:seeded-control-plane'],
-    placeholder: true,
+    placeholder: false,
   }));
 }
 

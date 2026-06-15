@@ -56,10 +56,27 @@ test('racing data workspace aggregate route has a first-class shared contract', 
   assert.ok(apiEndpointContracts.some((endpoint) => endpoint.path === '/api/v1/racing-data' && endpoint.response === 'RacingDataWorkspaceDto'));
 });
 
-test('shared API contract schemas cover race office, readiness, facilities, surface, track configuration, stewarding, barn, asset, and workflow DTOs', () => {
-  for (const schemaName of ['RaceMeetDto','RaceDayDto','RaceOfficeWorkspaceDto','RaceDayReadinessDashboardDto','FacilitiesMaintenanceWorkspaceDto','SurfaceIntelligenceDto','TrackMapDto','TrackConfigurationSummaryDto','TrackConfigurationWorkOrderDto','TrackConfigurationVerificationDto','StewardCenterDto','StreamingDataSourceDto','StreamingDataSnapshotDto','DomainAssetDto','BarnDto','StallDto','TrackFacilityDto','WorkflowContractDto','WorkflowTemplateRegistryDto','UniversalArtifactRegistryDto','UniversalArtifactSchemaCatalogDto','UniversalArtifactTrainingInputsDto','UniversalArtifactStorageMapDto','UniversalArtifactDraftRegistrationResultDto']) {
+test('shared API contract schemas cover race office, readiness, facilities, surface, finance, track configuration, stewarding, barn, asset, and workflow DTOs', () => {
+  for (const schemaName of ['RaceMeetDto','RaceDayDto','RaceOfficeWorkspaceDto','RaceDayReadinessDashboardDto','FacilitiesMaintenanceWorkspaceDto','FinanceTicketingWorkspaceDto','SurfaceIntelligenceDto','TrackMapDto','TrackConfigurationSummaryDto','TrackConfigurationWorkOrderDto','TrackConfigurationVerificationDto','StewardCenterDto','StreamingDataSourceDto','StreamingDataSnapshotDto','DomainAssetDto','BarnDto','StallDto','TrackFacilityDto','BarnOperationsDto','WorkflowContractDto','WorkflowTemplateRegistryDto','UniversalArtifactRegistryDto','UniversalArtifactSchemaCatalogDto','UniversalArtifactTrainingInputsDto','UniversalArtifactStorageMapDto','UniversalArtifactDraftRegistrationResultDto']) {
     assert.ok(apiContractSchemas[schemaName], `${schemaName} missing`);
   }
+  assert.ok(apiEndpointContracts.some((endpoint) => endpoint.path === '/api/v1/barn-operations/workspace' && endpoint.response === 'BarnOperationsDto'));
+});
+
+test('finance ticketing workspace contract replaces ticketing and finance mock route adapters', () => {
+  const workspace = {
+    generatedAt: '2026-06-15T06:00:00.000Z',
+    tickets: [{ ticketId: 'ticket-1', raceDayId: 'race-day-1', status: 'active', priceCents: 2500 }],
+    payouts: [],
+    summary: { activeTickets: 1, refundedTickets: 0, voidTickets: 0, grossTicketRevenueCents: 2500, protectedPayouts: 0, raceDayIds: ['race-day-1'] },
+    payoutApproval: 'dual-control steward + finance',
+    protectedActions: ['payout'],
+    evidence: ['finance-service:ticketing-state', 'approval-gateway:payout'],
+    mock: false,
+  };
+
+  assert.deepEqual(validateContract('FinanceTicketingWorkspaceDto', workspace, apiContractSchemas.FinanceTicketingWorkspaceDto), { valid: true, errors: [] });
+  assert.ok(apiEndpointContracts.some((endpoint) => endpoint.path === '/api/v1/services/finance/ticketing' && endpoint.response === 'FinanceTicketingWorkspaceDto'));
 });
 
 test('race office workspace contract covers carding, placeholders, lifecycle, and approval controls', () => {

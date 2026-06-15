@@ -25,9 +25,14 @@ const routeIconLabels: Record<string, string> = {
 
 export function AppShell(): ReactElement {
   const [activeRouteId, setActiveRouteId] = useState(() => resolveRoute(window.location.pathname).id);
+  const [searchQuery, setSearchQuery] = useState('');
   const visibleRoutes = routes.filter((route) => canViewRoute(route, defaultTenantContext.role));
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const searchableRoutes = normalizedSearch
+    ? visibleRoutes.filter((route) => routeSearchText(route).includes(normalizedSearch))
+    : visibleRoutes;
   const groupedRoutes = navigationOrder
-    .map((group) => ({ group, routes: visibleRoutes.filter((route) => route.navigationGroup === group) }))
+    .map((group) => ({ group, routes: searchableRoutes.filter((route) => route.navigationGroup === group) }))
     .filter((entry) => entry.routes.length > 0);
 
   useEffect(() => {
@@ -47,6 +52,7 @@ export function AppShell(): ReactElement {
           </div>
         </div>
         <nav>
+          {groupedRoutes.length === 0 ? <p className="nav-empty-state">No routes match "{searchQuery}".</p> : null}
           {groupedRoutes.map(({ group, routes: groupRoutes }) => (
             <section className="nav-group" key={group} aria-label={`${group} routes`}>
               <h2>{group}</h2>
@@ -68,23 +74,19 @@ export function AppShell(): ReactElement {
       <div className="shell-body">
         <header className="topbar">
           <div className="switcher">
-            <label>
-              Tenant
-              <select defaultValue={defaultTenantContext.tenantId} aria-label="Tenant switcher" disabled title="Demo reference context; production scope must come from authenticated backend claims.">
-                <option value={defaultTenantContext.tenantId}>{defaultTenantContext.tenantId}</option>
-              </select>
-            </label>
-            <label>
-              Racetrack
-              <select defaultValue={defaultTenantContext.racetrackId} aria-label="Racetrack switcher" disabled title="Demo reference context; production scope must come from authenticated backend claims.">
-                <option value={defaultTenantContext.racetrackId}>{defaultTenantContext.racetrackId}</option>
-              </select>
-            </label>
+            <div className="scope-chip" aria-label="Tenant scope">
+              <span>Tenant</span>
+              <strong>{defaultTenantContext.tenantId}</strong>
+            </div>
+            <div className="scope-chip" aria-label="Racetrack scope">
+              <span>Racetrack</span>
+              <strong>{defaultTenantContext.racetrackId}</strong>
+            </div>
             <span className="scope-disclaimer">Demo context only; backend auth must enforce scope.</span>
           </div>
           <label className="global-search">
             Search
-            <input type="search" placeholder="Search routes, approvals, audit, evidence" disabled title="Search is not wired yet." />
+            <input type="search" placeholder="Search routes, approvals, audit, evidence" value={searchQuery} onChange={(event) => setSearchQuery(event.currentTarget.value)} />
           </label>
           <div className="topbar-actions" aria-label="Global route shortcuts">
             <button type="button" onClick={() => navigate('/dashboard')}>Dashboard</button>
@@ -126,4 +128,17 @@ export function AppShell(): ReactElement {
 function toggleTheme(): void {
   const root = document.documentElement;
   root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+}
+
+function routeSearchText(route: (typeof routes)[number]): string {
+  return [
+    route.label,
+    route.path,
+    ...(route.aliases ?? []),
+    route.navigationGroup,
+    route.supportStatus,
+    route.dataSource,
+    ...route.backendPaths,
+    ...route.sharedTypes,
+  ].join(' ').toLowerCase();
 }

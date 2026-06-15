@@ -141,6 +141,15 @@ nav {
   text-transform: uppercase;
 }
 
+.nav-empty-state {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  background: var(--surface-raised);
+}
+
 nav button,
 .route-button {
   display: grid;
@@ -213,6 +222,25 @@ nav small {
   max-width: 9rem;
 }
 
+.scope-chip {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+
+.scope-chip span {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.scope-chip strong {
+  color: var(--text-strong);
+  font-size: 0.86rem;
+}
+
 label {
   display: grid;
   gap: var(--space-1);
@@ -280,6 +308,7 @@ input {
 .record-card,
 .ai-card,
 .kpi-card,
+.focus-banner,
 .empty-state,
 .workspace-state {
   border: 1px solid var(--border-subtle);
@@ -293,6 +322,15 @@ input {
   display: grid;
   align-content: start;
   gap: var(--space-3);
+}
+
+.focus-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  background: color-mix(in srgb, var(--accent-operational), var(--surface-raised) 88%);
 }
 
 .contract-meta {

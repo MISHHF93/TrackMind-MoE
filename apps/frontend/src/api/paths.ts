@@ -14,9 +14,12 @@ export const apiPaths = {
     races: '/races',
     raceOffice: '/race-operations/race-office',
     readiness: '/race-day-readiness/dashboard',
+    surface: '/surface-intelligence/workspace',
+    trackConfiguration: '/track-configuration/map',
   },
   equine: {
     horse: '/equine-intelligence/horses/horse-1',
+    barnOperations: '/barn-operations/workspace',
   },
   approvals: {
     list: '/approvals/requests',
@@ -33,6 +36,9 @@ export const apiPaths = {
   },
   facilities: {
     workspace: '/facilities-maintenance/workspace',
+  },
+  finance: {
+    ticketing: '/services/finance/ticketing',
   },
   federation: {
     workspace: '/federation/workspace',

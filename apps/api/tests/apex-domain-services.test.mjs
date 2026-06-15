@@ -118,6 +118,18 @@ test('finance payout requires steward and finance approval and emits immutable a
   assert.ok(gateway.eventBus.events({ aggregateId: 'payout-race-7' }).some((event) => String(event.type).includes('finance.payout.executed')));
 });
 
+test('finance ticketing state exposes computed read model for frontend workspaces', async () => {
+  const state = createApiFacadeState();
+  const response = await handleApiRequest('GET', '/api/v1/services/finance/ticketing', undefined, state);
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.mock, false);
+  assert.ok(response.body.tickets.length >= 2);
+  assert.equal(response.body.summary.activeTickets, response.body.tickets.filter((ticket) => ticket.status === 'active').length);
+  assert.ok(response.body.summary.grossTicketRevenueCents > 0);
+  assert.deepEqual(response.body.protectedActions, ['payout']);
+});
+
 test('stewarding and security read paths remain advisory until approval gates are used', async () => {
   const state = createApiFacadeState();
   const rulebook = await handleApiRequest('POST', '/api/v1/services/stewarding/rulebook/query', { question: 'Can stewards issue a penalty from AI output?', evidenceRefs: ['rulebook://arci/stewards'] }, state);

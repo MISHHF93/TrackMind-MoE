@@ -38,7 +38,7 @@ test('frontend and backend share schemas for assets, races, approvals, audit eve
 
 test('contract metadata covers authorization, audit records, event emissions, and consistent errors', () => {
   const byOperation = new Map(apiEndpointContracts.map((endpoint) => [endpoint.operationId, endpoint]));
-  for (const op of ['listAssets','listRaces','getOperationsCommandCenter','getRaceOfficeWorkspace','listApprovals','listAuditEvents','listDigitalTwinState','listSurfaceMeasurements','getSecurityOperationsWorkspace','getEmergencyOperationsWorkspace','getComplianceControlLibrary','getGatePosition','getTrackConfigurationMap','getAIGovernanceWorkspace','createDraftRequest','createTrackConfigurationDraftRequest','listAIRecommendations']) {
+  for (const op of ['listAssets','listRaces','getOperationsCommandCenter','getRaceOfficeWorkspace','listApprovals','getFinanceTicketingWorkspace','listAuditEvents','listDigitalTwinState','listSurfaceMeasurements','getSurfaceIntelligenceWorkspace','getBarnOperationsWorkspace','getSecurityOperationsWorkspace','getEmergencyOperationsWorkspace','getComplianceControlLibrary','getGatePosition','getTrackConfigurationMap','getAIGovernanceWorkspace','createDraftRequest','createTrackConfigurationDraftRequest','listAIRecommendations']) {
     assert.ok(byOperation.has(op), `${op} must have OpenAPI metadata`);
     assert.ok(byOperation.get(op).audits.length > 0, `${op} must declare audit metadata`);
   }

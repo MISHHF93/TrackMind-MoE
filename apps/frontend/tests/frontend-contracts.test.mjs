@@ -42,12 +42,17 @@ test('route constants cover required backend-driven sections', async () => {
   ]) {
     assert.match(routes, new RegExp(`path: '${path}'`), `${path} route missing`);
   }
-  assert.match(routes, /supportStatus: 'mock-adapter'/);
-  assert.match(routes, /backendPaths: \[\]/);
+  assert.doesNotMatch(routes, /supportStatus: 'mock-adapter'/);
+  assert.match(routes, /\/api\/v1\/services\/finance\/ticketing/);
+  assert.match(routes, /\/api\/v1\/surface-intelligence\/workspace/);
+  assert.match(routes, /\/api\/v1\/barn-operations\/workspace/);
+  assert.match(routes, /FinanceTicketingWorkspaceDto/);
+  assert.match(routes, /BarnOperationsDto/);
   for (const alias of [
     '/operations',
     '/command-center',
     '/race-day-readiness',
+    '/surface',
     '/starting-gate',
     '/horse-profile',
     '/approval-queue',
@@ -79,7 +84,8 @@ test('components do not call raw fetch or render forbidden execution controls', 
   for (const unsafe of ['Start race', 'Stop race', 'Finalize results', 'Scratch horse', 'Administer medication', 'Issue payout']) {
     assert.doesNotMatch(page, new RegExp(unsafe, 'i'));
   }
-  assert.match(page, /Request approval/);
+  assert.match(page, /Open approval queue/);
+  assert.doesNotMatch(page, /Request approval/);
   assert.match(page, /Open audit trail/);
   assert.doesNotMatch(page, /disabled title="Read-only until a governed endpoint is wired\."/);
   assert.match(page, /CardActions/);
@@ -89,6 +95,8 @@ test('components do not call raw fetch or render forbidden execution controls', 
   assert.match(page, /Route contract summary/);
   assert.match(page, /Route navigation map/);
   assert.match(page, /Canonical route/);
+  assert.match(page, /Focused evidence/);
+  assert.match(page, /focusFromSearch/);
   assert.match(page, /Governed KPI Artifacts/);
   assert.match(page, /Data quality/);
 });
@@ -102,6 +110,11 @@ test('app shell renders grouped route navigation from metadata', async () => {
   assert.match(shell, /route\.navigationGroup === group/);
   assert.match(shell, /Global route shortcuts/);
   assert.match(shell, /navigate\('\/dashboard'\)/);
+  assert.match(shell, /searchQuery/);
+  assert.match(shell, /routeSearchText/);
+  assert.match(shell, /scope-chip/);
+  assert.doesNotMatch(shell, /Search is not wired yet/);
+  assert.doesNotMatch(shell, /disabled title/);
 });
 
 test('frontend route filtering honors required roles and tenant scope headers', async () => {
@@ -121,11 +134,14 @@ test('frontend route filtering honors required roles and tenant scope headers', 
   assert.match(shell, /Demo context only/);
 });
 
-test('mock data is isolated from React components', async () => {
-  const mock = await source('src/mocks/domainMocks.ts');
+test('frontend route adapters do not depend on generic mock-domain data', async () => {
   const page = await source('src/pages/WorkspacePage.tsx');
-  assert.match(mock, /mockUnsupportedDomain/);
+  const services = await source('src/api/services.ts');
+  const routes = await source('src/routes/routes.ts');
+  await assert.rejects(() => source('src/mocks/domainMocks.ts'), /ENOENT/);
   assert.doesNotMatch(page, /mockUnsupportedDomain/);
+  assert.doesNotMatch(services, /mockUnsupportedDomain|mockService/);
+  assert.doesNotMatch(routes, /explicit-mock|mock-adapter/);
 });
 
 test('vite proxy does not capture api-hub frontend deep links', async () => {
@@ -134,13 +150,33 @@ test('vite proxy does not capture api-hub frontend deep links', async () => {
   assert.doesNotMatch(viteConfig, /'\/api':/);
 });
 
+test('root deployment build stays Vite-only', async () => {
+  const rootPackage = await repoSource('package.json');
+  const vercelConfig = await repoSource('vercel.json');
+  const packageJson = JSON.parse(rootPackage);
+  const vercelJson = JSON.parse(vercelConfig);
+
+  assert.equal(packageJson.scripts.build, 'npm run build:vite');
+  assert.doesNotMatch(packageJson.scripts['build:vite'], /apps\/api|apps\\api/);
+  assert.match(packageJson.scripts['build:vite'], /apps\/frontend|apps\\frontend/);
+  assert.equal(vercelJson.buildCommand, 'npm run build:vite');
+  assert.equal(vercelJson.outputDirectory, 'dist');
+});
+
 test('frontend KPI adapter uses the central API service layer', async () => {
   const services = await source('src/api/services.ts');
   const paths = await source('src/api/paths.ts');
   assert.match(paths, /workspace: '\/kpis'/);
   assert.match(services, /getJson<KPIWorkspaceDto>/);
+  assert.match(services, /getJson<FacilitiesMaintenanceWorkspaceDto>/);
+  assert.match(services, /getJson<SurfaceIntelligenceDto>/);
+  assert.match(services, /getJson<BarnOperationsDto>/);
   assert.match(services, /requireReady/);
   assert.match(services, /routeKpiDomains/);
+  assert.match(services, /getJson<FinanceTicketingWorkspaceDto>/);
+  assert.doesNotMatch(services, /mockService/);
+  assert.doesNotMatch(services, /interface FacilitiesMaintenanceWorkspace/);
+  assert.doesNotMatch(services, /equineExtras/);
 });
 
 test('frontend backend route paths are declared in shared endpoint contracts', async () => {

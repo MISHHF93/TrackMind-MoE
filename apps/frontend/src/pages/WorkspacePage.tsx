@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react';
+import { useEffect, useState } from 'react';
 import type { KPIArtifact } from '@trackmind/shared';
 import type { AdvisoryAIRecommendation, WorkspaceCardAction, WorkspacePanel, WorkspaceViewModel } from '../domain/workspaceModel';
 import { backendSupportLabels } from '../domain/support';
@@ -15,6 +16,14 @@ interface WorkspacePageProps {
 
 export function WorkspacePage({ route, state }: WorkspacePageProps): ReactElement {
   const supportLabel = backendSupportLabels[route.supportStatus];
+  const [search, setSearch] = useState(() => window.location.search);
+  const focus = focusFromSearch(search);
+
+  useEffect(() => {
+    const onPopState = () => setSearch(window.location.search);
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   if (state.loading) {
     return <section className="workspace-state">Loading {route.label} from {route.dataSource}</section>;
@@ -68,6 +77,14 @@ export function WorkspacePage({ route, state }: WorkspacePageProps): ReactElemen
           </dl>
         </div>
       </header>
+
+      {focus ? (
+        <aside className="focus-banner" aria-label="Focused evidence context">
+          <strong>Focused evidence</strong>
+          <span>{focus.label}: {focus.value}</span>
+          <button type="button" onClick={() => navigateWithinShell(route.path)}>Clear focus</button>
+        </aside>
+      ) : null}
 
       <div className="metric-grid">
         {data.metrics.map((metric) => (
@@ -204,7 +221,11 @@ function AICard({ recommendation }: { recommendation: AdvisoryAIRecommendation }
       <p>Evidence: {recommendation.evidence.join(' | ')}</p>
       <div className="action-row" aria-label="Allowed AI actions">
         <button type="button" onClick={() => navigateWithinShell(`/audit?recommendation=${encodeURIComponent(recommendation.recommendationId)}`)} title="Open audit references for this recommendation.">Open audit trail</button>
-        <button type="button" onClick={() => navigateWithinShell('/approvals')} title="Open human approval queue.">Request approval</button>
+        {recommendation.approvalRequirement.required ? (
+          <button type="button" onClick={() => navigateWithinShell(`/approvals?recommendation=${encodeURIComponent(recommendation.recommendationId)}`)} title="Open human approval queue for this recommendation.">Open approval queue</button>
+        ) : (
+          <span className="action-note">No approval request is required for this advisory record.</span>
+        )}
         <button type="button" onClick={() => navigateWithinShell('/settings')} title="Open advisory-only AI policy.">Review policy</button>
         <span className="action-note">Draft, evaluate, and execution flows require governed backend endpoints.</span>
       </div>
@@ -256,7 +277,7 @@ function actionsForPanel(panel: WorkspacePanel, routePath: string): WorkspaceCar
     actions.push({ label: 'Open facilities', path: '/facilities', detail: 'Review facilities service workspace.' });
   }
   if (actions.length === 0) {
-    actions.push({ label: 'Review workspace', path: routePath, detail: 'Review this route workspace.' });
+    actions.push({ label: 'Open audit', path: `/audit?route=${encodeURIComponent(routePath)}`, detail: 'Review available route evidence.' });
   }
   return dedupeActions(actions);
 }
@@ -272,7 +293,7 @@ function actionsForMetric(label: string, value: string, detail: string, routePat
   if (content.includes('provider') || content.includes('data') || content.includes('quality') || content.includes('lineage')) return [{ label: 'Open data hub', path: '/data-hub', detail: 'Review data hub metadata.' }];
   if (content.includes('race') || content.includes('readiness')) return [{ label: 'Open race day', path: '/race-day', detail: 'Review race-day readiness.' }];
   if (content.includes('asset') || content.includes('maintenance') || content.includes('work order')) return [{ label: 'Open facilities', path: '/facilities', detail: 'Review facilities service data.' }];
-  return [{ label: 'Review workspace', path: routePath, detail: 'Review this route workspace.' }];
+  return [{ label: 'Open audit', path: `/audit?route=${encodeURIComponent(routePath)}`, detail: 'Review available route evidence.' }];
 }
 
 function dedupeActions(actions: WorkspaceCardAction[]): WorkspaceCardAction[] {
@@ -288,4 +309,11 @@ function dedupeActions(actions: WorkspaceCardAction[]): WorkspaceCardAction[] {
 function navigateWithinShell(path: string): void {
   window.history.pushState({}, '', path);
   window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
+function focusFromSearch(search: string): { label: string; value: string } | undefined {
+  const params = new URLSearchParams(search);
+  const first = [...params.entries()][0];
+  if (!first) return undefined;
+  return { label: first[0], value: first[1] };
 }

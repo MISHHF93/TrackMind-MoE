@@ -53,10 +53,22 @@ npm install
 npm test
 npm run build
 npm run typecheck
-npm run start:api
 npm run start:frontend
 python -m pytest apps/agents
 node scripts/performance-smoke.mjs
+```
+
+The default build is intentionally Vite-only for the deployable platform UI. It builds shared contracts, builds `apps/frontend`, and syncs `apps/frontend/dist` into root `dist` for static hosting. Run the backend API separately when you need live local data:
+
+```bash
+npm run build:api
+npm run start:api
+```
+
+To validate every TypeScript workspace build in one command, use:
+
+```bash
+npm run build:all
 ```
 
 Python stubs and router checks can be run after installing the agent/router requirements and test runner:
@@ -75,10 +87,10 @@ docker compose -f infra/docker/docker-compose.yml up
 
 ## Vercel frontend deployment
 
-The Vite dashboard builds from `apps/frontend` and the root build copies the deployable assets into root `dist` for Vercel. The checked-in `vercel.json` expects:
+The platform UI is deployed as a Vite-only static frontend. The Vercel build uses `npm run build:vite`, which builds shared contracts, builds `apps/frontend`, and copies the deployable assets into root `dist`. The checked-in `vercel.json` expects:
 
 ```bash
-npm run build
+npm run build:vite
 ```
 
 and serves:
@@ -87,4 +99,4 @@ and serves:
 dist
 ```
 
-The dashboard route (`/dashboard`) is a client-side React route. Backend data is loaded from `VITE_TRACKMIND_API_BASE_URL`, which defaults to `/api/v1` for local Vite proxy development. On Vercel, configure `VITE_TRACKMIND_API_BASE_URL` to the public deployed API URL, including `/api/v1`, unless you add Vercel API functions for the backend.
+The dashboard route (`/dashboard`) is a client-side React route. Backend data is loaded from `VITE_TRACKMIND_API_BASE_URL`, which defaults to `/api/v1` for local Vite proxy development only. On Vercel or any static host, configure `VITE_TRACKMIND_API_BASE_URL` to the public deployed API URL, including `/api/v1`. The frontend project does not deploy the Node API as part of the Vite static build.

@@ -9,6 +9,8 @@ import type {
   EquineIntelligenceDto,
   EmergencyOperationsDto,
   FederationWorkspaceDto,
+  FinanceTicketingWorkspaceDto,
+  FacilitiesMaintenanceWorkspaceDto,
   KPIWorkspaceDto,
   OperationsCommandCenterDto,
   PlatformHealthWorkspaceDto,
@@ -17,27 +19,17 @@ import type {
   RaceDto,
   RacingDataWorkspaceDto,
   SecurityOperationsDto,
+  SurfaceIntelligenceDto,
+  TrackMapDto,
+  BarnOperationsDto,
 } from '@trackmind/shared';
 import { getJson, type AdapterResult } from './client';
 import { apiPaths } from './paths';
-import { mockUnsupportedDomain } from '../mocks/domainMocks';
 import { countMetric, textMetric, type AdvisoryAIRecommendation, type WorkspacePanel, type WorkspaceViewModel } from '../domain/workspaceModel';
 import { routeById } from '../routes/routes';
 import type { DomainRouteId } from '../domain/support';
 
 type UnknownRecord = Record<string, unknown>;
-interface FacilitiesMaintenanceWorkspace {
-  generatedAt: string;
-  readiness: { score: number; status: 'ready' | 'watch' | 'blocked'; ready: number; watch: number; blocked: number; evidence: string[] };
-  assets: Array<{ assetId: string; name: string; assetType: string; riskLevel: string; maintenanceStatus: string; healthScore: number; readinessStatus: 'ready' | 'watch' | 'blocked'; predictedFailureRisk: number; openWorkOrderIds: string[]; twinId?: string; sourceOfTruth: string }>;
-  inspections: Array<{ id: string; assetId: string; inspectedBy: string; status: string; score: number; findings: string[]; auditId: string; eventId: string }>;
-  workOrders: Array<{ id: string; assetId: string; title: string; priority: string; status: string; evidence: string[]; approvalRequestId?: string; workflowInstanceId?: string }>;
-  predictiveHooks: Array<{ assetId: string; priority: string; failureProbability: number; evidence: string[] }>;
-  approvals: Array<{ id: string; status: string; action: string; target: string; requestedBy?: string; createdAt?: string; expiresAt?: string; evidence: string[]; workflowInstanceId?: string }>;
-  events: Array<{ id?: string; type?: string }>;
-  twins: Array<{ twinId: string; assetId: string; health?: string }>;
-  mock: boolean;
-}
 const routeKpiDomains: Record<DomainRouteId, string[]> = {
   dashboard: ['race-day-operations', 'system-health', 'approval-workflows', 'ai-governance'],
   raceDay: ['race-day-operations', 'approval-workflows', 'stewarding'],
@@ -169,15 +161,19 @@ const dashboardService = {
 const raceDayService = {
   support: 'facade-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const [races, raceOffice, readiness, context] = await Promise.all([
+    const [races, raceOffice, readiness, surface, trackConfiguration, context] = await Promise.all([
       getJson<RaceDto[]>(apiPaths.raceDay.races),
       getJson<RaceOfficeWorkspaceDto>(apiPaths.raceDay.raceOffice),
       getJson<RaceDayReadinessDashboardDto>(apiPaths.raceDay.readiness),
+      getJson<SurfaceIntelligenceDto>(apiPaths.raceDay.surface),
+      getJson<TrackMapDto>(apiPaths.raceDay.trackConfiguration),
       commonContext(),
     ]);
     const raceRows = requireReady(races, 'Race summaries');
     const raceOfficeData = requireReady(raceOffice, 'Race office workspace');
     const readinessData = requireReady(readiness, 'Race-day readiness dashboard');
+    const surfaceData = requireReady(surface, 'Surface intelligence workspace');
+    const trackData = requireReady(trackConfiguration, 'Track configuration map');
     const approvalControls = raceOfficeData.approvalControls;
     const racePanels: WorkspacePanel[] = readinessData.races.map((race) => ({
       id: race.raceId,
@@ -200,15 +196,39 @@ const raceDayService = {
       status: 'facade-only',
       evidence: control.evidence,
     }));
+    const surfacePanels: WorkspacePanel[] = surfaceData.conditionScorecards.slice(0, 2).map((scorecard) => ({
+      id: scorecard.id,
+      title: scorecard.label,
+      body: `${scorecard.status} surface sector scored ${scorecard.score}; drivers ${scorecard.drivers.join(', ') || 'none'}.`,
+      status: 'facade-only',
+      evidence: ['SurfaceIntelligenceDto', scorecard.id],
+      actions: [
+        { label: 'Open approvals', path: '/approvals', detail: 'Review surface approval requirements.' },
+        { label: 'Open audit', path: `/audit?surface=${encodeURIComponent(scorecard.id)}`, detail: 'Review surface evidence.' },
+      ],
+    }));
+    const trackPanels: WorkspacePanel[] = [{
+      id: 'track-configuration-map',
+      title: 'Track configuration map',
+      body: `Starting gate ${trackData.startingGate.sectorId} at ${trackData.startingGate.metersFromStart}m; ${trackData.trackConfiguration?.workOrders.length ?? 0} gate/configuration work order(s).`,
+      status: 'facade-only',
+      evidence: ['TrackMapDto', '/api/v1/track-configuration/map'],
+      actions: [
+        { label: 'Open approvals', path: '/approvals', detail: 'Review track configuration approvals.' },
+        { label: 'Open audit', path: '/audit?trackConfiguration=map', detail: 'Review track configuration audit records.' },
+      ],
+    }];
     return vm('raceDay', races.source, {
       generatedAt: readinessData.generatedAt || raceOfficeData.cards[0]?.updatedAt || raceOfficeData.raceDays[0]?.updatedAt || '',
       metrics: [
         textMetric('Readiness average', `${readinessData.averageScore}%`, 'Service-backed dashboard score across race-day domains', readinessData.blocked ? 'critical' : readinessData.watch ? 'warning' : 'nominal'),
         countMetric('Races', raceRows.length, 'Race readiness summaries from /races'),
+        textMetric('Surface score', `${surfaceData.overallScore}%`, 'Surface intelligence workspace backs /surface aliases', surfaceData.overallScore >= 80 ? 'nominal' : 'warning'),
+        countMetric('Track sectors', trackData.sectors.length, 'Track map sectors from /track-configuration/map'),
         countMetric('Approval controls', readinessData.approvals.length + approvalControls.length, 'Race-day controls remain approval-only', 'warning'),
         textMetric('Direct execution', 'Locked', 'Race starts/stops/results are not exposed as frontend actions', 'critical'),
       ],
-      panels: [...racePanels, ...warningPanels, ...controlPanels],
+      panels: [...racePanels, ...warningPanels, ...controlPanels, ...surfacePanels, ...trackPanels],
       ...context,
     });
   },
@@ -217,24 +237,24 @@ const raceDayService = {
 const equineService = {
   support: 'facade-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const [horse, context] = await Promise.all([getJson<EquineIntelligenceDto>(apiPaths.equine.horse), commonContext()]);
+    const [horse, barnOperations, context] = await Promise.all([getJson<EquineIntelligenceDto>(apiPaths.equine.horse), getJson<BarnOperationsDto>(apiPaths.equine.barnOperations), commonContext()]);
     const data = requireReady(horse, 'Equine intelligence horse profile');
-    const equineExtras = asRecord(data);
-    const eligibilityRuleIds = Array.isArray(equineExtras.eligibilityRules)
-      ? equineExtras.eligibilityRules.map((rule) => String(asRecord(rule).id ?? 'eligibility-rule'))
-      : data.eligibilityStatus.failedRules;
-    const transportationRecordCount = Array.isArray(equineExtras.transportationRecords) ? equineExtras.transportationRecords.length : 0;
+    const barnData = requireReady(barnOperations, 'Barn operations workspace');
+    const eligibilityRuleIds = data.eligibilityRules?.map((rule) => rule.id) ?? data.eligibilityStatus.failedRules;
+    const transportationRecordCount = data.transportationRecords?.length ?? 0;
     const panels: WorkspacePanel[] = [
       { id: data.horse.horseId, title: data.horse.name, body: `${data.welfareStatus.level} welfare status at score ${data.welfareStatus.latestScore}; barn ${data.barnAssignment.barnId}, stall ${data.barnAssignment.stallId}.`, status: 'facade-only', evidence: ['EquineIntelligenceDto', '/equine-intelligence/horses/{horseId}'] },
       { id: 'equine-eligibility', title: 'Eligibility review', body: `${data.eligibilityStatus.complianceStatus}; flags ${data.eligibilityStatus.flags.join(', ') || 'none'}; failed rules ${data.eligibilityStatus.failedRules.join(', ') || 'none'}.`, status: 'facade-only', evidence: eligibilityRuleIds },
       { id: 'equine-relationships', title: 'Ownership and trainer context', body: `${data.ownership[0]?.ownerName ?? 'Owner pending'} owns ${data.ownership[0]?.percentage ?? 0}%; trainer ${data.trainerAssignments[0]?.trainerName ?? 'pending'} license ${data.trainerAssignments[0]?.licenseStatus ?? 'unknown'}.`, status: 'facade-only', evidence: ['ownership', 'trainerAssignments'] },
       { id: 'equine-activity', title: 'Race and workout activity', body: `${data.raceHistory.length} race record(s), ${data.workoutHistory.length} workout(s), ${transportationRecordCount} transport record(s) in the profile.`, status: 'facade-only', evidence: ['raceHistory', 'workoutHistory', 'transportationRecords'] },
+      ...barnData.readiness.slice(0, 2).map((readiness) => ({ id: readiness.barnId, title: `Barn ${readiness.barnId}`, body: `${readiness.status} barn readiness at ${readiness.score}; ${readiness.occupiedStalls}/${readiness.capacity} stalls occupied; blockers ${readiness.blockers.join(', ') || 'none'}.`, status: 'facade-only' as const, evidence: ['BarnOperationsDto', readiness.barnId], actions: [{ label: 'Open facilities', path: '/facilities', detail: 'Review facilities assets and maintenance.' }, { label: 'Open audit', path: `/audit?barn=${encodeURIComponent(readiness.barnId)}`, detail: 'Review barn operations evidence.' }] })),
     ];
     return vm('equine', horse.source, {
       metrics: [
         textMetric('Lifecycle', data.horse.lifecycleStatus, 'Horse lifecycle from EquineIntelligenceDto'),
         textMetric('Eligibility', data.eligibilityStatus.complianceStatus, 'Eligibility is role/privacy scoped', data.eligibilityStatus.eligible ? 'nominal' : 'warning'),
         textMetric('Veterinary privacy', data.veterinaryStatus.status, 'Restricted data is not shown by default', 'advisory'),
+        countMetric('Barn readiness rows', barnData.readiness.length, 'Barn operations workspace backs /barns and /barn-operations aliases'),
         countMetric('Twin refs', data.digitalTwinReferences.length, 'Equine digital twin references attached to this profile'),
       ],
       panels,
@@ -327,7 +347,7 @@ const securityService = {
 const facilitiesService = {
   support: 'live-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const [facilities, context] = await Promise.all([getJson<FacilitiesMaintenanceWorkspace>(apiPaths.facilities.workspace), commonContext()]);
+    const [facilities, context] = await Promise.all([getJson<FacilitiesMaintenanceWorkspaceDto>(apiPaths.facilities.workspace), commonContext()]);
     const data = requireReady(facilities, 'Facilities maintenance workspace');
     const assetPanels: WorkspacePanel[] = data.assets.slice(0, 4).map((asset) => ({
       id: asset.assetId,
@@ -364,7 +384,7 @@ const facilitiesService = {
           expiresAt: approval.expiresAt ?? data.generatedAt,
           evidence: approval.evidence,
           mock: false,
-          workflowId: approval.workflowInstanceId,
+          workflowId: approval.workflowId,
           requiredRoles: ['facilities-supervisor', 'operations-command'],
           affectedAssets: [approval.target],
         })),
@@ -373,8 +393,75 @@ const facilitiesService = {
   },
 };
 
-const ticketingService = mockService('ticketing', 'Ticketing has shared permissions and documented intent, but no dedicated backend route in the active API facade.');
-const financeService = mockService('finance', 'Finance has permissions and protected payout rules, but no dedicated active screen route; payouts remain forbidden without approval.');
+const ticketingService = {
+  support: 'facade-api' as const,
+  async load(): Promise<WorkspaceViewModel> {
+    const [ticketing, context] = await Promise.all([getJson<FinanceTicketingWorkspaceDto>(apiPaths.finance.ticketing), commonContext()]);
+    const data = requireReady(ticketing, 'Finance ticketing workspace');
+    const ticketPanels: WorkspacePanel[] = data.tickets.map((ticket) => ({
+      id: ticket.ticketId,
+      title: `Ticket ${ticket.ticketId}`,
+      body: `${ticket.status} ticket for ${ticket.raceDayId}; value ${formatCurrency(ticket.priceCents)}.`,
+      status: 'implemented',
+      evidence: ['FinanceTicketingWorkspaceDto', ...data.evidence],
+      actions: [
+        { label: 'Open audit', path: `/audit?ticket=${encodeURIComponent(ticket.ticketId)}`, detail: 'Review ticketing audit evidence.' },
+        { label: 'Open policy', path: '/settings', detail: 'Review payment and protected-data policy.' },
+      ],
+    }));
+    return vm('ticketing', ticketing.source, {
+      generatedAt: data.generatedAt,
+      metrics: [
+        countMetric('Active tickets', data.summary.activeTickets, 'Active tickets from the finance/ticketing service'),
+        textMetric('Ticket revenue', formatCurrency(data.summary.grossTicketRevenueCents), 'Gross active-ticket revenue computed by the backend service', 'nominal'),
+        countMetric('Race days', data.summary.raceDayIds.length, 'Race days represented by ticket records'),
+      ],
+      panels: ticketPanels,
+      ...context,
+    });
+  },
+};
+
+const financeService = {
+  support: 'facade-api' as const,
+  async load(): Promise<WorkspaceViewModel> {
+    const [finance, context] = await Promise.all([getJson<FinanceTicketingWorkspaceDto>(apiPaths.finance.ticketing), commonContext()]);
+    const data = requireReady(finance, 'Finance workspace');
+    const payoutPanels: WorkspacePanel[] = data.payouts.length
+      ? data.payouts.map((payout) => ({
+        id: payout.payoutId,
+        title: `Payout ${payout.payoutId}`,
+        body: `${payout.status} payout for ${payout.recipientId}; amount ${formatCurrency(payout.amountCents)}; dual control ${payout.dualControl.join(' + ')}.`,
+        status: 'implemented' as const,
+        evidence: ['FinanceTicketingWorkspaceDto', ...data.evidence],
+        actions: [
+          { label: 'Open approvals', path: '/approvals', detail: 'Review finance approval chain.' },
+          { label: 'Open audit', path: `/audit?payout=${encodeURIComponent(payout.payoutId)}`, detail: 'Review payout audit evidence.' },
+        ],
+      }))
+      : [{
+        id: 'finance-payout-boundary',
+        title: 'Payout approval boundary',
+        body: `${data.payoutApproval}; no payout is released without steward and finance approval.`,
+        status: 'implemented' as const,
+        evidence: data.evidence,
+        actions: [
+          { label: 'Open approvals', path: '/approvals', detail: 'Review protected payout approvals.' },
+          { label: 'Open policy', path: '/settings', detail: 'Review protected payout policy.' },
+        ],
+      }];
+    return vm('finance', finance.source, {
+      generatedAt: data.generatedAt,
+      metrics: [
+        textMetric('Revenue under view', formatCurrency(data.summary.grossTicketRevenueCents), 'Ticket revenue from service state'),
+        countMetric('Protected payouts', data.summary.protectedPayouts, 'Released payout records after approval gateway execution', data.summary.protectedPayouts ? 'warning' : 'nominal'),
+        textMetric('Payout control', data.payoutApproval, 'Finance payout actions are protected by dual-control approval', 'critical'),
+      ],
+      panels: payoutPanels,
+      ...context,
+    });
+  },
+};
 
 const federationService = {
   support: 'facade-api' as const,
@@ -403,6 +490,10 @@ function asRecord(value: unknown): UnknownRecord {
 
 function arrayEvidence(value: unknown, fallback: string[]): string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : fallback;
+}
+
+function formatCurrency(cents: number): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
 }
 
 const dataHubService = {
@@ -479,62 +570,44 @@ const auditService = {
   },
 };
 const adminService = {
-  support: 'documented-stub' as const,
+  support: 'facade-api' as const,
   async load(): Promise<WorkspaceViewModel> {
     const [health, context] = await Promise.all([getJson<PlatformHealthWorkspaceDto>(apiPaths.admin.platformHealth), commonContext()]);
     const data = requireReady(health, 'Platform health');
-    return vm('admin', 'documented-stub', {
+    return vm('admin', health.source, {
       generatedAt: data.generatedAt,
       metrics: [
-        textMetric('Platform status', data.overallStatus, 'Admin reads platform metadata only', data.overallStatus === 'healthy' ? 'nominal' : data.overallStatus === 'degraded' ? 'warning' : 'critical'),
-        countMetric('Services', data.services.length, 'Service health records visible to this demo shell'),
-        countMetric('Pending approvals', data.approvalEngine.pending, 'Approval engine metadata; no admin mutation route exists', data.approvalEngine.pending ? 'warning' : 'nominal'),
+        textMetric('Platform status', data.overallStatus, 'Platform health from /platform/health', data.overallStatus === 'healthy' ? 'nominal' : data.overallStatus === 'degraded' ? 'warning' : 'critical'),
+        countMetric('Services', data.services.length, 'Service health records from the platform health facade'),
+        countMetric('Pending approvals', data.approvalEngine.pending, 'Approval engine queue state from platform health', data.approvalEngine.pending ? 'warning' : 'nominal'),
       ],
       panels: [
-        { id: 'admin-boundary', title: 'Administration boundary', body: 'No user provisioning, tenant management, privileged elevation, or settings persistence endpoint exists in this frontend deployment.', status: 'documented-stub', evidence: ['PlatformHealthWorkspaceDto', '/api/v1/platform/health'] },
-        { id: 'deployment-boundary', title: 'Deployment assumptions', body: data.deploymentBoundary.claim, status: 'documented-stub', evidence: data.deploymentBoundary.assumptions },
+        ...data.services.slice(0, 4).map((service) => ({ id: service.serviceId, title: service.serviceId, body: `${service.status} service at ${service.latencyMs}ms with ${service.dependencies.length} dependency record(s).`, status: 'facade-only' as const, evidence: service.dependencies.map((dependency) => `${dependency.id}:${dependency.status}`) })),
+        { id: 'deployment-boundary', title: 'Deployment boundary', body: data.deploymentBoundary.claim, status: 'facade-only', evidence: data.deploymentBoundary.assumptions },
       ],
       ...context,
     });
   },
 };
 const settingsService = {
-  support: 'documented-stub' as const,
+  support: 'facade-api' as const,
   async load(): Promise<WorkspaceViewModel> {
     const [policy, context] = await Promise.all([getJson<AIControlPlanePolicyDto>(apiPaths.settings.policy), commonContext()]);
     const data = requireReady(policy, 'AI control-plane policy');
-    return vm('settings', 'documented-stub', {
+    return vm('settings', policy.source, {
       metrics: [
-        textMetric('Execution endpoints', data.executionEndpointsAvailable ? 'Available' : 'Unavailable', 'Settings is read-only policy metadata, not model serving controls', data.executionEndpointsAvailable ? 'warning' : 'nominal'),
+        textMetric('Execution endpoints', data.executionEndpointsAvailable ? 'Available' : 'Unavailable', 'AI policy endpoint reports whether execution routes are available', data.executionEndpointsAvailable ? 'warning' : 'nominal'),
         countMetric('Protected actions', data.protectedActions.length, 'Actions that require human approval'),
         countMetric('Governance mappings', data.governanceMapping.length, 'ISO/NIST policy mapping records'),
       ],
       panels: [
-        { id: data.policyId, title: 'AI advisory-only policy', body: `Allowed activities: ${data.allowedActivities.slice(0, 5).join(', ')}. State changes are draft-only: ${String(data.draftOnlyStateChanges)}.`, status: 'documented-stub', evidence: data.requiredEvidence },
-        { id: 'settings-boundary', title: 'Settings boundary', body: 'No SettingsDto, production model serving route, tenant preference persistence, or execution toggle API exists yet.', status: 'documented-stub', evidence: ['AIControlPlanePolicyDto', '/api/v1/ai-control-plane/policy'] },
+        { id: data.policyId, title: 'AI advisory-only policy', body: `Allowed activities: ${data.allowedActivities.slice(0, 5).join(', ')}. State changes are draft-only: ${String(data.draftOnlyStateChanges)}.`, status: 'facade-only', evidence: data.requiredEvidence },
+        ...data.governanceMapping.slice(0, 3).map((mapping, index) => ({ id: `governance-mapping-${index}`, title: mapping.framework, body: `${mapping.controls.length} control mapping(s); evidence ${mapping.evidence.join(', ') || 'policy evidence pending'}.`, status: 'facade-only' as const, evidence: mapping.evidence })),
       ],
       ...context,
     });
   },
 };
-
-function mockService(routeId: DomainRouteId, detail: string) {
-  return {
-    support: 'mock-adapter' as const,
-    async load(): Promise<WorkspaceViewModel> {
-      const fallback = mockUnsupportedDomain(routeId, detail);
-      return vm(routeId, 'mock-adapter', {
-        generatedAt: fallback.generatedAt,
-        metrics: [textMetric('Backend support', 'Mock adapter', detail, 'advisory')],
-        panels: fallback.panels.map((panel) => ({ id: panel.id, title: panel.label, body: panel.detail, status: panel.status, evidence: panel.evidence })),
-        approvals: [],
-        aiRecommendations: fallback.aiRecommendations,
-        auditEvents: fallback.auditEvents,
-        kpis: [],
-      });
-    },
-  };
-}
 
 export const domainServices = {
   dashboard: dashboardService,

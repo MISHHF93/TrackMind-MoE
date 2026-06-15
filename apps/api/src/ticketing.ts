@@ -20,10 +20,28 @@ export interface FanExperienceRequest {
   details: string;
 }
 
+export interface ConcessionsDemandForecast {
+  attendance: number;
+  expectedTransactions: number;
+  demandBand: 'low' | 'medium' | 'high';
+  staffingRecommendation: number;
+  model: 'baseline-attendance-ratio';
+}
+
 export function remainingInventory(inventory: TicketInventory): number {
   return Math.max(0, inventory.capacity - inventory.sold);
 }
 
-export function forecastConcessionsDemand(attendance: number) {
-  return { placeholder: true, expectedTransactions: Math.round(attendance * 0.7), model: 'baseline-attendance-ratio' };
+export function forecastConcessionsDemand(attendance: number): ConcessionsDemandForecast {
+  const normalizedAttendance = Math.max(0, Math.round(attendance));
+  const expectedTransactions = Math.round(normalizedAttendance * 0.7);
+  const demandBand = expectedTransactions >= 5000 ? 'high' : expectedTransactions >= 1500 ? 'medium' : 'low';
+  const staffingMultiplier = demandBand === 'high' ? 1 / 140 : demandBand === 'medium' ? 1 / 175 : 1 / 220;
+  return {
+    attendance: normalizedAttendance,
+    expectedTransactions,
+    demandBand,
+    staffingRecommendation: Math.max(1, Math.ceil(expectedTransactions * staffingMultiplier)),
+    model: 'baseline-attendance-ratio',
+  };
 }
