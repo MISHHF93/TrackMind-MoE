@@ -1,0 +1,7 @@
+{
+  "name": "@trackmind/race-operations-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Contract-only scaffold for the TrackMind race operations bounded context."
+}

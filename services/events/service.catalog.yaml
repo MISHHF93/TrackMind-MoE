@@ -1,0 +1,22 @@
+service:
+  name: events-service
+  owner: trackmind-platform
+  tier: mission-critical
+  boundedContext: events
+  dataClassification: regulated
+  tenantIsolation: required
+  currentReferenceImplementation:
+    - apps/api/src/eventBus.ts
+    - apps/api/src/events
+  humanApprovalRequiredFor:
+    - event-replay-with-delivery
+    - dead-letter-retry-of-protected-actions
+observability:
+  slo:
+    availability: 99.9
+    p95LatencyMs: 100
+  dashboards:
+    - platform-health
+  alerts:
+    - dead-letter-growth
+    - hash-chain-verification-failure

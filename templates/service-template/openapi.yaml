@@ -9,3 +9,21 @@ paths:
       responses:
         '200':
           description: Service is healthy
+  /ready:
+    get:
+      summary: Readiness check
+      responses:
+        '200':
+          description: Service dependencies are ready
+  /live:
+    get:
+      summary: Liveness check
+      responses:
+        '200':
+          description: Service process is alive
+  /metrics:
+    get:
+      summary: Prometheus-compatible metrics placeholder
+      responses:
+        '200':
+          description: Metrics are available

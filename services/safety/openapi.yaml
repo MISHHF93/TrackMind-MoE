@@ -1,0 +1,26 @@
+openapi: 3.1.0
+info:
+  title: TrackMind Safety Service API
+  version: 0.1.0
+  description: Contract-only safety scaffold. Runtime reference implementations currently live in apps/api/src/services/safetyService.ts, apps/api/src/safetyIntelligence, and apps/api/src/telemetry.
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200': { description: Service is healthy }
+  /ready:
+    get:
+      summary: Readiness check
+      responses:
+        '200': { description: Safety telemetry, approvals, and alerting dependencies are ready }
+  /live:
+    get:
+      summary: Liveness check
+      responses:
+        '200': { description: Service process is alive }
+  /metrics:
+    get:
+      summary: Safety alert and telemetry metrics
+      responses:
+        '200': { description: Metrics are available }

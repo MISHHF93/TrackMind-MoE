@@ -1,0 +1,26 @@
+openapi: 3.1.0
+info:
+  title: TrackMind Events Service API
+  version: 0.1.0
+  description: Contract-only event backbone scaffold. Runtime reference implementation currently lives in apps/api/src/eventBus.ts and apps/api/src/events.
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200': { description: Service is healthy }
+  /ready:
+    get:
+      summary: Readiness check
+      responses:
+        '200': { description: Event store, schema registry, and publisher dependencies are ready }
+  /live:
+    get:
+      summary: Liveness check
+      responses:
+        '200': { description: Service process is alive }
+  /metrics:
+    get:
+      summary: Event throughput and dead-letter metrics
+      responses:
+        '200': { description: Metrics are available }

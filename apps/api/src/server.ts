@@ -796,6 +796,7 @@ const controlledActionPermissions: Partial<Record<string, Permission[]>> = {
   'surface-irrigation': ['track:readings'],
   'surface-harrowing': ['track:readings'],
   'surface-rolling': ['track:readings'],
+  'surface-track-closure-recommendation': ['track:readings', 'incident:manage'],
   'track-closure': ['track:readings', 'incident:manage'],
   'track-reopen': ['track:readings', 'incident:manage'],
   'safety-critical-control': ['incident:manage', 'track:readings', 'security:manage'],
@@ -1301,6 +1302,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'GET' && path === '/audit/compliance-export') return { status: 200, body: (state.auditLedger as any).complianceExport };
   if (method === 'GET' && path === '/audit/legal-holds') return { status: 200, body: (state.auditLedger as any).legalHolds };
   if (method === 'GET' && path === '/track-configuration/map') return { status: 200, body: state.trackMap };
+  if (method === 'GET' && path === '/track-surface/measurements') return { status: 200, body: createCommandCenterContractSnapshot().surfaceMeasurements };
   if (method === 'GET' && path === '/operations/command-center') return { status: 200, body: state.operations };
   if (method === 'GET' && path === '/race-day-readiness/dashboard') return { status: 200, body: state.readiness };
   if (method === 'GET' && path === '/assets/search') return { status: 200, body: state.assetRegistry };
@@ -1460,7 +1462,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     if (!licenseDecision.allowed) return { status: 403, body: createRacingDataLicenseDenied(operation, provider, licenseDecision.details) };
     return { status: 202, body: createRacingDataDraftResult(operation, featureStore ? 'racing-data.feature-store-export.draft.created' : 'racing-data.data-lake-export.draft.created', providerId) };
   }
-  if (method === 'POST' && (path === '/racing-data/exports/feature-store' || path === '/racing-data/exports/data-lake' || path === '/racing-data/sync/digital-twins')) {
+  if (method === 'POST' && (path === '/racing-data/exports/feature-store' || path === '/racing-data/exports/data-lake' || path === '/racing-data/sync/digital-twins' || path === '/racing-data/digital-twin/sync-draft-requests')) {
     const input = (body ?? {}) as Record<string, any>;
     const providerId = input.providerId ?? 'provider-official-feed';
     const provider = findRacingDataProvider(state.racingData, providerId);

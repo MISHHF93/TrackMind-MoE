@@ -1,0 +1,26 @@
+openapi: 3.1.0
+info:
+  title: TrackMind Tenant Service API
+  version: 0.1.0
+  description: Contract-only tenant scaffold. Runtime tenant boundaries are currently represented in shared DTOs, API facade state, and Azure-first infrastructure parameters.
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200': { description: Service is healthy }
+  /ready:
+    get:
+      summary: Readiness check
+      responses:
+        '200': { description: Identity, configuration, and tenancy dependencies are ready }
+  /live:
+    get:
+      summary: Liveness check
+      responses:
+        '200': { description: Service process is alive }
+  /metrics:
+    get:
+      summary: Tenant isolation and provisioning metrics
+      responses:
+        '200': { description: Metrics are available }

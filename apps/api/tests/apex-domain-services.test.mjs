@@ -129,3 +129,26 @@ test('stewarding and security read paths remain advisory until approval gates ar
   assert.equal(credential.body.allowed, false);
   assert.match(credential.body.reason, /denied/);
 });
+
+test('steward penalty recommendations create an approval request before official decision state changes', async () => {
+  const gateway = new ApexApprovalGateway();
+  const controllers = createApexDomainControllers(gateway);
+  const request = await controllers.handle('POST', '/services/stewarding/penalty-recommendations', {
+    inquiryId: 'inquiry-race-7',
+    ruleIds: ['rule-interference'],
+    recommendedPenalty: 'three-day suspension',
+    ...context('steward-clerk', ['steward']),
+    evidence: evidence('Penalty recommendation requires human steward approval before it becomes official.'),
+  });
+
+  assert.equal(request.status, 202);
+  assert.equal(request.body.approvalRequired, true);
+  assert.equal(request.body.action, 'steward-decision');
+  assert.deepEqual(request.body.requiredRoles, ['steward']);
+
+  const approved = await controllers.handle('POST', `/approvals/${request.body.approvalRequestId}/approve`, steward);
+  assert.equal(approved.status, 200);
+  assert.equal(approved.body.executed, true);
+  assert.equal(approved.body.result.official, true);
+  assert.equal(gateway.auditLog.verify().valid, true);
+});

@@ -1,0 +1,24 @@
+service:
+  name: tenant-service
+  owner: platform
+  tier: mission-critical
+  boundedContext: tenant
+  dataClassification: confidential
+  tenantIsolation: required
+  currentReferenceImplementation:
+    - packages/shared/src
+    - apps/api/src/server.ts
+    - infra/azure/parameters
+  humanApprovalRequiredFor:
+    - tenant-provisioning
+    - cross-tenant-federation
+    - regulated-data-export
+observability:
+  slo:
+    availability: 99.9
+    p95LatencyMs: 250
+  dashboards:
+    - platform-health
+  alerts:
+    - tenant-isolation-policy-gap
+    - provisioning-approval-sla

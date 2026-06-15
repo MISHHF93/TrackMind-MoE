@@ -10,6 +10,7 @@ test('runtime API facade serves dashboard live-client endpoints', async () => {
     '/api/v1/workflows/templates',
     '/api/v1/audit/events',
     '/api/v1/track-configuration/map',
+    '/api/v1/track-surface/measurements',
     '/api/v1/operations/command-center',
     '/api/v1/race-day-readiness/dashboard',
     '/api/v1/starting-gate/position',
@@ -149,6 +150,11 @@ test('runtime API facade serves auxiliary adapter endpoints and consistent fallb
   assert.ok(Array.isArray(sectors.body));
   assert.ok(sectors.body.every((sector) => sector.id && sector.name));
 
+  const measurements = await handleApiRequest('GET', '/api/v1/track-surface/measurements', undefined, state);
+  assert.equal(measurements.status, 200);
+  assert.ok(Array.isArray(measurements.body));
+  assert.ok(measurements.body.every((measurement) => measurement.sectorId && measurement.measuredAt));
+
   const preflight = await handleApiRequest('OPTIONS', '/api/v1/approvals/controlled-actions', undefined, state);
   assert.equal(preflight.status, 204);
 
@@ -283,6 +289,7 @@ test('runtime Racing Data API Hub POST routes are draft-only and governed', asyn
     ['POST', '/api/v1/racing-data/exports/feature-store', { providerId: 'provider-official-feed', featureSetId: 'race-card-features' }],
     ['POST', '/api/v1/racing-data/exports/data-lake', { providerId: 'provider-official-feed', zone: 'silver-conformed' }],
     ['POST', '/api/v1/racing-data/sync/digital-twins', { providerId: 'provider-official-feed', twinIds: ['twin:race:race-7'] }],
+    ['POST', '/api/v1/racing-data/digital-twin/sync-draft-requests', { providerId: 'provider-official-feed', twinIds: ['twin:race:race-7'] }],
   ];
 
   for (const [method, route, body] of draftRoutes) {

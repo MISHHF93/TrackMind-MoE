@@ -1,0 +1,24 @@
+service:
+  name: stewarding-service
+  owner: stewards
+  tier: mission-critical
+  boundedContext: stewarding
+  dataClassification: regulated
+  tenantIsolation: required
+  currentReferenceImplementation:
+    - apps/api/src/stewarding.ts
+    - apps/api/src/services/stewardingService.ts
+  humanApprovalRequiredFor:
+    - steward-decision
+    - steward-ruling
+    - official-results
+    - disciplinary-decision
+observability:
+  slo:
+    availability: 99.9
+    p95LatencyMs: 250
+  dashboards:
+    - steward-center
+  alerts:
+    - evidence-custody-gap
+    - pending-final-approval-sla

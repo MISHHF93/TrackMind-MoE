@@ -1,0 +1,25 @@
+service:
+  name: race-operations-service
+  owner: race-office
+  tier: mission-critical
+  boundedContext: race-operations
+  dataClassification: regulated
+  tenantIsolation: required
+  currentReferenceImplementation:
+    - apps/api/src/raceOperationsPlatform.ts
+    - apps/api/src/server.ts
+  humanApprovalRequiredFor:
+    - race-start
+    - race-stop
+    - scratch-horse
+    - race-status-change
+    - official-results
+observability:
+  slo:
+    availability: 99.9
+    p95LatencyMs: 250
+  dashboards:
+    - race-day-command
+  alerts:
+    - approval-queue-sla
+    - race-state-projection-lag

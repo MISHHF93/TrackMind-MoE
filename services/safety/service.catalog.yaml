@@ -1,0 +1,26 @@
+service:
+  name: safety-service
+  owner: safety-operations
+  tier: mission-critical
+  boundedContext: safety
+  dataClassification: restricted
+  tenantIsolation: required
+  currentReferenceImplementation:
+    - apps/api/src/services/safetyService.ts
+    - apps/api/src/safetyIntelligence
+    - apps/api/src/telemetry
+  humanApprovalRequiredFor:
+    - emergency-action
+    - race-stop
+    - medication-decision
+    - protected-safety-control
+observability:
+  slo:
+    availability: 99.95
+    p95LatencyMs: 100
+  dashboards:
+    - race-day-command
+    - platform-health
+  alerts:
+    - hot-path-latency-budget
+    - safety-critical-approval-missing
