@@ -1,0 +1,7 @@
+{
+  "name": "@trackmind/barn-operations-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Contract-only scaffold for the TrackMind barn operations bounded context."
+}

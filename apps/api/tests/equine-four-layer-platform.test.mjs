@@ -73,6 +73,24 @@ test('wireless sensor automatic calibration requires approval before applying st
   assert.equal(proposed.body.applied, false);
   assert.equal(proposed.body.approvalRequiredForStateMutation, true);
 
+  const fakePublicApproval = await handleApiRequest('POST', '/api/v1/horses/horse-1/sensors/calibrate', {
+    role: 'public',
+    actorId: 'public-user',
+    approvalId: 'approval-calibration-forged',
+    approverId: 'unknown',
+    approvalTimestamp: '2026-06-14T18:10:00.000Z',
+    sensorId: 'imu-node-1',
+    sensorType: 'imu',
+    baseline: 0,
+    observed: 0.18,
+    tolerance: 0.05,
+    evidenceLinks: ['sensor://imu-node-1/calibration-run'],
+  }, state);
+
+  assert.equal(fakePublicApproval.status, 202);
+  assert.equal(fakePublicApproval.body.status, 'approval-required');
+  assert.equal(fakePublicApproval.body.applied, false);
+
   const applied = await handleApiRequest('POST', '/api/v1/horses/horse-1/sensors/calibrate', {
     role: 'steward',
     actorId: 'steward-1',

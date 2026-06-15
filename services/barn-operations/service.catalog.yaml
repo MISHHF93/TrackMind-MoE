@@ -1,0 +1,26 @@
+service:
+  name: barn-operations-service
+  owner: barn-operations
+  tier: mission-critical
+  boundedContext: barn-operations
+  dataClassification: regulated
+  tenantIsolation: required
+  currentReferenceImplementation:
+    - apps/api/src/barnOperations.ts
+    - apps/api/src/server.ts
+  humanApprovalRequiredFor:
+    - restricted-stall-assignment
+    - quarantine-restriction
+    - restricted-barn-access
+    - safety-critical-control
+observability:
+  slo:
+    availability: 99.9
+    p95LatencyMs: 250
+  dashboards:
+    - barn-operations
+    - platform-health
+  alerts:
+    - barn-readiness-blocked
+    - tenant-boundary-violation
+    - pending-barn-approval-sla

@@ -20,6 +20,7 @@ This manifest maps the vertical-slice execution prompts to current reference imp
 Contract-only scaffolds now exist under:
 
 - `services/events`
+- `services/barn-operations`
 - `services/race-operations`
 - `services/safety`
 - `services/stewarding`

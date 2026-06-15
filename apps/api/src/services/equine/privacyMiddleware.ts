@@ -11,8 +11,12 @@ export function canEditEligibility(actor: EquineRequestActor): boolean {
 }
 
 export function assertHorseAccess(horse: HorseModel, actor: EquineRequestActor): void {
-  if (actor.role === 'trainer' && actor.trainerId && !horse.trainerIds.includes(actor.trainerId)) throw new Error('Trainer can only access assigned horses');
-  if (actor.role === 'owner' && actor.ownerId && !horse.ownershipHistory.some((owner) => owner.owner_id === actor.ownerId && !owner.ownership_period.to)) throw new Error('Owner can only access owned horses');
+  if (actor.role === 'trainer') {
+    if (!actor.trainerId || !horse.trainerIds.includes(actor.trainerId)) throw new Error('Trainer can only access assigned horses');
+  }
+  if (actor.role === 'owner') {
+    if (!actor.ownerId || !horse.ownershipHistory.some((owner) => owner.owner_id === actor.ownerId && !owner.ownership_period.to)) throw new Error('Owner can only access owned horses');
+  }
 }
 
 export function filterHorseProfile(horse: HorseModel, actor: EquineRequestActor): FilteredHorseProfile {

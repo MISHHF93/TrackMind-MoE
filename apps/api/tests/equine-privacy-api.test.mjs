@@ -26,6 +26,10 @@ test('horse profile endpoint filters veterinary data by role', async () => {
   assert.equal(publicView.body.identity.name, 'Safety First');
   assert.equal(publicView.body.identity.microchip, undefined);
   assert.equal(publicView.body.veterinary, 'redacted');
+
+  const missingOwnerScope = await handleApiRequest('GET', '/api/v1/horses/horse-1/profile?role=owner&actorId=owner-1', undefined, state);
+  assert.equal(missingOwnerScope.status, 403);
+  assert.match(missingOwnerScope.body.error.message, /owned horses/);
 });
 
 test('trainer and regulator profiles enforce ownership and anonymization boundaries', async () => {
@@ -38,6 +42,10 @@ test('trainer and regulator profiles enforce ownership and anonymization boundar
   const deniedTrainer = await handleApiRequest('GET', '/api/v1/horses/horse-1/profile?role=trainer&actorId=trainer-2&trainerId=trainer-2', undefined, state);
   assert.equal(deniedTrainer.status, 403);
   assert.match(deniedTrainer.body.error.message, /assigned horses/);
+
+  const missingTrainerScope = await handleApiRequest('GET', '/api/v1/horses/horse-1/profile?role=trainer&actorId=trainer-1', undefined, state);
+  assert.equal(missingTrainerScope.status, 403);
+  assert.match(missingTrainerScope.body.error.message, /assigned horses/);
 
   const regulator = await handleApiRequest('GET', '/api/v1/horses/horse-1/profile?role=regulator&actorId=regulator-1', undefined, state);
   assert.equal(regulator.status, 200);
@@ -55,7 +63,11 @@ test('veterinary endpoint requires veterinarian role and approval metadata for c
   assert.equal(missingApproval.status, 403);
   assert.match(missingApproval.body.error.message, /Controlled medication requires approval/);
 
-  const created = await handleApiRequest('POST', '/api/v1/horses/horse-1/veterinary', { role: 'veterinarian', actorId: 'vet-1', recordType: 'medication', summary: 'controlled medication with approval', medication: 'therapeutic-x', medicationClass: 'controlled', withdrawalUntil: '2026-06-20T00:00:00.000Z', approvalId: 'approval-med-controlled-1' }, state);
+  const partialApproval = await handleApiRequest('POST', '/api/v1/horses/horse-1/veterinary', { role: 'veterinarian', actorId: 'vet-1', recordType: 'medication', summary: 'controlled medication with partial approval', medication: 'therapeutic-x', medicationClass: 'controlled', withdrawalUntil: '2026-06-20T00:00:00.000Z', approvalId: 'approval-med-controlled-1' }, state);
+  assert.equal(partialApproval.status, 403);
+  assert.match(partialApproval.body.error.message, /approvalId, approverId, and approvalTimestamp/);
+
+  const created = await handleApiRequest('POST', '/api/v1/horses/horse-1/veterinary', { role: 'veterinarian', actorId: 'vet-1', recordType: 'medication', summary: 'controlled medication with approval', medication: 'therapeutic-x', medicationClass: 'controlled', withdrawalUntil: '2026-06-20T00:00:00.000Z', approvalId: 'approval-med-controlled-1', approverId: 'chief-vet', approvalTimestamp: '2026-06-14T18:05:00.000Z' }, state);
   assert.equal(created.status, 201);
   assert.equal(created.body.record.approvalId, 'approval-med-controlled-1');
   assert.ok(created.body.eligibility.failedRules.some((rule) => rule.includes('withdrawal:therapeutic-x')));

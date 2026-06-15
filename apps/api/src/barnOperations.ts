@@ -21,6 +21,7 @@ export type BarnEventType =
   | 'barn.trainer.assigned'
   | 'barn.veterinary-visit.recorded'
   | 'barn.facility-readiness.evaluated'
+  | 'barn.incident.linked'
   | 'digital-twin.state.patch';
 export type BarnPermission = 'barn:read' | 'barn:manage' | 'stall:assign' | 'movement:record' | 'access:record' | 'inspection:perform' | 'vet:record' | 'restriction:manage';
 
@@ -34,6 +35,7 @@ export interface BarnInspection { id: string; barnId: string; inspectedBy: strin
 export interface BarnRestriction { id: string; barnId: string; stallId?: string; horseId?: string; type: 'quarantine' | 'maintenance' | 'security' | 'veterinary'; reason: string; active: boolean; createdAt: string; createdBy: string; approvalRequestId?: string; eventId: string; auditId: string }
 export interface BarnTrainerAssignment { id: string; barnId: string; trainerId: string; assignedBy: string; assignedAt: string; active: boolean; auditId: string; eventId: string; approvalRequestId?: string }
 export interface VeterinaryVisitRecord { id: string; horseId: string; barnId: string; stallId?: string; veterinarianId: string; visitAt: string; findings: string[]; restrictionsCreated: string[]; eventId: string; auditId: string }
+export interface BarnIncidentLink { id: string; barnId: string; incidentId: string; linkedBy: string; linkedAt: string; reason: string; eventId: string; auditId: string }
 export interface BarnReadiness { barnId: string; status: BarnStatus; score: number; blockers: string[]; openRestrictions: number; occupiedStalls: number; capacity: number }
 export interface BarnFacilityReadiness extends BarnReadiness { inspectionStatus: 'current' | 'due' | 'missing'; approvalRequired: boolean; workflowStatus: WorkflowInstance['status'] | 'not-started'; twinIds: string[]; assetIds: string[] }
 export interface BarnAssetLink { assetId: string; barnId: string; stallId?: string; twinId: string; registryStatus: 'pending' | 'synced'; riskLevel: AssetRiskLevel; eventId?: string; auditId?: string }
@@ -43,7 +45,7 @@ export interface BarnIntegrationSignal { id: string; service: 'asset-registry' |
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const id = (p: string) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-const barnEvents: BarnEventType[] = ['barn.created', 'barn.asset.synced', 'barn.horse.assigned', 'barn.horse.moved', 'barn.access.recorded', 'barn.inspected', 'barn.restriction.created', 'barn.trainer.assigned', 'barn.veterinary-visit.recorded', 'barn.facility-readiness.evaluated', 'digital-twin.state.patch'];
+const barnEvents: BarnEventType[] = ['barn.created', 'barn.asset.synced', 'barn.horse.assigned', 'barn.horse.moved', 'barn.access.recorded', 'barn.inspected', 'barn.restriction.created', 'barn.trainer.assigned', 'barn.veterinary-visit.recorded', 'barn.facility-readiness.evaluated', 'barn.incident.linked', 'digital-twin.state.patch'];
 const equineRoles = ['trainer', 'veterinarian', 'racing-secretary', 'steward', 'compliance-officer', 'welfare-officer', 'transport-coordinator', 'auditor', 'ai-agent'] as const;
 const rolePermissions: Record<Role, BarnPermission[]> = {
   admin: ['barn:read', 'barn:manage', 'stall:assign', 'movement:record', 'access:record', 'inspection:perform', 'vet:record', 'restriction:manage'],
@@ -76,6 +78,7 @@ export class CoordinatedBarnOperationsService {
   private restrictions: BarnRestriction[] = [];
   private trainers: BarnTrainerAssignment[] = [];
   private vetVisits: VeterinaryVisitRecord[] = [];
+  private incidentLinks: BarnIncidentLink[] = [];
   private assetLinks = new Map<string, BarnAssetLink>();
   private twinSync: BarnTwinSyncRecord[] = [];
   private workflows: WorkflowInstance[] = [];
@@ -113,6 +116,7 @@ export class CoordinatedBarnOperationsService {
     const stall = this.requireAssignable(input.stallId, Boolean(input.approvalToken));
     if (input.barnId !== stall.barnId) throw new Error('stall does not belong to barn');
     const previous = this.occupancy.get(input.horseId);
+    if (previous) this.requireBarn(previous.barnId, input.actor);
     const approvalTarget = this.approvalTargetForAssignment(input.horseId, barn, stall, previous);
     if (approvalTarget) this.assertSafetyApproval(input.approvalToken, approvalTarget, input.actor, input.assignedAt);
     if (previous?.stallId === input.stallId) return clone(previous);
@@ -214,12 +218,25 @@ export class CoordinatedBarnOperationsService {
     this.require(input.actor, 'vet:record');
     const occ = this.occupancy.get(input.horseId);
     if (!occ) throw new Error('horse is not assigned to a stall');
+    this.requireBarn(occ.barnId, input.actor);
     const audit = this.audit('barn.veterinary-visit.recorded', input.actor, input.horseId, input, 'data-change', 'warning');
     this.publish('barn.veterinary-visit.recorded', { ...input, occupancy: occ, auditId: audit.id }, input.horseId, 'restricted', 'veterinarian');
     const rec: VeterinaryVisitRecord = { id: id('vet'), horseId: input.horseId, barnId: occ.barnId, stallId: occ.stallId, veterinarianId: input.actor.id, visitAt: input.at, findings: [...input.findings], restrictionsCreated: [], eventId: 'barn.veterinary-visit.recorded', auditId: audit.id };
     this.vetVisits.push(rec);
     this.patchTwin(occ, { latestVeterinaryVisitAt: input.at, veterinaryFindingsCount: input.findings.length }, input.actor, audit.id, rec.eventId);
     return clone(rec);
+  }
+
+  linkIncident(input: { actor: BarnActor; barnId: string; incidentId: string; reason: string; at: string }): BarnIncidentLink {
+    this.require(input.actor, 'access:record');
+    const barn = this.requireBarn(input.barnId, input.actor);
+    const nextBarn = { ...barn, incidentIds: [...new Set([...barn.incidentIds, input.incidentId])] };
+    this.barns.set(input.barnId, nextBarn);
+    const audit = this.audit('barn.incident.linked', input.actor, input.barnId, input, 'security-event', 'warning');
+    this.publish('barn.incident.linked', { ...input, auditId: audit.id }, input.barnId, 'regulated', 'security');
+    const link: BarnIncidentLink = { id: id('barn-incident'), barnId: input.barnId, incidentId: input.incidentId, linkedBy: input.actor.id, linkedAt: input.at, reason: input.reason, eventId: 'barn.incident.linked', auditId: audit.id };
+    this.incidentLinks.push(link);
+    return clone(link);
   }
 
   readiness(): BarnReadiness[] {
@@ -287,6 +304,7 @@ export class CoordinatedBarnOperationsService {
       restrictions: this.restrictions,
       trainers: this.trainers,
       vetVisits: this.vetVisits,
+      incidentLinks: this.incidentLinks,
       readiness: this.readiness(),
       facilityReadiness: this.facilityReadiness(),
       dashboard: this.dashboard(),

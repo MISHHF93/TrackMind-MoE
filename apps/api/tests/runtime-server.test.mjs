@@ -65,6 +65,7 @@ test('runtime equine and barn facades keep horse occupancy, relationship map, an
 
   assert.equal(equine.status, 200);
   assert.equal(barn.status, 200);
+  assert.ok(apiEndpointContracts.some((endpoint) => endpoint.path === '/api/v1/equine-intelligence/horses/{horseId}' && endpoint.operationId === 'getEquineIntelligenceHorse'));
   assert.equal(equine.body.barnAssignment.barnId, 'barn-2');
   assert.equal(equine.body.barnAssignment.stallId, 'stall-12A');
   assert.ok(barn.body.occupancy.some((occupancy) => occupancy.horseId === equine.body.horse.horseId && occupancy.stallId === equine.body.barnAssignment.stallId));
@@ -80,6 +81,10 @@ test('runtime equine and barn facades keep horse occupancy, relationship map, an
   assert.equal(equine.body.integrations.barn, true);
   assert.equal(equine.body.integrations.digitalTwin, true);
   assert.ok(barn.body.twinSync.some((sync) => sync.twinId === 'equine:horse-1'));
+
+  const missing = await handleApiRequest('GET', '/api/v1/equine-intelligence/horses/horse-unknown', undefined, state);
+  assert.equal(missing.status, 404);
+  assert.equal(missing.body.error.code, 'not_found');
 });
 
 test('runtime operations command center exposes stabilized widget sources', async () => {
@@ -621,6 +626,12 @@ test('runtime API facade exposes platform health and event stream heartbeat', as
   assert.equal(health.body.observability.requestIdHeader, 'x-trackmind-request-id');
   assert.ok(health.body.requestId);
   assert.equal(health.headers['x-trackmind-request-id'], health.body.requestId);
+
+  const platform = await handleApiRequest('GET', '/api/v1/platform/health');
+  assert.equal(platform.status, 200);
+  assert.equal(platform.body.overallStatus, 'degraded');
+  assert.equal(platform.body.frontend.degradedMode, true);
+  assert.ok(platform.body.signals.length > 0);
 
   const stream = await handleApiRequest('GET', '/api/v1/events/stream');
   assert.equal(stream.status, 200);

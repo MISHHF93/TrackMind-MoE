@@ -1,0 +1,26 @@
+openapi: 3.1.0
+info:
+  title: TrackMind Barn Operations Service API
+  version: 0.1.0
+  description: Contract-only barn operations scaffold. Runtime reference implementation currently lives in apps/api/src/barnOperations.ts and the API facade.
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200': { description: Service is healthy }
+  /ready:
+    get:
+      summary: Readiness check
+      responses:
+        '200': { description: Barn, stall, equine, approval, audit, event, and digital twin dependencies are ready }
+  /live:
+    get:
+      summary: Liveness check
+      responses:
+        '200': { description: Service process is alive }
+  /metrics:
+    get:
+      summary: Barn occupancy, readiness, approval, and incident-link metrics
+      responses:
+        '200': { description: Metrics are available }

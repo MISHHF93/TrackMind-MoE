@@ -46,14 +46,17 @@ export class EquineIntelligenceController {
     const input = isRecord(body) ? body : {};
     try {
       if (method === 'GET' && profileMatch) return { status: 200, body: this.service.profile(decodeURIComponent(profileMatch[1]), actorFrom(input, searchParams)) };
-      if (method === 'POST' && veterinaryMatch) return { status: 201, body: this.service.addVeterinaryRecord(decodeURIComponent(veterinaryMatch[1]), { recordType: input.recordType ?? 'examination', summary: stringValue(input.summary, 'Veterinary record'), diagnosis: input.diagnosis, medication: input.medication, medicationClass: input.medicationClass, withdrawalUntil: input.withdrawalUntil, approvalId: input.approvalId }, actorFrom(input, searchParams)) };
+      if (method === 'POST' && veterinaryMatch) return { status: 201, body: this.service.addVeterinaryRecord(decodeURIComponent(veterinaryMatch[1]), { recordType: input.recordType ?? 'examination', summary: stringValue(input.summary, 'Veterinary record'), diagnosis: input.diagnosis, medication: input.medication, medicationClass: input.medicationClass, withdrawalUntil: input.withdrawalUntil, approvalId: input.approvalId, approverId: input.approverId, approvalTimestamp: input.approvalTimestamp }, actorFrom(input, searchParams)) };
       if (method === 'POST' && eligibilityMatch) return { status: 200, body: this.service.updateEligibility(decodeURIComponent(eligibilityMatch[1]), { hisaCompliance: input.hisaCompliance, scratchStatus: input.scratchStatus, eligibilityFlags: input.eligibilityFlags, raceRestrictions: input.raceRestrictions }, actorFrom(input, searchParams)) };
       if (method === 'GET' && hisaMatch) return { status: 200, body: this.service.hisaCompliance(decodeURIComponent(hisaMatch[1]), actorFrom(input, searchParams)) };
       if (method === 'GET' && auditMatch) return { status: 200, body: this.service.auditChain(decodeURIComponent(auditMatch[1])) };
       if (method === 'GET' && platformMatch) return { status: 200, body: this.platform.snapshot(decodeURIComponent(platformMatch[1]), actorFrom(input, searchParams)) };
       if (method === 'GET' && managementMatch) return { status: 200, body: this.platform.managementModules(decodeURIComponent(managementMatch[1]), actorFrom(input, searchParams)) };
       if (method === 'POST' && lamenessMatch) return { status: 202, body: this.platform.detectLameness(decodeURIComponent(lamenessMatch[1]), input as any, actorFrom(input, searchParams)) };
-      if (method === 'POST' && calibrationMatch) return { status: input.approvalId && input.approverId && input.approvalTimestamp ? 200 : 202, body: this.platform.calibrateSensor(decodeURIComponent(calibrationMatch[1]), input as any, actorFrom(input, searchParams)) };
+      if (method === 'POST' && calibrationMatch) {
+        const result = this.platform.calibrateSensor(decodeURIComponent(calibrationMatch[1]), input as any, actorFrom(input, searchParams));
+        return { status: result.applied ? 200 : 202, body: result };
+      }
     } catch (error) {
       return { status: /require|access|only|approval|Unknown/i.test(error instanceof Error ? error.message : String(error)) ? 403 : 400, body: { ok: false, error: { code: 'equine_request_denied', message: error instanceof Error ? error.message : String(error) } } };
     }

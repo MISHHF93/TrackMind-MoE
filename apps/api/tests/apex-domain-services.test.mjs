@@ -128,6 +128,8 @@ test('stewarding and security read paths remain advisory until approval gates ar
   assert.equal(credential.status, 200);
   assert.equal(credential.body.allowed, false);
   assert.match(credential.body.reason, /denied/);
+  assert.ok(credential.body.evidence.some((item) => item.startsWith('credential-ref:sha256:')));
+  assert.ok(!credential.body.evidence.some((item) => item.includes('credential-unknown') || item.includes('guest-1')));
 });
 
 test('steward penalty recommendations create an approval request before official decision state changes', async () => {

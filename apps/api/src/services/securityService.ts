@@ -32,7 +32,7 @@ export class SecurityService {
     return {
       allowed,
       reason: allowed ? 'credential valid for restricted zone' : 'credential denied for restricted zone',
-      evidence: [`zone:${input.zoneId}`, `credential:${input.credentialId}`, `person:${input.personId}`],
+      evidence: [`zone:${input.zoneId}`, `credential-ref:${redactedRef(input.credentialId)}`, `person-ref:${redactedRef(input.personId)}`],
     };
   }
 
@@ -48,6 +48,10 @@ export class SecurityService {
       execute: (_token: ApprovalToken) => ({ zoneId: input.zoneId, action: input.action, executed: true, approvalRequired: true }),
     });
   }
+}
+
+function redactedRef(value: string): string {
+  return value ? `sha256:${value.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0).toString(16)}` : 'unknown';
 }
 
 export function createSecurityService(gateway = new ApexApprovalGateway()) {

@@ -511,7 +511,7 @@ export function createApiFacadeState(): ApiFacadeState {
   const aiGovernance = createSeededAIGovernanceWorkspace(timestamp, false);
   const aiControlPlane = createSeededAIControlPlaneWorkspace(timestamp, false) as unknown as AIControlPlaneWorkspaceDto;
   const intelligenceCore = { ...createTrackMindIntelligenceCoreMetadata(), generatedAt: timestamp, mock: false } satisfies TrackMindIntelligenceCoreDto;
-  const platformHealth = { ...createMockPlatformHealth(), generatedAt: timestamp, overallStatus: 'healthy', frontend: { status: 'healthy', reportedErrors: 0, degradedMode: false }, signals: [] };
+  const platformHealth = { ...createMockPlatformHealth(), generatedAt: timestamp };
   const auditLedger = createAuditLedgerFacade(timestamp, contract.auditEvents) as unknown as { verification?: { valid?: boolean }; complianceExport?: { records?: unknown[] } };
   const surfaceWorkspace = buildSurfaceIntelligenceWorkspace(createSurfaceFacadeInput(timestamp));
   const stewardCenter = { inquiries: listStewardInquiries(), permissions: { canRead: true, canDraft: true, canFinalize: false, canExportAppeal: true }, mock: false };
@@ -1317,7 +1317,11 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'GET' && path === '/tus/data-model') return { status: 200, body: state.unifiedDataModel };
   if (method === 'GET' && path === '/race-operations/race-office') return { status: 200, body: state.raceOffice };
   if (method === 'GET' && path === '/surface-intelligence/workspace') return { status: 200, body: state.surface };
-  if (method === 'GET' && path.startsWith('/equine-intelligence/horses/')) return { status: 200, body: state.equine };
+  const equineIntelligenceMatch = path.match(/^\/equine-intelligence\/horses\/([^/]+)$/);
+  if (method === 'GET' && equineIntelligenceMatch) {
+    const horseId = decodeURIComponent(equineIntelligenceMatch[1]);
+    return horseId === (state.equine as any).horse?.horseId ? { status: 200, body: state.equine } : apiNotFound(`No equine intelligence profile for ${horseId}`, path, requestId);
+  }
   if (method === 'GET' && path === '/barn-operations/workspace') return { status: 200, body: state.barn };
   if (method === 'GET' && path === '/facilities-maintenance/workspace') return { status: 200, body: state.facilitiesMaintenance };
   if (method === 'GET' && path === '/stewarding/inquiries') return { status: 200, body: state.steward };

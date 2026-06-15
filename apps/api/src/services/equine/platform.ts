@@ -46,6 +46,7 @@ export interface EquinePlatformSnapshot {
 const now = () => new Date().toISOString();
 const id = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
 const clone = <T>(value: T): T => value === undefined ? value : JSON.parse(JSON.stringify(value)) as T;
+const calibrationApproverRoles = new Set<EquineRequestActor['role']>(['steward', 'veterinarian', 'regulator']);
 
 export class EquineFourLayerPlatformService {
   constructor(private readonly privacy: EquineIntelligencePrivacyService, private readonly audit: EquineAuditLogger) {}
@@ -164,6 +165,8 @@ export class EquineFourLayerPlatformService {
     if (!input.evidenceLinks?.length) throw new Error('Sensor calibration requires evidenceLinks');
     const offset = input.baseline - input.observed;
     const withinTolerance = Math.abs(offset) <= input.tolerance;
+    const hasApprovalMetadata = Boolean(actor.approvalId && actor.approverId && actor.approvalTimestamp);
+    const canApplyCalibration = hasApprovalMetadata && calibrationApproverRoles.has(actor.role);
     const calibration = {
       calibrationId: id('sensor-calibration'),
       horseId,
@@ -176,14 +179,15 @@ export class EquineFourLayerPlatformService {
       withinTolerance,
       automaticCalibration: true,
       approvalRequiredForStateMutation: true,
-      applied: Boolean(actor.approvalId && actor.approverId && actor.approvalTimestamp),
+      applied: canApplyCalibration,
       approvalId: actor.approvalId,
       approverId: actor.approverId,
       approvalTimestamp: actor.approvalTimestamp,
       evidence_links: input.evidenceLinks,
     };
     if (!calibration.applied) {
-      return { ...calibration, status: 'approval-required', message: 'Automatic calibration was calculated but not applied without approval metadata.' };
+      const reason = hasApprovalMetadata ? 'approval metadata must come from a steward, veterinarian, or regulator actor' : 'approval metadata';
+      return { ...calibration, status: 'approval-required', message: `Automatic calibration was calculated but not applied without ${reason}.` };
     }
     const audit = this.audit.append({ horseId, type: 'equine.sensor.calibrated', actorId: actor.actorId, role: actor.role, occurredAt: actor.approvalTimestamp ?? now(), payload: calibration });
     return { ...calibration, status: 'applied', auditEventId: audit.eventId };

@@ -229,6 +229,8 @@ export type SecurityAction =
   | 'sensitive-fields.accessed'
   | 'sensitive-fields.masked'
   | 'security.approval.requested'
+  | 'security.approval.approved'
+  | 'security.authorization.failed'
   | 'security.asset.synced'
   | 'security.twin.patch.queued';
 export type SecurityDomainEventType =
@@ -241,6 +243,9 @@ export type SecurityDomainEventType =
   | 'security.camera.health.updated'
   | 'security.restricted-zone.registered'
   | 'security.sensitive-fields.accessed'
+  | 'security.approval.requested'
+  | 'security.approval.approved'
+  | 'security.authorization.failed'
   | 'security.asset.synced'
   | 'security.twin.patch.queued';
 export type SecurityApprovalAction = 'security-sensitive-read' | 'security-incident-escalation' | 'security-investigation-export';
@@ -338,14 +343,14 @@ export class SecurityOperationsService {
     const sensitive = this.canReadSensitive(actor);
     this.audit(sensitive ? 'sensitive-fields.accessed' : 'sensitive-fields.masked', actor.id, 'security-operations-workspace', sensitive ? this.sensitiveFieldNames() : []);
     return {
-      restrictedZones: this.values(this.zones),
+      restrictedZones: this.values(this.zones).map((zone) => sensitive ? zone : { ...zone, requiredCredential: mask }),
       cameras: this.values(this.cameras),
       accessEvents: this.accessEvents.map((event) => sensitive ? clone(event) : { ...clone(event), personLegalName: event.personLegalName ? mask : undefined, credentialId: mask }),
       incidents: this.values(this.incidents),
       investigations: this.values(this.investigations),
       watchlistPlaceholders: this.watchlist.map((item) => sensitive ? clone(item) : { ...clone(item), sensitiveNotes: item.sensitiveNotes ? mask : undefined }),
       visitorLogs: this.visitors.map((visitor) => sensitive ? clone(visitor) : { ...clone(visitor), visitorLegalName: visitor.visitorLegalName ? mask : undefined, credentialCheckId: mask }),
-      credentialChecks: this.credentialChecks.map((check) => sensitive ? clone(check) : { ...clone(check), holderLegalName: check.holderLegalName ? mask : undefined, credentialId: mask }),
+      credentialChecks: this.credentialChecks.map((check) => sensitive ? clone(check) : { ...clone(check), holderLegalName: check.holderLegalName ? mask : undefined, credentialId: mask, requiredCredential: check.requiredCredential ? mask : undefined }),
       escalations: this.escalations.map(clone),
       auditRecords: this.audits.map(clone),
       sharedAuditRecords: this.auditLog.all().filter((entry) => entry.type === 'security-event' || entry.subjectId?.startsWith('security:') || entry.payload && typeof entry.payload === 'object' && (entry.payload as Record<string, unknown>).domain === 'security-operations'),
@@ -364,13 +369,16 @@ export class SecurityOperationsService {
     this.approvalStore.saveRecommendation({ id: recommendationId, status: 'pending-approval', requestedBy: actor.id, createdAt: this.clock(), evidence: input.evidence, requiredApprovals: ['security', 'compliance-officer'], recommendation: { reason: input.reason, action: 'security-sensitive-read' } });
     const gate: SecurityApprovalGate = { id: `gate-${this.approvalGates.length + 1}`, action: 'security-sensitive-read', target: recommendationId, status: 'pending', requestedBy: actor.id, evidence: [...input.evidence], reason: input.reason };
     this.approvalGates.push(gate);
-    this.audit('security.approval.requested', actor.id, recommendationId, []);
+    const auditId = this.audit('security.approval.requested', actor.id, recommendationId, []);
+    this.emitDomainEvent('security.approval.requested', recommendationId, 'medium', auditId, { action: gate.action, requestedBy: actor.id, evidenceCount: input.evidence.length });
     return clone(gate);
   }
 
   approveSensitiveAccess(input: Omit<HumanApprovalRecord, 'action' | 'recommendationId' | 'status'> & { actorId: string; approver: string; reason: string; evidence: string[] }): HumanApprovalRecord {
     const record = this.approvalStore.saveApproval({ ...input, action: 'security-sensitive-read', recommendationId: this.sensitiveRecommendationId(input.actorId), status: 'approved' });
     this.approvalGates = this.approvalGates.map((gate) => gate.target === record.recommendationId ? { ...gate, status: 'approved' } : gate);
+    const auditId = this.audit('security.approval.approved', input.approver, record.recommendationId, []);
+    this.emitDomainEvent('security.approval.approved', record.recommendationId, 'medium', auditId, { action: record.action, approvedFor: input.actorId, approver: input.approver, evidenceCount: input.evidence.length });
     return clone(record);
   }
 
@@ -537,7 +545,8 @@ export class SecurityOperationsService {
 
   private queueTwinPatch(actor: SecurityActor, twinId: string, sourceId: string, patch: Record<string, unknown>): SecurityTwinUpdate {
     const auditId = this.audit('security.twin.patch.queued', actor.id, twinId, []);
-    const update: SecurityTwinUpdate = { twinId, sourceId, patch: clone(patch), auditId, status: 'queued' };
+    const event = this.emitDomainEvent('security.twin.patch.queued', twinId, 'medium', auditId, { twinId, sourceId, patch });
+    const update: SecurityTwinUpdate = { twinId, sourceId, patch: clone(patch), eventId: event.id, auditId, status: 'queued' };
     const twinPatch: TwinStatePatch = { twinId, patch, actor: actor.id, observedAt: this.clock(), sourceEventId: auditId };
     try {
       if (this.options.twins) {
@@ -604,8 +613,16 @@ export class SecurityOperationsService {
   }
 
   private require(actor: SecurityActor, permission: SecurityOpsPermission): void {
-    if (!actor.id) throw new Error('authentication required');
-    if (!can(actor, permission) && !can(actor, 'security:admin')) throw new Error(`missing permission ${permission}`);
+    if (!actor.id) {
+      const auditId = this.audit('security.authorization.failed', 'anonymous', permission, []);
+      this.emitDomainEvent('security.authorization.failed', permission, 'high', auditId, { reason: 'authentication required', permission });
+      throw new Error('authentication required');
+    }
+    if (!can(actor, permission) && !can(actor, 'security:admin')) {
+      const auditId = this.audit('security.authorization.failed', actor.id, permission, []);
+      this.emitDomainEvent('security.authorization.failed', permission, 'high', auditId, { reason: 'missing permission', permission });
+      throw new Error(`missing permission ${permission}`);
+    }
   }
 
   private values<T>(map: Map<string, T>): T[] {
@@ -613,7 +630,7 @@ export class SecurityOperationsService {
   }
 
   private sensitiveFieldNames(): string[] {
-    return ['credentialId', 'personLegalName', 'holderLegalName', 'visitorLegalName', 'credentialCheckId', 'sensitiveNotes'];
+    return ['credentialId', 'personLegalName', 'holderLegalName', 'visitorLegalName', 'credentialCheckId', 'requiredCredential', 'sensitiveNotes'];
   }
 
   private sensitiveRecommendationId(actorId: string): string {
@@ -636,6 +653,9 @@ export class SecurityOperationsService {
       'security.camera.health.updated',
       'security.restricted-zone.registered',
       'security.sensitive-fields.accessed',
+      'security.approval.requested',
+      'security.approval.approved',
+      'security.authorization.failed',
       'security.asset.synced',
       'security.twin.patch.queued',
     ] satisfies SecurityDomainEventType[]).forEach((type) => this.eventBus.registerEvent({ type, version: 1, description: `Security Operations ${type}`, owner, payloadFields: ['subjectId', 'severity', 'auditId'], compliance: 'regulated' }));

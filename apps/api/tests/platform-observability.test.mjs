@@ -25,6 +25,7 @@ test('telemetry schema consistency requires traceable logs metrics traces and fr
   const health = obs.health();
   assert.equal(health.telemetrySchema.consistent, true);
   for (const kind of health.telemetrySchema.requiredSignals) assert.ok(health.signals.some((s) => s.kind === kind), `missing signal ${kind}`);
+  assert.ok(health.signals.some((s) => s.name === 'api.request.latency' && s.attributes.route === '/api/v1/platform/health'));
   assert.ok(health.signals.every((s) => s.traceId && s.serviceId && s.timestamp));
 });
 

@@ -11,6 +11,8 @@ export interface VeterinaryWriteInput {
   medicationClass?: MedicationClass;
   withdrawalUntil?: string;
   approvalId?: string;
+  approverId?: string;
+  approvalTimestamp?: string;
 }
 
 export interface EligibilityWriteInput {
@@ -44,7 +46,10 @@ export class EquineIntelligencePrivacyService {
     const horse = this.requireHorse(horseId);
     assertHorseAccess(horse, actor);
     if (!canEditVeterinary(actor)) throw new Error('Veterinary records require veterinarian role');
-    if (input.medicationClass === 'controlled' && (!input.approvalId && !actor.approvalId)) throw new Error('Controlled medication requires approval metadata');
+    const approvalId = input.approvalId ?? actor.approvalId;
+    const approverId = input.approverId ?? actor.approverId;
+    const approvalTimestamp = input.approvalTimestamp ?? actor.approvalTimestamp;
+    if (input.medicationClass === 'controlled' && (!approvalId || !approverId || !approvalTimestamp)) throw new Error('Controlled medication requires approvalId, approverId, and approvalTimestamp');
     const record: VeterinaryRecord = {
       recordId: id('vet-record'),
       type: input.recordType,
@@ -55,7 +60,7 @@ export class EquineIntelligencePrivacyService {
       medication: input.medication,
       medicationClass: input.medicationClass,
       withdrawalUntil: input.withdrawalUntil,
-      approvalId: input.approvalId ?? actor.approvalId,
+      approvalId,
     };
     const target = input.recordType === 'examination' ? horse.veterinary.examination_records : input.recordType === 'medication' ? horse.veterinary.medication_history : horse.veterinary.injury_reports;
     target.push(record);
@@ -64,7 +69,7 @@ export class EquineIntelligencePrivacyService {
     }
     const eligibility = this.eligibilityEngine.evaluate(horse);
     horse.eligibility = eligibility.status;
-    const audit = this.audit.append({ horseId, type: 'equine.veterinary.recorded', actorId: actor.actorId, role: actor.role, occurredAt: record.recordedAt, payload: { record, approvalId: record.approvalId, failedRules: eligibility.failedRules } });
+    const audit = this.audit.append({ horseId, type: 'equine.veterinary.recorded', actorId: actor.actorId, role: actor.role, occurredAt: record.recordedAt, payload: { record, approvalId: record.approvalId, approverId, approvalTimestamp, failedRules: eligibility.failedRules } });
     return { horseId, record: clone(record), eligibility, auditEventId: audit.eventId };
   }
 

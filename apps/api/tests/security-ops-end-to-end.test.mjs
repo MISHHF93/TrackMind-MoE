@@ -20,7 +20,9 @@ test('privacy-sensitive security fields are masked without sensitive-read permis
   service.checkCredential(fullActor, { credentialId: 'cred-secret', holderDisplayName: 'Contractor B', holderLegalName: 'Contractor Beta', zoneId: 'zone-grandstand', status: 'valid' });
   service.recordAccessEvent(fullActor, { zoneId: 'zone-grandstand', credentialId: 'cred-secret', personDisplayName: 'Contractor B', personLegalName: 'Contractor Beta', decision: 'granted', reason: 'valid credential', occurredAt: '2026-06-14T00:00:00.000Z' });
   const masked = service.getWorkspace({ id: 'auditor', permissions: ['security:read'] });
+  assert.equal(masked.restrictedZones.find((zone) => zone.id === 'zone-backstretch-medication').requiredCredential, '••••');
   assert.equal(masked.credentialChecks[0].credentialId, '••••');
+  assert.equal(masked.credentialChecks[0].requiredCredential, '••••');
   assert.equal(masked.credentialChecks[0].holderLegalName, '••••');
   assert.equal(masked.accessEvents[0].credentialId, '••••');
   assert.equal(masked.watchlistPlaceholders[0].sensitiveNotes, '••••');
@@ -51,7 +53,8 @@ test('security operations mirrors actions to shared audit, events, and twin upda
   assert.ok(workspace.sharedAuditRecords.some((record) => record.type === 'security-event' && record.subjectId === 'security:zone-backstretch-medication'));
   assert.ok(eventBus.events({ type: 'security.access.checked' }).length >= 1);
   assert.ok(workspace.events.some((event) => event.type === 'security.incident.created'));
-  assert.ok(workspace.twinUpdates.some((update) => update.twinId === 'twin:zone-backstretch-medication' && update.status === 'published'));
+  assert.ok(workspace.events.some((event) => event.type === 'security.twin.patch.queued'));
+  assert.ok(workspace.twinUpdates.some((update) => update.twinId === 'twin:zone-backstretch-medication' && update.status === 'published' && update.eventId));
 });
 
 test('approved sensitive access can reveal protected fields and remains audited', () => {
@@ -65,6 +68,19 @@ test('approved sensitive access can reveal protected fields and remains audited'
 
   assert.equal(workspace.credentialChecks[0].credentialId, 'cred-sensitive');
   assert.ok(workspace.auditRecords.some((record) => record.action === 'sensitive-fields.accessed'));
+  assert.ok(workspace.auditRecords.some((record) => record.action === 'security.approval.approved'));
+  assert.ok(workspace.events.some((event) => event.type === 'security.approval.requested'));
+  assert.ok(workspace.events.some((event) => event.type === 'security.approval.approved'));
+});
+
+test('security authorization failures are audited and emitted', () => {
+  const service = new SecurityOperationsService(() => '2026-06-14T00:00:00.000Z');
+  assert.throws(() => service.getWorkspace({ id: 'visitor', permissions: [] }), /missing permission/);
+  const events = service.listEvents();
+  const audits = service.listAuditRecords();
+
+  assert.ok(audits.some((record) => record.action === 'security.authorization.failed'));
+  assert.ok(events.some((event) => event.type === 'security.authorization.failed'));
 });
 
 test('camera assets sync to registry with shared audit evidence', async () => {
