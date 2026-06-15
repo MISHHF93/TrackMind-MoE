@@ -1,0 +1,28 @@
+id: criterion-1-human-governance
+criterion: 1
+name: Human Governance
+description: High-risk racing operations require human-in-the-loop approval before execution or authoritative recommendation.
+requires_human_approval_for_risk:
+  - high
+  - critical
+high_risk_action_keywords:
+  - start race
+  - open gate
+  - open starting gate
+  - scratch horse
+  - administer medication
+  - override steward
+  - dispatch emergency
+  - unlock restricted zone
+  - release restricted zone
+  - issue payout
+  - refund payout
+  - change odds
+  - mutate digital twin
+required_approval_fields:
+  - approval_token
+  - evidence_links
+  - approved_by
+enforcement:
+  missing_approval: block
+  evidence_required: true

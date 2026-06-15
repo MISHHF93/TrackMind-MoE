@@ -1,0 +1,17 @@
+id: criterion-6-epistemic-prudence
+criterion: 6
+name: Epistemic Prudence
+description: Low confidence, narrow routing margins, and unavailable primary components must trigger conservative escalation.
+min_confidence: 0.58
+min_margin: 0.08
+escalation_expert: responsible_ai_governor
+uncertainty_signals:
+  - top_confidence_below_threshold
+  - top_two_domains_too_close
+  - semantic_embedding_unavailable
+  - ml_classifier_unavailable
+  - conflicting_symbolic_rules
+enforcement:
+  uncertain_route: escalate
+  uncertain_high_risk_route: block_until_human_review
+operator_message: Answer conservatively, cite uncertainty, request evidence, and escalate to human review.

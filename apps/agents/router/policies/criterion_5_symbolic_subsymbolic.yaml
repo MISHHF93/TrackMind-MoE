@@ -1,0 +1,36 @@
+id: criterion-5-symbolic-validation
+criterion: 5
+name: Symbolic-Subsymbolic Integration
+description: Neural expert routing must be constrained by symbolic racing, safety, finance, and security rules.
+forbidden_autonomous_actions:
+  - open starting gate
+  - start race
+  - approve disqualification
+  - administer medication
+  - dispatch law enforcement
+  - dispatch emergency
+  - issue payout
+  - change odds
+  - unlock restricted zone
+  - mutate digital twin
+symbolic_validation:
+  runs_after:
+    - semantic_embedding
+    - ml_classifier
+    - keyword_fallback
+  runs_before:
+    - backend_invocation
+  violation_action: block_and_escalate
+required_evidence_for_domains:
+  stewarding:
+    - rule_reference
+    - video_or_sensor_evidence
+  veterinary:
+    - veterinary_observation
+    - medication_record
+  security:
+    - credential_event
+    - camera_or_access_log
+  finance:
+    - transaction_reference
+    - settlement_or_refund_policy

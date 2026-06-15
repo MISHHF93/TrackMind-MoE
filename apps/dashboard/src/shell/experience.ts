@@ -1,5 +1,6 @@
 import { createTrackMindTenantUxBoundaryMetadata, hasPermission, type Permission, type Role, type TrackMindTenantUxBoundaryMetadata } from '@trackmind/shared';
 import { activeNavItem, canonicalPathForRoute, navItems, navSections, type NavDeepLink, type NavItem, type NavSection, type RouteBadgeSource, type RouteDataState, type RouteIconKey, type RouteSafetyPosture } from './navigation.js';
+import { canonicalBreadcrumbsForPath, canonicalCommandPaletteItems } from '../routes/registry.js';
 
 export interface TenantOption {
   id: string;
@@ -28,6 +29,7 @@ export function selectTenant(tenantId: string, options: TenantOption[] = tenants
 }
 
 export function breadcrumbForPath(path: string, items: NavItem[] = navItems): string[] {
+  if (items === navItems) return canonicalBreadcrumbsForPath(path);
   const match = activeNavItem(path, items);
   if (!match) return ['Nexus', 'Not Found'];
   const section = navSections.find((candidate) => candidate.id === match.section);
@@ -58,9 +60,19 @@ function paletteItemsForNavItem(item: NavItem): CommandPaletteItem[] {
 }
 
 export function commandPaletteItems(roles: Role[]): CommandPaletteItem[] {
-  return navItems
-    .filter((item) => !item.required?.length || roles.some((role) => item.required!.some((permission) => hasPermission(role, permission))))
-    .flatMap((item) => paletteItemsForNavItem(item));
+  return canonicalCommandPaletteItems(roles).map((item) => ({
+    id: item.id,
+    label: item.label,
+    path: item.path,
+    keywords: item.keywords,
+    required: item.required,
+    iconKey: item.iconKey,
+    workspaceGroup: item.workspaceGroup,
+    badgeSource: item.badgeSource,
+    breadcrumbLabel: item.breadcrumbLabel,
+    dataState: item.dataState,
+    safetyPosture: item.safetyPosture,
+  }));
 }
 
 export function filterCommandPalette(query: string, roles: Role[]): CommandPaletteItem[] {

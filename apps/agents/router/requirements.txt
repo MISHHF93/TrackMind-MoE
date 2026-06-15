@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pydantic
+sentence-transformers
+transformers
+rapidfuzz
+litellm
+onnxruntime
+PyYAML

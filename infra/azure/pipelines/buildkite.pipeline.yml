@@ -1,0 +1,10 @@
+env:
+  TRACKMIND_ENVIRONMENT: "${TRACKMIND_ENVIRONMENT:-dev}"
+  AZURE_RESOURCE_GROUP: "${AZURE_RESOURCE_GROUP:-trackmind-dev-rg}"
+
+steps:
+  - label: ":pipeline: Generate Azure gated deployment"
+    key: "generate-azure-gated-deployment"
+    command: "pwsh -NoProfile -File infra/azure/pipelines/buildkite-gated-pipeline.ps1 | buildkite-agent pipeline upload"
+    agents:
+      queue: "deployments"

@@ -1,175 +1,89 @@
+BEGIN;
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS age;
 
-CREATE TABLE racetracks (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL,
-  timezone text NOT NULL,
-  commission_name text,
-  created_at timestamptz NOT NULL DEFAULT now()
+CREATE SCHEMA IF NOT EXISTS trackmind;
+
+CREATE TYPE trackmind.twin_entity_type AS ENUM (
+  'Horse',
+  'Person',
+  'Racetrack',
+  'Race',
+  'Incident',
+  'RestrictedZone',
+  'Sensor',
+  'Camera'
 );
 
-CREATE TABLE race_days (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  racetrack_id uuid NOT NULL REFERENCES racetracks(id),
-  race_date date NOT NULL,
-  status text NOT NULL DEFAULT 'scheduled',
-  UNIQUE (racetrack_id, race_date)
+CREATE TYPE trackmind.person_role AS ENUM (
+  'trainer',
+  'jockey',
+  'official'
 );
 
-CREATE TABLE races (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  race_day_id uuid NOT NULL REFERENCES race_days(id),
-  race_number int NOT NULL,
-  post_time timestamptz,
-  status text NOT NULL DEFAULT 'scheduled',
-  official_results jsonb,
-  UNIQUE (race_day_id, race_number)
+CREATE TYPE trackmind.approval_status AS ENUM (
+  'pending',
+  'approved',
+  'rejected',
+  'expired',
+  'cancelled'
 );
 
-CREATE TABLE horses (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL,
-  foaled date,
-  safety_profile jsonb NOT NULL DEFAULT '{}'::jsonb,
-  medication_status_placeholder text NOT NULL DEFAULT 'placeholder-unknown'
+CREATE TYPE trackmind.event_visibility AS ENUM (
+  'internal',
+  'stewards',
+  'racing-officials',
+  'public-safety',
+  'system'
 );
 
-CREATE TABLE jockeys (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, license_number text);
-CREATE TABLE trainers (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, license_number text);
-CREATE TABLE veterinarians (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, license_number text);
-CREATE TABLE stewards (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, license_number text);
+CREATE OR REPLACE FUNCTION trackmind.hash_payload(
+  previous_hash text,
+  payload jsonb,
+  occurred_at timestamptz DEFAULT now()
+) RETURNS text
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT encode(
+    digest(
+      coalesce(previous_hash, '') || '|' || coalesce(payload, '{}'::jsonb)::text || '|' || occurred_at::text,
+      'sha256'
+    ),
+    'hex'
+  );
+$$;
 
-CREATE TABLE race_entries (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  race_id uuid NOT NULL REFERENCES races(id),
-  horse_id uuid NOT NULL REFERENCES horses(id),
-  jockey_id uuid REFERENCES jockeys(id),
-  trainer_id uuid REFERENCES trainers(id),
-  post_position int,
-  status text NOT NULL DEFAULT 'entered',
-  UNIQUE (race_id, horse_id)
-);
-
-CREATE TABLE tickets (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  race_day_id uuid NOT NULL REFERENCES race_days(id),
-  zone text NOT NULL,
-  status text NOT NULL,
-  price_cents int NOT NULL CHECK (price_cents >= 0),
-  purchased_at timestamptz
-);
-
-CREATE TABLE incidents (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  race_day_id uuid REFERENCES race_days(id),
-  severity text NOT NULL,
-  location text,
-  description text NOT NULL,
-  status text NOT NULL DEFAULT 'open',
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE track_condition_readings (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  race_day_id uuid NOT NULL REFERENCES race_days(id),
-  sensor_id text,
-  moisture numeric CHECK (moisture BETWEEN 0 AND 100),
-  cushion_depth numeric CHECK (cushion_depth >= 0),
-  compaction numeric CHECK (compaction >= 0),
-  temperature numeric,
-  rainfall numeric CHECK (rainfall >= 0),
-  wind numeric CHECK (wind >= 0),
-  lightning_distance numeric CHECK (lightning_distance >= 0),
-  gate_status text,
-  lighting_status text,
-  camera_health text,
-  anomalies jsonb NOT NULL DEFAULT '[]'::jsonb,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE steward_inquiries (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  race_id uuid NOT NULL REFERENCES races(id),
-  objections jsonb NOT NULL DEFAULT '[]'::jsonb,
-  video_clips jsonb NOT NULL DEFAULT '[]'::jsonb,
-  involved_horses jsonb NOT NULL DEFAULT '[]'::jsonb,
-  rule_references jsonb NOT NULL DEFAULT '[]'::jsonb,
-  steward_notes text,
-  decision_draft text,
-  final_decision text,
-  appeal_export_uri text,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE ai_recommendations (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  status text NOT NULL CHECK (status IN ('draft','pending-approval','approved','rejected','expired','overridden')),
-  request text NOT NULL,
-  recommendation jsonb NOT NULL,
-  evidence jsonb NOT NULL DEFAULT '[]'::jsonb,
-  required_approvals jsonb NOT NULL DEFAULT '[]'::jsonb,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE approvals (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  recommendation_id uuid NOT NULL REFERENCES ai_recommendations(id),
-  protected_action text NOT NULL,
-  status text NOT NULL CHECK (status IN ('draft','pending-approval','approved','rejected','expired','overridden')),
-  approver text,
-  reason text,
-  evidence jsonb NOT NULL DEFAULT '[]'::jsonb,
-  downstream_action text,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE audit_logs (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  event_type text NOT NULL,
-  actor text NOT NULL,
-  payload jsonb NOT NULL,
-  previous_hash text NOT NULL,
-  hash text NOT NULL UNIQUE,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE OR REPLACE FUNCTION prevent_audit_log_update() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION trackmind.prevent_update_or_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
 BEGIN
-  RAISE EXCEPTION 'audit_logs are immutable';
+  RAISE EXCEPTION '% rows are immutable; append an event instead', TG_TABLE_NAME;
 END;
 $$;
 
-CREATE TRIGGER audit_logs_immutable
-BEFORE UPDATE OR DELETE ON audit_logs
-FOR EACH ROW EXECUTE FUNCTION prevent_audit_log_update();
+CREATE OR REPLACE FUNCTION trackmind.require_approval_metadata()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.approved_by IS NULL OR NEW.approval_timestamp IS NULL THEN
+    RAISE EXCEPTION 'approved_by and approval_timestamp are mandatory for %', TG_TABLE_NAME;
+  END IF;
+  RETURN NEW;
+END;
+$$;
 
-CREATE TABLE equine_profiles (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id text NOT NULL,
-  horse_id text NOT NULL UNIQUE,
-  name text NOT NULL,
-  microchip_id text UNIQUE,
-  lifecycle_status text NOT NULL CHECK (lifecycle_status IN ('active','inactive','retired','deceased')),
-  compliance_status text NOT NULL CHECK (compliance_status IN ('compliant','under-review','suspended','ineligible')),
-  twin_id text NOT NULL UNIQUE,
-  profile jsonb NOT NULL DEFAULT '{}'::jsonb,
-  version int NOT NULL DEFAULT 1,
-  updated_at timestamptz NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS trackmind.schema_migrations (
+  version text PRIMARY KEY,
+  applied_at timestamptz NOT NULL DEFAULT now(),
+  description text NOT NULL
 );
 
-CREATE TABLE equine_profile_events (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  horse_id text NOT NULL REFERENCES equine_profiles(horse_id),
-  tenant_id text NOT NULL,
-  event_type text NOT NULL,
-  privacy_scope text NOT NULL DEFAULT 'racing-officials',
-  payload jsonb NOT NULL,
-  evidence jsonb NOT NULL DEFAULT '[]'::jsonb,
-  actor_id text NOT NULL,
-  hash text NOT NULL UNIQUE,
-  previous_hash text NOT NULL,
-  occurred_at timestamptz NOT NULL DEFAULT now()
-);
+INSERT INTO trackmind.schema_migrations(version, description)
+VALUES ('001', 'Initial TrackMind digital twin schema foundation with pgcrypto and Apache AGE extension')
+ON CONFLICT (version) DO NOTHING;
 
-CREATE INDEX equine_profiles_tenant_status_idx ON equine_profiles(tenant_id, lifecycle_status, compliance_status);
-CREATE INDEX equine_profile_events_horse_idx ON equine_profile_events(horse_id, occurred_at DESC);
+COMMIT;

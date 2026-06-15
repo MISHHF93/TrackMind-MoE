@@ -1,4 +1,5 @@
 import type { NexusOperationalActorType } from '@trackmind/shared';
+import { synchronizeTimestamps, type TimestampSource, type TimestampSynchronizationMetadata } from './timeSynchronization.js';
 
 export type AuditEventType =
   | 'user-action'
@@ -65,9 +66,12 @@ export interface AuditLogEntry {
   custody?: ChainOfCustodyStep[];
   retainedUntil?: string;
   legalHold?: boolean;
+  timestampSynchronization?: TimestampSynchronizationMetadata;
 }
 
-export interface AuditRecordInput extends Omit<AuditLogEntry, 'previousHash' | 'hash'> {}
+export interface AuditRecordInput extends Omit<AuditLogEntry, 'previousHash' | 'hash' | 'timestampSynchronization'> {
+  timestampSources?: TimestampSource[];
+}
 export interface RetentionPolicy { id: string; eventTypes: AuditEventType[]; retainForDays: number; regulatoryBasis: string }
 export interface EvidenceItem extends EvidenceReference { id: string; recordId: string; uri: string; hash: string; collectedBy: string; collectedAt: string; description?: string; legalHold?: boolean }
 export interface AuditVerificationResult { valid: boolean; checked: number; failures: Array<{ id: string; reason: string }> }
@@ -199,8 +203,14 @@ export class ImmutableAuditLog {
     const previousHash = this.logs.at(-1)?.hash ?? 'genesis';
     const custody = log.custody?.map((step) => ({ ...step })) ?? [{ actor: log.actor, action: 'created' as const, timestamp: log.timestamp }];
     const evidence = normalizeEvidence(log);
+    const { timestampSources: _timestampSources, ...persistedLog } = log;
+    const timestampSynchronization = synchronizeTimestamps([
+      { source: `${log.sourceService ?? 'audit-log'}.event`, timestamp: log.timestamp },
+      ...custody.map((step) => ({ source: `custody:${step.action}:${step.actor}`, timestamp: step.timestamp })),
+      ...(log.timestampSources ?? []),
+    ]);
     const unsigned = {
-      ...log,
+      ...persistedLog,
       actorType: inferActorType(log),
       action: inferAction(log),
       actionClass: classify({ ...log, action: inferAction(log) }),
@@ -211,6 +221,7 @@ export class ImmutableAuditLog {
       evidenceIds: evidence.evidenceIds,
       evidence: evidence.evidence,
       regulations: [...(log.regulations ?? [])],
+      timestampSynchronization,
     };
     const entry = Object.freeze({ ...unsigned, hash: digest(unsigned) });
     this.logs.push(entry);

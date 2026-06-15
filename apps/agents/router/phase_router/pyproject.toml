@@ -1,0 +1,17 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "trackmind-phase-router"
+version = "0.1.0"
+description = "Deterministic phase routing for TrackMind MoE expert load balancing"
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Rust",
+]
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+module-name = "apps.agents.router.phase_router._phase_router_rs"

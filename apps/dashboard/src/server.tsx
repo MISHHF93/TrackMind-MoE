@@ -1,4 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { dirname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -9,6 +12,10 @@ import { DEFAULT_DENSITY_LEVEL, DEFAULT_THEME_MODE, dashboardThemeCss } from './
 import { nexusApiBasePath, type Role } from '@trackmind/shared';
 
 const now = () => new Date().toISOString();
+const modulePath = fileURLToPath(import.meta.url);
+const moduleDir = dirname(modulePath);
+const clientDistDir = join(moduleDir, 'client');
+const spaEntryPath = join(clientDistDir, 'assets', 'trackmind-dashboard.js');
 
 function createRequestId() {
   return `tm-dashboard-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -153,9 +160,43 @@ const html = (body: string, mode: string) => `<!doctype html>
   </head>
   <body>
     <div role="status" class="render-mode-banner">TrackMind dashboard rendered in ${mode} mode.</div>
-    ${body}
+    <div id="root">${body}</div>
+    ${runtimeConfigScript()}
+    ${spaScriptTag()}
   </body>
 </html>`;
+
+function runtimeConfigScript() {
+  const roles = (process.env.TRACKMIND_ROLES ?? 'admin').split(',').map((role) => role.trim()).filter(Boolean);
+  const config = {
+    apiBase: process.env.TRACKMIND_BROWSER_API_BASE_URL ?? process.env.TRACKMIND_API_BASE_URL ?? nexusApiBasePath,
+    tenantId: process.env.TRACKMIND_TENANT_ID ?? 'trackmind',
+    racetrackId: process.env.TRACKMIND_RACETRACK_ID ?? 'main-track',
+    roles,
+    authenticated: process.env.TRACKMIND_AUTHENTICATED !== 'false',
+    theme: process.env.TRACKMIND_THEME ?? DEFAULT_THEME_MODE,
+    density: process.env.TRACKMIND_DENSITY ?? DEFAULT_DENSITY_LEVEL,
+  };
+  return `<script>window.__TRACKMIND_NEXUS__=${JSON.stringify(config).replace(/</g, '\\u003c')};</script>`;
+}
+
+function spaScriptTag() {
+  return existsSync(spaEntryPath) ? '<script type="module" src="/assets/trackmind-dashboard.js"></script>' : '<!-- TrackMind Nexus SPA bundle not built; SSR compatibility shell active. -->';
+}
+
+function contentTypeForAsset(path: string) {
+  if (path.endsWith('.js')) return 'text/javascript; charset=utf-8';
+  if (path.endsWith('.css')) return 'text/css; charset=utf-8';
+  if (path.endsWith('.json')) return 'application/json; charset=utf-8';
+  if (path.endsWith('.svg')) return 'image/svg+xml';
+  return 'application/octet-stream';
+}
+
+function safeClientAssetPath(pathname: string) {
+  const relative = pathname.replace(/^\/+/, '');
+  const absolute = normalize(join(clientDistDir, relative));
+  return absolute === clientDistDir || absolute.startsWith(`${clientDistDir}${sep}`) ? absolute : undefined;
+}
 
 async function renderDashboard(path = '/operations', requestId = createRequestId()) {
   const roles = ((process.env.TRACKMIND_ROLES ?? 'admin').split(',').map((role) => role.trim()).filter(Boolean) as Role[]) || ['admin'];
@@ -182,6 +223,19 @@ export function createTrackMindDashboardServer() {
     const startedAt = Date.now();
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
+      if (url.pathname.startsWith('/assets/')) {
+        const assetPath = safeClientAssetPath(url.pathname);
+        if (assetPath && existsSync(assetPath)) {
+          res.writeHead(200, { 'content-type': contentTypeForAsset(assetPath), 'cache-control': 'public, max-age=31536000, immutable', 'x-trackmind-request-id': requestId });
+          res.end(await readFile(assetPath));
+          structuredLog('info', 'dashboard.request.completed', { requestId, path: url.pathname, status: 200, durationMs: Date.now() - startedAt, asset: true });
+          return;
+        }
+        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8', 'x-trackmind-request-id': requestId });
+        res.end('TrackMind dashboard asset not found');
+        structuredLog('info', 'dashboard.request.completed', { requestId, path: url.pathname, status: 404, durationMs: Date.now() - startedAt, asset: true });
+        return;
+      }
       if (url.pathname === '/health') {
         res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'x-trackmind-request-id': requestId });
         res.end(JSON.stringify({ ok: true, service: 'trackmind-dashboard', status: 'healthy', requestId, time: now(), apiBase: process.env.TRACKMIND_API_BASE_URL ?? `http://127.0.0.1:4000${nexusApiBasePath}`, observability: { structuredLogs: true, requestIdHeader: 'x-trackmind-request-id', degradedFallbackMode: 'mock-read-only' } }));
@@ -214,4 +268,4 @@ export function startTrackMindDashboardServer(port = Number(process.env.PORT ?? 
   return server;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) startTrackMindDashboardServer();
+if (process.argv[1] === modulePath) startTrackMindDashboardServer();

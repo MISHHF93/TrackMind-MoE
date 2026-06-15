@@ -28,8 +28,10 @@ test('core theme modes expose all required semantic tokens', () => {
 
 test('theme switching metadata covers dark light and high contrast modes', () => {
   assert.equal(DEFAULT_THEME_MODE, 'command-center-dark');
-  assert.deepEqual(themeModes.map((mode) => mode.id), ['command-center-dark', 'light', 'high-contrast']);
+  assert.deepEqual(themeModes.map((mode) => mode.id), ['command-center-dark', 'command-center', 'dark', 'light', 'high-contrast']);
   assert.ok(themeModes.find((mode) => mode.id === 'command-center-dark')?.selectors.includes(':root'));
+  assert.ok(dashboardThemeCss.includes('[data-theme="command-center"]'));
+  assert.ok(dashboardThemeCss.includes('[data-theme="dark"]'));
   assert.ok(dashboardThemeCss.includes('[data-theme="light"]'));
   assert.ok(dashboardThemeCss.includes('[data-theme="high-contrast"]'));
 });

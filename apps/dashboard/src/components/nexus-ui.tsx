@@ -306,9 +306,37 @@ export function EvidenceList({ items, empty = 'No evidence linked.', label = 'Ev
   return <ul aria-label={label}>{items.length ? items.map((item) => <li key={item}><code>{item}</code></li>) : <li>{empty}</li>}</ul>;
 }
 
+export function EvidencePanel({ title = 'Evidence Panel', evidenceRefs, auditRefs = [], eventRefs = [], source = 'governed backend evidence', mock = false, children }: { title?: string; evidenceRefs: string[]; auditRefs?: string[]; eventRefs?: string[]; source?: string; mock?: boolean; children?: ReactNode }) {
+  return (
+    <section className="evidence-panel" aria-label={title} data-mock={mock || undefined} data-source={source}>
+      <h3>{title}</h3>
+      <RecordSourceLabel mock={mock} label={source} />
+      <EvidenceList items={evidenceRefs} label={`${title} evidence refs`} />
+      <p>Audit refs: {auditRefs.join(', ') || 'pending audit link'}.</p>
+      <p>Event refs: {eventRefs.join(', ') || 'pending event link'}.</p>
+      {children}
+    </section>
+  );
+}
+
 export function ConfidenceBadge({ confidence }: { confidence: number }) {
   const band = confidence >= 0.85 ? 'high' : confidence >= 0.6 ? 'medium' : 'low';
   return <span className="confidence-badge" aria-label={`AI confidence ${band} ${Math.round(confidence * 100)} percent`} data-confidence={band} data-tone={band === 'high' ? 'ok' : band === 'medium' ? 'warning' : 'critical'}><span aria-hidden="true">●</span> {band.toUpperCase()} {Math.round(confidence * 100)}%</span>;
+}
+
+export function RecommendationCard({ id, title, recommendation, confidence, riskLevel = 'medium', evidenceRefs, approvalRequired = true, advisoryOnly = true, actions }: { id: string; title: string; recommendation: ReactNode; confidence: number; riskLevel?: RiskLevel; evidenceRefs: string[]; approvalRequired?: boolean; advisoryOnly?: boolean; actions?: ReactNode }) {
+  return (
+    <NexusCard title={title} eyebrow="Recommendation" detail={typeof recommendation === 'string' ? recommendation : undefined} tone={riskLevel} actions={actions}>
+      <div aria-label={`${id} recommendation posture`}>
+        <RiskBadge level={riskLevel} />
+        <ConfidenceBadge confidence={confidence} />
+        <ApprovalChip status={approvalRequired ? 'pending-approval' : 'approved'} />
+      </div>
+      {typeof recommendation === 'string' ? null : <p>{recommendation}</p>}
+      <p>Advisory only: {String(advisoryOnly)}. Approval required: {String(approvalRequired)}. Autonomous execution allowed: false.</p>
+      <EvidenceList items={evidenceRefs} label={`${title} recommendation evidence`} />
+    </NexusCard>
+  );
 }
 
 export function AssignmentChip({ assigneeId, status = 'open', priority = 'medium' }: { assigneeId: string; status?: string; priority?: RiskLevel }) {

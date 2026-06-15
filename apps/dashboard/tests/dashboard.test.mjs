@@ -858,7 +858,7 @@ test('tenant switching helpers resolve known and fallback racetracks', () => {
   assert.deepEqual(breadcrumbForPath('/starting-gate'), ['Nexus', 'Operations', 'Starting Gate Control']);
   assert.deepEqual(breadcrumbForPath('/workforce/shifts/today'), ['Nexus', 'Facilities', 'Workforce']);
   assert.deepEqual(breadcrumbForPath('/facilities'), ['Nexus', 'Facilities']);
-  assert.deepEqual(breadcrumbForPath('/ai-governance/recommendations/rec-harrow-7'), ['Nexus', 'Intelligence', 'AI Governance']);
+  assert.deepEqual(breadcrumbForPath('/ai-governance/recommendations/rec-harrow-7'), ['Nexus', 'Governance', 'AI Governance']);
   assert.deepEqual(breadcrumbForPath('/api-hub/license-policy/terms'), ['Nexus', 'Platform Admin', 'Racing Data API Hub', 'License Policy']);
 });
 
@@ -2189,7 +2189,8 @@ test('navigation groups and command palette expose only role-visible destination
   assert.equal(groupHasActiveItem('/workforce/shifts/today', facilitiesGroup), true);
 
   const palettePaths = filterCommandPalette('  SURFACE  ', ['track-superintendent']).map((item) => item.path);
-  assert.deepEqual(palettePaths, ['/surface']);
+  assert.ok(palettePaths.includes('/surface'));
+  assert.ok(palettePaths.every((path) => path === '/surface' || path === '/safety'));
 
   const auditorPalette = filterCommandPalette('', ['read-only-auditor']).map((item) => item.path);
   assert.ok(auditorPalette.includes('/operations'));

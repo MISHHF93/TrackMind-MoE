@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
-import { ActivityFeed, ApprovalChip, AssignmentChip, CollaborationPanel, CommandBar, CommandPanel, ConfidenceBadge, ConfirmationDialog, DataTable, DataTableShell, DecisionLog, DetailDrawer, EmptyState as NexusEmptyState, ErrorState as NexusErrorState, EventTimeline, EvidenceList, EvidencePacketViewer, GovernedActionButton, KpiTile, LoadingSkeleton, MockDataBanner, PageHeader, RecordSourceLabel, RiskBadge, SafetyCriticalActionButton, SafetyCriticalButton, SplitPane, StatusIndicator, WorkspaceFrame, WorkspaceLayout } from '../dist/components/nexus-ui.js';
+import { ActivityFeed, ApprovalChip, AssignmentChip, CollaborationPanel, CommandBar, CommandPanel, ConfidenceBadge, ConfirmationDialog, DataTable, DataTableShell, DecisionLog, DetailDrawer, EmptyState as NexusEmptyState, ErrorState as NexusErrorState, EventTimeline, EvidenceList, EvidencePanel, EvidencePacketViewer, GovernedActionButton, KpiTile, LoadingSkeleton, MockDataBanner, PageHeader, RecommendationCard, RecordSourceLabel, RiskBadge, SafetyCriticalActionButton, SafetyCriticalButton, SplitPane, StatusIndicator, WorkspaceFrame, WorkspaceLayout } from '../dist/components/nexus-ui.js';
 import { buildStreamingDataSnapshot, StreamingDataStatus } from '../dist/components/streaming-data.js';
 import { DataState, EmptyState, ErrorState, LoadingState, SafetyButton } from '../dist/components/states.js';
 
@@ -80,6 +80,9 @@ test('governance shared components label mock records, evidence, and disabled ac
   assert.equal(button.props.disabled, true);
   assert.equal(button.props['aria-disabled'], 'true');
   assert.match(textFrom(action), /POST \/api\/v1\/approvals\/controlled-actions/);
+
+  assert.match(textFrom(h(EvidencePanel, { title: 'Gate move evidence', evidenceRefs: ['gps-fix'], auditRefs: ['audit-1'], eventRefs: ['event-1'], mock: true })), /Gate move evidence.*gps-fix.*audit-1.*event-1/);
+  assert.match(textFrom(h(RecommendationCard, { id: 'rec-1', title: 'Surface recommendation', recommendation: 'Review far turn moisture.', confidence: 0.82, riskLevel: 'high', evidenceRefs: ['surface-reading'], approvalRequired: true })), /Surface recommendation.*HIGH.*82\s*%.*pending-approval.*Autonomous execution allowed: false.*surface-reading/);
 });
 
 test('command-center shell components expose accessible layout labels', () => {

@@ -1,0 +1,21 @@
+id: criterion-2-policy-enforced-operation
+criterion: 2
+name: Policy-Enforced Operation
+description: The router must use machine-readable policy definitions before selecting or invoking an expert backend.
+policy_runtime:
+  format: yaml
+  load_path: apps/agents/router/policies
+  fail_mode: degraded_with_builtin_mandatory_policies
+required_router_checks:
+  - classify_request
+  - evaluate_human_approval
+  - symbolic_rule_validation
+  - uncertainty_detection
+enforcement:
+  no_policy_loaded: degrade
+  no_policy_evaluation: block
+audit_fields:
+  - policy_ids
+  - symbolic_violations
+  - uncertainty
+  - requires_human_approval

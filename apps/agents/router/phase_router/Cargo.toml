@@ -1,0 +1,11 @@
+[package]
+name = "trackmind_phase_router"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "_phase_router_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"] }

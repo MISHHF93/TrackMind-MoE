@@ -1,0 +1,164 @@
+{
+  "router": {
+    "semantic_model": "sentence-transformers/all-MiniLM-L6-v2",
+    "semantic_threshold": 0.62,
+    "classifier_threshold": 0.52,
+    "uncertainty_threshold": 0.58,
+    "escalate_uncertain_to_governor": true,
+    "phase_router": {
+      "enabled": true,
+      "n_tokens": 8192,
+      "n_experts": 32,
+      "k": 2,
+      "base_density": 0.3,
+      "imbalance_threshold": 2
+    },
+    "learned_router": {
+      "enabled": true,
+      "top_k": 2,
+      "aux_loss_weight": 0.01,
+      "learning_rate": 0.05,
+      "z_loss_weight": 0.0001,
+      "requires_confidence": true,
+      "requires_evidence_links": true
+    },
+    "cascade_router": {
+      "enabled": true,
+      "top_k": 1,
+      "primary_confidence_threshold": 0.45,
+      "secondary_confidence_threshold": 0.34,
+      "primary_aux_loss_threshold": 1.25,
+      "sinkhorn_iterations": 16
+    },
+    "utilization_monitor": {
+      "collapse_fraction": 0.65,
+      "min_active_fraction": 0.5,
+      "min_observations": 8,
+      "window_size": 256
+    },
+    "expert_parallel": {
+      "world_size": 1,
+      "local_rank": 0,
+      "backend": "nccl",
+      "enable_distributed": true,
+      "communication": "all_to_all"
+    },
+    "classifier": {
+      "model": "trackmind/bert-racing-domain-classifier",
+      "label_map": {
+        "LABEL_STEWARDING": "stewarding",
+        "LABEL_VETERINARY": "veterinary",
+        "LABEL_SECURITY": "security",
+        "LABEL_TICKETING": "ticketing",
+        "LABEL_FINANCE": "finance",
+        "LABEL_RACING_OPS": "racing_operations"
+      }
+    }
+  },
+  "experts": {
+    "stewarding": {
+      "id": "stewarding",
+      "display_name": "Stewarding Expert",
+      "backend": "anthropic-stewarding",
+      "backend_type": "external_litellm",
+      "model": "anthropic/claude-3-5-sonnet-latest",
+      "risk_level": "high",
+      "keywords": ["steward", "inquiry", "objection", "disqualification", "appeal", "rule violation", "race result", "official decision"],
+      "routing_examples": [
+        "A jockey filed an objection after interference in the stretch.",
+        "Can the stewards disqualify horse seven after a bumping incident?",
+        "Prepare a steward inquiry summary with evidence and rule citations."
+      ]
+    },
+    "veterinary": {
+      "id": "veterinary",
+      "display_name": "Veterinary Compliance Expert",
+      "backend": "ollama-rulebook-rag",
+      "backend_type": "ollama",
+      "model": "llama3.1:8b",
+      "endpoint": "http://127.0.0.1:11434",
+      "timeout_seconds": 15,
+      "risk_level": "high",
+      "keywords": ["veterinary", "vet", "medication", "scratch", "lameness", "welfare", "hisa", "horse safety", "exam"],
+      "routing_examples": [
+        "A horse shows signs of lameness in the paddock before post time.",
+        "Check medication compliance before race entry approval.",
+        "Summarize veterinary rulebook evidence for an equine safety review."
+      ]
+    },
+    "security": {
+      "id": "security",
+      "display_name": "Security Operations Expert",
+      "backend": "security-onnx-specialist",
+      "backend_type": "onnx",
+      "model": "security-incident-classifier",
+      "model_path": "models/security_incident_classifier.onnx",
+      "risk_level": "high",
+      "keywords": ["security", "restricted zone", "camera", "credential", "access", "incident", "soc", "evacuation", "threat"],
+      "routing_examples": [
+        "A credential was denied at the paddock restricted zone.",
+        "Classify a camera alert near the barn entrance.",
+        "Investigate a security incident involving restricted access."
+      ]
+    },
+    "ticketing": {
+      "id": "ticketing",
+      "display_name": "Ticketing and Fan Experience Expert",
+      "backend": "openai-ticketing",
+      "backend_type": "external_litellm",
+      "model": "openai/gpt-4o-mini",
+      "risk_level": "medium",
+      "keywords": ["ticket", "refund", "fan", "admission", "seat", "parking", "entry gate", "concession"],
+      "routing_examples": [
+        "A fan asks for a refund after a weather delay.",
+        "Resolve a duplicate mobile ticket at the admission gate.",
+        "Explain ticketing policy for cancelled race day admission."
+      ]
+    },
+    "finance": {
+      "id": "finance",
+      "display_name": "Finance and Revenue Expert",
+      "backend": "finance-onnx-specialist",
+      "backend_type": "onnx",
+      "model": "finance-risk-classifier",
+      "model_path": "models/finance_risk_classifier.onnx",
+      "risk_level": "high",
+      "keywords": ["finance", "revenue", "payout", "refund", "invoice", "settlement", "handle", "wagering", "fraud"],
+      "routing_examples": [
+        "Review payout anomaly risk before settlement.",
+        "Classify a suspicious refund and wagering revenue issue.",
+        "Analyze finance exposure for a cancelled race card."
+      ]
+    },
+    "racing_operations": {
+      "id": "racing_operations",
+      "display_name": "Racing Operations Expert",
+      "backend": "ollama-rulebook-rag",
+      "backend_type": "ollama",
+      "model": "llama3.1:8b",
+      "endpoint": "http://127.0.0.1:11434",
+      "timeout_seconds": 10,
+      "risk_level": "high",
+      "keywords": ["race start", "starting gate", "surface", "track condition", "post time", "race office", "operations", "weather"],
+      "routing_examples": [
+        "Can race office delay post time due to lightning within ten miles?",
+        "Evaluate starting gate readiness for race seven.",
+        "Summarize surface condition evidence before race start."
+      ]
+    },
+    "responsible_ai_governor": {
+      "id": "responsible_ai_governor",
+      "display_name": "Responsible AI Governor",
+      "backend": "anthropic-governor",
+      "backend_type": "external_litellm",
+      "model": "anthropic/claude-3-5-sonnet-latest",
+      "risk_level": "critical",
+      "keywords": ["uncertain", "policy", "approval", "human review", "governance", "blocked", "escalate", "safety"],
+      "routing_examples": [
+        "The domain assignment is uncertain and needs human review.",
+        "A protected action lacks approval evidence.",
+        "Validate whether an AI response is allowed under human governance policy."
+      ]
+    }
+  }
+}

@@ -1,11 +1,148 @@
+targetScope = 'resourceGroup'
+
+@allowed([
+  'dev'
+  'staging'
+  'prod'
+])
+param environmentName string
+
+param projectName string = 'trackmind'
 param location string = resourceGroup().location
-resource log 'Microsoft.OperationalInsights/workspaces@2023-09-01' = { name: 'trackmind-log' location: location properties: { sku: { name: 'PerGB2018' } retentionInDays: 30 } }
-resource appi 'Microsoft.Insights/components@2020-02-02' = { name: 'trackmind-appinsights' location: location kind: 'web' properties: { Application_Type: 'web' WorkspaceResourceId: log.id } }
-resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = { name: 'trackmind${uniqueString(resourceGroup().id)}' location: location sku: { name: 'Standard_LRS' } kind: 'StorageV2' }
-resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = { name: 'trackmind-kv-${uniqueString(resourceGroup().id)}' location: location properties: { tenantId: subscription().tenantId sku: { family: 'A' name: 'standard' } accessPolicies: [] enableRbacAuthorization: true } }
-resource env 'Microsoft.App/managedEnvironments@2023-05-01' = { name: 'trackmind-env' location: location properties: { appLogsConfiguration: { destination: 'log-analytics' logAnalyticsConfiguration: { customerId: log.properties.customerId sharedKey: log.listKeys().primarySharedKey } } } }
-resource pg 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-preview' = { name: 'trackmind-pg-${uniqueString(resourceGroup().id)}' location: location properties: { administratorLogin: 'trackmindadmin' administratorLoginPassword: 'REPLACE_WITH_KEYVAULT_SECRET' version: '16' storage: { storageSizeGB: 32 } } sku: { name: 'Standard_B1ms' tier: 'Burstable' } }
-resource events 'Microsoft.EventHub/namespaces@2024-01-01' = { name: 'trackmind-events-${uniqueString(resourceGroup().id)}' location: location sku: { name: 'Standard' tier: 'Standard' capacity: 1 } }
-resource iot 'Microsoft.Devices/IotHubs@2023-06-30' = { name: 'trackmind-iot-${uniqueString(resourceGroup().id)}' location: location sku: { name: 'S1' capacity: 1 } properties: {} }
-resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = { name: 'trackmind-mi' location: location }
-// Placeholders: Azure AI Search, Azure OpenAI / AI Foundry connections, and Container Apps revisions are wired by environment-specific modules.
+param tags object = {}
+
+@secure()
+param postgresAdministratorPassword string
+
+param network object
+param postgres object
+param containerApps object
+param eventHubs object
+param redis object
+param monitor object
+param approvalPolicy object
+
+var namePrefix = '${projectName}-${environmentName}'
+var commonTags = union(tags, {
+  application: 'trackmind-nexus'
+  environment: environmentName
+  managedBy: 'bicep'
+  approvalPolicy: approvalPolicy.mode
+})
+
+module monitoring 'modules/monitor.bicep' = {
+  name: '${namePrefix}-monitor'
+  params: {
+    namePrefix: namePrefix
+    location: location
+    tags: commonTags
+    retentionInDays: monitor.retentionInDays
+    actionGroupEmail: monitor.actionGroupEmail
+  }
+}
+
+module networking 'modules/networking.bicep' = {
+  name: '${namePrefix}-network'
+  params: {
+    namePrefix: namePrefix
+    location: location
+    tags: commonTags
+    addressPrefix: network.addressPrefix
+    containerAppsSubnetPrefix: network.containerAppsSubnetPrefix
+    postgresSubnetPrefix: network.postgresSubnetPrefix
+  }
+}
+
+module eventBus 'modules/event-hubs.bicep' = {
+  name: '${namePrefix}-eventhub'
+  params: {
+    namePrefix: namePrefix
+    location: location
+    tags: commonTags
+    skuName: eventHubs.skuName
+    capacity: eventHubs.capacity
+    eventHubName: eventHubs.eventHubName
+    messageRetentionInDays: eventHubs.messageRetentionInDays
+    partitionCount: eventHubs.partitionCount
+    telemetryHubName: eventHubs.telemetryHubName
+    telemetryMessageRetentionInDays: eventHubs.telemetryMessageRetentionInDays
+    telemetryPartitionCount: eventHubs.telemetryPartitionCount
+    telemetryConsumerGroupName: eventHubs.telemetryConsumerGroupName
+    telemetryTargetHz: eventHubs.telemetryTargetHz
+    telemetryLatencyTargetMs: eventHubs.telemetryLatencyTargetMs
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+  }
+}
+
+module cache 'modules/redis.bicep' = {
+  name: '${namePrefix}-redis'
+  params: {
+    namePrefix: namePrefix
+    location: location
+    tags: commonTags
+    skuName: redis.skuName
+    family: redis.family
+    capacity: redis.capacity
+    publicNetworkAccess: redis.publicNetworkAccess
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+  }
+}
+
+module database 'modules/postgresql.bicep' = {
+  name: '${namePrefix}-postgres'
+  params: {
+    namePrefix: namePrefix
+    location: location
+    tags: commonTags
+    administratorLogin: postgres.administratorLogin
+    administratorPassword: postgresAdministratorPassword
+    serverVersion: postgres.serverVersion
+    skuName: postgres.skuName
+    tier: postgres.tier
+    storageSizeGB: postgres.storageSizeGB
+    backupRetentionDays: postgres.backupRetentionDays
+    highAvailabilityMode: postgres.highAvailabilityMode
+    databaseName: postgres.databaseName
+    delegatedSubnetResourceId: networking.outputs.postgresSubnetResourceId
+    privateDnsZoneResourceId: networking.outputs.postgresPrivateDnsZoneResourceId
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+  }
+}
+
+module apps 'modules/container-apps.bicep' = {
+  name: '${namePrefix}-containerapps'
+  params: {
+    namePrefix: namePrefix
+    location: location
+    tags: commonTags
+    environmentName: environmentName
+    subnetResourceId: networking.outputs.containerAppsSubnetResourceId
+    logAnalyticsCustomerId: monitoring.outputs.logAnalyticsCustomerId
+    logAnalyticsSharedKey: monitoring.outputs.logAnalyticsSharedKey
+    appInsightsConnectionString: monitoring.outputs.applicationInsightsConnectionString
+    apiImage: containerApps.apiImage
+    agentImage: containerApps.agentImage
+    apiMinReplicas: containerApps.apiMinReplicas
+    apiMaxReplicas: containerApps.apiMaxReplicas
+    agentMinReplicas: containerApps.agentMinReplicas
+    agentMaxReplicas: containerApps.agentMaxReplicas
+    postgresHost: database.outputs.postgresHost
+    postgresDatabaseName: postgres.databaseName
+    redisHostName: cache.outputs.redisHostName
+    eventHubNamespaceHostName: eventBus.outputs.eventHubNamespaceHostName
+    eventHubName: eventHubs.eventHubName
+    telemetryEventHubName: eventBus.outputs.telemetryHubName
+    telemetryTargetHz: eventBus.outputs.telemetryTargetHz
+    telemetryLatencyTargetMs: eventBus.outputs.telemetryLatencyTargetMs
+  }
+}
+
+output approvalPolicyMode string = approvalPolicy.mode
+output apiContainerAppName string = apps.outputs.apiContainerAppName
+output agentContainerAppName string = apps.outputs.agentContainerAppName
+output postgresServerName string = database.outputs.postgresServerName
+output eventHubNamespaceName string = eventBus.outputs.eventHubNamespaceName
+output telemetryEventHubName string = eventBus.outputs.telemetryHubName
+output telemetryConsumerGroupName string = eventBus.outputs.telemetryConsumerGroupName
+output redisName string = cache.outputs.redisName
+output applicationInsightsName string = monitoring.outputs.applicationInsightsName

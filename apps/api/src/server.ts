@@ -10,7 +10,9 @@ import { createSeededBarnOperationsService } from './barnOperations.js';
 import { createCommandCenterContractSnapshot } from './commandCenterV1.js';
 import { CollaborationService, type CollaborationActivityQuery, type CollaborationCreateAssignmentInput, type CollaborationCreateCommentInput, type CollaborationCreateDecisionInput, type CollaborationPrincipal, type CollaborationThreadQuery } from './collaborationService.js';
 import { seededComplianceLibrary } from './complianceControlLibrary.js';
+import { createComplianceReportingController, type ComplianceReportingController } from './compliance/index.js';
 import { createMockEmergencyOperationsWorkspace } from './emergencyOperations.js';
+import { createCqrsCommandHandler, type CqrsCommandHandler } from './events/index.js';
 import { createNexusEventCatalog } from './eventBus.js';
 import { createMockFacilitiesMaintenanceWorkspace } from './facilitiesMaintenance.js';
 import { createFederationWorkspace } from './federation.js';
@@ -19,7 +21,11 @@ import { createMockPlatformHealth } from './platformObservability.js';
 import { createRacingDataApiFacadeState, createRacingDataDraftResult, createRacingDataLicenseDenied, findRacingDataProvider, findRacingDataStatus, isRacingDataLicenseAllowed, type RacingDataApiFacadeState } from './racingDataApiHub.js';
 import { seededRacingDataLicensePolicyService } from './racingDataLicensePolicy.js';
 import { ResponsibleAIGovernancePlatform } from './responsibleAiGovernor.js';
+import { createSafetyIntelligenceController, type SafetyIntelligenceController } from './safetyIntelligence/index.js';
 import { SecurityOperationsService, type SecurityActor } from './securityOps.js';
+import { createApexDomainControllers, type ApexDomainControllers } from './services/controllers.js';
+import { createEquineIntelligenceController, type EquineIntelligenceController } from './services/equine/index.js';
+import { createRtkTelemetryController, type RtkTelemetryController } from './telemetry/index.js';
 import { buildSurfaceIntelligenceWorkspace, type SurfaceIntelligenceInput } from './trackSurface.js';
 import { listStewardInquiries } from './stewarding.js';
 import { createTUSStandardizationWorkspace, legacyAssetToTUSAsset } from './tusStandardization.js';
@@ -482,6 +488,12 @@ export interface ApiFacadeState {
   ros: RosFacadeStateDto;
   artifacts: UniversalArtifactFrameworkState;
   collaboration: CollaborationService;
+  apex: ApexDomainControllers;
+  cqrs: CqrsCommandHandler;
+  complianceReporting: ComplianceReportingController;
+  equinePrivacy: EquineIntelligenceController;
+  rtkTelemetry: RtkTelemetryController;
+  safetyIntelligence: SafetyIntelligenceController;
 }
 
 export function createApiFacadeState(): ApiFacadeState {
@@ -516,6 +528,12 @@ export function createApiFacadeState(): ApiFacadeState {
   const nexusUpgrade = createTrackMindNexusUpgradePackage(timestamp);
   const federation = createFederationWorkspace(timestamp, false);
   const ros = createRosMetadataFacade(timestamp, nexusUpgrade, aiControlPlane as AIControlPlaneWorkspaceDto, tusStandardization, trackCertification);
+  const apex = createApexDomainControllers();
+  const cqrs = createCqrsCommandHandler();
+  const complianceReporting = createComplianceReportingController();
+  const equinePrivacy = createEquineIntelligenceController();
+  const rtkTelemetry = createRtkTelemetryController(cqrs);
+  const safetyIntelligence = createSafetyIntelligenceController();
   const equineWorkspace = {
     horse: { horseId: 'horse-1', tenantId: 'tenant-1', name: 'Lifecycle Runner', lifecycleStatus: 'active', microchipId: '985141001' },
     ownership: [{ ownerId: 'owner-1', ownerName: 'Stable A', percentage: 100, effectiveFrom: '2026-01-01' }],
@@ -707,6 +725,12 @@ export function createApiFacadeState(): ApiFacadeState {
     ros,
     artifacts,
     collaboration: new CollaborationService(),
+    apex,
+    cqrs,
+    complianceReporting,
+    equinePrivacy,
+    rtkTelemetry,
+    safetyIntelligence,
   };
 }
 
@@ -1228,6 +1252,47 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   const requestId = requestUrl.searchParams.get('requestId') ?? createRequestId();
   if (method === 'GET' && path === '/health') return { status: 200, headers: { 'x-trackmind-request-id': requestId }, body: { ok: true, service: 'trackmind-api', status: 'healthy', time: now(), requestId, observability: { structuredLogs: true, requestIdHeader: 'x-trackmind-request-id', serviceHealthEndpoint: `${nexusApiBasePath}/platform/health`, eventStreamEndpoint: `${nexusApiBasePath}/events/stream` } } };
   if (method === 'GET' && path === '/approvals/requests') return { status: 200, body: state.approvals };
+  const apexResponse = await state.apex.handle(method, path, body);
+  if (apexResponse) return apexResponse;
+  const raceStartMatch = path.match(/^\/races\/([^/]+)\/start$/);
+  if (method === 'POST' && raceStartMatch) {
+    const raceId = decodeURIComponent(raceStartMatch[1]);
+    const input = (body ?? {}) as Record<string, any>;
+    const result = await state.cqrs.startRace(raceId, input as any, { tenantId: input.tenantId, racetrackId: input.racetrackId, actorId: input.actorId ?? input.starterId });
+    return { status: result.accepted ? 202 : 403, body: result };
+  }
+  const raceStopMatch = path.match(/^\/races\/([^/]+)\/stop$/);
+  if (method === 'POST' && raceStopMatch) {
+    const raceId = decodeURIComponent(raceStopMatch[1]);
+    const input = (body ?? {}) as Record<string, any>;
+    const result = await state.cqrs.stopRace(raceId, input as any, { tenantId: input.tenantId, racetrackId: input.racetrackId, actorId: input.actorId });
+    return { status: result.accepted ? 202 : 403, body: result };
+  }
+  const raceScratchMatch = path.match(/^\/races\/([^/]+)\/scratches$/);
+  if (method === 'POST' && raceScratchMatch) {
+    const raceId = decodeURIComponent(raceScratchMatch[1]);
+    const input = (body ?? {}) as Record<string, any>;
+    const result = await state.cqrs.scratchHorse(raceId, input as any, { tenantId: input.tenantId, racetrackId: input.racetrackId, actorId: input.actorId });
+    return { status: result.accepted ? 202 : 403, body: result };
+  }
+  const horseMedicationMatch = path.match(/^\/horses\/([^/]+)\/medications\/administer$/);
+  if (method === 'POST' && horseMedicationMatch) {
+    const horseId = decodeURIComponent(horseMedicationMatch[1]);
+    const input = (body ?? {}) as Record<string, any>;
+    const result = await state.cqrs.administerMedication(horseId, input as any, { tenantId: input.tenantId, racetrackId: input.racetrackId, actorId: input.actorId });
+    return { status: result.accepted ? 202 : 403, body: result };
+  }
+  if (method === 'GET' && path === '/events/cqrs') return { status: 200, body: state.cqrs.events() };
+  if (method === 'GET' && path === '/events/cqrs/projections') return { status: 200, body: state.cqrs.rebuildProjections() };
+  if (method === 'GET' && path === '/events/cqrs/hash-chain') return { status: 200, body: state.cqrs.verifyHashChain() };
+  const rtkTelemetryResponse = await state.rtkTelemetry.handle(method, path, body, requestUrl.searchParams);
+  if (rtkTelemetryResponse) return rtkTelemetryResponse;
+  const safetyIntelligenceResponse = await state.safetyIntelligence.handle(method, path, body);
+  if (safetyIntelligenceResponse) return safetyIntelligenceResponse;
+  const complianceResponse = state.complianceReporting.handle(method, path);
+  if (complianceResponse) return complianceResponse;
+  const equinePrivacyResponse = state.equinePrivacy.handle(method, path, body, requestUrl.searchParams);
+  if (equinePrivacyResponse) return equinePrivacyResponse;
   if (method === 'GET' && path === '/workflows/templates') return { status: 200, body: state.workflowTemplates };
   if (method === 'GET' && path === '/audit/events') return { status: 200, body: state.auditEvents };
   if (method === 'GET' && path === '/audit/verification') return { status: 200, body: (state.auditLedger as any).verification };

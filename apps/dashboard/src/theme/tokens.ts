@@ -9,6 +9,20 @@ export const themeModes = [
     description: 'Default low-glare operations center theme for race-day command surfaces.',
   },
   {
+    id: 'command-center',
+    label: 'Command Center',
+    colorScheme: 'dark',
+    selectors: ['[data-theme="command-center"]'],
+    description: 'Canonical command-center operations mode for the TrackMind Nexus SPA.',
+  },
+  {
+    id: 'dark',
+    label: 'Dark',
+    colorScheme: 'dark',
+    selectors: ['[data-theme="dark"]'],
+    description: 'General dark application mode for non-wallboard operator work.',
+  },
+  {
     id: 'light',
     label: 'Light',
     colorScheme: 'light',
@@ -429,6 +443,8 @@ const highContrastTokens = {
 
 export const semanticTokensByMode: Record<ThemeModeId, TokenTree> = {
   'command-center-dark': commandCenterDarkTokens,
+  'command-center': commandCenterDarkTokens,
+  dark: commandCenterDarkTokens,
   light: lightTokens,
   'high-contrast': highContrastTokens,
 };

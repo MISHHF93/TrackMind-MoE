@@ -3,9 +3,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "npm --prefix ../../packages/shared run build && tsc -p tsconfig.json",
+    "build": "npm --prefix ../../packages/shared run build && tsc -p tsconfig.json && vite build",
+    "build:server": "npm --prefix ../../packages/shared run build && tsc -p tsconfig.json",
+    "build:spa": "vite build",
+    "dev": "vite --host 127.0.0.1",
     "start": "node dist/server.js",
-    "test": "npm run build && node ../../scripts/run-node-tests.mjs tests/*.test.mjs"
+    "test": "npm run build && node ../../scripts/run-node-tests.mjs tests/*.test.mjs",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
     "@trackmind/shared": "file:../../packages/shared",
@@ -13,5 +17,9 @@
     "@types/react-dom": "^18.3.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.2",
+    "vite": "^8.0.16"
   }
 }
