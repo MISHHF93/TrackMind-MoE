@@ -38,7 +38,7 @@ Governance is enforced through tenant boundaries, role-based veterinary privacy 
 
 ## Safety model
 
-TrackMind-MoE never directly automates race starts/stops, official results, scratches, medication decisions, emergency actions, payouts, or disciplinary decisions without a human approval record. Every AI recommendation carries confidence, evidence, required approvals, and immutable audit logging hooks.
+TrackMind-MoE never directly automates race starts/stops, official results, scratches, medication decisions, emergency actions, payouts, or disciplinary decisions without a human approval record. Every AI recommendation carries `recommendationId`, confidence, evidence, `modelVersion`, `generatedAt`, `approvalRequirement`, and `auditReference` metadata.
 
 ## Getting started
 
