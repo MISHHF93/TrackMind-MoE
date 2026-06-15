@@ -34,6 +34,16 @@ import { seedWorkforceOperations } from './workforceOperations.js';
 
 type HttpMethod = 'GET' | 'POST' | 'OPTIONS';
 type JsonBody = unknown;
+type SeededAIAgent = { id: string; name: string; owner: string; modelVersionId: string; promptTemplateId: string; allowedActivities?: string[]; restrictedActions: string[]; digitalTwinRefs?: string[] };
+type SeededAIModelVersion = { id: string; lineage: string[] };
+type SeededAIPolicy = { id: string; allowedActivities: string[]; protectedActions: string[]; prohibitedAutonomousActions: string[]; requiredEvidence: string[]; humanApprovalRequiredFor: string[] };
+type SeededAIApproval = { id: string; recommendationId: string; policy: string; requiredRoles: string[]; status: string; evidence: string[]; approvalRequestId?: string; workflowRecordId?: string };
+type SeededAIEvidencePackage = { id: string; recommendationId: string; evidence: string[] };
+type SeededAIAuditTrail = { id: string; subject: string };
+type SeededAIEvent = { id: string; subjectId: string };
+type SeededAIDigitalTwinImpact = { twinId: string; recommendationId: string };
+type SeededAIRecommendation = { id: string; agentId?: string; modelVersionId?: string; promptTemplateId?: string; createdAt?: string; approvalPolicy?: string; confidence: number; confidenceScore?: { calibrated?: number; band?: 'low' | 'medium' | 'high'; drivers?: string[] }; evidence?: string[]; affectedAssets?: string[]; riskLevel?: string; action?: string; target?: string; recommendation?: string; reason?: string; status?: string; activity?: string; lineage?: string[]; explainability?: { limitations: string[] } };
+type SeededAIGovernanceWorkspace = { activeAgents: SeededAIAgent[]; modelVersions: SeededAIModelVersion[]; recommendationQueue: SeededAIRecommendation[]; safetyBlockedActions: SeededAIRecommendation[]; evaluationStatus: unknown; approvalRequirements: SeededAIApproval[]; safetyPolicies: SeededAIPolicy[]; evidencePackages: SeededAIEvidencePackage[]; auditTrails: SeededAIAuditTrail[]; events: SeededAIEvent[]; digitalTwinImpacts?: SeededAIDigitalTwinImpact[] };
 
 const now = () => new Date().toISOString();
 const jsonHeaders = { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization, x-trackmind-request-id, x-trackmind-tenant-id, x-trackmind-racetrack-id', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
@@ -132,8 +142,8 @@ function createSeededAIGovernanceWorkspace(timestamp: string, mock: boolean): Js
   platform.recordOverride({ id:'override-1', recommendationId:rec.id, actor:'track-superintendent', reason:'Delay until lightning watch clears', evidence:['weather:cell-west-18mi'], createdAt:timestamp });
   platform.recordRollback({ id:'rollback-1', recommendationId:rec.id, actor:'ai-governance-board', reason:'Prompt drift review', restoredVersionId:'prompt-surface-v3', evidence:['drift:metric-9'], createdAt:timestamp });
   platform.ingestMonitoring({ modelId:model.id, observedAt:timestamp, metric:'drift', value:.12, threshold:.2, evidence:['monitor:drift-window-1'] });
-  const workspace = platform.governanceWorkspace();
-  const enrichRecommendation = (rec: any) => {
+  const workspace = platform.governanceWorkspace() as SeededAIGovernanceWorkspace;
+  const enrichRecommendation = (rec: SeededAIRecommendation) => {
     const agent = workspace.activeAgents.find((item) => item.id === rec.agentId) ?? workspace.activeAgents[0];
     const approval = workspace.approvalRequirements.find((item) => item.recommendationId === rec.id);
     const audits = workspace.auditTrails.filter((audit) => audit.subject === rec.id).map((audit) => audit.id);
@@ -145,7 +155,7 @@ function createSeededAIGovernanceWorkspace(timestamp: string, mock: boolean): Js
     generatedAt: timestamp,
     ...workspace,
     recommendationQueue: workspace.recommendationQueue.map(enrichRecommendation),
-    safetyBlockedActions: workspace.safetyBlockedActions.map((blocked) => ({ ...enrichRecommendation(blocked), reason: blocked.explainability.limitations.join(' ') })),
+    safetyBlockedActions: workspace.safetyBlockedActions.map((blocked) => ({ ...enrichRecommendation(blocked), reason: blocked.explainability?.limitations.join(' ') ?? blocked.reason ?? 'AI safety policy blocked autonomous protected action.' })),
     unifiedAIControlPlane: {
       modelRegistry: listExpertModelRegistry(),
       agentRegistry: listAIAgentRegistryRecords(timestamp),
@@ -157,7 +167,7 @@ function createSeededAIGovernanceWorkspace(timestamp: string, mock: boolean): Js
 }
 
 function createSeededAIControlPlaneWorkspace(timestamp: string, mock: boolean): JsonBody {
-  const ai = createSeededAIGovernanceWorkspace(timestamp, mock) as any;
+  const ai = createSeededAIGovernanceWorkspace(timestamp, mock) as SeededAIGovernanceWorkspace;
   const policySource = ai.safetyPolicies?.[0];
   const policy = {
     policyId: policySource?.id ?? 'trackmind-ai-advisory-only-v1',
@@ -169,23 +179,23 @@ function createSeededAIControlPlaneWorkspace(timestamp: string, mock: boolean): 
     executionEndpointsAvailable: false,
     draftOnlyStateChanges: true,
     governanceMapping: [
-      { framework: 'ISO-42001', controls: ['AI policy', 'impact assessment', 'model lifecycle control'], evidence: ai.evidencePackages.map((pkg: any) => pkg.id) },
-      { framework: 'NIST-AI-RMF', controls: ['govern', 'map', 'measure', 'manage'], evidence: ai.auditTrails.map((audit: any) => audit.id) },
+      { framework: 'ISO-42001', controls: ['AI policy', 'impact assessment', 'model lifecycle control'], evidence: ai.evidencePackages.map((pkg) => pkg.id) },
+      { framework: 'NIST-AI-RMF', controls: ['govern', 'map', 'measure', 'manage'], evidence: ai.auditTrails.map((audit) => audit.id) },
     ],
     mock,
   };
-  const expertModules = ai.activeAgents.map((agent: any) => ({ id: agent.id, name: agent.name, owner: agent.owner, modelVersionId: agent.modelVersionId, promptTemplateId: agent.promptTemplateId, allowedActivities: agent.allowedActivities ?? policy.allowedActivities, restrictedActions: agent.restrictedActions, digitalTwinRefs: agent.digitalTwinRefs ?? [] }));
-  const featureStore = { datasets: ['dataset:surface-readings-v5'], telemetryStreams: ['surface.reading.updated', 'gate-status', 'weather'], lineageRefs: ai.modelVersions.flatMap((model: any) => model.lineage), evidenceRefs: ai.evidencePackages.flatMap((pkg: any) => pkg.evidence) };
-  const toRecommendation = (rec: any, blocked = false) => {
-    const agent = ai.activeAgents.find((item: any) => item.id === rec.agentId) ?? ai.activeAgents[0];
-    const approval = ai.approvalRequirements.find((item: any) => item.recommendationId === rec.id);
-    const evidencePackage = ai.evidencePackages.find((pkg: any) => pkg.recommendationId === rec.id);
-    const events = ai.events.filter((event: any) => event.subjectId === rec.id);
-    const audits = ai.auditTrails.filter((audit: any) => audit.subject === rec.id);
-    const twins = (ai.digitalTwinImpacts ?? []).filter((impact: any) => impact.recommendationId === rec.id);
-    const auditIds = audits.map((audit: any) => audit.id);
-    const eventIds = events.map((event: any) => event.id);
-    const digitalTwinRefs = twins.map((impact: any) => impact.twinId);
+  const expertModules = ai.activeAgents.map((agent) => ({ id: agent.id, name: agent.name, owner: agent.owner, modelVersionId: agent.modelVersionId, promptTemplateId: agent.promptTemplateId, allowedActivities: agent.allowedActivities ?? policy.allowedActivities, restrictedActions: agent.restrictedActions, digitalTwinRefs: agent.digitalTwinRefs ?? [] }));
+  const featureStore = { datasets: ['dataset:surface-readings-v5'], telemetryStreams: ['surface.reading.updated', 'gate-status', 'weather'], lineageRefs: ai.modelVersions.flatMap((model) => model.lineage), evidenceRefs: ai.evidencePackages.flatMap((pkg) => pkg.evidence) };
+  const toRecommendation = (rec: SeededAIRecommendation, blocked = false) => {
+    const agent = ai.activeAgents.find((item) => item.id === rec.agentId) ?? ai.activeAgents[0];
+    const approval = ai.approvalRequirements.find((item) => item.recommendationId === rec.id);
+    const evidencePackage = ai.evidencePackages.find((pkg) => pkg.recommendationId === rec.id);
+    const events = ai.events.filter((event) => event.subjectId === rec.id);
+    const audits = ai.auditTrails.filter((audit) => audit.subject === rec.id);
+    const twins = (ai.digitalTwinImpacts ?? []).filter((impact) => impact.recommendationId === rec.id);
+    const auditIds = audits.map((audit) => audit.id);
+    const eventIds = events.map((event) => event.id);
+    const digitalTwinRefs = twins.map((impact) => impact.twinId);
     const calibrated = rec.confidenceScore?.calibrated ?? rec.confidence;
     return {
       id: rec.id,
@@ -208,19 +218,19 @@ function createSeededAIControlPlaneWorkspace(timestamp: string, mock: boolean): 
       mock,
     };
   };
-  const recommendations = ai.recommendationQueue.map((rec: any) => toRecommendation(rec));
-  const blockedActions = ai.safetyBlockedActions.map((rec: any) => toRecommendation(rec, true));
+  const recommendations = ai.recommendationQueue.map((rec) => toRecommendation(rec));
+  const blockedActions = ai.safetyBlockedActions.map((rec) => toRecommendation(rec, true));
   return {
     generatedAt: timestamp,
-    inputsSummary: { telemetryStreams: featureStore.telemetryStreams, evidenceRefs: featureStore.evidenceRefs, affectedAssets: [...new Set([...recommendations, ...blockedActions].flatMap((rec: any) => rec.affectedAssets))], protectedIntents: policy.protectedActions },
+    inputsSummary: { telemetryStreams: featureStore.telemetryStreams, evidenceRefs: featureStore.evidenceRefs, affectedAssets: [...new Set([...recommendations, ...blockedActions].flatMap((rec) => rec.affectedAssets))], protectedIntents: policy.protectedActions },
     featureStoreSummary: featureStore,
     modelRegistry: { models: [...ai.modelVersions, ...listExpertModelRegistry()], evaluations: ai.evaluationStatus, expertModules, featureStore, mock },
     expertModules,
     recommendations,
     blockedActions,
     policy,
-    approvalRequiredWorkflows: [...recommendations, ...blockedActions].flatMap((rec: any) => rec.approvalWorkflow ? [rec.approvalWorkflow] : []),
-    auditEventTwinReferences: { auditIds: ai.auditTrails.map((audit: any) => audit.id), eventIds: ai.events.map((event: any) => event.id), digitalTwinRefs: (ai.digitalTwinImpacts ?? []).map((impact: any) => impact.twinId) },
+    approvalRequiredWorkflows: [...recommendations, ...blockedActions].flatMap((rec) => rec.approvalWorkflow ? [rec.approvalWorkflow] : []),
+    auditEventTwinReferences: { auditIds: ai.auditTrails.map((audit) => audit.id), eventIds: ai.events.map((event) => event.id), digitalTwinRefs: (ai.digitalTwinImpacts ?? []).map((impact) => impact.twinId) },
     events: ai.events,
     mock,
   };
