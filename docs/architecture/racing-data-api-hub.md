@@ -244,7 +244,7 @@ Protected mutation endpoints must require idempotency, tenant/racetrack scope, a
 
 ## Frontend Workspaces
 
-The dashboard navigation already reserves `/api-hub` for the Racing Data API Hub workspace. The workspace should remain read-only unless backed by live authorization and approval workflows. It should surface:
+The canonical frontend navigation reserves `/data-hub` for the Racing Data API Hub workspace. The workspace should remain read-only unless backed by live authorization and approval workflows. It should surface:
 
 - provider registry cards with license status, usage scope, attribution, PII, retention, redistribution, and commercial-use controls;
 - connector health, sync mode, rate limit, latency, last sync, next sync, and degraded state;
@@ -290,7 +290,7 @@ The repository currently contains:
 - shared Racing Data API Hub DTOs and validation helpers in `packages/shared/src/racingDataApiHub.ts`;
 - a provider registry reference service in `apps/api/src/providerRegistryService.ts`;
 - a connector runtime, raw landing service, manual adapter, mock adapter, ingestion jobs, validation hooks, ingestion audit refs, and ingestion events in `apps/api/src/connectorRuntime.ts`;
-- a dashboard navigation entry for `/api-hub`;
+- a frontend navigation entry for `/data-hub`;
 - existing Universal Artifact, TUS, event backbone, audit, Digital Twin, compliance, and AI control-plane documentation that the hub must follow.
 
 These are contracts and reference slices. Production deployment still requires provider-specific agreements, secrets management, connector hardening, persistent stores, endpoint implementation, operational runbooks, security review, compliance review, data protection review, provider acceptance testing, and tenant-specific usage policy approval.

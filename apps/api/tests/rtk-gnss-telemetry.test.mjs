@@ -61,7 +61,7 @@ test('RTK ingestion accepts 20Hz centimeter-accurate samples and emits monitorin
   const accepted = await handleApiRequest('POST', '/api/v1/telemetry/rtk/ingest', rtkSample(), state);
   assert.equal(accepted.status, 202);
   assert.equal(accepted.body.accepted, true);
-  assert.equal(accepted.body.event.eventType, 'LocationUpdatedEvent');
+  assert.equal(accepted.body.event.eventType, 'location.position.updated.v1');
   assert.equal(accepted.body.event.category, 'monitoring');
   assert.equal(accepted.body.event.ai.model_id, 'rtk-gnss-synchronizer-v1');
   assert.deepEqual(accepted.body.event.payload.gnss.constellations.sort(), ['BeiDou', 'GLONASS', 'GPS', 'Galileo'].sort());

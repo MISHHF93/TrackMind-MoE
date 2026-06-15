@@ -22,6 +22,7 @@ export interface KPIWorkspaceInput {
 }
 
 export interface KPIVisibilityPrincipal {
+  organizationId?: string;
   tenantId?: string;
   racetrackId?: string;
   role?: Role;
@@ -98,7 +99,9 @@ function seed(
     value,
     unit,
     target,
-    threshold: { warning: target * 0.85, critical: target * 0.65, targetDirection: 'above', description: 'Readiness and quality KPIs should meet or exceed target unless explicitly count/pressure based.' },
+    threshold: domain === 'safety-incidents'
+      ? { warning: target, critical: target * 1.5, targetDirection: 'below', description: 'Safety incident pressure should stay below target; values above target require human review.' }
+      : { warning: target * 0.85, critical: target * 0.65, targetDirection: 'above', description: 'Readiness and quality KPIs should meet or exceed target unless explicitly count/pressure based.' },
     status,
     trend,
     confidence: status === 'readiness-only' ? 0.62 : 0.82,
@@ -140,6 +143,7 @@ export function createKPIWorkspace(input: KPIWorkspaceInput): KPIWorkspaceDto {
 export function filterKPIWorkspace(workspace: KPIWorkspaceDto, principal: KPIVisibilityPrincipal): KPIWorkspaceDto {
   const role = principal.role ?? 'read-only-auditor';
   const kpis = workspace.kpis.filter((kpi) => {
+    if (principal.organizationId && kpi.organizationId !== principal.organizationId) return false;
     if (principal.tenantId && kpi.tenantId !== principal.tenantId) return false;
     if (principal.racetrackId && kpi.racetrackId && kpi.racetrackId !== principal.racetrackId) return false;
     if (kpi.visibility === 'veterinary-restricted' && role !== 'veterinarian' && role !== 'admin') return false;

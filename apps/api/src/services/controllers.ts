@@ -35,11 +35,12 @@ function evidenceFromBody(body: Record<string, any>): ApprovalEvidencePackage {
 }
 
 function contextFromBody(body: Record<string, any>): ApexMutationContext {
+  const actorType = body.actorType === 'human' || body.actorType === 'ai-agent' || body.actorType === 'service' ? body.actorType : 'service';
   return {
     tenantId: stringValue(body.tenantId, 'trackmind'),
     racetrackId: stringValue(body.racetrackId, 'main-track'),
     actor: stringValue(body.actor, stringValue(body.requestedBy, 'api-operator')),
-    actorType: body.actorType === 'ai-agent' || body.actorType === 'service' ? body.actorType : 'human',
+    actorType,
     roles: arrayOfStrings(body.roles),
     now: typeof body.now === 'string' ? body.now : undefined,
   };

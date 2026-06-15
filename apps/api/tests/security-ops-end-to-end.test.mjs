@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ImmutableAuditLog, RacetrackAssetRegistryService, SecurityOperationsService, UniversalEventBus } from '../dist/index.js';
 
-const fullActor = { id: 'sec-commander', roles: ['security'], tenantId: 'trackmind', human: true, permissions: ['security:read','security:sensitive:read','security:write','security:escalate','security:investigate'] };
+const fullActor = { id: 'sec-commander', roles: ['security'], tenantId: 'trackmind', human: true, permissions: ['security:read','security:sensitive-read','security:manage','security:investigate'] };
 
 test('security operations enforces access control and creates auditable events/incidents', () => {
   const service = new SecurityOperationsService(() => '2026-06-14T00:00:00.000Z');

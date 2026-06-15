@@ -261,12 +261,17 @@ export interface AIRecommendationArtifactAdapterOptions extends AIArtifactAdapte
   domain?: SharedAIControlPlaneDomain;
   type?: SharedAIRecommendationType;
   horizon?: string;
+  auditEventIds?: string[];
+  eventIds?: string[];
+  evidencePackageId?: string;
+  confidenceDrivers?: string[];
 }
 
 export function recommendationDraftToSharedAIOutput(draft: ExpertRecommendationDraft, options: AIRecommendationArtifactAdapterOptions = {}): SharedAIRecommendationOutput {
   const type = options.type ?? sharedRecommendationTypeByExpertType[draft.recommendationType];
   const requiredApproverRoles = [...draft.requiredApprovals];
   const requiresApproval = requiredApproverRoles.length > 0 || draft.riskLevel === 'high' || draft.riskLevel === 'critical' || draft.protectedActions.length > 0;
+  const traceRefs = requiredTraceRefs(options, draft.id);
   return {
     recommendationId: draft.id,
     tenantId: options.tenantId ?? draft.tenantId,
@@ -278,6 +283,8 @@ export function recommendationDraftToSharedAIOutput(draft: ExpertRecommendationD
     summary: draft.recommendation,
     evidence: [...draft.evidence],
     confidence: draft.confidence,
+    confidenceScore: confidenceScoreFor(draft.confidence, draft.riskLevel, options.confidenceDrivers ?? ['expert-draft-confidence', `risk:${draft.riskLevel}`]),
+    evidencePackage: evidencePackageFor(draft.id, draft.evidence, draft.lineage, options),
     modelVersion: draft.modelId,
     policyReferences: policyReferencesForDraft(draft),
     riskLevel: draft.riskLevel,
@@ -290,10 +297,14 @@ export function recommendationDraftToSharedAIOutput(draft: ExpertRecommendationD
       requiredApproverRoles,
     },
     auditReference: {
-      auditEventIds: [],
-      eventIds: [],
+      auditEventIds: traceRefs.auditEventIds,
+      eventIds: traceRefs.eventIds,
+      digitalTwinRefs: [...(options.digitalTwinRefs ?? draft.lineage.filter((item) => item.startsWith('twin:')))],
       correlationId: `ai-draft:${draft.id}`,
+      integrityRef: options.evidencePackageId,
     },
+    advisoryOnly: true,
+    executionAllowed: false,
     blockedAutonomousExecution: true,
   };
 }
@@ -314,6 +325,7 @@ export function governanceRecommendationToSharedAIOutput(record: RecommendationR
   const requiresApproval = record.approvalPolicy !== 'none' || record.riskLevel === 'high' || record.riskLevel === 'critical';
   const type = options.type ?? sharedTypeForGovernanceRecord(record);
   const requiredApproverRoles = requiresApproval ? approverRolesForGovernanceRecord(record) : [];
+  const traceRefs = requiredTraceRefs(options, record.id);
   return {
     recommendationId: record.id,
     tenantId: options.tenantId ?? record.tenantId ?? 'unknown-tenant',
@@ -325,6 +337,8 @@ export function governanceRecommendationToSharedAIOutput(record: RecommendationR
     summary: record.recommendation,
     evidence: [...record.evidence],
     confidence: record.confidence,
+    confidenceScore: confidenceScoreFor(record.confidence, record.riskLevel, options.confidenceDrivers ?? ['governance-record-confidence', `risk:${record.riskLevel}`]),
+    evidencePackage: evidencePackageFor(record.id, record.evidence, record.lineage, options),
     modelVersion: record.modelVersionId,
     policyReferences: policyReferencesForGovernanceRecord(record),
     riskLevel: record.riskLevel,
@@ -337,10 +351,14 @@ export function governanceRecommendationToSharedAIOutput(record: RecommendationR
       requiredApproverRoles,
     },
     auditReference: {
-      auditEventIds: [`audit:ai-recommendation:${record.id}`],
-      eventIds: [`event:ai-recommendation:${record.id}`],
+      auditEventIds: traceRefs.auditEventIds,
+      eventIds: traceRefs.eventIds,
+      digitalTwinRefs: [...(options.digitalTwinRefs ?? record.digitalTwinRefs ?? [])],
       correlationId: record.correlationId ?? record.id,
+      integrityRef: options.evidencePackageId,
     },
+    advisoryOnly: true,
+    executionAllowed: false,
     blockedAutonomousExecution: true,
   };
 }
@@ -355,6 +373,46 @@ export function governanceRecommendationToInsightArtifact(record: Recommendation
 
 export function governanceRecommendationToForecastArtifact(record: RecommendationRecord, options: AIRecommendationArtifactAdapterOptions = {}): AIForecastArtifact {
   return adaptAIRecommendationOutputToForecastArtifact(governanceRecommendationToSharedAIOutput(record, options), { ...artifactMetadataForGovernanceRecord(record, options), horizon: options.horizon });
+}
+
+function requiredTraceRefs(options: AIRecommendationArtifactAdapterOptions, recommendationId: string): { auditEventIds: string[]; eventIds: string[] } {
+  const auditEventIds = [...(options.auditEventIds ?? [])].filter(Boolean);
+  const eventIds = [...(options.eventIds ?? [])].filter(Boolean);
+  if (auditEventIds.length === 0 || eventIds.length === 0) {
+    throw new Error(`AI recommendation ${recommendationId} requires explicit auditEventIds and eventIds before it can be projected to the canonical AI output contract`);
+  }
+  return { auditEventIds, eventIds };
+}
+
+function evidencePackageFor(recommendationId: string, evidence: string[], lineage: string[], options: AIRecommendationArtifactAdapterOptions) {
+  return {
+    evidencePackageId: options.evidencePackageId ?? `evidence-package:${recommendationId}`,
+    evidence: evidence.map((evidenceId) => ({
+      evidenceId,
+      kind: evidenceKindFor(evidenceId),
+      source: evidenceId.split(':')[0] || 'ai-control-plane',
+    })),
+    lineage: [...new Set(lineage)],
+    hash: options.evidencePackageId ? `sha256:${options.evidencePackageId}` : `sha256:${recommendationId}:${evidence.join('|')}`,
+  };
+}
+
+function confidenceScoreFor(raw: number, riskLevel: RiskLevel, drivers: string[]) {
+  const riskPenalty = riskLevel === 'critical' ? 0.08 : riskLevel === 'high' ? 0.04 : riskLevel === 'medium' ? 0.02 : 0;
+  const calibrated = Math.max(0, Math.min(1, Number((raw - riskPenalty).toFixed(4))));
+  const band: 'low' | 'medium' | 'high' = calibrated >= 0.85 ? 'high' : calibrated >= 0.65 ? 'medium' : 'low';
+  return { raw, calibrated, band, drivers: [...new Set(drivers)] };
+}
+
+function evidenceKindFor(evidenceId: string): 'event' | 'audit' | 'digital-twin' | 'telemetry' | 'approval' | 'document' | 'model' | 'policy' {
+  if (evidenceId.startsWith('event:') || evidenceId.startsWith('evt-')) return 'event';
+  if (evidenceId.startsWith('audit:') || evidenceId.startsWith('immutable-audit-')) return 'audit';
+  if (evidenceId.startsWith('twin:')) return 'digital-twin';
+  if (evidenceId.startsWith('telemetry:')) return 'telemetry';
+  if (evidenceId.startsWith('approval:') || evidenceId.startsWith('approval-')) return 'approval';
+  if (evidenceId.startsWith('model:')) return 'model';
+  if (evidenceId.startsWith('policy:')) return 'policy';
+  return 'document';
 }
 
 type ExpertImplementation = (request: AIExpertRequest) => ExpertRecommendationDraft;

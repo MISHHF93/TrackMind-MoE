@@ -1,8 +1,10 @@
 import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
 import { backendSupportLabels, canViewRoute, defaultTenantContext, regulatedActionNames, type NavigationGroup } from '../domain/support';
+import { navigate } from '../routes/navigation';
 import { resolveRoute, routes } from '../routes/routes';
-import { navigate, Router } from '../routes/Router';
+import { Router } from '../routes/Router';
+import { AlertPanel, EmptyState, StatusBadge, TagList } from '../components/ui';
 
 const navigationOrder: NavigationGroup[] = ['Command', 'Operations', 'Governance', 'Enterprise', 'Administration'];
 const routeIconLabels: Record<string, string> = {
@@ -52,7 +54,7 @@ export function AppShell(): ReactElement {
           </div>
         </div>
         <nav>
-          {groupedRoutes.length === 0 ? <p className="nav-empty-state">No routes match "{searchQuery}".</p> : null}
+          {groupedRoutes.length === 0 ? <EmptyState message={`No routes match "${searchQuery}".`} /> : null}
           {groupedRoutes.map(({ group, routes: groupRoutes }) => (
             <section className="nav-group" key={group} aria-label={`${group} routes`}>
               <h2>{group}</h2>
@@ -103,13 +105,14 @@ export function AppShell(): ReactElement {
         <aside className="intelligence-panel" aria-label="Contextual intelligence panel">
           <h2>AI Stack</h2>
           <p>Mixture-of-experts output is advisory by default and bound to evidence, approval, audit, and tenant context.</p>
-          <ul>
-            <li>Human approval required for regulated actions.</li>
-            <li>AI recommendations expose confidence, evidence, model version, risk, and audit references.</li>
-            <li>No autonomous control path is rendered in the shell.</li>
-          </ul>
-          <h3>Blocked Direct Actions</h3>
-          <p>{regulatedActionNames.join(', ')}</p>
+          <div className="intelligence-panel__badges" aria-label="AI governance controls">
+            <StatusBadge label="Human approval required" tone="critical" />
+            <StatusBadge label="Evidence-bound recommendations" tone="advisory" />
+            <StatusBadge label="No autonomous control path" tone="nominal" />
+          </div>
+          <AlertPanel title="Blocked Direct Actions" tone="critical">
+            <TagList label="Protected actions" values={regulatedActionNames} />
+          </AlertPanel>
         </aside>
 
         <footer className="status-footer">
@@ -134,7 +137,6 @@ function routeSearchText(route: (typeof routes)[number]): string {
   return [
     route.label,
     route.path,
-    ...(route.aliases ?? []),
     route.navigationGroup,
     route.supportStatus,
     route.dataSource,

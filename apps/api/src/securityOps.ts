@@ -1,4 +1,4 @@
-import type { Role } from '@trackmind/shared';
+import type { CanonicalEventRef, Permission, Role, SecurityEvent as CanonicalSecurityEvent } from '@trackmind/shared';
 import type { CentralizedApprovalService } from './approvals.js';
 import { ApprovalStore, type HumanApprovalRecord } from './approvals.js';
 import { ImmutableAuditLog, type AuditLogEntry } from './auditLog.js';
@@ -8,14 +8,12 @@ import type { PlatformObservabilityService, PlatformTelemetrySignal } from './pl
 import { controlCategoryPolicies, type AssetRiskLevel } from './racetrackControlRegistry.js';
 import { RacetrackAssetRegistryService, type AssetCreateInput, type AssetPrincipal } from './racetrackAssetRegistryService.js';
 
-export interface SecurityEvent {
-  id: string;
+export type SecurityEvent = Pick<CanonicalSecurityEvent, 'id' | 'severity'> & {
   type: 'access-control' | 'restricted-zone-alert' | 'camera-health' | 'emergency-button' | 'suspicious-activity' | 'lost-and-found' | 'banned-person-watchlist-placeholder';
-  severity: 'low' | 'medium' | 'high' | 'critical';
   status: 'new' | 'triaged' | 'escalated' | 'closed';
   location?: string;
   evidenceUris?: string[];
-}
+};
 
 export interface EscalationRecord {
   eventId: string;
@@ -215,7 +213,7 @@ export class SecurityOperationsSafetyPlatform {
   }
 }
 
-export type SecurityOpsPermission = 'security:read' | 'security:sensitive:read' | 'security:write' | 'security:escalate' | 'security:investigate' | 'security:admin';
+export type SecurityOpsPermission = Extract<Permission, 'security:read' | 'security:sensitive-read' | 'security:manage' | 'security:investigate' | 'security:admin'>;
 export type SecurityAction =
   | 'access.checked'
   | 'security.event.created'
@@ -260,7 +258,7 @@ export interface WatchlistPlaceholder { id: string; category: 'banned-person' | 
 export interface VisitorLog { id: string; visitorDisplayName: string; visitorLegalName?: string; host: string; zoneId: string; checkedInAt: string; checkedOutAt?: string; credentialCheckId: string; auditId: string }
 export interface CredentialCheck { id: string; credentialId: string; holderDisplayName: string; holderLegalName?: string; status: 'valid' | 'expired' | 'revoked' | 'unknown'; checkedAt: string; decision: 'allow' | 'deny' | 'review'; auditId: string; requiredCredential?: string }
 export interface EscalationWorkflow { id: string; incidentId: string; routeTo: string[]; status: 'pending' | 'sent' | 'acknowledged'; reason: string; auditId: string; approvalRequestId?: string }
-export interface SecurityDomainEvent { id: string; type: SecurityDomainEventType; subjectId: string; severity: RiskLevel; timestamp: string; auditId: string; payload: Record<string, unknown> }
+export interface SecurityDomainEvent extends Pick<CanonicalEventRef, 'eventId' | 'eventType' | 'tenantId' | 'racetrackId' | 'actorId' | 'source' | 'timestamp' | 'version'> { id: string; type: SecurityDomainEventType; subjectId: string; severity: RiskLevel; auditId: string; payload: Record<string, unknown> }
 export interface SecurityTwinUpdate { twinId: string; sourceId: string; patch: Record<string, unknown>; eventId?: string; auditId: string; status: 'queued' | 'published' | 'applied'; error?: string }
 export interface SecurityAssetRegistryLink { assetId: string; sourceId: string; sourceType: 'camera' | 'restricted-zone'; registryStatus: 'created' | 'updated' | 'queued'; twinId?: string; auditId: string; eventId?: string }
 export interface SecurityApprovalGate { id: string; action: SecurityApprovalAction; target: string; status: 'not-required' | 'pending' | 'approved' | 'rejected' | 'expired'; requestedBy?: string; evidence: string[]; reason: string }
@@ -383,7 +381,7 @@ export class SecurityOperationsService {
   }
 
   registerRestrictedZone(actor: SecurityActor, zone: RestrictedZone): RestrictedZone {
-    this.require(actor, 'security:write');
+    this.require(actor, 'security:manage');
     this.zones.set(zone.id, clone(zone));
     const auditId = this.audit('restricted-zone.registered', actor.id, zone.id, ['requiredCredential']);
     this.emitDomainEvent('security.restricted-zone.registered', zone.id, zone.classification === 'critical' ? 'critical' : 'medium', auditId, { zoneId: zone.id, classification: zone.classification, cameraIds: zone.cameraIds });
@@ -391,7 +389,7 @@ export class SecurityOperationsService {
   }
 
   registerCamera(actor: SecurityActor, camera: CameraAsset): CameraAsset {
-    this.require(actor, 'security:write');
+    this.require(actor, 'security:manage');
     if (!this.zones.has(camera.zoneId)) throw new Error(`unknown restricted zone ${camera.zoneId}`);
     this.cameras.set(camera.id, clone(camera));
     this.queueTwinPatch(actor, camera.twinId ?? `twin:${camera.id}`, camera.id, { cameraHealth: camera.health, privacyMasking: camera.privacyMasking, zoneId: camera.zoneId, lastHeartbeatAt: camera.lastHeartbeatAt });
@@ -399,7 +397,7 @@ export class SecurityOperationsService {
   }
 
   checkCredential(actor: SecurityActor, input: { credentialId: string; holderDisplayName: string; holderLegalName?: string; zoneId: string; status: CredentialCheck['status'] }): CredentialCheck {
-    this.require(actor, 'security:write');
+    this.require(actor, 'security:manage');
     const zone = this.zones.get(input.zoneId);
     const decision = input.status === 'valid' && zone ? 'allow' : input.status === 'unknown' ? 'review' : 'deny';
     const auditId = this.audit('credential.checked', actor.id, input.credentialId, ['credentialId', 'holderLegalName']);
@@ -411,7 +409,7 @@ export class SecurityOperationsService {
   }
 
   recordAccessEvent(actor: SecurityActor, input: Omit<AccessControlEvent, 'id' | 'eventId' | 'auditId'>): AccessControlEvent {
-    this.require(actor, 'security:write');
+    this.require(actor, 'security:manage');
     const zone = this.zones.get(input.zoneId);
     const auditId = this.audit('access.checked', actor.id, input.zoneId, ['credentialId', 'personLegalName']);
     const event: AccessControlEvent = { ...input, id: `access-${this.accessEvents.length + 1}`, eventId: `evt-security-access-${this.accessEvents.length + 1}`, auditId };
@@ -423,7 +421,7 @@ export class SecurityOperationsService {
   }
 
   createIncident(actor: SecurityActor, input: { title: string; severity: RiskLevel; zoneId: string; eventIds: string[] }): SecurityIncident {
-    this.require(actor, 'security:write');
+    this.require(actor, 'security:manage');
     const auditId = this.audit('incident.created', actor.id, input.zoneId, []);
     const incident: SecurityIncident = { id: `inc-${this.incidents.size + 1}`, status: 'open', createdAt: this.clock(), auditId, ...input };
     this.incidents.set(incident.id, incident);
@@ -443,7 +441,7 @@ export class SecurityOperationsService {
   }
 
   escalateIncident(actor: SecurityActor, incidentId: string, routeTo = ['security-supervisor', 'incident-command']): EscalationWorkflow {
-    this.require(actor, 'security:escalate');
+    this.require(actor, 'security:manage');
     const incident = this.incidents.get(incidentId);
     if (!incident) throw new Error('incident not found');
     incident.status = 'escalated';
@@ -458,7 +456,7 @@ export class SecurityOperationsService {
   }
 
   logVisitor(actor: SecurityActor, input: { visitorDisplayName: string; visitorLegalName?: string; host: string; zoneId: string; credentialId: string; credentialStatus: CredentialCheck['status'] }): VisitorLog {
-    this.require(actor, 'security:write');
+    this.require(actor, 'security:manage');
     const check = this.checkCredential(actor, { credentialId: input.credentialId, holderDisplayName: input.visitorDisplayName, holderLegalName: input.visitorLegalName, zoneId: input.zoneId, status: input.credentialStatus });
     const auditId = this.audit('visitor.logged', actor.id, input.zoneId, ['visitorLegalName', 'credentialCheckId']);
     const visitor: VisitorLog = { id: `visitor-${this.visitors.length + 1}`, visitorDisplayName: input.visitorDisplayName, visitorLegalName: input.visitorLegalName, host: input.host, zoneId: input.zoneId, checkedInAt: this.clock(), credentialCheckId: check.id, auditId };
@@ -468,7 +466,7 @@ export class SecurityOperationsService {
   }
 
   updateCameraHealth(actor: SecurityActor, cameraId: string, health: CameraAsset['health'], observedAt = this.clock()): CameraAsset {
-    this.require(actor, 'security:write');
+    this.require(actor, 'security:manage');
     const current = this.cameras.get(cameraId);
     if (!current) throw new Error(`unknown camera ${cameraId}`);
     const next = { ...current, health, lastHeartbeatAt: observedAt };
@@ -528,16 +526,25 @@ export class SecurityOperationsService {
   }
 
   private emitDomainEvent(type: SecurityDomainEventType, subjectId: string, severity: RiskLevel, auditId: string, payload: Record<string, unknown>): SecurityDomainEvent {
-    const event: SecurityDomainEvent = { id: `evt-security-${this.events.length + 1}`, type, subjectId, severity, timestamp: this.clock(), auditId, payload: clone(payload) };
+    const timestamp = this.clock();
+    const eventId = `evt-security-${this.events.length + 1}`;
+    const eventType = `${type}.v1` as CanonicalEventRef['eventType'];
+    const event: SecurityDomainEvent = { eventId, eventType, tenantId: 'trackmind', racetrackId: 'main-track', actorId: 'security-operations', source: 'security-operations', timestamp, version: 1, id: eventId, type, subjectId, severity, auditId, payload: clone(payload) };
     this.events.push(event);
     void this.eventBus.publish({
-      id: event.id,
-      type,
+      id: event.eventId,
+      type: event.eventType,
       occurredAt: event.timestamp,
+      tenantId: event.tenantId,
+      racetrackId: event.racetrackId,
+      actor: { id: event.actorId, type: 'service' },
+      subject: { id: subjectId, type: 'security', tenantId: event.tenantId },
       payload: { ...event.payload, subjectId, severity, auditId },
       aggregateId: subjectId,
       correlationId: auditId,
-      producer: 'security-operations',
+      auditRef: auditId,
+      evidence: [auditId],
+      producer: event.source,
       metadata: { team: 'security-operations', accountableRole: 'security-operations-commander', compliance: severity === 'critical' ? 'restricted' : 'regulated' },
     });
     return event;
@@ -564,7 +571,7 @@ export class SecurityOperationsService {
   }
 
   private canReadSensitive(actor: SecurityActor): boolean {
-    if ((can(actor, 'security:sensitive:read') && (!actor.roles || hasSensitiveRole(actor))) || can(actor, 'security:admin')) return true;
+    if ((can(actor, 'security:sensitive-read') && (!actor.roles || hasSensitiveRole(actor))) || can(actor, 'security:admin')) return true;
     return Boolean(this.approvalStore.findApproved('security-sensitive-read', this.sensitiveRecommendationId(actor.id)));
   }
 
@@ -658,7 +665,7 @@ export class SecurityOperationsService {
       'security.authorization.failed',
       'security.asset.synced',
       'security.twin.patch.queued',
-    ] satisfies SecurityDomainEventType[]).forEach((type) => this.eventBus.registerEvent({ type, version: 1, description: `Security Operations ${type}`, owner, payloadFields: ['subjectId', 'severity', 'auditId'], compliance: 'regulated' }));
+    ] satisfies SecurityDomainEventType[]).forEach((type) => this.eventBus.registerEvent({ type: `${type}.v1`, version: 1, description: `Security Operations ${type}`, owner, payloadFields: ['subjectId', 'severity', 'auditId'], compliance: 'regulated' }));
   }
 
   private seed(): void {

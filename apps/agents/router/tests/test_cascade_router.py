@@ -121,7 +121,7 @@ class CascadingRouterTests(unittest.TestCase):
             {"approved_by": "chief-steward", "approval_timestamp": "2026-06-14T00:00:00Z", "approval_verified": True},
         )
         self.assertTrue(forged.blocked)
-        self.assertFalse(verified.blocked)
+        self.assertTrue(verified.blocked)
 
     def test_chat_messages_accept_openai_text_parts(self):
         body = ChatCompletionRequest(messages=[{"role": "developer", "content": "Stay safe."}, {"role": "user", "content": [{"type": "text", "text": "route safety"}]}])

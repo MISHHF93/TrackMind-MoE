@@ -1,7 +1,7 @@
-import { hasPermission, type Permission, type Role } from '@trackmind/shared';
+import { hasPermission, type Permission, type Role, type TenantRacetrackContext } from '@trackmind/shared';
 
-export type BackendSupportStatus = 'live-api' | 'facade-api' | 'documented-stub' | 'mock-adapter';
-export type DataSourceKind = 'backend-route' | 'shared-contract' | 'database-migration' | 'documented-stub' | 'explicit-mock';
+export type BackendSupportStatus = 'live-api' | 'facade-api' | 'documented-stub';
+export type DataSourceKind = 'backend-route' | 'shared-contract' | 'database-migration' | 'documented-stub';
 export type NavigationGroup = 'Command' | 'Operations' | 'Governance' | 'Enterprise' | 'Administration';
 export type DomainRouteId =
   | 'dashboard'
@@ -29,7 +29,6 @@ export interface BackendEvidence {
 export interface RouteSupportMetadata {
   id: DomainRouteId;
   path: string;
-  aliases?: readonly string[];
   label: string;
   navigationGroup: NavigationGroup;
   iconKey: string;
@@ -37,8 +36,7 @@ export interface RouteSupportMetadata {
   requiredRoles: Role[] | 'authenticated';
   supportStatus: BackendSupportStatus;
   dataSource: string;
-  pageComponent: string;
-  backendPaths: string[];
+  backendPaths: readonly string[];
   sharedTypes: string[];
   databaseSupport: 'durable' | 'partial' | 'none';
   evidence: BackendEvidence[];
@@ -49,10 +47,9 @@ export const backendSupportLabels: Record<BackendSupportStatus, string> = {
   'live-api': 'Live API',
   'facade-api': 'Facade API',
   'documented-stub': 'Documented Stub',
-  'mock-adapter': 'Mock Adapter',
 };
 
-export const defaultTenantContext = {
+export const defaultTenantContext: TenantRacetrackContext = {
   tenantId: 'trackmind',
   racetrackId: 'main-track',
   organizationId: 'org-trackmind-network',

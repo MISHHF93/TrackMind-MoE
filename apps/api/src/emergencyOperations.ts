@@ -1,4 +1,4 @@
-import { hasPermission, type Role } from '@trackmind/shared';
+import { hasPermission, type CanonicalEventRef, type Role } from '@trackmind/shared';
 import type { ImmutableAuditLog } from './auditLog.js';
 import type { CentralizedApprovalService } from './approvals.js';
 import type { UniversalEventBus } from './eventBus.js';
@@ -32,7 +32,7 @@ export interface EvacuationZone { id: string; name: string; status: 'open' | 'ev
 export interface CommunicationChecklistItem { id: string; audience: string; channel: string; message: string; completed: boolean; completedBy?: string; completedAt?: string; }
 export interface EmergencyWorkflowInput { id: string; planId: string; incident: EmergencyIncidentInput; activatedBy: string; activatedByRoles: Role[]; commandRoles: IncidentCommandRole[]; resources: EmergencyResource[]; evacuationZones: EvacuationZone[]; communicationChecklist: CommunicationChecklistItem[]; aiRecommendationId?: string; tenantId?: string; racetrackId?: string; workforceResources?: EmergencyResource[]; workforceReadiness?: Pick<WorkforceReadinessSummary, 'status' | 'score' | 'emergencyGaps' | 'complianceStatus'>; }
 export interface EmergencyAuditRecord { id: string; action: string; actor: string; subjectId: string; timestamp: string; humanOverride: boolean; aiBlocked: false; previousHash: string; hash: string; externalAuditId?: string; }
-export interface EmergencyDomainEvent { id: string; type: EmergencyEventType | string; subjectId: string; severity: IncidentSeverity; timestamp: string; auditId: string; payload: Record<string, unknown>; eventBusId?: string; }
+export interface EmergencyDomainEvent extends Pick<CanonicalEventRef, 'eventId' | 'eventType' | 'tenantId' | 'racetrackId' | 'actorId' | 'source' | 'timestamp' | 'version'> { id: string; type: EmergencyEventType | string; subjectId: string; severity: IncidentSeverity; auditId: string; payload: Record<string, unknown>; eventBusId?: string; }
 export interface EmergencyResponseProcedure { scenario: EmergencyScenario; lead: string; checklist: string[]; workflowDefinitionId: string; slaMinutes: number; humanOverrideSupported: true; aiMayBlock: false; authorityStatement: string; }
 export interface EmergencyDrillRecord { id: string; scenario: EmergencyScenario; participants: string[]; injects: Array<{ minute: number; prompt: string }>; successCriteria: string[]; completedAt?: string; eventId?: string; auditId?: string; }
 export interface EmergencyAfterActionReport { incidentId: string; scenario: EmergencyScenario; timelineEntries: number; findings: Array<{ finding: string; severity: IncidentSeverity; owner: string }>; correctiveActions: Array<{ id: string; owner: string; action: string; dueDays: number }>; evidencePackage: string[]; approvalPosture: EmergencyApprovalPosture; }
@@ -250,9 +250,10 @@ export class EmergencyOperationsPlatform {
   }
 
   private appendEvent(type: EmergencyEventType, subjectId: string, severity: IncidentSeverity, auditId: string, payload: Record<string, unknown>) {
-    const event: EmergencyDomainEvent = { id: `evt-emergency-${this.events.length + 1}`, type, subjectId, severity, timestamp: nowIso(), auditId, payload };
+    const eventId = `evt-emergency-${this.events.length + 1}`;
+    const event: EmergencyDomainEvent = { eventId, eventType: `${type}.v1` as CanonicalEventRef['eventType'], tenantId: 'trackmind', racetrackId: 'main-track', actorId: 'emergency-operations', source: 'emergency-operations', timestamp: nowIso(), version: 1, id: eventId, type, subjectId, severity, auditId, payload };
     this.events.push(event);
-    void this.deps.eventBus?.publish({ id: event.id, type, payload: { subjectId, severity, auditId, ...payload }, aggregateId: subjectId, producer: 'emergency-operations', correlationId: auditId, metadata: { compliance: 'regulated', team: 'emergency-operations', accountableRole: 'incident-commander', description: `Emergency Operations ${type}` } }).then((published) => { event.eventBusId = published.id; });
+    void this.deps.eventBus?.publish({ id: event.eventId, type: event.eventType, tenantId: event.tenantId, racetrackId: event.racetrackId, actor: { id: event.actorId, type: 'service' }, subject: { id: subjectId, type: 'emergency', tenantId: event.tenantId }, evidence: [auditId], auditRef: auditId, payload: { subjectId, severity, auditId, ...payload }, aggregateId: subjectId, producer: event.source, correlationId: auditId, metadata: { compliance: 'regulated', team: 'emergency-operations', accountableRole: 'incident-commander', description: `Emergency Operations ${type}` } }).then((published) => { event.eventBusId = published.eventId; });
     return event;
   }
 

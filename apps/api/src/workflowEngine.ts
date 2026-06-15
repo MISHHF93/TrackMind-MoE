@@ -1,4 +1,4 @@
-import type { ApprovalViewStatusDto } from '@trackmind/shared';
+import type { ApprovalViewStatusDto, CanonicalEventRef } from '@trackmind/shared';
 import type { CentralizedApprovalService, ControlledAction, ControlledActionRequest } from './approvals.js';
 import type { AuditSeverity, ImmutableAuditLog } from './auditLog.js';
 import type { EventName, UniversalEventBus } from './eventBus.js';
@@ -170,7 +170,7 @@ export interface WorkflowTask {
 }
 
 export interface WorkflowAuditEntry { id: string; timestamp: string; actor: string; action: WorkflowEventType | string; details: Record<string, unknown>; }
-export interface WorkflowRuntimeEvent { id: string; type: WorkflowEventType | string; tenantId: string; instanceId?: string; timestamp: string; payload: Record<string, unknown>; }
+export interface WorkflowRuntimeEvent extends Pick<CanonicalEventRef, 'eventId' | 'eventType' | 'tenantId' | 'racetrackId' | 'actorId' | 'source' | 'timestamp' | 'version'> { id: string; type: WorkflowEventType | string; instanceId?: string; payload: Record<string, unknown>; }
 
 export interface WorkflowInstance {
   id: string;
@@ -371,8 +371,9 @@ export class WorkflowOrchestrationEngine {
     return this.snapshot(instance);
   }
 
-  emit(event: Omit<WorkflowRuntimeEvent, 'id' | 'timestamp'>, now = new Date().toISOString()): WorkflowInstance[] {
-    const runtimeEvent: WorkflowRuntimeEvent = { ...event, id: `event-${this.eventLog.length + 1}`, timestamp: now };
+  emit(event: Omit<WorkflowRuntimeEvent, 'id' | 'timestamp' | 'eventId' | 'eventType' | 'racetrackId' | 'actorId' | 'source' | 'version'> & Partial<Pick<WorkflowRuntimeEvent, 'eventId' | 'eventType' | 'racetrackId' | 'actorId' | 'source' | 'version'>>, now = new Date().toISOString()): WorkflowInstance[] {
+    const eventId = event.eventId ?? `event-${this.eventLog.length + 1}`;
+    const runtimeEvent: WorkflowRuntimeEvent = { ...event, eventId, eventType: event.eventType ?? `${event.type}.v1` as CanonicalEventRef['eventType'], racetrackId: event.racetrackId ?? 'main-track', actorId: event.actorId ?? 'workflow-orchestration-engine', source: event.source ?? 'workflow-orchestration-engine', version: event.version ?? 1, id: eventId, timestamp: now };
     this.eventLog.push(runtimeEvent);
     const affected: WorkflowInstance[] = [];
     for (const instance of this.workflowInstances.values()) {
@@ -636,10 +637,16 @@ export class WorkflowOrchestrationEngine {
     this.audit(instance, now, 'workflow-orchestration-engine', 'approval.requested', { taskId: task.id, stepId: step.id, approvalRequestId: request.id, action: request.action, target: request.target });
   }
   private publishEvent(type: WorkflowEventType | EventName | string, instance: WorkflowInstance, payload: Record<string, unknown>, occurredAt: string, actor: string): void {
+    const eventType = String(type).endsWith('.v1') ? String(type) : `${String(type)}.v1`;
+    const racetrackId = racetrackFor(instance.tenantId, instance.context.payload);
     void this.deps.eventBus?.publish({
-      type: type as EventName,
+      type: eventType as EventName,
       occurredAt,
-      payload: { instanceId: instance.id, definitionId: instance.definitionId, tenantId: instance.tenantId, status: instance.status, actor, ...payload },
+      tenantId: instance.tenantId,
+      racetrackId,
+      actor: { id: actor, type: actor.includes('ai') ? 'ai-agent' : 'service' },
+      subject: { id: instance.id, type: 'workflow', tenantId: instance.tenantId },
+      payload: { instanceId: instance.id, definitionId: instance.definitionId, tenantId: instance.tenantId, racetrackId, status: instance.status, actor, ...payload },
       aggregateId: instance.id,
       correlationId: `${instance.id}:${String(type)}`,
       producer: 'workflow-orchestration-engine',
@@ -648,20 +655,26 @@ export class WorkflowOrchestrationEngine {
     }).catch(() => undefined);
   }
   private recordDefinitionEvent(definition: WorkflowDefinition, type: WorkflowEventType, payload: Record<string, unknown>): void {
-    const event: WorkflowRuntimeEvent = { id: `event-${this.eventLog.length + 1}`, type, tenantId: definition.tenantId, timestamp: new Date().toISOString(), payload: { definitionId: definition.id, ...payload } };
+    const eventId = `event-${this.eventLog.length + 1}`;
+    const event: WorkflowRuntimeEvent = { eventId, eventType: `${type}.v1` as CanonicalEventRef['eventType'], tenantId: definition.tenantId, racetrackId: 'main-track', actorId: 'workflow-orchestration-engine', source: 'workflow-orchestration-engine', timestamp: new Date().toISOString(), version: 1, id: eventId, type, payload: { definitionId: definition.id, ...payload } };
     this.eventLog.push(event);
     void this.deps.eventBus?.publish({
-      type,
+      id: event.eventId,
+      type: event.eventType,
+      tenantId: event.tenantId,
+      racetrackId: event.racetrackId,
+      actor: { id: event.actorId, type: 'service' },
+      subject: { id: definition.id, type: 'workflow-definition', tenantId: event.tenantId },
       payload: event.payload,
       aggregateId: definition.id,
-      producer: 'workflow-orchestration-engine',
+      producer: event.source,
       metadata: { compliance: 'internal', team: 'platform-workflows', accountableRole: definition.ownerRole },
     }).catch(() => undefined);
   }
   private registerWorkflowEventContracts(): void {
     const owner = { service: 'workflow-orchestration-engine', team: 'platform-workflows', accountableRole: 'workflow-owner' };
     for (const type of ['workflow.template.registered','workflow.started','workflow.transitioned','task.created','task.claimed','task.completed','task.failed','task.retried','task.escalated','approval.requested','approval.recorded','sla.breached','workflow.completed','workflow.exception','workflow.recovered','digitalTwin.updated','service.executed','digital-twin.state.patch']) {
-      this.deps.eventBus?.registerEvent({ type, version: 1, description: `Workflow orchestration ${type}`, owner, payloadFields: [], compliance: type.includes('digital-twin') || type.includes('approval') || type.includes('sla') ? 'regulated' : 'internal' });
+      this.deps.eventBus?.registerEvent({ type: `${type}.v1`, version: 1, description: `Workflow orchestration ${type}`, owner, payloadFields: [], compliance: type.includes('digital-twin') || type.includes('approval') || type.includes('sla') ? 'regulated' : 'internal' });
     }
   }
   private cloneDefinition(definition: WorkflowDefinition): WorkflowDefinition {

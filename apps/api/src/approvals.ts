@@ -1,4 +1,4 @@
-import { normalizeProtectedActionIntent, type ApprovalStatus, type ApprovalViewStatusDto, type ProtectedAction, type Role } from '@trackmind/shared';
+import { normalizeApprovalStatus, normalizeProtectedActionIntent, type ApprovalStatus, type ApprovalViewStatusDto, type ApprovalWorkflowStatus, type CanonicalApprovalRequest, type CanonicalApprovalStep, type ProtectedAction, type Role } from '@trackmind/shared';
 import type { ImmutableAuditLog } from './auditLog.js';
 import type { UniversalEventBus } from './eventBus.js';
 import type { WorkflowOrchestrationEngine } from './workflowEngine.js';
@@ -49,8 +49,8 @@ export class ApprovalStore {
   allApprovals(): HumanApprovalRecord[] { return [...this.approvals.values()]; }
 }
 
-export type ControlledAction = ProtectedAction | 'race-cancellation' | 'veterinary-clearance' | 'steward-decision' | 'starting-gate-move' | 'race-distance-configuration' | 'race-office-scratch' | 'race-status-change' | 'race-office-configuration' | 'facility-maintenance-execution' | 'safety-critical-control' | 'surface-irrigation' | 'surface-harrowing' | 'surface-rolling' | 'surface-track-closure-recommendation' | 'compliance-filing-approval';
-export type ApprovalRequestStatus = Extract<ApprovalViewStatusDto, 'pending' | 'approved' | 'rejected' | 'expired' | 'escalated'>;
+export type ControlledAction = ProtectedAction;
+export type ApprovalRequestStatus = Extract<ApprovalWorkflowStatus, 'pending' | 'approved' | 'rejected' | 'expired' | 'escalated'>;
 
 export interface ApprovalStepRequirement { id: string; roles: Role[]; minimumApprovals: number; evidenceRequired: string[]; }
 export interface EscalationRule { afterMinutes: number; escalateToRoles: Role[]; reason: string; }
@@ -108,11 +108,49 @@ const normalizeAction = (action: ProtectedAction | string) => normalizeProtected
 const approvalPrincipal = (decision: ApprovalDecisionRecord) => decision.delegatedFor ?? decision.actorId;
 function isNonHumanActorId(actorId: string | undefined): boolean { return Boolean(actorId && (/^(ai|bot|service|system)(-|:|$)/i.test(actorId) || /(-|:)(ai|bot|service)$/i.test(actorId))); }
 export function normalizeApprovalArtifactStatus(status: ApprovalRequestStatus | ApprovalStatus | string): ApprovalArtifactStatus {
-  if (status === 'approved') return 'approved';
-  if (status === 'rejected') return 'rejected';
-  if (status === 'expired') return 'expired';
-  if (status === 'escalated') return 'escalated';
-  return 'pending';
+  const normalized = normalizeApprovalStatus(status);
+  return normalized === 'draft' || normalized === 'overridden' || normalized === 'cancelled' ? 'pending' : normalized;
+}
+
+export function canonicalApprovalRequest(request: ControlledActionRequest, options: { policy?: ApprovalPolicy; policies?: ApprovalPolicy[]; auditRefs?: string[]; eventRefs?: string[]; correlationId?: string } = {}): CanonicalApprovalRequest {
+  const policy = options.policy ?? (options.policies ?? defaultApprovalPolicies()).find((candidate) => candidate.action === request.action);
+  const steps: CanonicalApprovalStep[] = (policy?.chain ?? []).map((step) => {
+    const decisions = request.decisions.filter((decision) => decision.stepId === step.id);
+    const approvedCount = new Set(decisions.filter((decision) => decision.decision === 'approved').map(approvalPrincipal)).size;
+    const rejected = decisions.some((decision) => decision.decision === 'rejected');
+    return {
+      id: step.id,
+      approverRoles: [...step.roles],
+      minimumApprovals: step.minimumApprovals,
+      evidenceRequired: [...step.evidenceRequired],
+      status: rejected ? 'rejected' : approvedCount >= step.minimumApprovals ? 'approved' : normalizeApprovalStatus(request.status),
+      decisions: decisions.map((decision) => ({
+        stepId: decision.stepId,
+        actor: { id: decision.actorId, actorType: 'human', roles: [...decision.roles] },
+        decision: decision.decision,
+        reason: decision.reason,
+        evidence: [...decision.evidence],
+        decidedAt: decision.decidedAt,
+        delegatedFor: decision.delegatedFor,
+      })),
+    };
+  });
+  return {
+    approvalRequestId: request.id,
+    tenantId: request.tenantId,
+    racetrackId: request.racetrackId,
+    action: request.action,
+    target: request.target,
+    requestedBy: { id: request.requestedBy, actorType: request.actorType, roles: [] },
+    status: normalizeApprovalStatus(request.status),
+    reason: request.reason,
+    evidence: [...request.evidence],
+    steps,
+    escalation: (policy?.escalationRules ?? []).map((rule) => ({ afterMinutes: rule.afterMinutes, approverRoles: [...rule.escalateToRoles], reason: rule.reason })),
+    createdAt: request.createdAt,
+    expiresAt: request.expiresAt,
+    auditLinkage: { auditIds: [...(options.auditRefs ?? [])], eventIds: [...(options.eventRefs ?? [])], workflowInstanceId: request.workflowInstanceId, workflowTaskId: request.workflowTaskId, correlationId: options.correlationId ?? request.id },
+  };
 }
 
 export function defaultApprovalPolicies(): ApprovalPolicy[] {
@@ -144,12 +182,15 @@ export function defaultApprovalPolicies(): ApprovalPolicy[] {
     { action: 'surface-harrowing', chain: [{ id: 'surface-operations', roles: ['track-superintendent'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 30, escalationRules: [{ afterMinutes: 15, escalateToRoles: ['admin'], reason: 'surface harrowing approval pending' }] },
     { action: 'surface-rolling', chain: [{ id: 'surface-operations', roles: ['track-superintendent'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 30, escalationRules: [{ afterMinutes: 15, escalateToRoles: ['admin'], reason: 'surface rolling approval pending' }] },
     { action: 'surface-track-closure-recommendation', chain: [{ id: 'surface-operations', roles: ['track-superintendent'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 15, escalationRules: [{ afterMinutes: 8, escalateToRoles: ['admin'], reason: 'surface closure recommendation approval pending' }] },
+    { action: 'track-closure', chain: [{ id: 'surface-operations', roles: ['track-superintendent'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'security', roles: ['security'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 10, escalationRules: [{ afterMinutes: 5, escalateToRoles: ['admin'], reason: 'track closure approval pending' }] },
+    { action: 'track-reopen', chain: [{ id: 'surface-operations', roles: ['track-superintendent'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 15, escalationRules: [{ afterMinutes: 8, escalateToRoles: ['admin'], reason: 'track reopen approval pending' }] },
     { action: 'compliance-filing-approval', chain: [{ id: 'compliance', roles: ['compliance-officer'], minimumApprovals: 1, evidenceRequired: ['human-approval-record','reason','audit-readiness-package'] }], expiresInMinutes: 240, escalationRules: [{ afterMinutes: 120, escalateToRoles: ['admin'], reason: 'compliance filing approval pending' }] },
   ];
 }
 
 export function buildApprovalArtifact(request: ControlledActionRequest, options: { policy?: ApprovalPolicy; policies?: ApprovalPolicy[]; racetrackId?: string; correlationId?: string; auditRefs?: string[]; eventRefs?: string[]; generatedAt?: string } = {}): ApprovalArtifact {
   const policy = options.policy ?? (options.policies ?? defaultApprovalPolicies()).find((candidate) => candidate.action === request.action);
+  const canonical = canonicalApprovalRequest(request, { policy, policies: options.policies, auditRefs: options.auditRefs, eventRefs: options.eventRefs, correlationId: options.correlationId });
   const approvalSteps = (policy?.chain ?? []).map((step) => {
     const approvals = new Set(request.decisions.filter((decision) => decision.stepId === step.id && decision.decision === 'approved').map(approvalPrincipal)).size;
     const rejected = request.decisions.some((decision) => decision.stepId === step.id && decision.decision === 'rejected');
@@ -171,24 +212,24 @@ export function buildApprovalArtifact(request: ControlledActionRequest, options:
     target: request.target,
     tenantId: request.tenantId,
     racetrackId: options.racetrackId ?? request.racetrackId,
-    status: normalizeApprovalArtifactStatus(request.status),
+    status: normalizeApprovalArtifactStatus(canonical.status),
     sourceStatus: request.status,
     requestedBy: request.requestedBy,
     actorType: request.actorType,
     reason: request.reason,
     evidence: [...request.evidence],
-    requiredApprovers: [...new Set(approvalSteps.flatMap((step) => step.requiredApprovers))],
+    requiredApprovers: [...new Set(canonical.steps.flatMap((step) => step.approverRoles))],
     approvals: request.decisions.map((decision) => ({ ...decision, roles: [...decision.roles], evidence: [...decision.evidence] })),
     approvalSteps,
     createdAt: request.createdAt,
     expiresAt: request.expiresAt,
     expiry: { expiresAt: request.expiresAt, expired: request.status === 'expired' },
-    escalation: policy || request.escalatedToRoles.length ? { escalatedToRoles: [...request.escalatedToRoles], rules: (policy?.escalationRules ?? []).map((rule) => ({ ...rule, escalateToRoles: [...rule.escalateToRoles] })) } : undefined,
-    workflowInstanceId: request.workflowInstanceId,
-    workflowTaskId: request.workflowTaskId,
-    correlationId: options.correlationId ?? request.id,
-    auditRefs: [...(options.auditRefs ?? [])],
-    eventRefs: [...(options.eventRefs ?? [])],
+    escalation: policy || request.escalatedToRoles.length ? { escalatedToRoles: [...request.escalatedToRoles], rules: canonical.escalation.map((rule) => ({ afterMinutes: rule.afterMinutes, escalateToRoles: [...rule.approverRoles], reason: rule.reason })) } : undefined,
+    workflowInstanceId: canonical.auditLinkage.workflowInstanceId,
+    workflowTaskId: canonical.auditLinkage.workflowTaskId,
+    correlationId: canonical.auditLinkage.correlationId,
+    auditRefs: [...canonical.auditLinkage.auditIds],
+    eventRefs: [...canonical.auditLinkage.eventIds],
     mutationPolicy: { localMutationAllowed: false, writeModel: 'server-authoritative', updatePath: '/api/v1/approvals' },
     generatedAt: options.generatedAt ?? new Date().toISOString(),
   };

@@ -1,214 +1,48 @@
-export const trackMindCollaborationSchemaVersion = 'trackmind.collaboration.v1' as const;
+import {
+  collaborationEventNames,
+  trackMindCollaborationSchemaVersion,
+  validateCollaborationObject,
+  type CollaborationEventType as CanonicalCollaborationEventType,
+} from './collaborationContracts.js';
 
-export const collaborationTargetArtifactTypes = [
-  'Race',
-  'RaceCard',
-  'RaceEntry',
-  'RaceResult',
-  'GateMoveRequest',
-  'SurfaceRecommendation',
-  'Horse',
-  'Barn',
-  'Asset',
-  'DigitalTwin',
-  'Incident',
-  'Investigation',
-  'Approval',
-  'Audit',
-  'ComplianceControl',
-  'AIRecommendation',
-  'Workflow',
-  'ApiHubIngestionJob',
-  'ApiHubProvider',
-] as const;
+export { trackMindCollaborationSchemaVersion };
 
-export type CollaborationTargetArtifactType = typeof collaborationTargetArtifactTypes[number] | (string & {});
-export type CollaborationVisibility = 'team' | 'tenant' | 'restricted' | 'regulator-package';
-export type CollaborationStatus = 'open' | 'resolved' | 'archived' | 'escalated';
-export type CollaborationPriority = 'low' | 'medium' | 'high' | 'critical';
-export type CommentThreadObjectType = 'CommentThread' | 'ApprovalDiscussion' | 'StewardCaseDiscussion' | 'MaintenanceDiscussion' | 'AIRecommendationDiscussion' | 'ComplianceReviewDiscussion';
-
-export interface CollaborationRetentionPolicy {
-  policyId: string;
-  retainForDays: number;
-  legalHold: boolean;
-  regulatoryBasis?: string;
-}
-
-export interface CollaborationAttachment {
-  attachmentId: string;
-  kind: 'evidence' | 'document' | 'image' | 'video' | 'link' | 'audit-ref' | 'event-ref';
-  uri?: string;
-  evidenceRef?: string;
-  hash?: string;
-  sensitive?: boolean;
-}
+export const collaborationEventTypes = Object.keys(collaborationEventNames) as CanonicalCollaborationEventType[];
+export type CollaborationEventType = CanonicalCollaborationEventType;
 
 export interface CollaborationContext {
   id: string;
   tenantId: string;
   racetrackId: string;
   targetArtifactId: string;
-  targetArtifactType: CollaborationTargetArtifactType;
+  targetArtifactType: string;
   authorId: string;
   participants: string[];
   createdAt: string;
   updatedAt: string;
-  status: CollaborationStatus;
-  visibility: CollaborationVisibility;
+  status: string;
+  visibility: string;
   permissions: string[];
   auditRefs: string[];
   eventRefs: string[];
-  attachments?: CollaborationAttachment[];
   evidenceRefs: string[];
-  retentionPolicy: CollaborationRetentionPolicy;
+  retentionPolicy: { policyId: string; retainForDays?: number; legalHold?: boolean; regulatoryBasis?: string };
   workflowId?: string;
   approvalId?: string;
   digitalTwinRef?: string;
 }
 
-export interface CommentThread extends CollaborationContext {
-  objectType: CommentThreadObjectType;
-  title: string;
-  comments: Comment[];
-  unreadBy?: string[];
-}
-
-export interface Comment extends Omit<CollaborationContext, 'attachments'> {
-  objectType: 'Comment';
-  threadId: string;
-  body: string;
-  mentions: Mention[];
-  attachments: CollaborationAttachment[];
-}
-
-export interface Mention {
-  objectType: 'Mention';
-  mentionId: string;
-  tenantId: string;
-  racetrackId: string;
-  threadId: string;
-  commentId?: string;
-  actorId: string;
-  mentionedActorId: string;
-  targetArtifactId: string;
-  targetArtifactType: CollaborationTargetArtifactType;
-  createdAt: string;
-  acknowledgedAt?: string;
-  auditRefs: string[];
-  eventRefs: string[];
-}
-
-export interface Assignment extends CollaborationContext {
-  objectType: 'Assignment';
-  assigneeId: string;
-  assignedBy: string;
-  dueAt?: string;
-  priority: CollaborationPriority;
-  task: string;
-}
-
-export interface DecisionRecord extends CollaborationContext {
-  objectType: 'DecisionRecord';
-  decision: string;
-  rationale: string;
-  alternativesConsidered: string[];
-  outcome: 'accepted' | 'rejected' | 'superseded' | 'pending-review';
-}
-
-export interface Handoff extends CollaborationContext {
-  objectType: 'Handoff';
-  fromActorId: string;
-  toActorId: string;
-  reason: string;
-  acceptedAt?: string;
-}
-
-export interface EvidencePacket extends CollaborationContext {
-  objectType: 'EvidencePacket';
-  packetId: string;
-  title: string;
-  items: CollaborationAttachment[];
-  sealed: boolean;
-}
-
-export interface IncidentRoom extends CollaborationContext {
-  objectType: 'IncidentRoom';
-  incidentId: string;
-  severity: CollaborationPriority;
-  activeParticipants: string[];
-  commandLeadId: string;
-}
-
-export interface ApprovalDiscussion extends Omit<CommentThread, 'objectType'> {
-  objectType: 'ApprovalDiscussion';
-  approvalId: string;
-}
-
-export interface StewardCaseDiscussion extends Omit<CommentThread, 'objectType'> {
-  objectType: 'StewardCaseDiscussion';
-  caseId: string;
-  officialRulingAllowed: false;
-}
-
-export interface MaintenanceDiscussion extends Omit<CommentThread, 'objectType'> {
-  objectType: 'MaintenanceDiscussion';
-  workOrderId?: string;
-}
-
-export interface AIRecommendationDiscussion extends Omit<CommentThread, 'objectType'> {
-  objectType: 'AIRecommendationDiscussion';
-  recommendationId: string;
-  aiGenerated: true;
-  confidence: number;
-  approvalRequired: true;
-}
-
-export interface ComplianceReviewDiscussion extends Omit<CommentThread, 'objectType'> {
-  objectType: 'ComplianceReviewDiscussion';
-  controlId: string;
-  framework: string;
-}
-
-export type CollaborationObject =
-  | CommentThread
-  | Comment
-  | Mention
-  | Assignment
-  | DecisionRecord
-  | Handoff
-  | EvidencePacket
-  | IncidentRoom
-  | ApprovalDiscussion
-  | StewardCaseDiscussion
-  | MaintenanceDiscussion
-  | AIRecommendationDiscussion
-  | ComplianceReviewDiscussion;
-
-export const collaborationEventTypes = [
-  'CommentAdded',
-  'MentionCreated',
-  'AssignmentCreated',
-  'DecisionRecorded',
-  'HandoffRequested',
-  'EvidencePacketCreated',
-  'IncidentRoomOpened',
-  'ApprovalDiscussionUpdated',
-  'CollaborationArchived',
-] as const;
-
-export type CollaborationEventType = typeof collaborationEventTypes[number];
-
 export interface CollaborationEvent {
   schemaVersion: typeof trackMindCollaborationSchemaVersion;
   eventType: CollaborationEventType;
+  eventName: string;
   eventId: string;
   occurredAt: string;
   tenantId: string;
   racetrackId: string;
   actorId: string;
   targetArtifactId: string;
-  targetArtifactType: CollaborationTargetArtifactType;
+  targetArtifactType: string;
   collaborationObjectId: string;
   auditRefs: string[];
   eventRefs: string[];
@@ -217,20 +51,61 @@ export interface CollaborationEvent {
   digitalTwinRef?: string;
 }
 
-function hasStrings(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string');
-}
+const hasStrings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string');
 
 export function validateCollaborationContext(value: Partial<CollaborationContext>) {
+  const canonicalProbe = {
+    schemaVersion: trackMindCollaborationSchemaVersion,
+    id: value.id,
+    objectType: 'comment-thread',
+    tenantId: value.tenantId,
+    racetrackId: value.racetrackId,
+    targetArtifactId: value.targetArtifactId,
+    targetArtifactType: value.targetArtifactType,
+    authorId: value.authorId,
+    title: value.id ?? 'collaboration',
+    status: value.status ?? 'open',
+    visibility: value.visibility === 'team' ? 'participants' : value.visibility === 'regulator-package' ? 'regulator' : value.visibility ?? 'tenant',
+    participants: (value.participants ?? []).map((actorId) => ({ actorId, actorType: 'human', tenantId: value.tenantId, racetrackId: value.racetrackId })),
+    permissions: {
+      canRead: value.permissions ?? [],
+      canComment: value.permissions ?? [],
+      canMention: value.permissions ?? [],
+      canAssign: value.permissions ?? [],
+      canResolve: value.permissions ?? [],
+      canArchive: value.permissions ?? [],
+      canAttachEvidence: value.permissions ?? [],
+      externalShareAllowed: false,
+    },
+    auditRefs: (value.auditRefs ?? []).map((auditId) => ({ auditId })),
+    eventRefs: (value.eventRefs ?? []).map((eventId) => ({ eventId, eventType: collaborationEventNames.CommentAdded })),
+    attachments: [],
+    evidenceRefs: (value.evidenceRefs ?? []).map((evidenceId) => ({ evidenceId })),
+    retention: {
+      policyId: value.retentionPolicy?.policyId ?? '',
+      disposition: value.retentionPolicy?.legalHold ? 'legal-hold' : 'retain',
+      retainUntil: value.updatedAt,
+      legalHold: value.retentionPolicy?.legalHold ?? false,
+      regulatoryBasis: value.retentionPolicy?.regulatoryBasis ? [value.retentionPolicy.regulatoryBasis] : [],
+    },
+    comments: [],
+    mentionIds: [],
+    assignmentIds: [],
+    decisionRecordIds: [],
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+  };
+  const canonical = validateCollaborationObject(canonicalProbe);
   const missing = ['id', 'tenantId', 'racetrackId', 'targetArtifactId', 'targetArtifactType', 'authorId', 'createdAt', 'updatedAt']
     .filter((field) => !value[field as keyof CollaborationContext]);
   const validRefs = hasStrings(value.auditRefs) && hasStrings(value.eventRefs) && hasStrings(value.evidenceRefs);
   return {
-    valid: missing.length === 0 && validRefs && Boolean(value.retentionPolicy?.policyId),
+    valid: missing.length === 0 && validRefs && Boolean(value.retentionPolicy?.policyId) && canonical.valid,
     missing,
     validRefs,
     attachedToArtifact: Boolean(value.targetArtifactId && value.targetArtifactType),
     tenantScoped: Boolean(value.tenantId && value.racetrackId),
+    canonicalErrors: canonical.errors,
   };
 }
 
@@ -238,6 +113,7 @@ export function createCollaborationEvent(type: CollaborationEventType, context: 
   return {
     schemaVersion: trackMindCollaborationSchemaVersion,
     eventType: type,
+    eventName: collaborationEventNames[type],
     eventId: `collab-event:${context.id}:${type}`,
     occurredAt,
     tenantId: context.tenantId,
@@ -246,8 +122,8 @@ export function createCollaborationEvent(type: CollaborationEventType, context: 
     targetArtifactId: context.targetArtifactId,
     targetArtifactType: context.targetArtifactType,
     collaborationObjectId: context.id,
-    auditRefs: context.auditRefs,
-    eventRefs: context.eventRefs,
+    auditRefs: [...context.auditRefs],
+    eventRefs: [...context.eventRefs],
     workflowId: context.workflowId,
     approvalId: context.approvalId,
     digitalTwinRef: context.digitalTwinRef,

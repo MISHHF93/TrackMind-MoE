@@ -1,3 +1,4 @@
+import { normalizeApprovalStatus, type CanonicalApprovalEscalation, type CanonicalApprovalStep } from '@trackmind/shared';
 import type {
   AIGovernanceWorkspaceDto,
   AIControlPlanePolicyDto,
@@ -48,6 +49,53 @@ const routeKpiDomains: Record<DomainRouteId, string[]> = {
   settings: ['ai-governance', 'data-quality'],
 };
 
+function localApprovalDto(input: {
+  id: string;
+  action: string;
+  target: string;
+  requestedBy: string;
+  status: string;
+  createdAt: string;
+  expiresAt: string;
+  evidence: string[];
+  workflowId?: string;
+  requiredRoles: string[];
+  affectedAssets?: string[];
+}): ApprovalDto {
+  const canonicalStatus = normalizeApprovalStatus(input.status);
+  const approvalSteps: CanonicalApprovalStep[] = [{
+    id: `${input.id}-step`,
+    approverRoles: input.requiredRoles as CanonicalApprovalStep['approverRoles'],
+    minimumApprovals: 1,
+    evidenceRequired: ['human-approval-record', 'reason'],
+    status: canonicalStatus,
+    decisions: [],
+  }];
+  const escalation: CanonicalApprovalEscalation[] = [{ afterMinutes: 30, approverRoles: input.requiredRoles as CanonicalApprovalEscalation['approverRoles'], reason: `${input.action} approval SLA pending` }];
+  return {
+    id: input.id,
+    approvalRequestId: input.id,
+    action: input.action,
+    target: input.target,
+    requestedBy: input.requestedBy,
+    status: canonicalStatus,
+    canonicalStatus,
+    createdAt: input.createdAt,
+    expiresAt: input.expiresAt,
+    evidence: input.evidence,
+    mock: false,
+    workflowId: input.workflowId,
+    approverRoles: input.requiredRoles,
+    requiredRoles: input.requiredRoles,
+    approvalSteps,
+    escalation,
+    auditLinkage: { auditIds: [], eventIds: [], workflowInstanceId: input.workflowId, correlationId: input.id },
+    auditIds: [],
+    eventIds: [],
+    affectedAssets: input.affectedAssets,
+  };
+}
+
 function requireReady<T>(result: AdapterResult<T>, label: string): T {
   if (result.status === 'error') throw new Error(`${label} adapter failed: ${result.message ?? 'unknown error'}`);
   if (result.data === undefined) throw new Error(`${label} adapter returned no data.`);
@@ -63,17 +111,22 @@ function aiCardsFromGovernance(workspace?: AIGovernanceWorkspaceDto): AdvisoryAI
     id: item.id,
     recommendationId: item.recommendationId,
     recommendation: 'recommendation' in item && item.recommendation ? item.recommendation : 'AI recommendation requires human review.',
-    confidence: 'confidenceScore' in item && item.confidenceScore ? item.confidenceScore.calibrated : 'confidence' in item ? item.confidence : 0,
+    confidence: item.confidence,
+    confidenceValue: item.confidence.calibrated,
     evidence: item.evidence ?? [],
+    evidencePackage: item.evidencePackage,
     modelVersion: item.modelVersion,
     generatedAt: item.generatedAt,
     approvalRequirement: item.approvalRequirement,
     auditReference: item.auditReference,
     requiresApproval: item.approvalRequirement.required,
-    eventId: item.auditReference.eventIds[0] ?? `event:${item.id}`,
-    auditId: item.auditReference.auditIds[0] ?? `audit:${item.id}`,
+    eventId: item.auditReference.eventIds[0],
+    auditId: item.auditReference.auditIds[0],
     digitalTwinRefs: item.auditReference.digitalTwinRefs,
-    riskLevel: 'riskLevel' in item ? item.riskLevel : 'high',
+    riskLevel: item.riskLevel,
+    advisoryOnly: true,
+    executionAllowed: false,
+    blockedAutonomousExecution: true,
     governorAllowed: false,
     governorReason: 'Governance queue entries are advisory and require human review before protected action.',
     status: 'status' in item ? item.status : 'advisory',
@@ -86,17 +139,22 @@ function aiCardsFromControlPlane(recommendations?: AIControlPlaneRecommendationD
     id: item.id,
     recommendationId: item.recommendationId,
     recommendation: item.recommendation,
-    confidence: item.confidence.calibrated,
+    confidence: item.confidence,
+    confidenceValue: item.confidence.calibrated,
     evidence: item.evidence,
+    evidencePackage: item.evidencePackage,
     modelVersion: item.modelVersion,
     generatedAt: item.generatedAt,
     approvalRequirement: item.approvalRequirement,
     auditReference: item.auditReference,
     requiresApproval: item.approvalRequirement.required,
-    eventId: item.auditReference.eventIds[0] ?? `event:${item.id}`,
-    auditId: item.auditReference.auditIds[0] ?? `audit:${item.id}`,
+    eventId: item.auditReference.eventIds[0],
+    auditId: item.auditReference.auditIds[0],
     digitalTwinRefs: item.auditReference.digitalTwinRefs,
     riskLevel: item.risk.level,
+    advisoryOnly: true,
+    executionAllowed: false,
+    blockedAutonomousExecution: true,
     governorAllowed: item.governorDecision.allowed,
     governorReason: item.governorDecision.reason,
     actionLabel: item.action,
@@ -109,7 +167,15 @@ function aiCardsFromControlPlane(recommendations?: AIControlPlaneRecommendationD
 
 function vm(routeId: DomainRouteId, source: WorkspaceViewModel['source'], partial: Omit<WorkspaceViewModel, 'route' | 'source'>): WorkspaceViewModel {
   const domains = new Set(routeKpiDomains[routeId]);
-  return { route: routeById[routeId], source, ...partial, kpis: partial.kpis.filter((kpi) => domains.has(kpi.domain)) };
+  const kpis = partial.kpis.filter((kpi) => domains.has(kpi.domain));
+  const visibleKpiIds = new Set(kpis.map((kpi) => kpi.kpiId));
+  return {
+    route: routeById[routeId],
+    source,
+    ...partial,
+    kpis,
+    modelReadableKpiContext: partial.modelReadableKpiContext.filter((context) => visibleKpiIds.has(context.kpiId)),
+  };
 }
 
 async function commonContext() {
@@ -131,6 +197,7 @@ async function commonContext() {
     auditEvents: auditData,
     aiRecommendations: governedCards.length > 0 ? governedCards : aiCardsFromGovernance(aiData),
     kpis: kpiData.kpis,
+    modelReadableKpiContext: kpiData.modelReadableContext,
   };
 }
 
@@ -223,7 +290,7 @@ const raceDayService = {
       metrics: [
         textMetric('Readiness average', `${readinessData.averageScore}%`, 'Service-backed dashboard score across race-day domains', readinessData.blocked ? 'critical' : readinessData.watch ? 'warning' : 'nominal'),
         countMetric('Races', raceRows.length, 'Race readiness summaries from /races'),
-        textMetric('Surface score', `${surfaceData.overallScore}%`, 'Surface intelligence workspace backs /surface aliases', surfaceData.overallScore >= 80 ? 'nominal' : 'warning'),
+        textMetric('Surface score', `${surfaceData.overallScore}%`, 'Surface intelligence workspace uses the canonical surface API', surfaceData.overallScore >= 80 ? 'nominal' : 'warning'),
         countMetric('Track sectors', trackData.sectors.length, 'Track map sectors from /track-configuration/map'),
         countMetric('Approval controls', readinessData.approvals.length + approvalControls.length, 'Race-day controls remain approval-only', 'warning'),
         textMetric('Direct execution', 'Locked', 'Race starts/stops/results are not exposed as frontend actions', 'critical'),
@@ -254,7 +321,7 @@ const equineService = {
         textMetric('Lifecycle', data.horse.lifecycleStatus, 'Horse lifecycle from EquineIntelligenceDto'),
         textMetric('Eligibility', data.eligibilityStatus.complianceStatus, 'Eligibility is role/privacy scoped', data.eligibilityStatus.eligible ? 'nominal' : 'warning'),
         textMetric('Veterinary privacy', data.veterinaryStatus.status, 'Restricted data is not shown by default', 'advisory'),
-        countMetric('Barn readiness rows', barnData.readiness.length, 'Barn operations workspace backs /barns and /barn-operations aliases'),
+        countMetric('Barn readiness rows', barnData.readiness.length, 'Barn operations workspace uses the canonical barn API'),
         countMetric('Twin refs', data.digitalTwinReferences.length, 'Equine digital twin references attached to this profile'),
       ],
       panels,
@@ -374,16 +441,15 @@ const facilitiesService = {
       ...context,
       approvals: [
         ...context.approvals,
-        ...data.approvals.map((approval) => ({
+        ...data.approvals.map((approval) => localApprovalDto({
           id: approval.id,
           action: approval.action,
           target: approval.target,
           requestedBy: approval.requestedBy ?? 'facilities-service',
-          status: approval.status as ApprovalDto['status'],
+          status: approval.status,
           createdAt: approval.createdAt ?? data.generatedAt,
           expiresAt: approval.expiresAt ?? data.generatedAt,
           evidence: approval.evidence,
-          mock: false,
           workflowId: approval.workflowId,
           requiredRoles: ['facilities-supervisor', 'operations-command'],
           affectedAssets: [approval.target],
@@ -550,7 +616,7 @@ const auditService = {
     const [audit, context] = await Promise.all([getJson<AuditEventDto[]>(apiPaths.audit.events), commonContext()]);
     const events = requireReady(audit, 'Audit events');
     const critical = events.filter((event) => event.severity === 'critical').length;
-    const actors = new Set(events.map((event) => event.actor));
+    const actors = new Set(events.map((event) => event.actor.actorId));
     return vm('audit', audit.source, {
       metrics: [
         countMetric('Audit events', events.length, 'Hash-chained audit records from /audit/events'),
@@ -559,8 +625,8 @@ const auditService = {
       ],
       panels: events.slice(0, 8).map((event) => ({
         id: event.id,
-        title: event.type,
-        body: `${event.severity} event by ${event.actor}; hash ${event.hash.slice(0, 12)} follows ${event.previousHash.slice(0, 12)}.`,
+        title: event.action,
+        body: `${event.severity} event by ${event.actor.actorId} on ${event.entity.entityType}; hash ${event.integrityReference.hash.slice(0, 12)} follows ${event.integrityReference.previousHash.slice(0, 12)}.`,
         status: 'implemented',
         evidence: [event.hash, event.previousHash, ...(event.evidenceIds ?? [])],
       })),

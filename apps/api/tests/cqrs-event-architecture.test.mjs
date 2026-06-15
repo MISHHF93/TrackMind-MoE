@@ -10,7 +10,7 @@ function approveToken(state, action, target, approvers, now = new Date().toISOSt
   return state.approvalService.authorizeExecution({ requestId: request.id, action, target, tenantId, racetrackId, actor: human('executor-1', ['admin']), now: new Date(Date.parse(now) + (approvers.length + 1) * 1000).toISOString() });
 }
 
-test('race start command requires approval metadata before emitting RaceStartedEvent', async () => {
+test('race start command requires approval metadata before emitting canonical race.lifecycle.started.v1 event', async () => {
   const state = createApiFacadeState();
   const blocked = await handleApiRequest('POST', '/api/v1/races/race-7/start', {
     starterId: 'starter-1',
@@ -38,7 +38,10 @@ test('race start command requires approval metadata before emitting RaceStartedE
   }, state);
 
   assert.equal(accepted.status, 202);
-  assert.equal(accepted.body.event.eventType, 'RaceStartedEvent');
+  assert.equal(accepted.body.event.eventType, 'race.lifecycle.started.v1');
+  assert.equal(accepted.body.event.actorId, 'starter-1');
+  assert.equal(accepted.body.event.source, 'cqrs-command-handler');
+  assert.equal(accepted.body.event.timestamp, accepted.body.event.occurredAt);
   assert.equal(accepted.body.event.category, 'safety-critical');
   assert.equal(accepted.body.event.previousEventHash, 'genesis');
   assert.equal(accepted.body.event.governance.approval_id, approvalToken.requestId);

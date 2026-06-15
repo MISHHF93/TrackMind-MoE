@@ -1,4 +1,4 @@
-import { aiAllowedActivities, normalizeProtectedActionIntent, protectedActions, type AIAllowedActivity, type ProtectedAction } from '@trackmind/shared';
+import { aiAllowedActivities, normalizeProtectedActionIntent, protectedActions, type AIAllowedActivity, type CanonicalEventRef, type ProtectedAction } from '@trackmind/shared';
 import type { ApprovalStore, CentralizedApprovalService, ControlledAction, ControlledActionRequest } from './approvals.js';
 import type { ImmutableAuditLog } from './auditLog.js';
 import type { EventContract, UniversalEventBus } from './eventBus.js';
@@ -19,7 +19,7 @@ export type AIControlPlaneEventType =
   | 'ai.approval.required'
   | 'ai.dashboard.updated';
 export type AIGovernanceEventType = AIControlPlaneEventType | 'ai.agent.registered' | 'ai.model.registered' | 'ai.model.evaluated' | 'ai.prompt.published' | 'ai.recommendation.recorded' | 'ai.recommendation.blocked' | 'ai.approval.workflow.created' | 'ai.autonomous-execution.blocked' | 'ai.safety.policy.enforced' | 'ai.digital-twin.impact.queued' | 'ai.override.recorded' | 'ai.rollback.recorded' | 'ai.metric.observed';
-export type GovernanceRecommendationStatus = 'queued' | 'pending-approval' | 'approved' | 'safety-blocked' | 'executed' | 'overridden' | 'rolled-back';
+export type GovernanceRecommendationStatus = 'queued' | 'pending-approval' | 'approved' | 'safety-blocked' | 'advisory-reviewed' | 'overridden' | 'rolled-back';
 export type GovernanceApprovalPolicy = 'none' | 'single-human' | 'two-person' | 'governance-board' | 'veterinarian' | 'steward' | 'role-policy-map';
 
 export interface AIAgent { id: string; name: string; owner: string; modelVersionId: string; promptTemplateId: string; status: 'active' | 'paused' | 'retired'; allowedActions: string[]; restrictedActions: string[]; allowedActivities?: AIAllowedActivity[]; tenantId?: string; digitalTwinRefs?: string[]; }
@@ -43,7 +43,7 @@ export interface SafetyPolicy { id: string; allowedActivities: AIAllowedActivity
 export interface RecommendationRecord { id: string; agentId: string; modelVersionId: string; promptTemplateId: string; tenantId?: string; racetrackId?: string; correlationId?: string; causationId?: string; activity?: AIAllowedActivity; action: string; target: string; recommendation: string; confidence: number; affectedAssets: string[]; evidence: string[]; lineage: string[]; approvalPolicy: GovernanceApprovalPolicy; riskLevel: RiskLevel; status?: GovernanceRecommendationStatus; createdAt: string; digitalTwinRefs?: string[]; explainability?: Partial<ExplainabilityRecord>; digitalTwinImpacts?: Array<Omit<AIDigitalTwinImpact, 'recommendationId' | 'eventType'>>; }
 export interface OverrideRecord { id: string; recommendationId: string; actor: string; reason: string; evidence: string[]; createdAt: string; }
 export interface RollbackRecord { id: string; recommendationId: string; actor: string; reason: string; restoredVersionId: string; evidence: string[]; createdAt: string; }
-export interface AIGovernanceEvent { id: string; type: AIGovernanceEventType; subjectId: string; actor: string; timestamp: string; evidence: string[]; lineage: string[]; auditId?: string; tenantId?: string; racetrackId?: string; correlationId?: string; causationId?: string; digitalTwinRefs?: string[]; payload?: Record<string, unknown>; }
+export interface AIGovernanceEvent extends Pick<CanonicalEventRef, 'eventId' | 'eventType' | 'tenantId' | 'racetrackId' | 'actorId' | 'source' | 'timestamp' | 'version'> { id: string; type: AIGovernanceEventType; subjectId: string; actor: string; evidence: string[]; lineage: string[]; auditId?: string; correlationId?: string; causationId?: string; digitalTwinRefs?: string[]; payload?: Record<string, unknown>; }
 export interface DraftWorkOrderRecord { id: string; recommendationId: string; action: string; controlledAction?: ControlledAction; target: string; summary: string; affectedAssets: string[]; evidence: string[]; riskLevel: RiskLevel; createdAt: string; executionState: 'draft-only'; executionAllowed: false; }
 export interface HumanInLoopWorkflowRecord { id: string; recommendationId: string; action: string; controlledAction?: ControlledAction; target: string; affectedAssets: string[]; evidence: string[]; riskLevel: RiskLevel; requiredRoles: string[]; approvalRequestId?: string; auditId: string; eventId: string; status: 'draft' | 'pending-approval' | 'safety-blocked'; draftWorkOrderId?: string; advisoryOnly: true; executionAllowed: false; }
 export interface BlockedAutonomousExecutionRecord { id: string; recommendationId: string; action: string; target: string; actor: string; reason: string; confidence: number; riskLevel: RiskLevel; evidence: string[]; blockedAt: string; auditId: string; eventId: string; }
@@ -265,7 +265,7 @@ export class ResponsibleAIGovernor {
   private readonly automaticAdvisoryActions: Set<string>;
 
   constructor(private readonly approvals?: ApprovalStore, private readonly config: AIGovernorPolicyConfig = defaultAIGovernorPolicyConfig) {
-    this.blockedActions = new Set(config.blockedActions.map(normalizeGovernorAction));
+    this.blockedActions = new Set(unique([...config.blockedActions, ...defaultAIGovernorPolicyConfig.blockedActions, ...protectedActions, ...controlledApprovalActions].map(normalizeGovernorAction)));
     this.automaticAdvisoryActions = new Set(config.automaticAdvisoryActions.map(normalizeGovernorAction));
   }
 
@@ -293,23 +293,19 @@ export class ResponsibleAIGovernor {
   reviewAutonomousPermission(input: AutonomousPermissionReviewInput): AIGovernorReviewRecord {
     const canonicalAction = normalizeGovernorAction(input.action);
     const hardBlocked = this.blockedActions.has(canonicalAction);
-    const policyAllowsAutomation = this.automaticAdvisoryActions.has(canonicalAction) && !hardBlocked;
+    const policyAllowsAutomation = false;
     const requiredApproverRoles = hardBlocked || input.requiresApproval ? this.requiredRolesFor(canonicalAction) : [];
     const evidencePresent = input.evidence.length > 0;
-    const responsibleAIGovernorApproved = policyAllowsAutomation && evidencePresent;
-    const canExecute = input.riskLevel === 'low' && input.requiresApproval === false && policyAllowsAutomation === true && responsibleAIGovernorApproved === true;
+    const responsibleAIGovernorApproved = evidencePresent && !hardBlocked && !input.requiresApproval;
+    const canExecute = false;
     const decision: AIGovernorReviewDecision = canExecute ? 'approved' : hardBlocked || input.requiresApproval ? 'requires-human-approval' : 'blocked';
-    const reason = canExecute
-      ? `Autonomous advisory action ${canonicalAction} satisfies low-risk AI Governor policy.`
-      : hardBlocked
-        ? `TrackMind control ${canonicalAction} is hard-blocked from autonomous AI execution and requires authorized human roles: ${requiredApproverRoles.join(', ') || 'configured approver'}.`
-        : input.requiresApproval
-          ? `Human approval is required before ${canonicalAction}; autonomous permission rule requires requiresApproval == false.`
-          : input.riskLevel !== 'low'
-            ? `Risk level ${input.riskLevel} is not eligible for autonomous execution.`
-            : !policyAllowsAutomation
-              ? `Policy ${this.config.id} does not allow autonomous execution for ${canonicalAction}.`
-              : 'Responsible AI Governor review requires supporting evidence before autonomous execution.';
+    const reason = hardBlocked
+      ? `TrackMind control ${canonicalAction} is hard-blocked from autonomous AI execution and requires authorized human roles: ${requiredApproverRoles.join(', ') || 'configured approver'}.`
+      : input.requiresApproval
+        ? `Human approval is required before ${canonicalAction}; autonomous permission rule requires requiresApproval == false.`
+        : input.riskLevel !== 'low'
+          ? `Risk level ${input.riskLevel} is not eligible for autonomous execution.`
+          : `Policy ${this.config.id} is advisory-only; AI outputs may inform humans but cannot autonomously execute ${canonicalAction}.`;
     const policyEvidence = unique([
       `policy:${this.config.id}`,
       ...this.config.policyEvidence,
@@ -494,14 +490,9 @@ export class ResponsibleAIGovernancePlatform {
   executeRecommendation(recommendationId: string, actor: string) {
     const recommendation = this.requireRecommendation(recommendationId);
     const governorReview = this.governorReviews.find((review) => review.recommendationId === recommendationId);
-    const protectedOrApproval = this.isProtectedAction(recommendation.action) || Boolean(this.controlledActionFor(recommendation.action)) || recommendation.approvalPolicy !== 'none';
-    const canExecute = governorReview?.canExecute === true && !protectedOrApproval && recommendation.status !== 'safety-blocked';
-    if (!canExecute) {
-      recommendation.status = 'safety-blocked';
-      const log = this.logBlockedAutonomousExecution(recommendation, actor, governorReview);
-      return { executed: false, reason: log.reason, blockedExecutionId: log.id, auditId: log.auditId, eventId: log.eventId, governorReviewId: governorReview?.id };
-    }
-    recommendation.status = 'executed'; this.audit('ai-recommendation-executed', actor, recommendationId, recommendation.evidence); return { executed: true, governorReviewId: governorReview?.id };
+    recommendation.status = 'safety-blocked';
+    const log = this.logBlockedAutonomousExecution(recommendation, actor, governorReview);
+    return { executed: false, executionAllowed: false, reason: log.reason, blockedExecutionId: log.id, auditId: log.auditId, eventId: log.eventId, governorReviewId: governorReview?.id };
   }
 
   recordOverride(record: OverrideRecord) { const rec = this.requireRecommendation(record.recommendationId); rec.status = 'overridden'; this.overrides.push({ ...record, evidence: [...record.evidence] }); this.emit('ai.override.recorded', record.id, record.actor, record.evidence, rec.lineage, record.createdAt); return record; }
@@ -624,7 +615,9 @@ export class ResponsibleAIGovernancePlatform {
   private emit(type: AIGovernanceEventType, subjectId: string, actor: string, evidence: string[], lineage: string[], timestamp = new Date().toISOString(), context: Partial<AIControlPlaneContext> = {}, payload: Record<string, unknown> = {}) {
     const eventContext = this.completeContext(subjectId, context, lineage);
     const audit = this.audit(type, actor, subjectId, evidence, timestamp, eventContext, { eventType: type, lineage, ...payload });
-    const event: AIGovernanceEvent = { id: `ai-event-${this.events.length + 1}`, type, subjectId, actor, timestamp, evidence: [...evidence], lineage: [...lineage], auditId: audit.immutableAuditId ?? audit.id, tenantId: eventContext.tenantId, racetrackId: eventContext.racetrackId, correlationId: eventContext.correlationId, causationId: eventContext.causationId, digitalTwinRefs: [...(eventContext.digitalTwinRefs ?? [])], payload: { ...payload } };
+    const eventId = `ai-event-${this.events.length + 1}`;
+    const eventType = `${type}.v1` as CanonicalEventRef['eventType'];
+    const event: AIGovernanceEvent = { eventId, eventType, tenantId: eventContext.tenantId, racetrackId: eventContext.racetrackId, actorId: actor, source: eventContext.sourceService ?? 'responsible-ai-governor', timestamp, version: 1, id: eventId, type, subjectId, actor, evidence: [...evidence], lineage: [...lineage], auditId: audit.immutableAuditId ?? audit.id, correlationId: eventContext.correlationId, causationId: eventContext.causationId, digitalTwinRefs: [...(eventContext.digitalTwinRefs ?? [])], payload: { ...payload } };
     this.events.push(event);
     this.publishGovernedEvent(type, event, eventContext, audit.immutableAuditId ?? audit.id);
     return { event, auditId: audit.immutableAuditId ?? audit.id };
@@ -685,9 +678,10 @@ export class ResponsibleAIGovernancePlatform {
   }
   private publishGovernedEvent(type: AIGovernanceEventType, event: AIGovernanceEvent, context: AIControlPlaneContext, auditRef: string): void {
     const publish = this.deps.eventBus?.publish({
-      type,
-      payload: { ...event.payload, eventId: event.id, eventType: type, subjectId: event.subjectId, actor: event.actor, timestamp: event.timestamp, evidence: event.evidence, lineage: event.lineage, tenantId: context.tenantId, racetrackId: context.racetrackId, correlationId: context.correlationId, causationId: context.causationId, auditRef, digitalTwinRefs: context.digitalTwinRefs },
-      producer: 'responsible-ai-governor',
+      id: event.eventId,
+      type: event.eventType,
+      payload: { ...event.payload, eventId: event.eventId, eventType: event.eventType, subjectId: event.subjectId, actor: event.actor, timestamp: event.timestamp, evidence: event.evidence, lineage: event.lineage, tenantId: context.tenantId, racetrackId: context.racetrackId, correlationId: context.correlationId, causationId: context.causationId, auditRef, digitalTwinRefs: context.digitalTwinRefs },
+      producer: event.source,
       tenantId: context.tenantId,
       racetrackId: context.racetrackId,
       aggregateId: context.aggregateId ?? event.subjectId,

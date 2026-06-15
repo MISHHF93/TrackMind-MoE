@@ -1,6 +1,6 @@
 import { TrackMindNexusFoundation } from './trackmindNexus.js';
 import { apiContractSchemas, apiEndpointContracts, assertContract, type AIRecommendationDto, type ApprovalDto, type AssetMarkerDto, type AuditEventDto, type DigitalTwinStateDto, type GatePositionDto, type RaceDistanceConfigurationDto, type RaceDto, type SurfaceMeasurementDto } from '@trackmind/shared';
-import type { ApprovalActor, ApprovalToken, ControlledActionRequest } from './approvals.js';
+import { canonicalApprovalRequest, defaultApprovalPolicies, type ApprovalActor, type ApprovalToken, type ControlledActionRequest } from './approvals.js';
 
 export interface CommandCenterTrackSector { id: string; name: string; startMeters: number; endMeters: number; condition: 'fast' | 'good' | 'muddy' | 'maintenance' }
 export interface CommandCenterAsset { id: string; type: 'gate' | 'sensor' | 'camera' | 'vehicle' | 'crew'; label: string; sectorId: string; status: 'online' | 'offline' | 'standby' | 'warning' }
@@ -87,14 +87,20 @@ export interface CommandCenterContractSnapshot { assets: AssetMarkerDto[]; races
 export function createCommandCenterContractSnapshot(service = new TrackMindCommandCenterV1Service()): CommandCenterContractSnapshot {
   const snapshot = service.snapshot();
   const assets = snapshot.assets.map((asset): AssetMarkerDto => assertContract('AssetMarkerDto', { ...asset, twinId: asset.id === 'gate-1' ? 'twin:main-track:gate-1' : `twin:main-track:${asset.id}` }, apiContractSchemas.AssetMarkerDto));
-  const approvals = snapshot.pendingApprovals.map((request): ApprovalDto => assertContract('ApprovalDto', {
+  const approvalPolicies = defaultApprovalPolicies();
+  const approvals = snapshot.pendingApprovals.map((request): ApprovalDto => {
+    const canonical = canonicalApprovalRequest(request, { policies: approvalPolicies, auditRefs: snapshot.auditEvents.filter((event) => event.payload && JSON.stringify(event.payload).includes(request.id)).map((event) => event.id), correlationId: request.id });
+    const approverRoles = [...new Set(canonical.steps.flatMap((step) => step.approverRoles))];
+    return assertContract('ApprovalDto', {
     id: request.id,
+    approvalRequestId: canonical.approvalRequestId,
     action: request.action,
     target: request.target,
     tenantId: request.tenantId,
     racetrackId: request.racetrackId,
     requestedBy: request.requestedBy,
     status: request.status,
+    canonicalStatus: canonical.status,
     createdAt: request.createdAt,
     expiresAt: request.expiresAt,
     evidence: request.evidence,
@@ -103,19 +109,34 @@ export function createCommandCenterContractSnapshot(service = new TrackMindComma
     priority: request.action === 'race-start' ? 'critical' : 'high',
     affectedAssets: [request.target],
     actor: { id: request.requestedBy, displayName: request.requestedBy, role: request.actorType, actorType: request.actorType },
-    requiredRoles: [...new Set(request.decisions.flatMap((decision) => decision.roles))],
+    requestedByActor: { id: canonical.requestedBy.id, displayName: canonical.requestedBy.displayName ?? canonical.requestedBy.id, role: canonical.requestedBy.roles.join(', ') || canonical.requestedBy.actorType, actorType: canonical.requestedBy.actorType === 'system' ? 'service' : canonical.requestedBy.actorType },
+    approverRoles,
+    requiredRoles: approverRoles,
     approvalPolicy: String(request.action),
+    approvalSteps: canonical.steps,
+    escalation: canonical.escalation,
+    auditLinkage: canonical.auditLinkage,
     correlationId: request.id,
     workflowId: request.workflowInstanceId,
-    auditIds: snapshot.auditEvents.filter((event) => event.payload && JSON.stringify(event.payload).includes(request.id)).map((event) => event.id),
+    auditIds: canonical.auditLinkage.auditIds,
+    eventIds: canonical.auditLinkage.eventIds,
     history: request.decisions.map((decision, index) => ({ id: `${request.id}-decision-${index + 1}`, actor: { id: decision.actorId, displayName: decision.actorId, role: decision.roles.join(', '), actorType: 'human' as const }, decision: decision.decision, reason: decision.reason, evidence: decision.evidence, timestamp: decision.decidedAt })),
-    exportFields: ['id', 'tenantId', 'racetrackId', 'action', 'target', 'status', 'requestedBy', 'createdAt', 'expiresAt', 'correlationId'],
-  }, apiContractSchemas.ApprovalDto));
+    exportFields: ['approvalRequestId', 'tenantId', 'racetrackId', 'action', 'target', 'canonicalStatus', 'approverRoles', 'evidence', 'escalation', 'expiresAt', 'auditLinkage', 'correlationId'],
+  }, apiContractSchemas.ApprovalDto);
+  });
   const auditEvents = snapshot.auditEvents.map((event): AuditEventDto => assertContract('AuditEventDto', {
+    auditEventId: event.auditEventId,
+    actor: { ...event.actor, id: event.actor.actorId, role: event.actor.roles?.join(', ') ?? event.actor.actorType },
+    entity: event.entity,
+    action: event.action ?? event.type,
+    reason: event.reason,
+    approvalReference: event.approvalReference,
+    timestamp: event.timestamp,
+    tenantScope: event.tenantScope,
+    integrityReference: event.integrityReference,
     id: event.id,
     type: event.type,
-    actor: event.actor,
-    timestamp: event.timestamp,
+    actorId: event.actor.actorId,
     subjectId: event.subjectId,
     severity: event.severity ?? 'info',
     hash: event.hash,
@@ -123,11 +144,10 @@ export function createCommandCenterContractSnapshot(service = new TrackMindComma
     mock: false,
     correlationId: event.correlationId,
     workflowId: event.workflowId,
-    actorDetails: { id: event.actor, displayName: event.actor, role: event.type, actorType: event.actor === 'system' ? 'system' : 'service' },
     affectedAssets: event.subjectId ? [event.subjectId] : [],
     evidenceIds: event.evidenceIds ?? [],
     retainedUntil: event.retainedUntil,
-    exportFields: ['id', 'type', 'actor', 'timestamp', 'subjectId', 'hash', 'previousHash', 'correlationId'],
+    exportFields: ['auditEventId', 'actor', 'entity', 'action', 'reason', 'approvalReference', 'timestamp', 'tenantScope', 'integrityReference', 'id', 'hash', 'previousHash'],
   }, apiContractSchemas.AuditEventDto));
   const digitalTwinState = snapshot.digitalTwinState.map((state): DigitalTwinStateDto => assertContract('DigitalTwinStateDto', { ...state, mock: false }, apiContractSchemas.DigitalTwinStateDto));
   const gatePosition = assertContract('GatePositionDto', { ...snapshot.gatePosition, mock: false }, apiContractSchemas.GatePositionDto);
@@ -138,6 +158,28 @@ export function createCommandCenterContractSnapshot(service = new TrackMindComma
   ].map((measurement) => assertContract('SurfaceMeasurementDto', measurement, apiContractSchemas.SurfaceMeasurementDto));
   const races: RaceDto[] = [{ raceId: 'race-7', trackId: 'main-track', postTime: '2026-06-13T21:00:00.000Z', score: 87, status: 'watch' as const, warnings: 2, approvals: approvals.length, mock: false }].map((race) => assertContract('RaceDto', race, apiContractSchemas.RaceDto));
   const recommendationGeneratedAt = now();
-  const aiRecommendations: AIRecommendationDto[] = [{ id: 'ai-1', recommendationId: 'ai-1', recommendation: 'Dispatch surface crew for one harrow pass before Race 7.', confidence: 0.82, evidence: ['surface:far-turn moisture=27', 'asset:sensor-44 warning'], modelVersion: 'model-surface-advisor-v2', generatedAt: recommendationGeneratedAt, approvalRequirement: { required: true, policy: 'single-human', requirementId: 'approval-ai-1' }, auditReference: { auditIds: ['audit-ai-1'], eventIds: ['evt-ai-1'], digitalTwinRefs: ['twin:main-track:sensor-44'], approvalReference: 'approval-ai-1' }, requiresApproval: true, actionPath: '/ai-governance', eventId: 'evt-ai-1', auditId: 'audit-ai-1', digitalTwinRefs: ['twin:main-track:sensor-44'], mock: false }].map((rec) => assertContract('AIRecommendationDto', rec, apiContractSchemas.AIRecommendationDto));
+  const aiRecommendations: AIRecommendationDto[] = [{
+    id: 'ai-1',
+    recommendationId: 'ai-1',
+    recommendation: 'Dispatch surface crew for one harrow pass before Race 7.',
+    confidence: { raw: 0.82, calibrated: 0.78, band: 'medium' as const, drivers: ['surface-telemetry', 'risk:high'] },
+    confidenceValue: 0.78,
+    evidence: ['surface:far-turn moisture=27', 'asset:sensor-44 warning'],
+    evidencePackage: { evidencePackageId: 'evidence-package:ai-1', evidence: [{ evidenceId: 'surface:far-turn moisture=27', kind: 'telemetry' as const, source: 'surface' }], lineage: ['agent:surface', 'model:model-surface-advisor-v2'], hash: 'sha256:ai-1' },
+    modelVersion: 'model-surface-advisor-v2',
+    generatedAt: recommendationGeneratedAt,
+    approvalRequirement: { required: true, policy: 'single-human', requiredApproverRoles: ['track-superintendent'], requirementId: 'approval-ai-1' },
+    auditReference: { auditIds: ['audit-ai-1'], eventIds: ['evt-ai-1'], digitalTwinRefs: ['twin:main-track:sensor-44'], approvalReference: 'approval-ai-1', correlationId: 'corr-ai-1', integrityRef: 'evidence-package:ai-1' },
+    requiresApproval: true,
+    actionPath: '/settings',
+    eventId: 'evt-ai-1',
+    auditId: 'audit-ai-1',
+    digitalTwinRefs: ['twin:main-track:sensor-44'],
+    riskLevel: 'high' as const,
+    advisoryOnly: true as const,
+    executionAllowed: false as const,
+    blockedAutonomousExecution: true as const,
+    mock: false,
+  }].map((rec) => assertContract('AIRecommendationDto', rec, apiContractSchemas.AIRecommendationDto));
   return { assets, races, approvals, auditEvents, digitalTwinState, surfaceMeasurements, gatePosition, raceDistanceConfiguration, aiRecommendations, openApi: { title: 'TrackMind Nexus API', version: '1.0.0', endpoints: apiEndpointContracts }, errors: { notAuthorized: { ok: false, error: { code: 'forbidden', message: 'Actor is not authorized for this TrackMind API operation' } } } };
 }

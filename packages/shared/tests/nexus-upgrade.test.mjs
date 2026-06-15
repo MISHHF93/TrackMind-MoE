@@ -30,7 +30,7 @@ test('TrackMind Nexus upgrade package covers all required areas and workspaces',
   assert.deepEqual(validateTrackMindNexusUpgradePackage(pkg), { valid: true, errors: [] });
   assert.equal(pkg.workspaces.length, nexusWorkspaceIds.length);
   assert.ok(nexusWorkspaceIds.includes('api-hub'));
-  assert.ok(pkg.workspaces.some((workspace) => workspace.id === 'api-hub' && workspace.route === '/api-hub' && workspace.apiPath === '/api/v1/racing-data'));
+  assert.ok(pkg.workspaces.some((workspace) => workspace.id === 'api-hub' && workspace.route === '/data-hub' && workspace.apiPath === '/api/v1/racing-data'));
   assert.equal(pkg.areas.length, nexusUpgradeAreaIds.length);
   for (const framework of nexusComplianceFrameworks) assert.ok(pkg.complianceFrameworks.includes(framework));
   for (const kind of nexusDigitalTwinAssetKinds) assert.ok(pkg.digitalTwinAssetKinds.includes(kind));
@@ -48,7 +48,7 @@ test('Nexus event contracts require audit, tenant, racetrack, correlation, and D
     assert.match(contract.eventType, /\.v1$/);
     assert.equal(contract.auditRequired, true);
     assert.equal(contract.replayable, true);
-    for (const metadata of ['eventType','version','timestamp','actor','correlationId','causationId','aggregateId','tenantId','racetrackId','payload','auditRef','digitalTwinRef']) {
+    for (const metadata of ['eventId','eventType','version','timestamp','actorId','actor','source','correlationId','causationId','aggregateId','tenantId','racetrackId','payload','auditRef','digitalTwinRef']) {
       assert.ok(contract.requiredMetadata.includes(metadata), `${contract.eventType} missing ${metadata}`);
     }
   }
@@ -223,7 +223,15 @@ test('Nexus upgrade event envelope validates against shared event contract', () 
     auditRef: 'audit-1',
     digitalTwinRef: 'twin:track-1:asset-1',
   });
+  assert.equal(envelope.eventId, 'evt-upgrade-1');
+  assert.equal(envelope.eventType, 'asset.registry.changed.v1');
   assert.equal(envelope.tenantId, 'tenant-1');
+  assert.equal(envelope.racetrackId, 'track-1');
+  assert.equal(envelope.actorId, 'asset-service');
+  assert.equal(envelope.actor.id, envelope.actorId);
+  assert.equal(envelope.source, 'trackmind-nexus-upgrade');
+  assert.equal(envelope.timestamp, envelope.occurredAt);
+  assert.equal(envelope.version, 1);
   assert.equal(envelope.payload.racetrackId, 'track-1');
   assert.equal(envelope.payload.auditRef, 'audit-1');
   assert.equal(envelope.payload.digitalTwinRef, 'twin:track-1:asset-1');

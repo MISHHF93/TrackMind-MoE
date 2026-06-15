@@ -45,7 +45,7 @@ test('event infrastructure propagates operational actions into audit logs and di
   assert.equal(twin.eventHistory[0].sourceEventId, createdEvents[0].id);
 
   const auditRecords = auditLog.all();
-  assert.ok(auditRecords.some((entry) => entry.id === `audit:${createdEvents[0].id}` && entry.payload.eventType === 'racetrack.asset.created'));
+  assert.ok(auditRecords.some((entry) => entry.id === `audit:${createdEvents[0].id}` && entry.payload.eventType === 'racetrack.asset.created.v1'));
   assert.ok(auditRecords.some((entry) => entry.type === 'digital-twin-update' && entry.subjectId === 'twin:EVENT_GATE_01'));
   assert.equal(auditLog.verify().valid, true);
   assert.ok(signals.some((signal) => signal.name === 'handler.delivered' && signal.handlerName === 'digital-twin-runtime'));

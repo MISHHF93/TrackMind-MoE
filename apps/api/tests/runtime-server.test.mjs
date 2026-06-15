@@ -32,8 +32,6 @@ test('runtime API facade serves dashboard live-client endpoints', async () => {
     '/api/v1/compliance/control-library',
     '/api/v1/kpis',
     '/api/v1/kpis/model-context',
-    '/api/v1/artifacts/kpis',
-    '/api/v1/artifacts/kpis/model-context',
     '/api/v1/ai/recommendations',
     '/api/v1/ai-governance/workspace',
     '/api/v1/ai-control-plane/workspace',
@@ -92,14 +90,15 @@ test('runtime KPI facade exposes governed artifacts, snapshots, filtering, and m
   const adminHeaders = { 'x-trackmind-role': 'admin' };
   const auditorHeaders = { 'x-trackmind-role': 'read-only-auditor' };
 
-  for (const path of ['/api/v1/kpis', '/api/v1/kpis/model-context', '/api/v1/kpis/kpi-race-day-operations', '/api/v1/kpis/kpi-race-day-operations/snapshots', '/api/v1/artifacts/kpis', '/api/v1/artifacts/kpis/kpi-race-day-operations', '/api/v1/artifacts/kpis/kpi-race-day-operations/snapshots', '/api/v1/artifacts/kpis/model-context']) {
+  for (const path of ['/api/v1/kpis', '/api/v1/kpis/model-context', '/api/v1/kpis/kpi-race-day-operations', '/api/v1/kpis/kpi-race-day-operations/snapshots']) {
     const response = await handleApiRequest('GET', path, undefined, state, adminHeaders);
     assert.equal(response.status, 200, path);
   }
 
-  for (const path of ['/api/v1/kpis', '/api/v1/kpis/{kpiId}', '/api/v1/kpis/{kpiId}/snapshots', '/api/v1/kpis/model-context', '/api/v1/artifacts/kpis', '/api/v1/artifacts/kpis/{kpiId}', '/api/v1/artifacts/kpis/{kpiId}/snapshots', '/api/v1/artifacts/kpis/model-context']) {
+  for (const path of ['/api/v1/kpis', '/api/v1/kpis/{kpiId}', '/api/v1/kpis/{kpiId}/snapshots', '/api/v1/kpis/model-context']) {
     assert.ok(apiEndpointContracts.some((endpoint) => endpoint.path === path), `${path} missing from shared contract manifest`);
   }
+  assert.ok(!apiEndpointContracts.some((endpoint) => endpoint.path.startsWith('/api/v1/artifacts/kpis')));
 
   const workspace = await handleApiRequest('GET', '/api/v1/kpis?tenantId=trackmind&racetrackId=main-track', undefined, state, adminHeaders);
   assert.equal(workspace.body.kpis.length, 20);
@@ -108,12 +107,17 @@ test('runtime KPI facade exposes governed artifacts, snapshots, filtering, and m
   assert.deepEqual(validateContract('KPIWorkspaceDto', workspace.body, apiContractSchemas.KPIWorkspaceDto), { valid: true, errors: [] });
   assert.ok(workspace.body.kpis.every((kpi) => validateKPIArtifact(kpi).valid));
   assert.ok(workspace.body.kpis.some((kpi) => kpi.domain === 'multi-track-federation' && kpi.visibility === 'federation-aggregate'));
+  assert.equal(workspace.body.kpis.find((kpi) => kpi.domain === 'safety-incidents')?.threshold.targetDirection, 'below');
 
   const queryRoleOnly = await handleApiRequest('GET', '/api/v1/kpis?role=admin&tenantId=trackmind&racetrackId=main-track', undefined, state);
   assert.ok(queryRoleOnly.body.kpis.length < workspace.body.kpis.length);
 
   const mismatch = await handleApiRequest('GET', '/api/v1/kpis?tenantId=trackmind&racetrackId=main-track', undefined, state, { ...adminHeaders, 'x-trackmind-tenant-id': 'different-tenant' });
   assert.equal(mismatch.status, 403);
+  const organizationMismatch = await handleApiRequest('GET', '/api/v1/kpis?organizationId=org-trackmind-network', undefined, state, { ...adminHeaders, 'x-trackmind-organization-id': 'different-org' });
+  assert.equal(organizationMismatch.status, 403);
+  const organizationFilter = await handleApiRequest('GET', '/api/v1/kpis?organizationId=unknown-org', undefined, state, adminHeaders);
+  assert.equal(organizationFilter.body.kpis.length, 0);
 
   const auditor = await handleApiRequest('GET', '/api/v1/kpis?tenantId=trackmind&racetrackId=main-track', undefined, state, auditorHeaders);
   assert.ok(auditor.body.kpis.length < workspace.body.kpis.length);
@@ -126,7 +130,7 @@ test('runtime KPI facade exposes governed artifacts, snapshots, filtering, and m
   assert.ok(context.body.every((entry) => entry.prohibitedUse.includes('execute regulated actions')));
   assert.ok(context.body.every((entry) => entry.prohibitedUse.includes('expose raw cross-track records')));
 
-  for (const path of ['/api/v1/kpis/execute', '/api/v1/artifacts/kpis/execute', '/api/v1/artifacts/kpis/kpi-race-day-operations/execute']) {
+  for (const path of ['/api/v1/kpis/execute', '/api/v1/artifacts/kpis', '/api/v1/artifacts/kpis/kpi-race-day-operations']) {
     const response = await handleApiRequest('POST', path, { action: 'race-start' }, state);
     assert.equal(response.status, 404, path);
   }
@@ -285,6 +289,21 @@ test('runtime API facade serves auxiliary adapter endpoints and consistent fallb
   assert.equal(missing.body.error.code, 'not_found');
 });
 
+test('runtime API facade enforces shared endpoint permissions when role headers are present', async () => {
+  const state = createApiFacadeState();
+  const missingRole = await handleApiRequest('GET', '/api/v1/audit/compliance-export', undefined, state, {});
+  assert.equal(missingRole.status, 401);
+  assert.equal(missingRole.body.error.code, 'unauthorized');
+
+  const disallowedRole = await handleApiRequest('GET', '/api/v1/audit/compliance-export', undefined, state, { 'x-trackmind-role': 'steward' });
+  assert.equal(disallowedRole.status, 403);
+  assert.match(disallowedRole.body.error.message, /not allowed|lacks permission/i);
+
+  const allowedRole = await handleApiRequest('GET', '/api/v1/audit/compliance-export', undefined, state, { 'x-trackmind-role': 'read-only-auditor' });
+  assert.equal(allowedRole.status, 200);
+  assert.ok(allowedRole.body.records);
+});
+
 test('runtime protected action POST boundaries require context, human actors, and RBAC', async () => {
   const state = createApiFacadeState();
   const validContext = {
@@ -331,7 +350,7 @@ test('runtime API facade serves Racing Data API Hub core GET routes', async () =
   const routes = [
     '/api/v1/racing-data/providers',
     '/api/v1/racing-data/providers/provider-official-feed/status',
-    '/api/v1/racing-data/ingest/jobs/job-racing-hub-seed-1',
+    '/api/v1/racing-data/ingestion-jobs/job-racing-hub-seed-1',
     '/api/v1/racing-data/raw-payloads/raw-official-feed-race-7',
     '/api/v1/racing-data/canonical/race-cards',
     '/api/v1/racing-data/canonical/races/race-7',
@@ -357,7 +376,7 @@ test('runtime API facade serves Racing Data API Hub core GET routes', async () =
   assert.ok(quality.body[0].checks.some((check) => check.checkId === 'no-scraping' && check.passed));
 });
 
-test('runtime API facade serves dashboard Racing Data live-client aliases', async () => {
+test('runtime API facade serves dashboard Racing Data canonical read models', async () => {
   const state = createApiFacadeState();
   const routes = [
     '/api/v1/racing-data',
@@ -372,7 +391,7 @@ test('runtime API facade serves dashboard Racing Data live-client aliases', asyn
     '/api/v1/racing-data/canonical/races',
     '/api/v1/racing-data/canonical/horses',
     '/api/v1/racing-data/entity-resolution',
-    '/api/v1/racing-data/quality-reports',
+    '/api/v1/racing-data/data-quality/reports',
     '/api/v1/racing-data/lineage',
     '/api/v1/racing-data/digital-twin/sync-descriptor',
   ];
@@ -389,8 +408,8 @@ test('runtime API facade serves dashboard Racing Data live-client aliases', asyn
 
   const drafts = [
     ['/api/v1/racing-data/ingestion-jobs/draft-requests', 'racing-data.ingestion-job.draft.created'],
-    ['/api/v1/racing-data/feature-store/exports/draft-requests', 'racing-data.feature-store-export.draft.created'],
-    ['/api/v1/racing-data/data-lake/exports/draft-requests', 'racing-data.data-lake-export.draft.created'],
+    ['/api/v1/racing-data/exports/feature-store', 'racing-data.export.feature-store.draft.created'],
+    ['/api/v1/racing-data/exports/data-lake', 'racing-data.export.data-lake.draft.created'],
   ];
   for (const [route, eventType] of drafts) {
     const response = await handleApiRequest('POST', route, { providerId: 'provider-official-feed' }, state);
@@ -405,12 +424,11 @@ test('runtime Racing Data API Hub POST routes are draft-only and governed', asyn
   const state = createApiFacadeState();
   const draftRoutes = [
     ['POST', '/api/v1/racing-data/providers', { providerId: 'provider-new-draft' }],
-    ['POST', '/api/v1/racing-data/ingest/provider-official-feed', { requestedBy: 'racing-secretary' }],
+    ['POST', '/api/v1/racing-data/ingestion-jobs/draft-requests', { providerId: 'provider-official-feed', requestedBy: 'racing-secretary' }],
     ['POST', '/api/v1/racing-data/entity-resolution/review', { providerId: 'provider-official-feed', entityId: 'horse-1' }],
     ['POST', '/api/v1/racing-data/exports/feature-store', { providerId: 'provider-official-feed', featureSetId: 'race-card-features' }],
     ['POST', '/api/v1/racing-data/exports/data-lake', { providerId: 'provider-official-feed', zone: 'silver-conformed' }],
     ['POST', '/api/v1/racing-data/sync/digital-twins', { providerId: 'provider-official-feed', twinIds: ['twin:race:race-7'] }],
-    ['POST', '/api/v1/racing-data/digital-twin/sync-draft-requests', { providerId: 'provider-official-feed', twinIds: ['twin:race:race-7'] }],
   ];
 
   for (const [method, route, body] of draftRoutes) {
@@ -430,7 +448,7 @@ test('runtime Racing Data API Hub enforces license restrictions before drafts', 
   const state = createApiFacadeState();
   const restrictedProvider = state.racingData.providers.find((provider) => provider.providerId === 'provider-restricted-odds');
 
-  const ingest = await handleApiRequest('POST', '/api/v1/racing-data/ingest/provider-restricted-odds', { requestedBy: 'compliance-officer' }, state);
+  const ingest = await handleApiRequest('POST', '/api/v1/racing-data/ingestion-jobs/draft-requests', { providerId: 'provider-restricted-odds', requestedBy: 'compliance-officer' }, state);
   assert.equal(ingest.status, 403);
   assert.equal(ingest.body.error.code, 'license_not_permitted');
   assert.equal(ingest.body.externalCallsPerformed, false);
@@ -450,7 +468,7 @@ test('runtime Racing Data API Hub enforces license restrictions before drafts', 
 
 test('runtime Racing Data API Hub uses shared API constants and performs no external calls', async () => {
   const racingDataContracts = apiEndpointContracts.filter((endpoint) => endpoint.path.startsWith('/api/v1/racing-data/'));
-  assert.equal(racingDataContracts.length, 17);
+  assert.equal(racingDataContracts.length, 18);
   assert.ok(racingDataContracts.some((endpoint) => endpoint.operationId === 'createRacingDataIngestDraft' && endpoint.description.includes('no external pull')));
   assert.ok(racingDataContracts.filter((endpoint) => endpoint.method === 'POST').every((endpoint) => /draft/i.test(endpoint.description)));
 
@@ -466,7 +484,7 @@ test('runtime Racing Data API Hub uses shared API constants and performs no exte
     const responses = await Promise.all([
       handleApiRequest('GET', '/api/v1/racing-data/providers', undefined, state),
       handleApiRequest('GET', '/api/v1/racing-data/canonical/race-cards', undefined, state),
-      handleApiRequest('POST', '/api/v1/racing-data/ingest/provider-official-feed', {}, state),
+      handleApiRequest('POST', '/api/v1/racing-data/ingestion-jobs/draft-requests', { providerId: 'provider-official-feed' }, state),
       handleApiRequest('POST', '/api/v1/racing-data/exports/data-lake', { providerId: 'provider-official-feed' }, state),
     ]);
     assert.ok(responses.every((response) => [200, 202].includes(response.status)));
@@ -782,6 +800,9 @@ test('runtime API server returns structured bad-json errors with request metadat
     assert.equal(body.error.requestId, 'test-request-1');
     assert.equal(body.error.path, '/api/v1/approvals/draft-requests');
     assert.ok(body.error.timestamp);
+    assert.equal(body.meta.requestId, 'test-request-1');
+    assert.equal(body.meta.method, 'POST');
+    assert.equal(body.meta.path, '/api/v1/approvals/draft-requests');
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

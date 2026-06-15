@@ -6,6 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "npm --prefix ../../packages/shared run build && tsc -p tsconfig.json",
+    "typecheck": "npm --prefix ../../packages/shared run build && tsc -p tsconfig.json --noEmit",
     "start": "node dist/server.js",
     "test": "npm run build && node ../../scripts/run-node-tests.mjs tests/*.test.mjs",
     "link:shared": "node ../../scripts/link-shared.mjs"

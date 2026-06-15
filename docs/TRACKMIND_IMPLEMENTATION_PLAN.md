@@ -6,7 +6,7 @@ This plan turns the TrackMind Nexus build intent into incremental repository wor
 
 ## Current code-space alignment
 
-The repository already contains platform foundations for API domain modules, a dashboard, expert-agent stubs, shared governance types, database seeds/migrations, Azure Bicep, compliance docs, service templates, workflows, tests, and placeholder bounded-context folders. The immediate code-space goal is therefore to harden discoverability, exports, and contributor alignment rather than introduce a large greenfield rewrite.
+The repository already contains platform foundations for API domain modules, the canonical `apps/frontend` shell, expert-agent stubs, shared governance types, database seeds/migrations, Azure Bicep, compliance docs, service templates, workflows, tests, and placeholder bounded-context folders. The immediate code-space goal is therefore to harden discoverability, exports, and contributor alignment rather than introduce a large greenfield rewrite.
 
 ## Workstream 1: Documentation and contributor guidance
 

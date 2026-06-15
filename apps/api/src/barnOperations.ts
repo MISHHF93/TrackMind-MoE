@@ -58,6 +58,8 @@ const rolePermissions: Record<Role, BarnPermission[]> = {
   'read-only-auditor': ['barn:read'],
   finance: ['barn:read'],
   'ticketing-manager': ['barn:read'],
+  'operations-admin': ['barn:read', 'barn:manage', 'stall:assign', 'movement:record', 'access:record', 'inspection:perform', 'restriction:manage'],
+  'ai-safety-agent': ['barn:read'],
 };
 
 export class CoordinatedBarnOperationsService {
@@ -363,7 +365,9 @@ export class CoordinatedBarnOperationsService {
 
   private publish(type: BarnEventType, payload: Record<string, unknown>, aggregateId: string, compliance: ComplianceClassification, accountableRole: string): Pick<RaceDayEvent, 'id'> {
     const pending = { id: id('evt-barn') };
-    void this.eventBus.publish({ type, payload, aggregateId, producer: 'barn-operations', metadata: { compliance, team: 'barn-operations', accountableRole } });
+    const parts = type.split('.');
+    const eventType = parts.length === 2 ? `${parts[0]}.lifecycle.${parts[1]}.v1` : `${type}.v1`;
+    void this.eventBus.publish({ id: pending.id, type: eventType, payload, tenantId: typeof payload.tenantId === 'string' ? payload.tenantId : 'trackmind', racetrackId: typeof payload.racetrackId === 'string' ? payload.racetrackId : 'main-track', actor: { id: 'barn-operations', type: 'service' }, subject: { id: aggregateId, type: 'barn', tenantId: typeof payload.tenantId === 'string' ? payload.tenantId : 'trackmind' }, evidence: typeof payload.auditId === 'string' ? [payload.auditId] : [], auditRef: typeof payload.auditId === 'string' ? payload.auditId : undefined, aggregateId, producer: 'barn-operations', metadata: { compliance, team: 'barn-operations', accountableRole } });
     return pending;
   }
 

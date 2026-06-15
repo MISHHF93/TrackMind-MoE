@@ -18,7 +18,7 @@ test('race-day readiness evaluates score, events, warnings, approvals, audit, an
   assert.ok(assessment.warnings.some((warning) => warning.domain === 'weather' && warning.severity === 'critical'));
   assert.ok(assessment.approvals.some((approval) => approval.action === 'weather-readiness-override'));
   assert.equal(assessment.audit.previousHash, 'genesis');
-  assert.ok(seen.some((event) => event.type === 'readiness.blocked'));
+  assert.ok(seen.some((event) => event.eventType === 'readiness.race-day.blocked.v1'));
   assert.equal(auditLog.forensicTimeline({ subjectId: 'race-7' }).length, 1);
 
   const dashboard = service.dashboard('2026-06-13T20:46:00Z');

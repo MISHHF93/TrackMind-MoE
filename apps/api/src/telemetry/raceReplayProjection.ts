@@ -19,7 +19,7 @@ function constellationValues(value: unknown): GnssConstellation[] {
 export class DigitalTwinRaceReplayProjectionService {
   build(events: EventEnvelope[], raceId: string): RaceReplayProjection {
     const points = events
-      .filter((event) => event.eventType === 'LocationUpdatedEvent')
+      .filter((event) => event.eventType === 'location.position.updated.v1')
       .map((event) => this.toReplayPoint(event))
       .filter((point): point is RaceReplayPoint => Boolean(point && point.raceId === raceId))
       .sort((left, right) => left.observedAt.localeCompare(right.observedAt) || left.sequence - right.sequence);

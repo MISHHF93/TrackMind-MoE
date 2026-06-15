@@ -1,4 +1,4 @@
-import type { AIRecommendationDto, AuditEventDto, ApprovalDto, KPIArtifact } from '@trackmind/shared';
+import type { AIRecommendationDto, AuditEventDto, ApprovalDto, KPI, ModelReadableKPIContext } from '@trackmind/shared';
 import type { AdapterSource } from '../api/client';
 import type { RouteSupportMetadata } from './support';
 
@@ -20,7 +20,7 @@ export interface WorkspacePanel {
   id: string;
   title: string;
   body: string;
-  status: 'implemented' | 'facade-only' | 'documented-stub' | 'mock-adapter';
+  status: 'implemented' | 'facade-only' | 'documented-stub';
   evidence: string[];
   actions?: WorkspaceCardAction[];
 }
@@ -43,7 +43,8 @@ export interface WorkspaceViewModel {
   approvals: ApprovalDto[];
   aiRecommendations: AdvisoryAIRecommendation[];
   auditEvents: AuditEventDto[];
-  kpis: KPIArtifact[];
+  kpis: KPI[];
+  modelReadableKpiContext: ModelReadableKPIContext[];
 }
 
 export function countMetric(label: string, count: number, detail: string, tone: WorkspaceMetric['tone'] = 'nominal', actions?: WorkspaceCardAction[]): WorkspaceMetric {

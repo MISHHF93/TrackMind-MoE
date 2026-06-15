@@ -12,7 +12,7 @@ The README defines TrackMind-MoE as a racetrack operating-system monorepo with:
 - `packages/shared` as shared DTO, policy, and route contracts.
 - `db`, `infra`, `docs`, and service folders as migration, deployment, architecture, and extraction scaffolds.
 
-The implemented runtime is strongest when `packages/shared` contracts and `apps/api` routes are treated as the product contract before expanding UI behavior. The old monolithic dashboard compatibility layer is gone; the active frontend shell now exposes backend-declared workspaces through route metadata, API adapters, explicit mock adapters, and disabled read-only action rails until governed endpoints are available.
+The implemented runtime is strongest when `packages/shared` contracts and `apps/api` routes are treated as the product contract before expanding UI behavior. The old monolithic dashboard compatibility layer is gone; the active frontend shell now exposes backend-declared workspaces through route metadata, centralized API adapters, and governed read-only action rails until approved backend workflows are available.
 
 ## Better User Layout
 
@@ -190,6 +190,6 @@ Start with the backend contract pass:
 
 1. Generate or hand-maintain a route coverage test that compares `apiEndpointContracts` with `handleApiRequest`.
 2. Add missing shared contract entries for live routes that are implemented but not in the manifest.
-3. Keep stale dashboard references quarantined behind explicit compatibility aliases in the new route registry.
+3. Remove stale dashboard references instead of preserving compatibility aliases in the route registry.
 4. Keep the AI Stack-first route registry and API adapter reconciled with shared backend contracts.
 5. Add AI model-card, prompt-card, and evaluation files for the current seeded Surface Advisor agent.

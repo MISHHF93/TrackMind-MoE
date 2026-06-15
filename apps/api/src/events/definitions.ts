@@ -1,4 +1,5 @@
 import type { TimestampSource, TimestampSynchronizationMetadata } from '../timeSynchronization.js';
+import type { CanonicalEventEnvelope } from '@trackmind/shared';
 
 export type CqrsEventCategory = 'safety-critical' | 'monitoring' | 'administrative';
 export type SafetyCriticalCommandType = 'race_start' | 'race_stop' | 'emergency_action' | 'scratch_decision' | 'medication_admin';
@@ -7,17 +8,17 @@ export type AdministrativeCommandType = 'ticket_sales' | 'facility_schedule' | '
 export type CqrsCommandType = SafetyCriticalCommandType | MonitoringCommandType | AdministrativeCommandType;
 
 export type DomainEventType =
-  | 'RaceStartedEvent'
-  | 'RaceStoppedEvent'
-  | 'HorseScratchedEvent'
-  | 'MedicationAdministeredEvent'
-  | 'IncidentReportedEvent'
-  | 'SensorReadingEvent'
-  | 'CameraDetectionEvent'
-  | 'LocationUpdatedEvent'
-  | 'TicketSalesRecordedEvent'
-  | 'FacilityScheduleUpdatedEvent'
-  | 'FinanceTransferRequestedEvent';
+  | 'race.lifecycle.started.v1'
+  | 'race.lifecycle.stopped.v1'
+  | 'horse.status.scratched.v1'
+  | 'medication.decision.administered.v1'
+  | 'incident.case.reported.v1'
+  | 'sensor.reading.recorded.v1'
+  | 'camera.detection.recorded.v1'
+  | 'location.position.updated.v1'
+  | 'ticket.sales.recorded.v1'
+  | 'facility.schedule.updated.v1'
+  | 'finance.transfer.requested.v1';
 
 export interface AiEventMetadata {
   model_id?: string;
@@ -49,17 +50,15 @@ export interface CqrsCommand<TPayload = Record<string, unknown>> {
   sourceTimestamps?: TimestampSource[];
 }
 
-export interface EventEnvelope<TPayload = Record<string, unknown>> {
-  eventId: string;
+export interface EventEnvelope<TPayload extends Record<string, unknown> = Record<string, unknown>> extends CanonicalEventEnvelope<TPayload> {
   eventType: DomainEventType;
   category: CqrsEventCategory;
   aggregateId: string;
-  tenantId: string;
-  racetrackId: string;
+  actorId: string;
+  source: string;
+  timestamp: string;
   commandId: string;
   occurredAt: string;
-  version: number;
-  payload: TPayload;
   previousEventHash: string;
   eventHash: string;
   ai: AiEventMetadata;
@@ -114,17 +113,17 @@ export function eventCategoryFor(commandType: CqrsCommandType): CqrsEventCategor
 
 export function eventTypeFor(commandType: CqrsCommandType): DomainEventType {
   const map: Record<CqrsCommandType, DomainEventType> = {
-    race_start: 'RaceStartedEvent',
-    race_stop: 'RaceStoppedEvent',
-    emergency_action: 'IncidentReportedEvent',
-    scratch_decision: 'HorseScratchedEvent',
-    medication_admin: 'MedicationAdministeredEvent',
-    sensor_reading: 'SensorReadingEvent',
-    camera_detection: 'CameraDetectionEvent',
-    location_update: 'LocationUpdatedEvent',
-    ticket_sales: 'TicketSalesRecordedEvent',
-    facility_schedule: 'FacilityScheduleUpdatedEvent',
-    finance_transfer: 'FinanceTransferRequestedEvent',
+    race_start: 'race.lifecycle.started.v1',
+    race_stop: 'race.lifecycle.stopped.v1',
+    emergency_action: 'incident.case.reported.v1',
+    scratch_decision: 'horse.status.scratched.v1',
+    medication_admin: 'medication.decision.administered.v1',
+    sensor_reading: 'sensor.reading.recorded.v1',
+    camera_detection: 'camera.detection.recorded.v1',
+    location_update: 'location.position.updated.v1',
+    ticket_sales: 'ticket.sales.recorded.v1',
+    facility_schedule: 'facility.schedule.updated.v1',
+    finance_transfer: 'finance.transfer.requested.v1',
   };
   return map[commandType];
 }

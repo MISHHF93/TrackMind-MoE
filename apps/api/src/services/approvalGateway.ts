@@ -1,4 +1,4 @@
-import { CentralizedApprovalService, type ApprovalActor, type ApprovalDecisionRecord, type ApprovalPolicy, type ApprovalToken, type ControlledAction, type ControlledActionRequest } from '../approvals.js';
+import { CentralizedApprovalService, defaultApprovalPolicies, type ApprovalActor, type ApprovalDecisionRecord, type ApprovalPolicy, type ApprovalToken, type ControlledAction, type ControlledActionRequest } from '../approvals.js';
 import { ImmutableAuditLog, type AuditLogEntry } from '../auditLog.js';
 import { UniversalEventBus, type RaceDayEvent } from '../eventBus.js';
 
@@ -68,17 +68,12 @@ const addSeconds = (iso: string, seconds: number) => new Date(Date.parse(iso) + 
 const clone = <T>(value: T): T => value === undefined ? value : JSON.parse(JSON.stringify(value)) as T;
 
 function twoMinuteApprovalPolicies(): ApprovalPolicy[] {
-  const evidence = ['human-approval-record', 'reason'];
-  return [
-    { action: 'race-start', chain: [{ id: 'race-office', roles: ['racing-secretary'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'veterinary', roles: ['veterinarian'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 2, escalationRules: [{ afterMinutes: 1, escalateToRoles: ['admin'], reason: 'race start cannot wait longer than 120 seconds' }] },
-    { action: 'race-stop', chain: [{ id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'emergency-command', roles: ['security'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 2, escalationRules: [{ afterMinutes: 1, escalateToRoles: ['admin'], reason: 'race stop cannot wait longer than 120 seconds' }] },
-    { action: 'scratch-horse', chain: [{ id: 'veterinary', roles: ['veterinarian'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 2, escalationRules: [{ afterMinutes: 1, escalateToRoles: ['admin'], reason: 'horse scratch dual-control approval cannot wait longer than 120 seconds' }] },
-    { action: 'race-office-scratch', chain: [{ id: 'veterinary', roles: ['veterinarian'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 2, escalationRules: [{ afterMinutes: 1, escalateToRoles: ['admin'], reason: 'horse scratch dual-control approval cannot wait longer than 120 seconds' }] },
-    { action: 'medication-decision', chain: [{ id: 'veterinary', roles: ['veterinarian'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 2, escalationRules: [{ afterMinutes: 1, escalateToRoles: ['admin'], reason: 'medication approval cannot wait longer than 120 seconds' }] },
-    { action: 'steward-decision', chain: [{ id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 2, escalationRules: [{ afterMinutes: 1, escalateToRoles: ['admin', 'compliance-officer'], reason: 'steward decision approval cannot wait longer than 120 seconds' }] },
-    { action: 'emergency-action', chain: [{ id: 'security', roles: ['security'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 2, escalationRules: [{ afterMinutes: 1, escalateToRoles: ['admin'], reason: 'emergency approval cannot wait longer than 120 seconds' }] },
-    { action: 'payout', chain: [{ id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'finance', roles: ['finance'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 2, escalationRules: [{ afterMinutes: 1, escalateToRoles: ['admin'], reason: 'financial payout approval cannot wait longer than 120 seconds' }] },
-  ];
+  return defaultApprovalPolicies().map((policy) => ({
+    ...policy,
+    chain: policy.chain.map((step) => ({ ...step, roles: [...step.roles], evidenceRequired: [...step.evidenceRequired] })),
+    expiresInMinutes: 2,
+    escalationRules: policy.escalationRules.map((rule) => ({ ...rule, afterMinutes: 1, escalateToRoles: [...rule.escalateToRoles], reason: `${rule.reason}; APEX protected mutation SLA is 120 seconds` })),
+  }));
 }
 
 function requiredRoles(policy: ApprovalPolicy): string[] {
@@ -110,7 +105,7 @@ export class ApexApprovalGateway {
       action: input.action,
       target: input.target,
       requestedBy: input.context.actor,
-      actorType: input.context.actorType ?? 'human',
+      actorType: input.context.actorType ?? 'service',
       reason: input.evidence.rationale,
       evidence: this.evidenceList(input.evidence),
       now: createdAt,
@@ -209,7 +204,7 @@ export class ApexApprovalGateway {
       id: id(`audit-${service}`),
       type: 'approval',
       actor,
-      actorType: actor === 'system' ? 'system' : 'human',
+      actorType: context.actorType ?? (actor === 'system' ? 'system' : 'service'),
       timestamp: context.now ?? new Date().toISOString(),
       action,
       actionClass: 'approval',
@@ -235,7 +230,7 @@ export class ApexApprovalGateway {
       producer: `${service}-service`,
       tenantId: context.tenantId,
       racetrackId: context.racetrackId,
-      actor: { id: context.actor, type: context.actorType ?? 'human' },
+      actor: { id: context.actor, type: context.actorType ?? 'service' },
       subject: { id: target, type: 'approval-target', tenantId: context.tenantId },
       evidence: [auditRef],
       auditRef,

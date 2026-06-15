@@ -41,33 +41,115 @@ export interface NexusSubjectReference {
   displayName?: string;
 }
 
-export interface NexusEventEnvelope<TPayload extends Record<string, unknown> = Record<string, unknown>> {
+export type CanonicalEventType = `${string}.${string}.${string}.v${number}`;
+
+export interface CanonicalEventRef {
   eventId: EntityId;
-  eventType: `${string}.${string}.${string}.v${number}`;
+  eventType: CanonicalEventType;
   tenantId: TenantId;
+  racetrackId: EntityId;
+  actorId: EntityId;
+  source: string;
+  timestamp: ISODateTime;
+  version: number;
+  correlationId?: string;
+  causationId?: string;
+  aggregateId?: EntityId;
+  auditRef?: EntityId;
+  approvalRef?: EntityId;
+  digitalTwinRef?: string;
+}
+
+export interface CanonicalEventEnvelope<TPayload extends Record<string, unknown> = Record<string, unknown>> extends CanonicalEventRef {
+  payload: TPayload;
+}
+
+export interface NexusEventEnvelope<TPayload extends Record<string, unknown> = Record<string, unknown>> extends CanonicalEventEnvelope<TPayload> {
   occurredAt: ISODateTime;
   actor: NexusActor;
   correlationId: string;
   subject: NexusSubjectReference;
-  payload: TPayload;
   evidence: string[];
 }
 
-export interface AuditEvent {
-  id: EntityId;
-  tenantId: TenantId;
-  eventType: string;
+export type AuditDecision = 'allowed' | 'denied' | 'approved' | 'rejected' | 'blocked' | 'executed' | 'observed';
+export type AuditActorType = NexusOperationalActorType;
+export type AuditSeverity = 'info' | 'warning' | 'critical';
+
+export interface AuditActorReference {
   actorId: EntityId;
-  actorType: NexusActorType;
+  actorType: AuditActorType;
+  displayName?: string;
+  roles?: string[];
+}
+
+export interface AuditEntityReference {
+  entityId: EntityId;
+  entityType: string;
+  tenantId: TenantId;
+  racetrackId?: EntityId;
+  displayName?: string;
+}
+
+export interface AuditApprovalReference {
+  approvalId: EntityId;
+  status?: 'draft' | 'pending-approval' | 'approved' | 'rejected' | 'expired' | 'overridden';
+  protectedAction?: string;
+  approvedBy?: EntityId;
+  decidedAt?: ISODateTime;
+}
+
+export interface AuditTenantScope {
+  tenantId: TenantId;
+  racetrackId?: EntityId;
+  organizationId?: EntityId;
+}
+
+export interface AuditIntegrityReference {
+  hash: string;
+  previousHash: string;
+  algorithm: 'sha256';
+  chainScope: 'global' | 'tenant' | 'racetrack' | 'entity';
+}
+
+export interface AuditEvent {
+  auditEventId: EntityId;
+  actor: AuditActorReference;
+  entity: AuditEntityReference;
   action: string;
-  target: string | NexusSubjectReference;
-  occurredAt: ISODateTime;
-  correlationId: string;
+  reason: string;
+  approvalReference?: AuditApprovalReference;
+  timestamp: ISODateTime;
+  tenantScope: AuditTenantScope;
+  integrityReference: AuditIntegrityReference;
+  eventType: string;
   evidence: string[];
-  decision?: 'allowed' | 'denied' | 'approved' | 'rejected' | 'blocked' | 'executed';
+  decision?: AuditDecision;
   sourceService?: string;
-  previousHash?: string;
+  correlationId?: string;
+  workflowId?: string;
+  severity?: AuditSeverity;
+  payload?: Record<string, unknown>;
+  id?: EntityId;
+  tenantId?: TenantId;
+  racetrackId?: EntityId;
+  subjectId?: EntityId;
   hash?: string;
+  previousHash?: string;
+}
+
+export function validateAuditEventContract(event: AuditEvent): SafetyValidationResult {
+  if (!event.auditEventId) return { allowed: false, reason: 'Audit event requires auditEventId' };
+  if (!event.actor?.actorId || !event.actor.actorType) return { allowed: false, reason: 'Audit event requires actor.actorId and actor.actorType' };
+  if (!event.entity?.entityId || !event.entity.entityType || !event.entity.tenantId) return { allowed: false, reason: 'Audit event requires tenant-scoped entity reference' };
+  if (!event.action) return { allowed: false, reason: 'Audit event requires action' };
+  if (!event.reason) return { allowed: false, reason: 'Audit event requires reason' };
+  if (!event.timestamp) return { allowed: false, reason: 'Audit event requires timestamp' };
+  if (!event.tenantScope?.tenantId) return { allowed: false, reason: 'Audit event requires tenantScope.tenantId' };
+  if (event.tenantScope.tenantId !== event.entity.tenantId) return { allowed: false, reason: 'Audit tenantScope must match entity tenantId' };
+  if (!event.integrityReference?.hash || !event.integrityReference.previousHash || event.integrityReference.algorithm !== 'sha256') return { allowed: false, reason: 'Audit event requires sha256 integrity reference' };
+  if (!Array.isArray(event.evidence)) return { allowed: false, reason: 'Audit event evidence references are required as an array' };
+  return { allowed: true, reason: 'Audit event satisfies TrackMind canonical audit contract' };
 }
 
 export interface ApprovalRequirement {
@@ -242,9 +324,12 @@ function isNonHumanApprovalActor(actorId: string): boolean {
 }
 
 export function validateNexusEventEnvelope(event: NexusEventEnvelope): SafetyValidationResult {
-  if (!event.eventId || !event.tenantId || !event.occurredAt || !event.correlationId) return { allowed: false, reason: 'Event envelope is missing required identity, tenant, timestamp, or correlation fields' };
+  if (!event.eventId || !event.tenantId || !event.racetrackId || !event.timestamp || !event.occurredAt || !event.correlationId) return { allowed: false, reason: 'Event envelope is missing required identity, tenant, racetrack, timestamp, or correlation fields' };
   if (!/^([a-z][A-Za-z0-9-]*\.){2,}[a-z][A-Za-z0-9-]*\.v\d+$/.test(event.eventType)) return { allowed: false, reason: 'Event type must follow context.entity.verb.vN naming' };
+  if (!Number.isInteger(event.version) || event.version < 1) return { allowed: false, reason: 'Event version must be a positive integer' };
+  if (!event.actorId || !event.source) return { allowed: false, reason: 'Event actorId and source are required' };
   if (!event.actor?.id || !event.actor.type) return { allowed: false, reason: 'Event actor is required' };
+  if (event.actor.id !== event.actorId) return { allowed: false, reason: 'Event actorId must match actor.id' };
   if (!event.subject?.id || !event.subject.tenantId || event.subject.tenantId !== event.tenantId) return { allowed: false, reason: 'Event subject must be tenant-scoped and match the envelope tenant' };
   if (!Array.isArray(event.evidence)) return { allowed: false, reason: 'Event evidence references are required as an array' };
   return { allowed: true, reason: 'Event envelope satisfies TrackMind Nexus contract' };

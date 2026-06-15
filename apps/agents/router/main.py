@@ -611,13 +611,7 @@ def record_expert_load(expert_id: str) -> None:
 def validate_approval_token(approval_token: str | None, evidence_links: list[str], context: dict[str, Any]) -> bool:
     # Until the central approval service verifier is wired into the router,
     # caller-supplied approval metadata is not enough to unlock protected work.
-    return bool(
-        approval_token
-        and evidence_links
-        and context.get("approved_by")
-        and context.get("approval_timestamp")
-        and context.get("approval_verified") is True
-    )
+    return False
 
 
 def evaluate_compliance(text: str, expert_id: str, candidates: list[RouteCandidate], approval_token: str | None, evidence_links: list[str], context: dict[str, Any]) -> ComplianceDecision:

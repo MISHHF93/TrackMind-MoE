@@ -33,21 +33,16 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
   IF NEW.event_type IN (
-    'race_start',
-    'race_stop',
-    'emergency_action',
-    'scratch_decision',
-    'medication_admin',
-    'RaceStartedEvent',
-    'RaceStoppedEvent',
-    'HorseScratchedEvent',
-    'MedicationAdministeredEvent',
-    'IncidentReportedEvent'
+    'race.lifecycle.started.v1',
+    'race.lifecycle.stopped.v1',
+    'incident.case.reported.v1',
+    'horse.status.scratched.v1',
+    'medication.decision.administered.v1'
   ) THEN
     NEW.event_category := 'safety-critical';
   END IF;
 
-  IF NEW.event_type IN ('sensor_reading', 'camera_detection', 'location_update', 'SensorReadingEvent', 'CameraDetectionEvent', 'LocationUpdatedEvent') THEN
+  IF NEW.event_type IN ('sensor.reading.recorded.v1', 'camera.detection.recorded.v1', 'location.position.updated.v1') THEN
     NEW.event_category := 'monitoring';
   END IF;
 
@@ -227,7 +222,7 @@ DECLARE
   zone text;
   occupant text;
 BEGIN
-  IF NEW.event_type IN ('race_start', 'RaceStartedEvent') THEN
+  IF NEW.event_type = 'race.lifecycle.started.v1' THEN
     race_uuid := coalesce((NEW.payload->>'raceId')::uuid, NEW.aggregate_id);
     INSERT INTO trackmind.current_race_state_projection(race_id, aggregate_id, status, last_event_id, updated_at, immutable_hash_chain)
     VALUES (race_uuid, NEW.aggregate_id, 'running', NEW.event_id, NEW."timestamp", NEW.immutable_hash_chain)
@@ -239,7 +234,7 @@ BEGIN
           immutable_hash_chain = EXCLUDED.immutable_hash_chain;
   END IF;
 
-  IF NEW.event_type IN ('race_stop', 'RaceStoppedEvent') THEN
+  IF NEW.event_type = 'race.lifecycle.stopped.v1' THEN
     race_uuid := coalesce((NEW.payload->>'raceId')::uuid, NEW.aggregate_id);
     INSERT INTO trackmind.current_race_state_projection(race_id, aggregate_id, status, last_event_id, updated_at, immutable_hash_chain)
     VALUES (race_uuid, NEW.aggregate_id, 'stopped', NEW.event_id, NEW."timestamp", NEW.immutable_hash_chain)
@@ -251,7 +246,7 @@ BEGIN
           immutable_hash_chain = EXCLUDED.immutable_hash_chain;
   END IF;
 
-  IF NEW.event_type IN ('scratch_decision', 'HorseScratchedEvent') THEN
+  IF NEW.event_type = 'horse.status.scratched.v1' THEN
     race_uuid := coalesce((NEW.payload->>'raceId')::uuid, NEW.aggregate_id);
     horse_uuid := (NEW.payload->>'horseId')::uuid;
     INSERT INTO trackmind.current_race_state_projection(race_id, aggregate_id, status, scratched_horse_ids, last_event_id, updated_at, immutable_hash_chain)
@@ -265,7 +260,7 @@ BEGIN
           immutable_hash_chain = EXCLUDED.immutable_hash_chain;
   END IF;
 
-  IF NEW.event_type IN ('emergency_action', 'IncidentReportedEvent') THEN
+  IF NEW.event_type = 'incident.case.reported.v1' THEN
     incident_uuid := coalesce((NEW.payload->>'incidentId')::uuid, NEW.event_id);
     race_uuid := NULLIF(NEW.payload->>'raceId', '')::uuid;
     zone := NEW.payload->>'zoneId';
@@ -289,7 +284,7 @@ BEGIN
     END IF;
   END IF;
 
-  IF NEW.event_type IN ('location_update', 'LocationUpdatedEvent') THEN
+  IF NEW.event_type = 'location.position.updated.v1' THEN
     horse_uuid := NULLIF(NEW.payload->>'horseId', '')::uuid;
     zone := NEW.payload->>'zoneId';
     occupant := coalesce(NEW.payload->>'horseId', NEW.payload->>'personId', NEW.payload->>'subjectId');

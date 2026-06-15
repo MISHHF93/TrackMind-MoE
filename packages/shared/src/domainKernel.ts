@@ -1,4 +1,5 @@
-import type { NexusActorType } from './foundation.js';
+import type { AuditActorReference, AuditApprovalReference, AuditEntityReference, AuditIntegrityReference, AuditTenantScope, CanonicalEventRef, NexusActorType } from './foundation.js';
+import type { Permission, Role } from './accessControl.js';
 
 export const domainKernelSchemaVersion = 'trackmind.domain-kernel.v1' as const;
 
@@ -7,10 +8,11 @@ type TenantId = string;
 type ISODateTime = string;
 
 export type DomainEntityKind =
+  | 'organization' | 'tenant' | 'user' | 'role' | 'permission'
   | 'racetrack' | 'race-meet' | 'race-day' | 'race'
   | 'horse' | 'jockey' | 'trainer' | 'owner' | 'veterinarian' | 'steward'
   | 'barn' | 'stall' | 'track-sector' | 'facility' | 'asset' | 'starting-gate' | 'sensor' | 'vehicle'
-  | 'incident' | 'workflow' | 'ai-recommendation' | 'approval' | 'audit-event' | 'audit-record';
+  | 'incident' | 'security-event' | 'workflow' | 'ai-recommendation' | 'approval' | 'audit-event' | 'audit-record' | 'compliance-record';
 export type LifecycleState = 'proposed' | 'draft' | 'pending-approval' | 'approved' | 'active' | 'suspended' | 'under-review' | 'executed' | 'completed' | 'cancelled' | 'retired' | 'archived';
 export type DataClassification = 'public' | 'internal' | 'confidential' | 'restricted' | 'regulated';
 export type AssetRiskClassification = 'informational' | 'operational' | 'safety-critical';
@@ -22,7 +24,7 @@ export interface DomainMetadata { classification: DataClassification; tags: stri
 export interface EntityReference<K extends DomainEntityKind = DomainEntityKind> { id: EntityId; kind: K; tenantId: TenantId; displayName?: string; version?: number }
 export interface DigitalTwinRef { twinId: `twin:${string}:${string}`; modelId: string; entity: EntityReference; sourceSystem: string; twinClass?: DomainEntityKind | 'control' | 'emergency-asset' | 'ai-agent'; readOnly?: boolean; legalSourceOfTruth?: false; relationship?: 'primary' | 'shadow' | 'sensor-feed' | 'workflow-state' | 'analytics-view' }
 export interface ApprovalRef { approvalId: EntityId; status: 'pending-approval' | 'approved' | 'rejected' | 'expired' | 'overridden'; protectedAction?: string; approvedBy?: EntityId; approvedAt?: ISODateTime; evidence?: string[] }
-export interface EventRef { eventId: EntityId; eventType: `${string}.${string}.${string}.v${number}` | string; occurredAt: ISODateTime; streamName?: string; auditId?: EntityId; digitalTwinId?: string }
+export interface EventRef extends CanonicalEventRef { occurredAt?: ISODateTime; streamName?: string; auditId?: EntityId; digitalTwinId?: string }
 export interface ObservabilityRef { traceId?: string; spanId?: string; metricNames: string[]; logEventIds: string[] }
 export interface AIApprovalRequirement { required: boolean; policy: string; requirementId?: string; workflowId?: string }
 export interface AIAuditReference { auditIds: string[]; eventIds: string[]; digitalTwinRefs: string[]; approvalReference?: string }
@@ -33,6 +35,11 @@ export interface DomainEntityBase<K extends DomainEntityKind> {
   digitalTwin?: DigitalTwinRef; approvals?: ApprovalRef[]; events?: EventRef[]; observability?: ObservabilityRef;
 }
 
+export interface OrganizationEntity extends DomainEntityBase<'organization'> { legalName: string; tenantIds: EntityId[]; status: 'active' | 'suspended' | 'archived'; dataResidency?: string }
+export interface TenantEntity extends DomainEntityBase<'tenant'> { organizationId: EntityId; racetrackIds: EntityId[]; status: 'active' | 'suspended' | 'archived'; dataBoundary: 'organization' | 'tenant' | 'racetrack'; isolationMode: 'strict' }
+export interface UserEntity extends DomainEntityBase<'user'> { organizationId: EntityId; email?: string; identityKind: 'human' | 'service' | 'ai-agent'; roles: Role[]; permissions: Permission[]; racetrackIds: EntityId[]; status: 'active' | 'suspended' | 'inactive' }
+export interface RoleEntity extends DomainEntityBase<'role'> { role: Role; permissions: Permission[]; assignable: boolean; privileged: boolean }
+export interface PermissionEntity extends DomainEntityBase<'permission'> { permission: Permission; category: string; protected: boolean; approvalRequired: boolean }
 export interface RacetrackEntity extends DomainEntityBase<'racetrack'> { timezone: string; commissionName?: string; sectorIds: EntityId[]; facilityIds: EntityId[] }
 export interface RaceMeetEntity extends DomainEntityBase<'race-meet'> { racetrackId: EntityId; meetCode?: string; season: string; opensOn: string; closesOn: string; status: 'scheduled' | 'open' | 'closed' | 'cancelled'; raceDayIds: EntityId[]; regulatoryAuthority?: string }
 export interface RaceDayEntity extends DomainEntityBase<'race-day'> { racetrackId: EntityId; raceMeetId?: EntityId; raceDate: string; status: 'scheduled' | 'open' | 'closed' | 'cancelled'; raceIds: EntityId[] }
@@ -52,12 +59,29 @@ export interface StartingGateEntity extends DomainEntityBase<'starting-gate'> { 
 export interface SensorEntity extends DomainEntityBase<'sensor'> { assetId: EntityId; sensorType: 'surface' | 'weather' | 'gate' | 'camera' | 'rfid' | 'position' | 'security'; unit?: string }
 export interface VehicleEntity extends DomainEntityBase<'vehicle'> { racetrackId: EntityId; vehicleType: 'ambulance' | 'starting-gate-tractor' | 'maintenance' | 'security' | 'transport'; callSign?: string; assetId?: EntityId }
 export interface IncidentEntity extends DomainEntityBase<'incident'> { severity: 'low' | 'medium' | 'high' | 'critical'; status: 'open' | 'contained' | 'resolved' | 'closed'; subject: EntityReference; evidence: string[] }
+export interface SecurityEventEntity extends DomainEntityBase<'security-event'> { eventType: string; severity: 'low' | 'medium' | 'high' | 'critical'; zoneId?: EntityId; credentialId?: EntityId; cameraId?: EntityId; incidentId?: EntityId; actorId: EntityId; occurredAt: ISODateTime; evidence: string[]; auditEventId: EntityId }
 export interface WorkflowEntity extends DomainEntityBase<'workflow'> { workflowType: string; state: LifecycleState; subject: EntityReference; approvalRefs: ApprovalRef[]; protectedAction?: string; auditEventRefs?: EntityId[] }
 export interface AIRecommendationEntity extends DomainEntityBase<'ai-recommendation'> { activity: string; target: EntityReference; summary: string; recommendationId: string; confidence: number; evidence: string[]; modelVersion: string; generatedAt: ISODateTime; approvalRequirement: AIApprovalRequirement; auditReference: AIAuditReference; requestedAction?: string; requiredApprovals: ApprovalRef[]; advisoryOnly?: true; modelLineage?: string[]; affectedAssets?: EntityReference[] }
 export interface ApprovalEntity extends DomainEntityBase<'approval'> { recommendationId?: EntityId; protectedAction: string; target: EntityReference; status: ApprovalRef['status']; approverId?: EntityId; approverRoles: string[]; reason?: string; evidence: string[]; decidedAt?: ISODateTime; expiresAt?: ISODateTime }
-export interface AuditEventEntity extends DomainEntityBase<'audit-event'> { eventType: `${string}.${string}.${string}.v${number}`; actorId: EntityId; actorType: NexusActorType; action: string; target: EntityReference; occurredAt: ISODateTime; decision?: 'allowed' | 'denied' | 'approved' | 'rejected' | 'blocked' | 'executed'; evidence: string[]; correlationId: string; sourceService: string; previousHash?: string; hash?: string }
-export interface AuditRecordEntity extends DomainEntityBase<'audit-record'> { actorId: EntityId; actorType: NexusActorType; action: string; target: EntityReference; occurredAt: ISODateTime; evidence: string[]; previousHash?: string; hash?: string }
-export type DomainEntity = RacetrackEntity | RaceMeetEntity | RaceDayEntity | RaceEntity | HorseEntity | JockeyEntity | TrainerEntity | OwnerEntity | VeterinarianEntity | StewardEntity | BarnEntity | StallEntity | TrackSectorEntity | FacilityEntity | AssetEntity | StartingGateEntity | SensorEntity | VehicleEntity | IncidentEntity | WorkflowEntity | AIRecommendationEntity | ApprovalEntity | AuditEventEntity | AuditRecordEntity;
+export interface AuditEventEntity extends DomainEntityBase<'audit-event'> { auditEventId: EntityId; actor: AuditActorReference; entity: AuditEntityReference; action: string; reason: string; approvalReference?: AuditApprovalReference; timestamp: ISODateTime; tenantScope: AuditTenantScope; integrityReference: AuditIntegrityReference; eventType: `${string}.${string}.${string}.v${number}`; evidence: string[]; decision?: 'allowed' | 'denied' | 'approved' | 'rejected' | 'blocked' | 'executed' | 'observed'; correlationId?: string; workflowId?: string; sourceService?: string; actorId?: EntityId; actorType?: NexusActorType; target?: EntityReference; occurredAt?: ISODateTime; previousHash?: string; hash?: string }
+export interface AuditRecordEntity extends DomainEntityBase<'audit-record'> { auditEventId: EntityId; actor: AuditActorReference; entity: AuditEntityReference; action: string; reason: string; approvalReference?: AuditApprovalReference; timestamp: ISODateTime; tenantScope: AuditTenantScope; integrityReference: AuditIntegrityReference; evidence: string[]; actorId?: EntityId; actorType?: NexusActorType; target?: EntityReference; occurredAt?: ISODateTime; previousHash?: string; hash?: string }
+export interface ComplianceRecordEntity extends DomainEntityBase<'compliance-record'> { frameworkId: string; controlId: string; status: 'mapped' | 'effective' | 'finding-open' | 'remediation-required' | 'readiness-only'; evidenceIds: string[]; auditEventIds: EntityId[]; approvalIds: EntityId[]; readinessOnly: boolean; externalCertificationClaimed: false }
+export type DomainEntity = OrganizationEntity | TenantEntity | UserEntity | RoleEntity | PermissionEntity | RacetrackEntity | RaceMeetEntity | RaceDayEntity | RaceEntity | HorseEntity | JockeyEntity | TrainerEntity | OwnerEntity | VeterinarianEntity | StewardEntity | BarnEntity | StallEntity | TrackSectorEntity | FacilityEntity | AssetEntity | StartingGateEntity | SensorEntity | VehicleEntity | IncidentEntity | SecurityEventEntity | WorkflowEntity | AIRecommendationEntity | ApprovalEntity | AuditEventEntity | AuditRecordEntity | ComplianceRecordEntity;
+
+export type Organization = OrganizationEntity;
+export type Tenant = TenantEntity;
+export type User = UserEntity;
+export type CanonicalRacetrack = RacetrackEntity;
+export type CanonicalHorse = HorseEntity;
+export type CanonicalRace = RaceEntity;
+export type Incident = IncidentEntity;
+export type Approval = ApprovalEntity;
+export type CanonicalAuditEvent = AuditEventEntity;
+export type Recommendation = AIRecommendationEntity;
+export type Facility = FacilityEntity;
+export type SecurityEvent = SecurityEventEntity;
+export type ComplianceRecord = ComplianceRecordEntity;
+export interface TenantRacetrackContext { organizationId: EntityId; tenantId: TenantId; racetrackId: EntityId; role: Role; auditMode?: 'read-only' | 'write-through'; scopeSource?: string }
 
 type ValidationRule = { path: string; required?: true; type?: 'string' | 'number' | 'boolean' | 'array' | 'object'; values?: readonly (string | number | boolean)[]; min?: number; max?: number };
 export interface DomainSchema<K extends DomainEntityKind = DomainEntityKind> { kind: K; schemaVersion: typeof domainKernelSchemaVersion; requiredLifecycleStates: readonly LifecycleState[]; rules: readonly ValidationRule[] }
@@ -70,6 +94,11 @@ const baseRules: ValidationRule[] = [
 ];
 const schema = <K extends DomainEntityKind>(kind: K, rules: ValidationRule[]): DomainSchema<K> => ({ kind, schemaVersion: domainKernelSchemaVersion, requiredLifecycleStates: lifecycleStates, rules: [...baseRules, { path: 'kind', required: true, type: 'string', values: [kind] }, ...rules] });
 export const domainSchemas = {
+  organization: schema('organization', [{ path: 'legalName', required: true, type: 'string' }, { path: 'tenantIds', required: true, type: 'array' }, { path: 'status', required: true, type: 'string', values: ['active','suspended','archived'] }]),
+  tenant: schema('tenant', [{ path: 'organizationId', required: true, type: 'string' }, { path: 'racetrackIds', required: true, type: 'array' }, { path: 'status', required: true, type: 'string', values: ['active','suspended','archived'] }, { path: 'dataBoundary', required: true, type: 'string', values: ['organization','tenant','racetrack'] }, { path: 'isolationMode', required: true, type: 'string', values: ['strict'] }]),
+  user: schema('user', [{ path: 'organizationId', required: true, type: 'string' }, { path: 'identityKind', required: true, type: 'string', values: ['human','service','ai-agent'] }, { path: 'roles', required: true, type: 'array' }, { path: 'permissions', required: true, type: 'array' }, { path: 'racetrackIds', required: true, type: 'array' }, { path: 'status', required: true, type: 'string', values: ['active','suspended','inactive'] }]),
+  role: schema('role', [{ path: 'role', required: true, type: 'string' }, { path: 'permissions', required: true, type: 'array' }, { path: 'assignable', required: true, type: 'boolean' }, { path: 'privileged', required: true, type: 'boolean' }]),
+  permission: schema('permission', [{ path: 'permission', required: true, type: 'string' }, { path: 'category', required: true, type: 'string' }, { path: 'protected', required: true, type: 'boolean' }, { path: 'approvalRequired', required: true, type: 'boolean' }]),
   racetrack: schema('racetrack', [{ path: 'timezone', required: true, type: 'string' }, { path: 'sectorIds', required: true, type: 'array' }, { path: 'facilityIds', required: true, type: 'array' }]),
   'race-meet': schema('race-meet', [{ path: 'racetrackId', required: true, type: 'string' }, { path: 'season', required: true, type: 'string' }, { path: 'opensOn', required: true, type: 'string' }, { path: 'closesOn', required: true, type: 'string' }, { path: 'status', required: true, type: 'string' }, { path: 'raceDayIds', required: true, type: 'array' }]),
   'race-day': schema('race-day', [{ path: 'racetrackId', required: true, type: 'string' }, { path: 'raceDate', required: true, type: 'string' }, { path: 'raceIds', required: true, type: 'array' }]),
@@ -89,11 +118,13 @@ export const domainSchemas = {
   sensor: schema('sensor', [{ path: 'assetId', required: true, type: 'string' }]),
   vehicle: schema('vehicle', [{ path: 'racetrackId', required: true, type: 'string' }, { path: 'vehicleType', required: true, type: 'string' }]),
   incident: schema('incident', [{ path: 'severity', required: true, type: 'string' }, { path: 'subject', required: true, type: 'object' }, { path: 'evidence', required: true, type: 'array' }]),
+  'security-event': schema('security-event', [{ path: 'eventType', required: true, type: 'string' }, { path: 'severity', required: true, type: 'string' }, { path: 'actorId', required: true, type: 'string' }, { path: 'occurredAt', required: true, type: 'string' }, { path: 'evidence', required: true, type: 'array' }, { path: 'auditEventId', required: true, type: 'string' }]),
   workflow: schema('workflow', [{ path: 'subject', required: true, type: 'object' }, { path: 'approvalRefs', required: true, type: 'array' }]),
   'ai-recommendation': schema('ai-recommendation', [{ path: 'target', required: true, type: 'object' }, { path: 'summary', required: true, type: 'string' }, { path: 'recommendationId', required: true, type: 'string' }, { path: 'confidence', required: true, type: 'number', min: 0, max: 1 }, { path: 'evidence', required: true, type: 'array' }, { path: 'modelVersion', required: true, type: 'string' }, { path: 'generatedAt', required: true, type: 'string' }, { path: 'approvalRequirement', required: true, type: 'object' }, { path: 'approvalRequirement.required', required: true, type: 'boolean' }, { path: 'approvalRequirement.policy', required: true, type: 'string' }, { path: 'auditReference', required: true, type: 'object' }, { path: 'auditReference.auditIds', required: true, type: 'array' }, { path: 'auditReference.eventIds', required: true, type: 'array' }, { path: 'auditReference.digitalTwinRefs', required: true, type: 'array' }, { path: 'requiredApprovals', required: true, type: 'array' }]),
   approval: schema('approval', [{ path: 'target', required: true, type: 'object' }, { path: 'status', required: true, type: 'string' }, { path: 'approverRoles', required: true, type: 'array' }, { path: 'evidence', required: true, type: 'array' }]),
-  'audit-event': schema('audit-event', [{ path: 'eventType', required: true, type: 'string' }, { path: 'actorId', required: true, type: 'string' }, { path: 'target', required: true, type: 'object' }, { path: 'occurredAt', required: true, type: 'string' }, { path: 'evidence', required: true, type: 'array' }, { path: 'correlationId', required: true, type: 'string' }, { path: 'sourceService', required: true, type: 'string' }]),
-  'audit-record': schema('audit-record', [{ path: 'actorId', required: true, type: 'string' }, { path: 'target', required: true, type: 'object' }, { path: 'evidence', required: true, type: 'array' }]),
+  'audit-event': schema('audit-event', [{ path: 'auditEventId', required: true, type: 'string' }, { path: 'actor', required: true, type: 'object' }, { path: 'actor.actorId', required: true, type: 'string' }, { path: 'entity', required: true, type: 'object' }, { path: 'entity.entityId', required: true, type: 'string' }, { path: 'action', required: true, type: 'string' }, { path: 'reason', required: true, type: 'string' }, { path: 'timestamp', required: true, type: 'string' }, { path: 'tenantScope', required: true, type: 'object' }, { path: 'tenantScope.tenantId', required: true, type: 'string' }, { path: 'integrityReference', required: true, type: 'object' }, { path: 'integrityReference.hash', required: true, type: 'string' }, { path: 'eventType', required: true, type: 'string' }, { path: 'evidence', required: true, type: 'array' }]),
+  'audit-record': schema('audit-record', [{ path: 'auditEventId', required: true, type: 'string' }, { path: 'actor', required: true, type: 'object' }, { path: 'actor.actorId', required: true, type: 'string' }, { path: 'entity', required: true, type: 'object' }, { path: 'entity.entityId', required: true, type: 'string' }, { path: 'action', required: true, type: 'string' }, { path: 'reason', required: true, type: 'string' }, { path: 'timestamp', required: true, type: 'string' }, { path: 'tenantScope', required: true, type: 'object' }, { path: 'tenantScope.tenantId', required: true, type: 'string' }, { path: 'integrityReference', required: true, type: 'object' }, { path: 'integrityReference.hash', required: true, type: 'string' }, { path: 'evidence', required: true, type: 'array' }]),
+  'compliance-record': schema('compliance-record', [{ path: 'frameworkId', required: true, type: 'string' }, { path: 'controlId', required: true, type: 'string' }, { path: 'status', required: true, type: 'string' }, { path: 'evidenceIds', required: true, type: 'array' }, { path: 'auditEventIds', required: true, type: 'array' }, { path: 'approvalIds', required: true, type: 'array' }, { path: 'readinessOnly', required: true, type: 'boolean' }, { path: 'externalCertificationClaimed', required: true, type: 'boolean', values: [false] }]),
 } satisfies Record<DomainEntityKind, DomainSchema>;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
@@ -118,6 +149,27 @@ export function validateDomainEntity(entity: unknown): { valid: boolean; errors:
 
   const domainEntity = entity as DomainEntity;
   if (domainEntity.tenantId !== domainEntity.ownership?.tenantId) errors.push('tenantId must match ownership.tenantId');
+  if (kind === 'organization' && (domainEntity as OrganizationEntity).tenantIds.length === 0) errors.push('organization requires at least one tenantId');
+  if (kind === 'tenant') {
+    const tenant = domainEntity as TenantEntity;
+    if (tenant.isolationMode !== 'strict') errors.push('tenant isolationMode must be strict');
+    if (tenant.racetrackIds.length === 0) errors.push('tenant requires at least one racetrackId');
+  }
+  if (kind === 'user') {
+    const user = domainEntity as UserEntity;
+    if (user.roles.length === 0) errors.push('user requires at least one role');
+    if (user.permissions.length === 0) errors.push('user requires at least one permission');
+    if (user.identityKind === 'ai-agent' && user.permissions.some((permission) => permission !== 'read:any' && permission !== 'ai-agent:act')) errors.push('ai-agent users may only hold read:any and ai-agent:act permissions');
+  }
+  if (kind === 'role') {
+    const role = domainEntity as RoleEntity;
+    if (role.permissions.length === 0) errors.push('role requires at least one permission');
+    if (role.privileged && role.assignable) errors.push('privileged roles must not be directly assignable');
+  }
+  if (kind === 'permission') {
+    const permission = domainEntity as PermissionEntity;
+    if (permission.protected && !permission.approvalRequired) errors.push('protected permissions require approval');
+  }
   if (domainEntity.digitalTwin) {
     if (!domainEntity.digitalTwin.twinId.startsWith('twin:')) errors.push('digitalTwin.twinId must use twin:<context>:<entity-id>');
     if (!tenantMatches(domainEntity, domainEntity.digitalTwin.entity)) errors.push('digitalTwin.entity tenantId must match entity tenantId');
@@ -144,10 +196,26 @@ export function validateDomainEntity(entity: unknown): { valid: boolean; errors:
     const approval = domainEntity as ApprovalEntity;
     if (approval.status === 'approved' && (!approval.approverId || !approval.reason || approval.evidence.length === 0)) errors.push('approved approval requires approverId, reason, and evidence');
   }
+  if (kind === 'security-event') {
+    const securityEvent = domainEntity as SecurityEventEntity;
+    if (securityEvent.evidence.length === 0) errors.push('security-event requires evidence');
+    if (!securityEvent.auditEventId) errors.push('security-event requires auditEventId');
+  }
   if (kind === 'audit-event') {
     const auditEvent = domainEntity as AuditEventEntity;
     if (!/^([a-z][A-Za-z0-9-]*\.){2,}[a-z][A-Za-z0-9-]*\.v\d+$/.test(auditEvent.eventType)) errors.push('audit-event.eventType must follow context.entity.verb.vN naming');
     if (auditEvent.evidence.length === 0) errors.push('audit-event requires evidence');
+    if (auditEvent.auditEventId !== auditEvent.id) errors.push('audit-event auditEventId must match id');
+    if (!auditEvent.tenantScope?.tenantId || !auditEvent.entity?.tenantId) errors.push('audit-event requires tenantScope and entity tenantId');
+    else if (auditEvent.tenantScope.tenantId !== auditEvent.tenantId || auditEvent.entity.tenantId !== auditEvent.tenantId) errors.push('audit-event tenant scope and entity tenantId must match tenantId');
+    if (!auditEvent.integrityReference?.hash) errors.push('audit-event requires integrityReference.hash');
+    else if (auditEvent.integrityReference.hash !== auditEvent.hash && auditEvent.hash) errors.push('audit-event integrityReference.hash must match hash alias');
+  }
+  if (kind === 'compliance-record') {
+    const complianceRecord = domainEntity as ComplianceRecordEntity;
+    if (complianceRecord.externalCertificationClaimed !== false) errors.push('compliance-record must not claim external certification');
+    if (!complianceRecord.readinessOnly && complianceRecord.evidenceIds.length === 0) errors.push('non-readiness compliance records require evidenceIds');
+    if (complianceRecord.auditEventIds.length === 0) errors.push('compliance-record requires auditEventIds');
   }
   return { valid: errors.length === 0, errors };
 }

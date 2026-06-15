@@ -9,9 +9,9 @@ The current backend-first rebuild execution anchor is documented in `docs/archit
 ## Monorepo layout
 
 - `apps/api` — TypeScript Node.js API domain services, RBAC, event bus, approvals, audit, IoT, safety, stewarding, ticketing, and security modules.
-- `apps/frontend` — canonical React/Vite frontend shell rebuilt from backend contracts, shared DTOs, route metadata, explicit mock adapters, governed KPI cards, and advisory-only AI context.
+- `apps/frontend` — canonical React/Vite frontend shell rebuilt from backend contracts, shared DTOs, route metadata, central API adapters, governed KPI cards, and advisory-only AI context.
 - `apps/agents` — FastAPI-compatible Python service stubs for expert agents and rulebook RAG.
-- `packages/shared` — shared TypeScript types and policy constants.
+- `packages/shared` — canonical TypeScript domain kernel, DTO contracts, RBAC permissions, KPI artifacts, and governance policy constants.
 - `db` — PostgreSQL migrations and seed data.
 - `infra/azure` — Azure Bicep deployment baseline.
 - `docs` — architecture and compliance mappings.
@@ -25,6 +25,8 @@ The Racing Operating System and TrackMind Standardization Framework are document
 The TrackMind Universal Artifact Framework is documented in `docs/architecture/universal-artifact-framework.md`. It defines the canonical path from inputs, events, artifacts, Digital Twins, feature metadata, AI models, recommendations, approvals, outputs, and audits while keeping storage, model-training, federation, and certification claims limited to documented contracts and readiness metadata unless production infrastructure exists.
 
 TrackMind KPI artifacts are documented in `docs/architecture/kpi-artifacts.md`. KPI values are governed artifacts with owners, thresholds, source events/entities, confidence, data quality, audit references, model-readable metadata, and historical snapshots. Current KPI values are deterministic readiness/facade calculations, not production telemetry or certification proof.
+
+Canonical business-domain ownership lives in `packages/shared/src/domainKernel.ts`, `packages/shared/src/accessControl.ts`, and `packages/shared/src/kpiArtifacts.ts`, backed by PostgreSQL migrations under `db/migrations`. The canonical event envelope lives in `packages/shared/src/foundation.ts` and is emitted through `apps/api/src/eventBus.ts` with `eventId`, `eventType`, `tenantId`, `racetrackId`, `actorId`, `source`, `timestamp`, `payload`, and `version`. Organization, tenant, user, racetrack, horse, race, incident, facility, security event, compliance record, approval, audit event, recommendation, role, permission, KPI, and event consumers should import those shared models or DTO projections instead of declaring local shapes.
 
 The TrackMind Racing Data API Hub is documented in `docs/architecture/racing-data-api-hub.md`. It defines the provider-agnostic licensed ingestion architecture for racing data, including adapter-ready provider categories, no-scraping and no-public-redistribution assumptions, raw landing, validation, normalization, canonical artifacts, entity resolution, data quality, API surfaces, frontend workspace expectations, Digital Twin/event/audit integration, and AI training restrictions without claiming that external providers are currently integrated or licensed.
 
@@ -99,4 +101,4 @@ and serves:
 dist
 ```
 
-The dashboard route (`/dashboard`) is a client-side React route. Backend data is loaded from `VITE_TRACKMIND_API_BASE_URL`, which defaults to `/api/v1` for local Vite proxy development only. On Vercel or any static host, configure `VITE_TRACKMIND_API_BASE_URL` to the public deployed API URL, including `/api/v1`. The frontend project does not deploy the Node API as part of the Vite static build.
+The command-center route (`/dashboard`) is a client-side React route. Backend data is loaded from `VITE_TRACKMIND_API_BASE_URL`, which defaults to `/api/v1` for local Vite proxy development only. On Vercel or any static host, configure `VITE_TRACKMIND_API_BASE_URL` to the public deployed API URL, including `/api/v1`. The frontend project does not deploy the Node API as part of the Vite static build.

@@ -35,7 +35,7 @@ The target TrackMind Nexus platform is a multi-racetrack, tenant-isolated Thorou
 | --- | --- |
 | Domain | Asset Management, Digital Twin Management, Event Management, Compliance and Accreditation, Responsible AI Governance, Multi-Racetrack Federation. |
 | Digital Twin model | Every RACR asset includes `digitalTwin.twinId`, `modelRef`, `stateTopic`, optional `commandTopic`, simulation profile, shadow state, and relationships. |
-| Event model | Registry mutations emit versioned `RacrAssetCreated` and `RacrAssetUpdated` events with schema refs, tenant context, aggregate id, correlation id, lineage, compliance classification, and observability metadata. |
+| Event model | Registry mutations emit canonical versioned asset events such as `racr.asset.created.v1` and `racr.asset.updated.v1` with schema refs, tenant context, aggregate id, correlation id, lineage, compliance classification, and observability metadata. |
 | Workflow model | Approval requirements and lifecycle controls remain part of every asset snapshot so workflow engines can route activation, retirement, maintenance, and critical state changes. |
 | Approval requirements | Critical assets require approval requirements at validation time; controls define min approvals and role requirements. |
 | Audit requirements | Every accepted command appends an immutable audit entry with actor, action, version, timestamp, changes, and reason. |
@@ -62,4 +62,4 @@ The target TrackMind Nexus platform is a multi-racetrack, tenant-isolated Thorou
 
 ## Immediate next steps
 
-The immediate foundational code change is to register first-class RACR event schemas inside the authoritative registry, emit stable versioned `RacrAssetCreated` and `RacrAssetUpdated` event names, include aggregate/tenant metadata, and expose a governance catalog for downstream consumers. This strengthens event discoverability, auditability, replayability, observability, and Digital Twin synchronization without removing existing functionality.
+The immediate foundational code change is to keep first-class RACR event schemas inside the authoritative registry, emit stable canonical `racr.asset.*.v1` event names, include aggregate/tenant metadata, and expose a governance catalog for downstream consumers. This strengthens event discoverability, auditability, replayability, observability, and Digital Twin synchronization without removing existing functionality.

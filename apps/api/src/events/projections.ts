@@ -38,12 +38,12 @@ export class CqrsProjectionRebuilder {
   private readonly zones = new Map<string, SecurityZoneOccupancyProjection>();
 
   apply(event: EventEnvelope): void {
-    if (event.eventType === 'RaceStartedEvent') this.applyRaceStarted(event as EventEnvelope<RaceStartedPayload & Record<string, unknown>>);
-    if (event.eventType === 'RaceStoppedEvent') this.applyRaceStopped(event);
-    if (event.eventType === 'HorseScratchedEvent') this.applyHorseScratched(event as EventEnvelope<HorseScratchedPayload & Record<string, unknown>>);
-    if (event.eventType === 'IncidentReportedEvent') this.applyIncidentReported(event as EventEnvelope<IncidentReportedPayload & Record<string, unknown>>);
-    if (event.eventType === 'LocationUpdatedEvent') this.applyLocationUpdated(event as EventEnvelope<LocationUpdatedPayload & Record<string, unknown>>);
-    if (event.eventType === 'CameraDetectionEvent') this.applyCameraDetection(event);
+    if (event.eventType === 'race.lifecycle.started.v1') this.applyRaceStarted(event as EventEnvelope<RaceStartedPayload & Record<string, unknown>>);
+    if (event.eventType === 'race.lifecycle.stopped.v1') this.applyRaceStopped(event);
+    if (event.eventType === 'horse.status.scratched.v1') this.applyHorseScratched(event as EventEnvelope<HorseScratchedPayload & Record<string, unknown>>);
+    if (event.eventType === 'incident.case.reported.v1') this.applyIncidentReported(event as EventEnvelope<IncidentReportedPayload & Record<string, unknown>>);
+    if (event.eventType === 'location.position.updated.v1') this.applyLocationUpdated(event as EventEnvelope<LocationUpdatedPayload & Record<string, unknown>>);
+    if (event.eventType === 'camera.detection.recorded.v1') this.applyCameraDetection(event);
   }
 
   rebuild(events: EventEnvelope[]): CqrsProjectionState {

@@ -71,7 +71,9 @@ test('AI recommendation outputs require evidence, affected assets, approval role
     affectedAssets: ['sector:far-turn', 'twin:surface:far-turn'],
     summary: 'Far Turn risk is high; draft maintenance approval before race start.',
     evidence: ['surface:moisture=27', 'surface:drainage=6'],
+    evidencePackage: { evidencePackageId: 'evidence-package:rec-surface-1', evidence: [{ evidenceId: 'surface:moisture=27', kind: 'telemetry', source: 'surface' }], lineage: ['agent:surface', 'model:model-surface-risk-v1'], hash: 'sha256:rec-surface-1' },
     confidence: 0.88,
+    confidenceScore: { raw: 0.88, calibrated: 0.84, band: 'medium', drivers: ['surface-telemetry', 'risk:high'] },
     modelVersion: 'model-surface-risk-v1',
     policyReferences: ['trackmind-ai-advisory-only-v1', 'approval-policy:steward'],
     riskLevel: 'high',
@@ -79,7 +81,9 @@ test('AI recommendation outputs require evidence, affected assets, approval role
     requiresApproval: true,
     requiredApproverRoles: ['track-superintendent', 'steward'],
     approvalRequirement: { required: true, policy: 'steward', requiredApproverRoles: ['track-superintendent', 'steward'] },
-    auditReference: { auditEventIds: ['audit-rec-surface-1'], eventIds: ['event-rec-surface-1'], correlationId: 'corr-rec-surface-1' },
+    auditReference: { auditEventIds: ['audit-rec-surface-1'], eventIds: ['event-rec-surface-1'], digitalTwinRefs: ['twin:surface:far-turn'], correlationId: 'corr-rec-surface-1', integrityRef: 'evidence-package:rec-surface-1' },
+    advisoryOnly: true,
+    executionAllowed: false,
     blockedAutonomousExecution: true,
   };
 
@@ -89,6 +93,8 @@ test('AI recommendation outputs require evidence, affected assets, approval role
   assert.ok(missingApproval.errors.some((error) => error.includes('requiredApproverRoles')));
   assert.ok(missingApproval.errors.some((error) => error.includes('blockedAutonomousExecution')));
   assert.equal(validateAIRecommendationOutput({ ...recommendation, evidence: [] }).valid, false);
+  assert.equal(validateAIRecommendationOutput({ ...recommendation, auditReference: { ...recommendation.auditReference, auditEventIds: [] } }).valid, false);
+  assert.equal(validateAIRecommendationOutput({ ...recommendation, executionAllowed: true }).valid, false);
   assert.equal(validateAIRecommendationOutput({ ...recommendation, recommendationType: 'forecast' }).valid, false);
   assert.equal(validateAIRecommendationOutput({ ...recommendation, policyReferences: [] }).valid, false);
 });
@@ -104,7 +110,9 @@ test('AI output artifact adapters preserve confidence, risk, evidence, and block
     affectedAssets: ['track:main', 'race:7'],
     summary: 'Forecast lightning risk for Race 7 and recommend human weather review.',
     evidence: ['weather:lightning=5mi', 'forecast:rain=18mm'],
+    evidencePackage: { evidencePackageId: 'evidence-package:rec-forecast-1', evidence: [{ evidenceId: 'weather:lightning=5mi', kind: 'telemetry', source: 'weather' }], lineage: ['agent:weather', 'model:model-weather-impact-v1'], hash: 'sha256:rec-forecast-1' },
     confidence: 0.87,
+    confidenceScore: { raw: 0.87, calibrated: 0.83, band: 'medium', drivers: ['weather-telemetry', 'risk:high'] },
     modelVersion: 'model-weather-impact-v1',
     policyReferences: ['trackmind-ai-advisory-only-v1', 'approval-policy:steward'],
     riskLevel: 'high',
@@ -112,7 +120,9 @@ test('AI output artifact adapters preserve confidence, risk, evidence, and block
     requiresApproval: true,
     requiredApproverRoles: ['steward', 'track-superintendent'],
     approvalRequirement: { required: true, policy: 'steward', requiredApproverRoles: ['steward', 'track-superintendent'] },
-    auditReference: { auditEventIds: ['audit-rec-forecast-1'], eventIds: ['event-rec-forecast-1'], correlationId: 'corr-rec-forecast-1' },
+    auditReference: { auditEventIds: ['audit-rec-forecast-1'], eventIds: ['event-rec-forecast-1'], digitalTwinRefs: ['twin:race-7'], correlationId: 'corr-rec-forecast-1', integrityRef: 'evidence-package:rec-forecast-1' },
+    advisoryOnly: true,
+    executionAllowed: false,
     blockedAutonomousExecution: true,
   };
 
@@ -122,7 +132,7 @@ test('AI output artifact adapters preserve confidence, risk, evidence, and block
 
   for (const artifact of [recommendation, insight, forecast]) {
     assert.deepEqual(validateAIOutputArtifact(artifact), { valid: true, errors: [] });
-    assert.equal(artifact.confidence, 0.87);
+    assert.equal(artifact.confidence, 0.83);
     assert.equal(artifact.riskLevel, 'high');
     assert.deepEqual(artifact.evidence, output.evidence);
     assert.equal(artifact.executionAllowed, false);

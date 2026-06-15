@@ -229,7 +229,7 @@ export class RacetrackAssetControlRegistry {
       .filter((schema) => Object.values(racrRegistryEventTypes).includes(schema.type as RacrRegistryEventType))
       .map((schema) => ({
         eventType: schema.type as RacrRegistryEventType,
-        schemaRef: `${schema.type}.v${schema.version}`,
+        schemaRef: String(schema.type).endsWith(`.v${schema.version}`) ? String(schema.type) : `${schema.type}.v${schema.version}`,
         aggregate: 'RacrAsset',
         tenantScoped: true,
         authoritativeSource: 'RACR',

@@ -162,7 +162,7 @@ test('protected controls cannot execute while advisory actions remain queued', (
     const record = platform.recordRecommendation(recommendation(`advisory-${activity}`, { id: `rec-${activity}`, activity, riskLevel: 'low' }));
     assert.equal(record.status, 'queued', activity);
     assert.equal(record.governorReview.approvalRequired, false);
-    assert.match(record.governorReview.reason ?? '', /does not allow autonomous execution/);
+    assert.match(record.governorReview.reason ?? '', /advisory-only/);
     assert.ok(platform.governanceWorkspace().recommendationQueue.some((item) => item.id === record.id));
   }
 });

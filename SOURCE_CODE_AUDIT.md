@@ -11,9 +11,9 @@ Audit date: 2026-06-14
 
 ## Implemented feature areas
 
-- Shared policy and domain kernel foundations for protected actions, RBAC, identity governance, tenant isolation, entity schemas, and safety rules.
+- Shared policy and domain kernel foundations for protected actions, canonical RBAC permissions, organization/tenant/racetrack/user scope, entity schemas, and safety rules.
 - API domain slices for approvals, immutable audit logging, universal event bus, workflow orchestration, Digital Twin runtime/foundation/graph, track configuration, race operations, race-day readiness, surface intelligence, barn operations, security operations, emergency operations, stewarding, compliance controls, policy engine, responsible AI governance, racetrack asset registry, enterprise API gateway, observability, geospatial operations, and equine intelligence.
-- Canonical frontend shell rebuilt from backend contracts, route metadata, explicit API/mock adapters, and governed AI/KPI display rules.
+- Canonical frontend shell rebuilt from backend contracts, route metadata, central API adapters, and governed AI/KPI display rules.
 - Documentation for architecture intent, compliance mappings, security baseline, onboarding, service templates, and implementation sequencing.
 
 ## Key findings
@@ -23,12 +23,12 @@ Audit date: 2026-06-14
 | Build health | Passing | Builds complete for shared, API, and the new frontend shell. |
 | Test health | Focused | Root and workspace tests cover shared, API, frontend contract checks, and service-template checks. |
 | Broken imports | No current blocker found | Workspace builds did not reveal unresolved TypeScript imports. |
-| Frontend/backend contract drift | Improved | The old dashboard and temporary shell have been removed; `apps/frontend` now uses route metadata, centralized API paths, scoped client headers/query params, and explicit mock adapters. |
+| Frontend/backend contract drift | Improved | The old dashboard and temporary shell have been removed; `apps/frontend` now uses route metadata, centralized API paths, scoped client headers/query params, and source-aware API adapters. |
 | Weak typing | Improved | Backend/shared/frontend contract typing remains enforced by current workspace builds and frontend typecheck. |
 | Incomplete stubs/placeholders | Present by design | Python agents, future service folders, integrations, Terraform environment folders, and compliance framework placeholder data are explicitly scaffolding/reference implementations. |
 | Security gaps | Production gap | In-memory services model RBAC, approvals, audit, and tenant context, but production authentication, durable authorization enforcement, secret management, mTLS termination, persistence, and rate limiting are not fully wired to a deployable HTTP boundary. |
 | Missing validation | Partial risk | Many domain modules validate critical fields, but validation style is inconsistent and not centralized around versioned request schemas for every API boundary. |
-| Missing audit/events | Partial risk | Core protected workflows emit audit/events, but not every helper has an externally verifiable event contract. Contract tests should be expanded around event schemas and audit completeness. |
+| Missing audit/events | Reduced risk | Core protected workflows emit audit/events through the canonical `CanonicalEventEnvelope` fields and `UniversalEventBus`; CQRS, security, workforce, barn, and equine helpers now normalize to versioned event names. Remaining risk is durable outbox/HTTP production wiring rather than duplicate event contracts. |
 | Approval checks | Strong in core domains | Protected action tests cover approvals extensively. Remaining risk is at integration/HTTP boundary because live endpoint enforcement is not represented as a real server. |
 | Digital Twin sync | Partial | Several slices synchronize or queue Twin updates, but synchronization is in-memory/reference-level and lacks durable reconciliation, rollback, and outbox processing. |
 | Duplicated logic | Present | Repeated mock DTO construction, id/date helpers, clone helpers, audit/event helper patterns, and approval/evidence literals appear across modules. Consolidation should be incremental to avoid destabilizing tests. |
@@ -43,7 +43,7 @@ Audit date: 2026-06-14
 | Responsible AI governance / approval engine | AI intent verbs from the Nexus definition (`start-race`, `clear-veterinary-flag`, `execute-safety-critical-control`, etc.) were not normalized consistently to platform protected actions (`race-start`, `clear-vet-flag`, `safety-critical-control`, etc.), creating a potential policy bypass or missing approval policy lookup when callers used definition-language action names. | Critical | Fixed by adding a shared normalization map and routing Nexus safety evaluation and protected execution requests through it. |
 | Approval engine | Default approval policies covered core aliases but not every normalized protected action (`race-stop`, `modify-official-results`, `scratch-horse`, `clear-vet-flag`, `steward-ruling`, `emergency-personnel-override`). | Critical | Fixed by adding explicit policies for the missing normalized protected actions with role chains, evidence, expiration, and escalation rules. |
 | Shared types | Shared safety types exposed both AI autonomy intent names and platform protected action names without a first-class bridge type. | High | Fixed by exporting `protectedActionIntentMap`, `ProtectedActionIntent`, `NormalizedProtectedAction`, and normalization helpers from the shared package. |
-| API contracts | Frontend binding exists through a typed adapter layer, but route metadata must continue to stay reconciled with actual adapter reads. | Medium | Partially fixed through centralized API paths, frontend contract tests, and route metadata cleanup. |
+| API contracts | API routes, response envelopes, metadata, errors, pagination, and frontend adapters needed one shared contract standard. | Medium | Fixed by extending `apiEndpointContracts` with the canonical `ApiResponse` envelope, request metadata, pagination modes, structured `ApiError`, frontend envelope unwrapping, and removal of duplicate KPI/Racing Data route aliases. |
 | Event bus / audit ledger | Core protected workflows emit events and hash-chained audit records, but external API boundary event/audit completeness is not enforced uniformly for future HTTP handlers. | Medium | Partially covered by existing domain tests; contract-level enforcement remains recommended. |
 | Digital Twin runtime | Runtime is in-memory/reference-level and lacks durable outbox/reconciliation for production Azure Digital Twins synchronization. | Medium | Not fixed in this pass; current safety alignment is modeled and tested in memory. |
 | Asset registry | Registry models controlled assets and approval-sensitive controls but is not connected to live actuators, which is correct for the first slice but leaves production execution adapters absent. | Medium | No change; intentional safety posture. |

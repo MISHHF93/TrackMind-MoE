@@ -819,7 +819,7 @@ export function toAuditArtifact(entry: AuditLogEntry): AuditArtifact {
     target: entry.target,
     decision: entry.decision,
     timestamp: entry.timestamp,
-    actor: actorFromAudit(entry.actor, entry.actorType),
+    actor: actorFromAudit(entry.actor.actorId, entry.actor.actorType),
     sourceService: entry.sourceService,
     apiRoute: entry.apiRoute,
     tenantId,

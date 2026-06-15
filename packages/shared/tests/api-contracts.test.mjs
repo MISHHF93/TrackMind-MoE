@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { apiContractSchemas, apiEndpointContracts, validateContract } from '../dist/index.js';
+import { apiContractSchemas, apiEndpointContracts, auditExportPermissionRegistry, frontendRoutePermissionRegistry, hasPermission, modelReadableKpiAllowedUses, normalizeApprovalStatus, permissionRegistry, rolesWithPermission, validateAuditEventContract, validateContract, validateModelReadableKPIContext, workflowPermissionRegistry } from '../dist/index.js';
 
 const externalOrDeferredResponseSchemas = new Set([
   'ProviderConfig',
@@ -24,7 +24,123 @@ test('endpoint catalog responses resolve to shared schemas or explicit deferred 
   for (const endpoint of apiEndpointContracts) {
     const name = baseResponseName(endpoint.response);
     assert.ok(apiContractSchemas[name] || externalOrDeferredResponseSchemas.has(name), `${endpoint.operationId} response ${endpoint.response} is missing a schema or explicit deferred marker`);
+    assert.equal(endpoint.responseEnvelope, 'ApiResponse');
+    assert.ok(endpoint.requiredPermission in permissionRegistry, `${endpoint.operationId} uses an unknown permission ${endpoint.requiredPermission}`);
+    assert.ok(rolesWithPermission(endpoint.requiredPermission).length > 0, `${endpoint.operationId} permission ${endpoint.requiredPermission} is not granted to any role`);
+    assert.ok(endpoint.metadata.includes('requestId'), `${endpoint.operationId} missing requestId metadata`);
+    assert.ok(endpoint.metadata.includes('timestamp'), `${endpoint.operationId} missing timestamp metadata`);
+    if (endpoint.response.endsWith('[]')) assert.equal(endpoint.pagination, 'offset', `${endpoint.operationId} list endpoint missing offset pagination standard`);
   }
+});
+
+test('endpoint role allowlists match required permissions', () => {
+  for (const endpoint of apiEndpointContracts) {
+    if (endpoint.roles === 'authenticated') continue;
+    for (const role of endpoint.roles) {
+      assert.equal(
+        hasPermission(role, endpoint.requiredPermission),
+        true,
+        `${endpoint.operationId} allows ${role} but requires ${endpoint.requiredPermission}`,
+      );
+    }
+  }
+});
+
+test('RBAC registry centralizes route, workflow, approval, and audit export permissions', () => {
+  for (const [routeId, permission] of Object.entries(frontendRoutePermissionRegistry)) {
+    assert.ok(permission in permissionRegistry, `${routeId} route permission is not registered`);
+    assert.ok(rolesWithPermission(permission).length > 0, `${routeId} route permission has no grants`);
+  }
+  for (const [path, permission] of Object.entries(auditExportPermissionRegistry)) {
+    assert.ok(apiEndpointContracts.some((endpoint) => endpoint.path === path && endpoint.requiredPermission === permission), `${path} audit export permission is not reflected in endpoint contracts`);
+  }
+  for (const [workflowId, permissions] of Object.entries(workflowPermissionRegistry)) {
+    assert.ok(permissions.length > 0, `${workflowId} workflow has no permissions`);
+    for (const permission of permissions) assert.ok(permission in permissionRegistry, `${workflowId} references unknown permission ${permission}`);
+  }
+  assert.equal(hasPermission('read-only-auditor', 'audit:read'), true);
+  assert.equal(hasPermission('read-only-auditor', 'compliance:audit'), false);
+  assert.equal(hasPermission('compliance-officer', frontendRoutePermissionRegistry.security), true);
+});
+
+test('shared API standard defines request metadata, pagination, and error envelope schemas', () => {
+  const meta = { requestId: 'req-1', path: '/api/v1/kpis', method: 'GET', timestamp: '2026-06-15T06:00:00.000Z', tenantId: 'trackmind', racetrackId: 'main-track', organizationId: 'org-trackmind-network', role: 'admin', pagination: { limit: 50, offset: 0, total: 100, hasMore: true } };
+  const error = { code: 'bad_request', message: 'Invalid input', details: ['field is required'], path: meta.path, requestId: meta.requestId, timestamp: meta.timestamp };
+  assert.deepEqual(validateContract('ApiResponseMetadata', meta, apiContractSchemas.ApiResponseMetadata), { valid: true, errors: [] });
+  assert.deepEqual(validateContract('ApiPaginationMetadata', meta.pagination, apiContractSchemas.ApiPaginationMetadata), { valid: true, errors: [] });
+  assert.deepEqual(validateContract('ApiError', error, apiContractSchemas.ApiError), { valid: true, errors: [] });
+});
+
+test('model-readable KPI context rejects unknown or prohibited model uses', () => {
+  const context = {
+    kpiId: 'kpi-ai-governance',
+    domain: 'ai-governance',
+    name: 'AI governance completeness',
+    description: 'Governed KPI context for advisory AI only.',
+    currentValue: 91,
+    unit: '%',
+    trend: 'up',
+    status: 'watch',
+    confidence: 0.82,
+    dataQualityScore: 0.79,
+    sourceSummary: '2 event refs; deterministic calculation',
+    allowedUse: [...modelReadableKpiAllowedUses],
+    prohibitedUse: ['modify KPI values', 'execute regulated actions', 'bypass human approval', 'expose raw cross-track records'],
+    approvalSensitivity: 'approval-visible',
+    lastCalculatedAt: '2026-06-15T06:00:00.000Z',
+  };
+  assert.equal(validateModelReadableKPIContext(context).valid, true);
+  assert.equal(validateModelReadableKPIContext({ ...context, allowedUse: [...context.allowedUse, 'train autonomous executor'] }).valid, false);
+  assert.equal(validateModelReadableKPIContext({ ...context, allowedUse: ['execute regulated actions'] }).valid, false);
+});
+
+test('canonical audit event DTO standardizes identity actor entity scope approval and integrity fields', () => {
+  const event = {
+    auditEventId: 'audit-race-7',
+    id: 'audit-race-7',
+    type: 'approval',
+    actor: { actorId: 'steward-1', actorType: 'human', roles: ['steward'] },
+    actorId: 'steward-1',
+    entity: { entityId: 'race-7', entityType: 'race', tenantId: 'trackmind', racetrackId: 'main-track' },
+    action: 'approval.approved',
+    reason: 'Race start checklist approved by human steward.',
+    approvalReference: { approvalId: 'approval-race-start', status: 'approved', protectedAction: 'race-start' },
+    timestamp: '2026-06-13T00:05:00.000Z',
+    tenantScope: { tenantId: 'trackmind', racetrackId: 'main-track' },
+    integrityReference: { hash: 'sha256:audit', previousHash: 'genesis', algorithm: 'sha256', chainScope: 'tenant' },
+    severity: 'warning',
+    hash: 'sha256:audit',
+    previousHash: 'genesis',
+    evidenceIds: ['human-approval-record'],
+    mock: false,
+  };
+  assert.deepEqual(validateContract('AuditEventDto', event, apiContractSchemas.AuditEventDto), { valid: true, errors: [] });
+  assert.equal(validateAuditEventContract({ ...event, eventType: event.type, evidence: event.evidenceIds, sourceService: 'approval-engine' }).allowed, true);
+});
+
+test('canonical approval DTO standardizes request status roles evidence escalation expiration and audit linkage', () => {
+  const approval = {
+    id: 'approval-race-start',
+    approvalRequestId: 'approval-race-start',
+    action: 'race-start',
+    target: 'race-7',
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+    requestedBy: 'ai-race-agent',
+    status: 'escalated',
+    canonicalStatus: normalizeApprovalStatus('approval_required'),
+    createdAt: '2026-06-13T17:45:00.000Z',
+    expiresAt: '2026-06-13T18:00:00.000Z',
+    evidence: ['human-approval-record'],
+    mock: false,
+    requestedByActor: { id: 'ai-race-agent', displayName: 'ai-race-agent', role: 'ai-agent', actorType: 'ai-agent' },
+    approverRoles: ['racing-secretary', 'steward'],
+    approvalSteps: [{ id: 'stewards', approverRoles: ['steward'], minimumApprovals: 1, evidenceRequired: ['human-approval-record', 'reason'], status: 'pending', decisions: [] }],
+    escalation: [{ afterMinutes: 10, approverRoles: ['admin'], reason: 'race start approval SLA exceeded' }],
+    auditLinkage: { auditIds: ['audit-approval-1'], eventIds: ['approval.requested'], workflowInstanceId: 'wf-race-start', correlationId: 'approval-race-start' },
+  };
+  assert.equal(approval.canonicalStatus, 'pending');
+  assert.deepEqual(validateContract('ApprovalDto', approval, apiContractSchemas.ApprovalDto), { valid: true, errors: [] });
 });
 
 test('racing data workspace aggregate route has a first-class shared contract', () => {
@@ -57,7 +173,7 @@ test('racing data workspace aggregate route has a first-class shared contract', 
 });
 
 test('shared API contract schemas cover race office, readiness, facilities, surface, finance, track configuration, stewarding, barn, asset, and workflow DTOs', () => {
-  for (const schemaName of ['RaceMeetDto','RaceDayDto','RaceOfficeWorkspaceDto','RaceDayReadinessDashboardDto','FacilitiesMaintenanceWorkspaceDto','FinanceTicketingWorkspaceDto','SurfaceIntelligenceDto','TrackMapDto','TrackConfigurationSummaryDto','TrackConfigurationWorkOrderDto','TrackConfigurationVerificationDto','StewardCenterDto','StreamingDataSourceDto','StreamingDataSnapshotDto','DomainAssetDto','BarnDto','StallDto','TrackFacilityDto','BarnOperationsDto','WorkflowContractDto','WorkflowTemplateRegistryDto','UniversalArtifactRegistryDto','UniversalArtifactSchemaCatalogDto','UniversalArtifactTrainingInputsDto','UniversalArtifactStorageMapDto','UniversalArtifactDraftRegistrationResultDto']) {
+  for (const schemaName of ['EventRefDto','RaceMeetDto','RaceDayDto','RaceOfficeWorkspaceDto','RaceDayReadinessDashboardDto','FacilitiesMaintenanceWorkspaceDto','FinanceTicketingWorkspaceDto','SurfaceIntelligenceDto','TrackMapDto','TrackConfigurationSummaryDto','TrackConfigurationWorkOrderDto','TrackConfigurationVerificationDto','StewardCenterDto','StreamingDataSourceDto','StreamingDataSnapshotDto','DomainAssetDto','BarnDto','StallDto','TrackFacilityDto','BarnOperationsDto','WorkflowContractDto','WorkflowTemplateRegistryDto','UniversalArtifactRegistryDto','UniversalArtifactSchemaCatalogDto','UniversalArtifactTrainingInputsDto','UniversalArtifactStorageMapDto','UniversalArtifactDraftRegistrationResultDto']) {
     assert.ok(apiContractSchemas[schemaName], `${schemaName} missing`);
   }
   assert.ok(apiEndpointContracts.some((endpoint) => endpoint.path === '/api/v1/barn-operations/workspace' && endpoint.response === 'BarnOperationsDto'));
@@ -225,8 +341,7 @@ test('shared API contract schemas and endpoint catalog cover Universal Artifact 
   assert.equal(endpoints.filter((endpoint) => endpoint.method === 'POST').length, 1);
   assert.ok(endpoints.some((endpoint) => endpoint.path === '/api/v1/artifacts/registry' && endpoint.response === 'UniversalArtifactRegistryDto'));
   assert.ok(endpoints.some((endpoint) => endpoint.path === '/api/v1/artifacts/registry/draft-registrations' && endpoint.response === 'UniversalArtifactDraftRegistrationResultDto'));
-  assert.ok(endpoints.some((endpoint) => endpoint.path === '/api/v1/artifacts/kpis' && endpoint.response === 'KPIWorkspaceDto'));
-  assert.ok(endpoints.some((endpoint) => endpoint.path === '/api/v1/artifacts/kpis/model-context' && endpoint.response === 'ModelReadableKPIContext[]'));
+  assert.ok(!endpoints.some((endpoint) => endpoint.path.startsWith('/api/v1/artifacts/kpis')));
   assert.ok(endpoints.every((endpoint) => endpoint.audits.length > 0));
   assert.ok(!apiEndpointContracts.some((endpoint) => endpoint.path.startsWith('/api/v1/artifacts/') && /execute|publish|mutate/i.test(endpoint.operationId)));
 });

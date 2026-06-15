@@ -1,14 +1,16 @@
-import { apiUrl } from './paths';
+import { adapterSourceForPath, apiUrl, type ApiAdapterSource } from './paths';
 import { defaultTenantContext } from '../domain/support';
+import type { ApiResponse } from '@trackmind/shared';
 
 export type AdapterStatus = 'loading' | 'ready' | 'empty' | 'error';
-export type AdapterSource = 'live-api' | 'facade-api' | 'documented-stub' | 'mock-adapter';
+export type AdapterSource = ApiAdapterSource;
 
 export interface AdapterResult<T> {
   status: AdapterStatus;
   source: AdapterSource;
   data?: T;
   message?: string;
+  requestId?: string;
   emptyReason?: string;
 }
 
@@ -21,6 +23,7 @@ function scopedPath(path: string): string {
 }
 
 export async function getJson<T>(path: string, init?: RequestInit): Promise<AdapterResult<T>> {
+  const source = adapterSourceForPath(path);
   try {
     const response = await fetch(apiUrl(scopedPath(path)), {
       ...init,
@@ -36,20 +39,37 @@ export async function getJson<T>(path: string, init?: RequestInit): Promise<Adap
     });
 
     if (!response.ok) {
-      return { status: 'error', source: 'live-api', message: `${response.status} ${response.statusText}` };
+      const body = await response.json().catch(() => undefined);
+      const error = isRecord(body) && isRecord(body.error) ? body.error : undefined;
+      const meta = isRecord(body) && isRecord(body.meta) ? body.meta : undefined;
+      return {
+        status: 'error',
+        source,
+        message: typeof error?.message === 'string' ? error.message : `${response.status} ${response.statusText}`,
+        requestId: typeof error?.requestId === 'string' ? error.requestId : typeof meta?.requestId === 'string' ? meta.requestId : undefined,
+      };
     }
 
-    const data = (await response.json()) as T;
+    const body = await response.json();
+    const data = isApiEnvelope<T>(body) ? body.data : body as T;
     if (Array.isArray(data) && data.length === 0) {
-      return { status: 'empty', source: 'live-api', data, emptyReason: 'Backend returned an empty array.' };
+      return { status: 'empty', source, data, emptyReason: 'Backend returned an empty array.' };
     }
 
-    return { status: 'ready', source: 'live-api', data };
+    return { status: 'ready', source, data };
   } catch (error) {
     return {
       status: 'error',
-      source: 'live-api',
+      source,
       message: error instanceof Error ? error.message : 'Unknown API adapter error',
     };
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isApiEnvelope<T>(value: unknown): value is Extract<ApiResponse<T>, { ok: true }> {
+  return typeof value === 'object' && value !== null && 'ok' in value && (value as { ok?: unknown }).ok === true && 'data' in value;
 }

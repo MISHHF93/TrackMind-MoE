@@ -23,6 +23,7 @@ test('frontend has one canonical entrypoint and app shell', async () => {
 
 test('route constants cover required backend-driven sections', async () => {
   const routes = await source('src/routes/routes.ts');
+  const paths = await source('src/api/paths.ts');
   for (const path of [
     '/dashboard',
     '/race-day',
@@ -43,41 +44,24 @@ test('route constants cover required backend-driven sections', async () => {
     assert.match(routes, new RegExp(`path: '${path}'`), `${path} route missing`);
   }
   assert.doesNotMatch(routes, /supportStatus: 'mock-adapter'/);
-  assert.match(routes, /\/api\/v1\/services\/finance\/ticketing/);
-  assert.match(routes, /\/api\/v1\/surface-intelligence\/workspace/);
-  assert.match(routes, /\/api\/v1\/barn-operations\/workspace/);
+  assert.doesNotMatch(routes, /pageComponent:/);
+  assert.match(routes, /backendContractPathsForRoute/);
+  assert.match(paths, /routeApiPathGroups/);
+  assert.match(paths, /services\/finance\/ticketing/);
+  assert.match(paths, /surface-intelligence\/workspace/);
+  assert.match(paths, /barn-operations\/workspace/);
   assert.match(routes, /FinanceTicketingWorkspaceDto/);
   assert.match(routes, /BarnOperationsDto/);
-  for (const alias of [
-    '/operations',
-    '/command-center',
-    '/race-day-readiness',
-    '/surface',
-    '/starting-gate',
-    '/horse-profile',
-    '/approval-queue',
-    '/emergency-operations',
-    '/control-library',
-    '/facility-maintenance',
-    '/tickets',
-    '/payouts',
-    '/multi-track',
-    '/api-hub',
-    '/api-hub-dashboard',
-    '/racing-data',
-    '/audit-ledger',
-    '/platform-health',
-    '/ai-policy',
-  ]) {
-    assert.match(routes, new RegExp(alias.replace(/\//g, '\\/')), `${alias} compatibility alias missing`);
-  }
-  assert.match(routes, /normalized\.startsWith\(`\$\{alias\}\/`\)/);
+  assert.doesNotMatch(routes, /aliases:/);
+  assert.doesNotMatch(routes, /normalized\.startsWith\(`\$\{alias\}\/`\)/);
+  assert.match(routes, /normalized\.startsWith\(`\$\{route\.path\}\/`\)/);
 });
 
 test('components do not call raw fetch or render forbidden execution controls', async () => {
   const page = await source('src/pages/WorkspacePage.tsx');
   const shell = await source('src/shell/AppShell.tsx');
   const router = await source('src/routes/Router.tsx');
+  const ui = await source('src/components/ui.tsx');
   assert.doesNotMatch(page, /\bfetch\(/);
   assert.doesNotMatch(shell, /\bfetch\(/);
   assert.doesNotMatch(router, /\bfetch\(/);
@@ -88,17 +72,42 @@ test('components do not call raw fetch or render forbidden execution controls', 
   assert.doesNotMatch(page, /Request approval/);
   assert.match(page, /Open audit trail/);
   assert.doesNotMatch(page, /disabled title="Read-only until a governed endpoint is wired\."/);
-  assert.match(page, /CardActions/);
+  assert.match(page, /ActionButtons/);
+  assert.match(ui, /PageHeader/);
+  assert.match(ui, /SectionCard/);
+  assert.match(ui, /StatusBadge/);
+  assert.match(ui, /MetricCard/);
+  assert.match(ui, /DataTable/);
+  assert.match(ui, /Timeline/);
+  assert.match(ui, /EmptyState/);
+  assert.match(ui, /LoadingState/);
+  assert.match(ui, /RecordCardFrame/);
+  assert.match(ui, /AlertPanel/);
+  assert.match(ui, /ApprovalCard/);
+  assert.match(ui, /AuditCard/);
+  assert.match(ui, /AuditEventCard/);
+  assert.match(ui, /RecommendationCard/);
+  assert.match(ui, /KPICard/);
+  assert.match(ui, /WorkspaceRecordCard/);
   assert.match(page, /Open approvals/);
   assert.match(page, /navigateWithinShell/);
   assert.match(page, /Contract surface/);
   assert.match(page, /Route contract summary/);
-  assert.match(page, /Route navigation map/);
   assert.match(page, /Canonical route/);
   assert.match(page, /Focused evidence/);
   assert.match(page, /focusFromSearch/);
   assert.match(page, /Governed KPI Artifacts/);
-  assert.match(page, /Data quality/);
+  assert.match(ui, /Data quality/);
+  assert.doesNotMatch(page, /function RecordCard/);
+  assert.doesNotMatch(page, /function KPICard/);
+  assert.doesNotMatch(page, /function AICard/);
+  assert.doesNotMatch(page, /className="workspace-state"/);
+  for (const sourceText of [page, shell, ui]) {
+    assert.doesNotMatch(sourceText, /```/);
+    assert.doesNotMatch(sourceText, /dangerouslySetInnerHTML/);
+    assert.doesNotMatch(sourceText, /README/);
+    assert.doesNotMatch(sourceText, /JSON\.stringify/);
+  }
 });
 
 test('app shell renders grouped route navigation from metadata', async () => {
@@ -113,6 +122,9 @@ test('app shell renders grouped route navigation from metadata', async () => {
   assert.match(shell, /searchQuery/);
   assert.match(shell, /routeSearchText/);
   assert.match(shell, /scope-chip/);
+  assert.match(shell, /AlertPanel/);
+  assert.match(shell, /TagList/);
+  assert.match(shell, /StatusBadge/);
   assert.doesNotMatch(shell, /Search is not wired yet/);
   assert.doesNotMatch(shell, /disabled title/);
 });
@@ -122,7 +134,10 @@ test('frontend route filtering honors required roles and tenant scope headers', 
   const router = await source('src/routes/Router.tsx');
   const support = await source('src/domain/support.ts');
   const client = await source('src/api/client.ts');
+  const routes = await source('src/routes/routes.ts');
   assert.match(support, /canViewRoute/);
+  assert.match(routes, /frontendRoutePermissionRegistry/);
+  assert.doesNotMatch(routes, /requiredPermission: 'compliance:audit'/);
   assert.match(shell, /canViewRoute\(route, defaultTenantContext\.role\)/);
   assert.match(router, /canViewRoute\(route, defaultTenantContext\.role\)/);
   assert.match(client, /x-trackmind-tenant-id/);
@@ -167,7 +182,11 @@ test('frontend KPI adapter uses the central API service layer', async () => {
   const services = await source('src/api/services.ts');
   const paths = await source('src/api/paths.ts');
   assert.match(paths, /workspace: '\/kpis'/);
+  assert.match(paths, /adapterSourceForPath/);
+  assert.match(paths, /backendContractPathsForRoute/);
   assert.match(services, /getJson<KPIWorkspaceDto>/);
+  assert.match(services, /modelReadableKpiContext/);
+  assert.match(services, /modelReadableContext/);
   assert.match(services, /getJson<FacilitiesMaintenanceWorkspaceDto>/);
   assert.match(services, /getJson<SurfaceIntelligenceDto>/);
   assert.match(services, /getJson<BarnOperationsDto>/);
@@ -177,15 +196,29 @@ test('frontend KPI adapter uses the central API service layer', async () => {
   assert.doesNotMatch(services, /mockService/);
   assert.doesNotMatch(services, /interface FacilitiesMaintenanceWorkspace/);
   assert.doesNotMatch(services, /equineExtras/);
+  const ui = await source('src/components/ui.tsx');
+  assert.match(ui, /Allowed model use/);
+  assert.match(ui, /Prohibited model use/);
 });
 
 test('frontend backend route paths are declared in shared endpoint contracts', async () => {
-  const routes = await source('src/routes/routes.ts');
+  const paths = await source('src/api/paths.ts');
   const sharedContracts = await repoSource('packages/shared/src/apiContracts.ts');
 
-  const routeBackendPaths = [...routes.matchAll(/backendPaths: \[([^\]]*)\]/g)]
+  const routeBackendPaths = [...paths.matchAll(/routeApiPathGroups = \{([\s\S]*?)\} as const/g)]
+    .flatMap((match) => [...match[1].matchAll(/apiPaths\.[a-zA-Z0-9]+\.[a-zA-Z0-9]+/g)].map((pathMatch) => pathMatch[0]))
+    .map((apiRef) => {
+      const [, group, key] = apiRef.split('.');
+      const groupBlock = paths.match(new RegExp(`${group}: \\{([\\s\\S]*?)\\n  \\}`))?.[1] ?? '';
+      return groupBlock.match(new RegExp(`${key}: '([^']+)'`))?.[1];
+    })
+    .filter(Boolean)
+    .map((path) => `/api/v1${path}`);
+  const literalRouteBackendPaths = [...paths.matchAll(/routeApiPathGroups = \{([\s\S]*?)\} as const/g)]
     .flatMap((match) => [...match[1].matchAll(/'([^']+)'/g)].map((pathMatch) => pathMatch[1]))
-    .filter((path) => path.startsWith('/api/v1/'));
+    .filter((path) => path.startsWith('/'))
+    .map((path) => `/api/v1${path}`);
+  routeBackendPaths.push(...literalRouteBackendPaths);
   const sharedEndpointPaths = [...sharedContracts.matchAll(/path:'([^']+)'/g)].map((match) => match[1]);
 
   assert.ok(routeBackendPaths.length > 0, 'frontend routes should declare backend paths');

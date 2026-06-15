@@ -103,6 +103,7 @@ export interface KPIArtifact {
   updatedAt: string;
   historicalSnapshots: KPIHistoricalSnapshot[];
 }
+export type KPI = KPIArtifact;
 
 export interface ModelReadableKPIContext {
   kpiId: string;
@@ -256,6 +257,12 @@ export function validateModelReadableKPIContext(value: unknown): { valid: boolea
   }
   if (Array.isArray(context.allowedUse) && context.allowedUse.some((use) => modelReadableKpiRequiredProhibitedUses.includes(use as typeof modelReadableKpiRequiredProhibitedUses[number]))) {
     errors.push('ModelReadableKPIContext.allowedUse cannot include prohibited KPI or regulated action uses');
+  }
+  if (Array.isArray(context.allowedUse)) {
+    const allowedUseSet = new Set<string>(modelReadableKpiAllowedUses);
+    for (const use of context.allowedUse) {
+      if (!allowedUseSet.has(use)) errors.push(`ModelReadableKPIContext.allowedUse contains unknown model use: ${use}`);
+    }
   }
   return { valid: errors.length === 0, errors };
 }

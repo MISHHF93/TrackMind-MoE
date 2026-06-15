@@ -6,6 +6,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="TrackMind MoE Expert Agents", version="0.1.0")
+DOMAIN_KERNEL_SCHEMA_VERSION = "trackmind.domain-kernel.v1"
+DEFAULT_TENANT_ID = "trackmind"
+DEFAULT_RACETRACK_ID = "main-track"
 
 ExpertDomain = Literal[
     "RaceOps",
@@ -63,6 +66,7 @@ class AgentRequest(BaseModel):
 class ApprovalRequirement(BaseModel):
     required: bool
     policy: str
+    requiredApproverRoles: list[str] = Field(default_factory=list)
     requirementId: str | None = None
     workflowId: str | None = None
 
@@ -72,19 +76,55 @@ class AuditReference(BaseModel):
     eventIds: list[str] = Field(default_factory=list)
     digitalTwinRefs: list[str] = Field(default_factory=list)
     approvalReference: str | None = None
+    correlationId: str
+    integrityRef: str | None = None
+
+
+class EvidenceReference(BaseModel):
+    evidenceId: str
+    kind: Literal["event", "audit", "digital-twin", "telemetry", "approval", "document", "model", "policy"]
+    source: str
+    uri: str | None = None
+    description: str | None = None
+    collectedAt: str | None = None
+
+
+class EvidencePackage(BaseModel):
+    evidencePackageId: str
+    evidence: list[EvidenceReference] = Field(min_length=1)
+    lineage: list[str] = Field(min_length=1)
+    hash: str | None = None
+
+
+class ConfidenceScore(BaseModel):
+    raw: float = Field(ge=0.0, le=1.0)
+    calibrated: float = Field(ge=0.0, le=1.0)
+    band: Literal["low", "medium", "high"]
+    drivers: list[str] = Field(min_length=1)
 
 
 class ExpertRecommendation(BaseModel):
+    schemaVersion: Literal["trackmind.domain-kernel.v1"] = DOMAIN_KERNEL_SCHEMA_VERSION
+    entityKind: Literal["ai-recommendation"] = "ai-recommendation"
+    tenantId: str = DEFAULT_TENANT_ID
+    racetrackId: str = DEFAULT_RACETRACK_ID
     domain: str
     recommendationId: str
-    confidence: float = Field(ge=0.0, le=1.0)
+    confidence: ConfidenceScore
+    confidenceValue: float = Field(ge=0.0, le=1.0)
     recommendation: str
+    target: dict[str, str] = Field(default_factory=dict)
     evidence: list[str] = Field(min_length=1)
+    evidencePackage: EvidencePackage
     modelVersion: str
     generatedAt: str
+    riskLevel: Literal["low", "medium", "high", "critical"]
     approvalRequirement: ApprovalRequirement
     auditReference: AuditReference
     requiredApprovals: list[str] = Field(default_factory=list)
+    advisoryOnly: Literal[True] = True
+    executionAllowed: Literal[False] = False
+    blockedAutonomousExecution: Literal[True] = True
 
 
 class ModelReadableKPIContext(BaseModel):
@@ -141,16 +181,30 @@ def expert(domain: str, body: AgentRequest) -> ExpertRecommendation:
     audit_id = f"audit-{uuid4()}"
     event_id = f"event-{uuid4()}"
     approval_reference = f"approval-required-{recommendation_id}"
+    evidence_refs = [f"expert:{domain}", "stub-response", f"request:{body.request[:64]}"]
+    evidence_package_id = f"evidence-package:{recommendation_id}"
     return ExpertRecommendation(
         domain=domain,
         recommendationId=recommendation_id,
-        confidence=0.7,
+        target={"id": f"expert:{domain}", "kind": "ai-recommendation", "tenantId": DEFAULT_TENANT_ID},
+        confidence=ConfidenceScore(raw=0.7, calibrated=0.68, band="medium", drivers=["stub-expert", "human-review-required"]),
+        confidenceValue=0.68,
         recommendation="Human-reviewed stub recommendation from the requested expert domain.",
-        evidence=[f"expert:{domain}", "stub-response", f"request:{body.request[:64]}"],
+        evidence=evidence_refs,
+        evidencePackage=EvidencePackage(
+            evidencePackageId=evidence_package_id,
+            evidence=[
+                EvidenceReference(evidenceId=evidence_id, kind="document", source=evidence_id.split(":")[0])
+                for evidence_id in evidence_refs
+            ],
+            lineage=[f"agent-domain:{domain}", "model:trackmind-agent-stub-v0.1.0", "prompt:stub"],
+            hash=f"sha256:{recommendation_id}:{'|'.join(evidence_refs)}",
+        ),
         modelVersion="trackmind-agent-stub-v0.1.0",
         generatedAt=now_iso(),
-        approvalRequirement=ApprovalRequirement(required=True, policy="human-review-required", requirementId=approval_reference),
-        auditReference=AuditReference(auditIds=[audit_id], eventIds=[event_id], digitalTwinRefs=[], approvalReference=approval_reference),
+        riskLevel="medium",
+        approvalRequirement=ApprovalRequirement(required=True, policy="human-review-required", requiredApproverRoles=["human-review"], requirementId=approval_reference),
+        auditReference=AuditReference(auditIds=[audit_id], eventIds=[event_id], digitalTwinRefs=[], approvalReference=approval_reference, correlationId=recommendation_id, integrityRef=evidence_package_id),
         requiredApprovals=["human-review"],
     )
 

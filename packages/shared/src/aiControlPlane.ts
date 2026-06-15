@@ -173,6 +173,46 @@ export interface UnifiedAIInput {
   quality: AIInputQuality;
 }
 
+export interface AIEvidenceReference {
+  evidenceId: string;
+  kind: 'event' | 'audit' | 'digital-twin' | 'telemetry' | 'approval' | 'document' | 'model' | 'policy';
+  uri?: string;
+  description?: string;
+  source: string;
+  collectedAt?: string;
+}
+
+export interface AIEvidencePackage {
+  evidencePackageId: string;
+  evidence: AIEvidenceReference[];
+  lineage: string[];
+  hash?: string;
+}
+
+export interface AIConfidenceScore {
+  raw: number;
+  calibrated: number;
+  band: 'low' | 'medium' | 'high';
+  drivers: string[];
+}
+
+export interface AIRecommendationApprovalRequirement {
+  required: boolean;
+  policy: string;
+  requiredApproverRoles: string[];
+  requirementId?: string;
+  workflowId?: string;
+}
+
+export interface AIAuditLinkage {
+  auditEventIds: string[];
+  eventIds: string[];
+  digitalTwinRefs: string[];
+  correlationId: string;
+  integrityRef?: string;
+  approvalReference?: string;
+}
+
 export interface AIRecommendationOutput {
   recommendationId: string;
   tenantId: string;
@@ -183,7 +223,9 @@ export interface AIRecommendationOutput {
   affectedAssets: string[];
   summary: string;
   evidence: string[];
+  evidencePackage: AIEvidencePackage;
   confidence: number;
+  confidenceScore: AIConfidenceScore;
   modelVersion: string;
   policyReferences: string[];
   riskLevel: AIRiskLevel;
@@ -191,18 +233,11 @@ export interface AIRecommendationOutput {
   expiresAt?: string;
   requiresApproval: boolean;
   requiredApproverRoles: string[];
-  approvalRequirement: {
-    required: boolean;
-    policy: string;
-    requiredApproverRoles: string[];
-  };
-  auditReference: {
-    auditEventIds: string[];
-    eventIds: string[];
-    correlationId: string;
-    integrityRef?: string;
-  };
-  blockedAutonomousExecution: boolean;
+  approvalRequirement: AIRecommendationApprovalRequirement;
+  auditReference: AIAuditLinkage;
+  advisoryOnly: true;
+  executionAllowed: false;
+  blockedAutonomousExecution: true;
 }
 
 export const aiControlModes = ['human_in_the_loop', 'approval_required', 'autonomous_low_risk'] as const;
@@ -340,7 +375,16 @@ export const aiControlPlaneContractSchemas = {
     { path: 'affectedAssets', required: true, type: 'array' },
     { path: 'summary', required: true, type: 'string' },
     { path: 'evidence', required: true, type: 'array' },
+    { path: 'evidencePackage', required: true, type: 'object' },
+    { path: 'evidencePackage.evidencePackageId', required: true, type: 'string' },
+    { path: 'evidencePackage.evidence', required: true, type: 'array' },
+    { path: 'evidencePackage.lineage', required: true, type: 'array' },
     { path: 'confidence', required: true, type: 'number', min: 0, max: 1 },
+    { path: 'confidenceScore', required: true, type: 'object' },
+    { path: 'confidenceScore.raw', required: true, type: 'number', min: 0, max: 1 },
+    { path: 'confidenceScore.calibrated', required: true, type: 'number', min: 0, max: 1 },
+    { path: 'confidenceScore.band', required: true, type: 'string', values: ['low', 'medium', 'high'] },
+    { path: 'confidenceScore.drivers', required: true, type: 'array' },
     { path: 'modelVersion', required: true, type: 'string' },
     { path: 'policyReferences', required: true, type: 'array' },
     { path: 'riskLevel', required: true, type: 'string', values: aiRiskLevels },
@@ -354,7 +398,10 @@ export const aiControlPlaneContractSchemas = {
     { path: 'auditReference', required: true, type: 'object' },
     { path: 'auditReference.auditEventIds', required: true, type: 'array' },
     { path: 'auditReference.eventIds', required: true, type: 'array' },
+    { path: 'auditReference.digitalTwinRefs', required: true, type: 'array' },
     { path: 'auditReference.correlationId', required: true, type: 'string' },
+    { path: 'advisoryOnly', required: true, type: 'boolean' },
+    { path: 'executionAllowed', required: true, type: 'boolean' },
     { path: 'blockedAutonomousExecution', required: true, type: 'boolean' },
   ],
   AIControlPolicyConfig: [
@@ -386,11 +433,18 @@ export function validateAIRecommendationOutput(output: unknown): AIControlPlaneV
   if (recommendation.type !== recommendation.recommendationType) errors.push('AIRecommendationOutput.recommendationType must match type');
   if (Array.isArray(recommendation.affectedAssets) && recommendation.affectedAssets.length === 0) errors.push('AIRecommendationOutput.affectedAssets requires at least one asset');
   if (Array.isArray(recommendation.evidence) && recommendation.evidence.length === 0) errors.push('AIRecommendationOutput.evidence requires at least one evidence reference');
+  if (recommendation.evidencePackage && Array.isArray(recommendation.evidencePackage.evidence) && recommendation.evidencePackage.evidence.length === 0) errors.push('AIRecommendationOutput.evidencePackage.evidence requires at least one structured evidence reference');
+  if (recommendation.evidencePackage && Array.isArray(recommendation.evidencePackage.lineage) && recommendation.evidencePackage.lineage.length === 0) errors.push('AIRecommendationOutput.evidencePackage.lineage requires at least one lineage reference');
+  if (recommendation.confidenceScore && recommendation.confidenceScore.calibrated < recommendation.confidenceScore.raw - 0.25) errors.push('AIRecommendationOutput.confidenceScore.calibrated cannot materially undercut raw confidence without a separate model calibration artifact');
   if (Array.isArray(recommendation.policyReferences) && recommendation.policyReferences.length === 0) errors.push('AIRecommendationOutput.policyReferences requires at least one policy reference');
   if (recommendation.requiresApproval && Array.isArray(recommendation.requiredApproverRoles) && recommendation.requiredApproverRoles.length === 0) errors.push('AIRecommendationOutput.requiredApproverRoles is required when approval is required');
-  if (recommendation.requiresApproval && recommendation.blockedAutonomousExecution !== true) errors.push('AIRecommendationOutput.blockedAutonomousExecution must be true when approval is required');
+  if (recommendation.advisoryOnly !== true) errors.push('AIRecommendationOutput.advisoryOnly must be true');
+  if (recommendation.executionAllowed !== false) errors.push('AIRecommendationOutput.executionAllowed must be false');
+  if (recommendation.blockedAutonomousExecution !== true) errors.push('AIRecommendationOutput.blockedAutonomousExecution must always be true');
   if (recommendation.approvalRequirement && recommendation.approvalRequirement.required !== recommendation.requiresApproval) errors.push('AIRecommendationOutput.approvalRequirement.required must match requiresApproval');
   if (recommendation.approvalRequirement && recommendation.requiresApproval && recommendation.approvalRequirement.requiredApproverRoles.length === 0) errors.push('AIRecommendationOutput.approvalRequirement.requiredApproverRoles is required when approval is required');
+  if (recommendation.auditReference && Array.isArray(recommendation.auditReference.auditEventIds) && recommendation.auditReference.auditEventIds.length === 0) errors.push('AIRecommendationOutput.auditReference.auditEventIds requires at least one audit event');
+  if (recommendation.auditReference && Array.isArray(recommendation.auditReference.eventIds) && recommendation.auditReference.eventIds.length === 0) errors.push('AIRecommendationOutput.auditReference.eventIds requires at least one event reference');
   if ((recommendation.riskLevel === 'high' || recommendation.riskLevel === 'critical') && recommendation.requiresApproval !== true) errors.push('AIRecommendationOutput high and critical risk recommendations require approval');
   return { valid: errors.length === 0, errors };
 }
@@ -528,7 +582,7 @@ export function createDefaultAIControlPolicyConfig(overrides: Partial<AIControlP
   return {
     ...defaultAIControlPolicyConfig,
     ...overrides,
-    blockedActions: [...(overrides.blockedActions ?? defaultAIControlPolicyConfig.blockedActions)],
+    blockedActions: uniqueStrings([...(overrides.blockedActions ?? []), ...defaultAIControlPolicyConfig.blockedActions]),
     confidenceThresholds: { ...defaultAIControlPolicyConfig.confidenceThresholds, ...(overrides.confidenceThresholds ?? {}) },
     approvalRoles: { ...defaultAIControlPolicyConfig.approvalRoles, ...(overrides.approvalRoles ?? {}) },
   };
@@ -571,13 +625,13 @@ function baseOutputArtifact<TClass extends AIOutputArtifactClass>(
     advisoryOnly: true,
     executionAllowed: false,
     blockedAutonomousExecution: true,
-    evidence: uniqueStrings([...(metadata.evidence ?? []), ...output.evidence]),
+    evidence: uniqueStrings([...(metadata.evidence ?? []), ...output.evidence, ...output.evidencePackage.evidence.map((item) => item.evidenceId)]),
     lineage: uniqueStrings([...(metadata.lineage ?? []), `ai-output:${output.recommendationId}`, `ai-domain:${output.domain}`, `ai-type:${output.type}`, `model:${output.modelVersion}`, ...output.policyReferences.map((ref) => `policy:${ref}`), ...output.auditReference.auditEventIds.map((ref) => `audit:${ref}`), ...output.auditReference.eventIds.map((ref) => `event:${ref}`)]),
     curated: metadata.curated ?? true,
-    confidence: output.confidence,
+    confidence: output.confidenceScore.calibrated,
     riskLevel: output.riskLevel,
     dataClassification: metadata.dataClassification ?? 'restricted',
-    digitalTwinRefs: uniqueStrings(metadata.digitalTwinRefs ?? []),
+    digitalTwinRefs: uniqueStrings([...(metadata.digitalTwinRefs ?? []), ...output.auditReference.digitalTwinRefs]),
   };
 }
 

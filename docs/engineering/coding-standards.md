@@ -21,12 +21,12 @@ Each production service must include:
 
 ## Event standards
 
-- Event names use `domain.entity.action.vN`, such as `race.card.published.v1`.
-- Events must contain `eventId`, `tenantId`, `trackId`, `occurredAt`, `correlationId`, `causationId`, `actor`, `schemaVersion`, and `data`.
+- Event names use `context.entity.verb.vN`, such as `race.card.published.v1`.
+- Events must contain `eventId`, `eventType`, `tenantId`, `racetrackId`, `actorId`, `source`, `timestamp`, `payload`, and `version`. Use `correlationId`, `causationId`, `aggregateId`, `auditRef`, `approvalRef`, and `digitalTwinRef` when the workflow has those references.
 - Events are append-only; corrections are emitted as compensating events.
 
 ## AI standards
 
 - Store prompt templates, model versions, retrieval sources, confidence, and evaluator output for every AI recommendation.
 - Use policy gates before executing actions; regulated domains must require human approval.
-- Maintain model cards and evaluation reports under `ai/evaluation` before production promotion.
+- Maintain model cards and evaluation reports under `ai/evaluations` before production promotion.

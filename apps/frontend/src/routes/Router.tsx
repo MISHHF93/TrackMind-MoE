@@ -18,11 +18,6 @@ function useRoute(): AppRoute {
   return route;
 }
 
-export function navigate(path: string): void {
-  window.history.pushState({}, '', path);
-  window.dispatchEvent(new PopStateEvent('popstate'));
-}
-
 export function Router(): ReactElement {
   const route = useRoute();
   const [state, setState] = useState<{ loading: boolean; data?: WorkspaceViewModel; error?: string }>({ loading: true });

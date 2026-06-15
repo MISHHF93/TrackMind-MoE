@@ -1,5 +1,5 @@
-import type { GovernedIdentity, EnterpriseIdentityGovernancePlatform, GovernancePermission } from '@trackmind/shared';
-import type { ImmutableAuditLog, AuditLogEntry } from './auditLog.js';
+import type { CanonicalEventRef, GovernedIdentity, EnterpriseIdentityGovernancePlatform, GovernancePermission } from '@trackmind/shared';
+import { ImmutableAuditLog, type AuditLogEntry } from './auditLog.js';
 import type { CentralizedApprovalService, ControlledActionRequest } from './approvals.js';
 import type { UniversalEventBus } from './eventBus.js';
 import type { ApiServiceDefinition } from './enterpriseApiGateway.js';
@@ -139,12 +139,10 @@ export interface WorkforceDigitalTwinSync {
   auditId?: string;
 }
 
-export interface WorkforceDomainEvent {
+export interface WorkforceDomainEvent extends Pick<CanonicalEventRef, 'eventId' | 'eventType' | 'tenantId' | 'racetrackId' | 'actorId' | 'source' | 'timestamp' | 'version'> {
   id: string;
   type: string;
-  tenantId: string;
   subjectId: string;
-  timestamp: string;
   severity: 'info' | 'warning' | 'critical';
   auditId?: string;
   payload: Record<string, unknown>;
@@ -474,17 +472,20 @@ export class WorkforceOperationsService {
 
   private isWorkforceAudit(entry: AuditLogEntry): boolean {
     const payload = JSON.stringify(entry.payload).toLowerCase();
-    return payload.includes('workforce') || String(entry.actor).startsWith('workforce-') || String(entry.subjectId ?? '').startsWith('staff-') || String(entry.subjectId ?? '').startsWith('shift-') || String(entry.subjectId ?? '').startsWith('assign-');
+    return payload.includes('workforce') || entry.actor.actorId.startsWith('workforce-') || String(entry.subjectId ?? '').startsWith('staff-') || String(entry.subjectId ?? '').startsWith('shift-') || String(entry.subjectId ?? '').startsWith('assign-');
   }
 
   private audit(type: Parameters<ImmutableAuditLog['append']>[0]['type'], actor: string, subjectId: string, timestamp: string, action: string, payload: unknown, severity: 'info' | 'warning' | 'critical'): AuditLogEntry {
-    return this.deps.auditLog?.append({ id: id('audit-workforce'), type, actor, timestamp, subjectId, tenantId: this.tenantId, severity, regulations: ['HISA', 'ARCI', 'ISO-22301'], evidenceIds: [action], payload: { action, payload } }) ?? { id: id('audit-workforce'), type, actor, timestamp, subjectId, tenantId: this.tenantId, severity, regulations: ['HISA', 'ARCI'], evidenceIds: [action], payload: { action, payload }, previousHash: 'genesis', hash: 'sha256:workforce' };
+    const ledger = this.deps.auditLog ?? new ImmutableAuditLog();
+    return ledger.append({ id: id('audit-workforce'), type, actor, timestamp, subjectId, tenantId: this.tenantId, racetrackId: 'main-track', severity, regulations: ['HISA', 'ARCI', 'ISO-22301'], evidenceIds: [action], action, reason: action, payload: { action, payload } });
   }
 
   private emit(type: string, subjectId: string, timestamp: string, severity: WorkforceDomainEvent['severity'], payload: Record<string, unknown>, auditId?: string): WorkforceDomainEvent {
-    const event: WorkforceDomainEvent = { id: id('evt-workforce'), type, tenantId: this.tenantId, subjectId, timestamp, severity, auditId, payload };
+    const eventId = id('evt-workforce');
+    const eventType = `${type}.v1` as CanonicalEventRef['eventType'];
+    const event: WorkforceDomainEvent = { eventId, eventType, tenantId: this.tenantId, racetrackId: 'main-track', actorId: 'workforce-operations', source: 'workforce-operations', timestamp, version: 1, id: eventId, type, subjectId, severity, auditId, payload };
     this.events.push(clone(event));
-    void this.deps.eventBus?.publish({ type, payload: event, aggregateId: subjectId, producer: 'workforce-operations', metadata: { compliance: 'regulated', team: 'workforce-operations', accountableRole: 'workforce-manager' } });
+    void this.deps.eventBus?.publish({ id: event.eventId, type: event.eventType, payload: event, tenantId: event.tenantId, racetrackId: event.racetrackId, actor: { id: event.actorId, type: 'service' }, subject: { id: subjectId, type: 'workforce', tenantId: event.tenantId }, evidence: auditId ? [auditId] : [], auditRef: auditId, occurredAt: event.timestamp, aggregateId: subjectId, producer: event.source, metadata: { compliance: 'regulated', team: 'workforce-operations', accountableRole: 'workforce-manager' } });
     return event;
   }
 
@@ -498,10 +499,10 @@ export class WorkforceOperationsService {
 export function seedWorkforceOperations(deps: ConstructorParameters<typeof WorkforceOperationsService>[1] = {}, tenantId = 'track-1', now = '2026-06-13T20:30:00.000Z'): WorkforceOperationsService {
   const service = new WorkforceOperationsService(tenantId, deps);
   const identities: GovernedIdentity[] = [
-    { id: 'staff-gate-lead', tenantId, kind: 'user', displayName: 'Gate Crew Lead', roles: ['operations'], attributes: { department: 'race-operations', credentialed: true } },
-    { id: 'staff-vet-tech', tenantId, kind: 'user', displayName: 'Veterinary Technician', roles: ['veterinary'], attributes: { department: 'veterinary', credentialed: true } },
+    { id: 'staff-gate-lead', tenantId, kind: 'user', displayName: 'Gate Crew Lead', roles: ['operations-admin'], attributes: { department: 'race-operations', credentialed: true } },
+    { id: 'staff-vet-tech', tenantId, kind: 'user', displayName: 'Veterinary Technician', roles: ['veterinarian'], attributes: { department: 'veterinary', credentialed: true } },
     { id: 'staff-emergency-liaison', tenantId, kind: 'user', displayName: 'Emergency Liaison', roles: ['security'], attributes: { department: 'emergency', credentialed: true } },
-    { id: 'staff-facilities-watch', tenantId, kind: 'user', displayName: 'Facilities Watch', roles: ['facilities'], attributes: { department: 'facilities', credentialed: true } },
+    { id: 'staff-facilities-watch', tenantId, kind: 'user', displayName: 'Facilities Watch', roles: ['track-superintendent'], attributes: { department: 'facilities', credentialed: true } },
   ];
   identities.forEach((identity, index) => service.registerEmployee({ identity, employeeNumber: `EMP-${index + 101}`, department: index === 1 ? 'veterinary' : index === 2 ? 'emergency' : index === 3 ? 'facilities' : 'race-operations', managerIdentityId: 'staff-gate-lead', employmentStatus: 'active', emergencyQualified: index === 2, homeZoneId: index === 2 ? 'zone-grandstand' : 'backstretch', hiredAt: '2024-01-01T00:00:00.000Z' }, 'seed', now));
   service.scheduleShift({ id: 'shift-race-7', tenantId, label: 'Race 7 operations shift', startsAt: '2026-06-13T19:30:00.000Z', endsAt: '2026-06-13T22:30:00.000Z', zoneId: 'backstretch', status: 'active', raceId: 'race-7', requirements: [

@@ -52,7 +52,7 @@ test('race stop scratch and medication API commands require approval gates befor
   const stopToken = approveToken(state, 'race-stop', 'race-7', [['steward-1', ['steward']], ['security-1', ['security']]]);
   const stopped = await handleApiRequest('POST', '/api/v1/races/race-7/stop', { tenantId: 'trackmind', racetrackId: 'main-track', actorId: 'race-control', reason: 'incident on track', approvalToken: stopToken, model_id: approval.model_id, confidence: approval.confidence, evidence_links: approval.evidence_links }, state);
   assert.equal(stopped.status, 202);
-  assert.equal(stopped.body.event.eventType, 'RaceStoppedEvent');
+  assert.equal(stopped.body.event.eventType, 'race.lifecycle.stopped.v1');
   assert.equal(typeof stopped.body.event.timestampSynchronization.withinTolerance, 'boolean');
   assert.ok(stopped.body.event.timestampSynchronization.maxSkewMs >= 0);
   assert.ok(stopped.body.event.timestampSynchronization.sources.some((source) => source.source === 'approval.timestamp'));
@@ -60,12 +60,12 @@ test('race stop scratch and medication API commands require approval gates befor
   const scratchToken = approveToken(state, 'scratch-horse', 'horse-1', [['vet-1', ['veterinarian']], ['steward-1', ['steward']]]);
   const scratched = await handleApiRequest('POST', '/api/v1/races/race-7/scratches', { tenantId: 'trackmind', racetrackId: 'main-track', actorId: 'vet-1', horseId: 'horse-1', reason: 'vet scratch', approvalToken: scratchToken, model_id: approval.model_id, confidence: approval.confidence, evidence_links: approval.evidence_links }, state);
   assert.equal(scratched.status, 202);
-  assert.equal(scratched.body.event.eventType, 'HorseScratchedEvent');
+  assert.equal(scratched.body.event.eventType, 'horse.status.scratched.v1');
 
   const medicationToken = approveToken(state, 'medication-decision', 'horse-1', [['vet-1', ['veterinarian']], ['steward-1', ['steward']]]);
   const medication = await handleApiRequest('POST', '/api/v1/horses/horse-1/medications/administer', { tenantId: 'trackmind', racetrackId: 'main-track', actorId: 'vet-1', medication: 'controlled-x', dose: '1ml', reason: 'approved medication administration', approvalToken: medicationToken, model_id: approval.model_id, confidence: approval.confidence, evidence_links: approval.evidence_links }, state);
   assert.equal(medication.status, 202);
-  assert.equal(medication.body.event.eventType, 'MedicationAdministeredEvent');
+  assert.equal(medication.body.event.eventType, 'medication.decision.administered.v1');
   assert.equal(state.cqrs.verifyHashChain().valid, true);
 });
 

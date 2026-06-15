@@ -1,4 +1,4 @@
-import type { NexusOperationalActorType } from '@trackmind/shared';
+import type { AuditActorReference, AuditActorType as CanonicalAuditActorType, AuditEntityReference, AuditEvent as CanonicalAuditEvent, AuditIntegrityReference, AuditTenantScope, NexusOperationalActorType } from '@trackmind/shared';
 import { synchronizeTimestamps, type TimestampSource, type TimestampSynchronizationMetadata } from './timeSynchronization.js';
 
 export type AuditEventType =
@@ -17,7 +17,7 @@ export type AuditEventType =
 
 export type AuditSeverity = 'info' | 'warning' | 'critical';
 export type RetentionDisposition = 'retain' | 'eligible-for-disposal' | 'legal-hold';
-export type AuditActorType = NexusOperationalActorType;
+export type AuditActorType = CanonicalAuditActorType;
 export type AuditDecision = 'allowed' | 'denied' | 'approved' | 'rejected' | 'blocked' | 'executed' | 'observed';
 export type AuditActionClass = 'user' | 'service' | 'workflow' | 'api' | 'ai' | 'approval' | 'config' | 'asset' | 'twin' | 'incident' | 'compliance';
 
@@ -41,17 +41,24 @@ export interface EvidenceReference {
 }
 
 export interface AuditLogEntry {
+  auditEventId: string;
   id: string;
   type: AuditEventType;
-  actor: string;
+  actor: AuditActorReference;
+  actorId: string;
   actorType?: AuditActorType;
   timestamp: string;
-  action?: string;
+  action: string;
   actionClass?: AuditActionClass;
   target?: string;
   decision?: AuditDecision;
   sourceService?: string;
   apiRoute?: string;
+  reason: string;
+  entity: AuditEntityReference;
+  approvalReference?: CanonicalAuditEvent['approvalReference'];
+  tenantScope: AuditTenantScope;
+  integrityReference: AuditIntegrityReference;
   payload: unknown;
   previousHash: string;
   hash: string;
@@ -70,7 +77,15 @@ export interface AuditLogEntry {
   timestampSynchronization?: TimestampSynchronizationMetadata;
 }
 
-export interface AuditRecordInput extends Omit<AuditLogEntry, 'previousHash' | 'hash' | 'timestampSynchronization'> {
+export interface AuditRecordInput extends Omit<AuditLogEntry, 'auditEventId' | 'actor' | 'actorId' | 'actorType' | 'action' | 'reason' | 'entity' | 'tenantScope' | 'integrityReference' | 'previousHash' | 'hash' | 'timestampSynchronization'> {
+  auditEventId?: string;
+  actor: string | AuditActorReference;
+  actorType?: AuditActorType | string;
+  action?: string;
+  reason?: string;
+  entity?: AuditEntityReference;
+  approvalReference?: CanonicalAuditEvent['approvalReference'];
+  tenantScope?: AuditTenantScope;
   timestampSources?: TimestampSource[];
 }
 export interface RetentionPolicy { id: string; eventTypes: AuditEventType[]; retainForDays: number; regulatoryBasis: string }
@@ -159,21 +174,79 @@ function inferTarget(log: AuditRecordInput): string | undefined {
 }
 
 function inferActorType(log: AuditRecordInput): AuditActorType | undefined {
-  if (log.actorType) return log.actorType;
+  if (log.actorType && auditActorTypes.includes(String(log.actorType) as AuditActorType)) return log.actorType as AuditActorType;
+  if (typeof log.actor === 'object' && log.actor.actorType) return log.actor.actorType;
   const actorType = getPayloadField(log.payload, 'actorType');
   if (auditActorTypes.includes(String(actorType) as AuditActorType)) return actorType as AuditActorType;
-  if (log.actor === 'system') return 'system';
-  if (log.type === 'ai-recommendation' || log.type === 'expert-call' || /ai|moe|agent/i.test(log.actor)) return 'ai-agent';
-  if (log.sourceService || /service|runtime|registry|api|bus/i.test(log.actor)) return 'service';
+  const actorId = actorIdOf(log.actor);
+  if (actorId === 'system') return 'system';
+  if (log.type === 'ai-recommendation' || log.type === 'expert-call' || /ai|moe|agent/i.test(actorId)) return 'ai-agent';
+  if (log.sourceService || /service|runtime|registry|api|bus/i.test(actorId)) return 'service';
   return undefined;
 }
 
-function classify(log: Pick<AuditLogEntry, 'type' | 'actor' | 'actionClass' | 'action' | 'sourceService' | 'apiRoute' | 'payload'>): AuditActionClass {
+function actorIdOf(actor: string | AuditActorReference): string {
+  return typeof actor === 'string' ? actor : actor.actorId;
+}
+
+function normalizeActor(log: AuditRecordInput): AuditActorReference {
+  if (typeof log.actor === 'object') return { ...log.actor, actorType: log.actor.actorType ?? inferActorType(log) ?? 'service', roles: [...(log.actor.roles ?? [])] };
+  return { actorId: log.actor, actorType: inferActorType(log) ?? 'service' };
+}
+
+function normalizeTenantScope(log: AuditRecordInput, target?: string): AuditTenantScope {
+  return {
+    tenantId: log.tenantScope?.tenantId ?? log.tenantId ?? (typeof getPayloadField(log.payload, 'tenantId') === 'string' ? String(getPayloadField(log.payload, 'tenantId')) : 'trackmind'),
+    racetrackId: log.tenantScope?.racetrackId ?? log.racetrackId ?? (typeof getPayloadField(log.payload, 'racetrackId') === 'string' ? String(getPayloadField(log.payload, 'racetrackId')) : undefined),
+    organizationId: log.tenantScope?.organizationId ?? (typeof getPayloadField(log.payload, 'organizationId') === 'string' ? String(getPayloadField(log.payload, 'organizationId')) : undefined),
+  };
+}
+
+function inferEntityType(log: AuditRecordInput, target?: string): string {
+  const explicit = getPayloadField(log.payload, 'entityType') ?? getPayloadField(log.payload, 'subjectType') ?? getPayloadField(log.payload, 'type');
+  if (typeof explicit === 'string' && explicit.trim()) return explicit;
+  if (target?.startsWith('twin:')) return 'digital-twin';
+  if (log.apiRoute) return 'api-route';
+  return log.actionClass ?? classify({ ...log, actor: actorIdOf(log.actor) });
+}
+
+function normalizeEntity(log: AuditRecordInput, target?: string): AuditEntityReference {
+  if (log.entity) return { ...log.entity };
+  const tenantScope = normalizeTenantScope(log, target);
+  return {
+    entityId: target ?? log.subjectId ?? log.id,
+    entityType: inferEntityType(log, target),
+    tenantId: tenantScope.tenantId,
+    racetrackId: tenantScope.racetrackId,
+  };
+}
+
+function inferReason(log: AuditRecordInput): string {
+  const payloadReason = getPayloadField(log.payload, 'reason');
+  if (log.reason) return log.reason;
+  if (typeof payloadReason === 'string' && payloadReason.trim()) return payloadReason;
+  return log.action ?? log.type;
+}
+
+function normalizeApprovalReference(log: AuditRecordInput): CanonicalAuditEvent['approvalReference'] | undefined {
+  if (log.approvalReference) return { ...log.approvalReference };
+  const approvalId = getPayloadField(log.payload, 'approvalId') ?? getPayloadField(log.payload, 'approvalRef') ?? getPayloadField(log.payload, 'approvalRequestId');
+  if (typeof approvalId !== 'string' || !approvalId.trim()) return undefined;
+  const status = getPayloadField(log.payload, 'status');
+  const protectedAction = getPayloadField(log.payload, 'protectedAction') ?? getPayloadField(log.payload, 'action');
+  return {
+    approvalId,
+    status: typeof status === 'string' ? status as NonNullable<CanonicalAuditEvent['approvalReference']>['status'] : undefined,
+    protectedAction: typeof protectedAction === 'string' ? protectedAction : undefined,
+  };
+}
+
+function classify(log: Pick<AuditRecordInput, 'type' | 'actor' | 'actionClass' | 'action' | 'sourceService' | 'apiRoute' | 'payload'>): AuditActionClass {
   if (log.actionClass) return log.actionClass;
   const action = `${log.action ?? ''} ${String(getPayloadField(log.payload, 'action') ?? '')} ${String(getPayloadField(log.payload, 'type') ?? '')}`.toLowerCase();
   if (log.apiRoute || action.includes('api.')) return 'api';
   if (log.type === 'approval' || action.includes('approval.')) return 'approval';
-  if (log.type === 'ai-recommendation' || log.type === 'expert-call' || /ai|moe|agent/i.test(log.actor)) return 'ai';
+  if (log.type === 'ai-recommendation' || log.type === 'expert-call' || /ai|moe|agent/i.test(actorIdOf(log.actor))) return 'ai';
   if (log.type === 'workflow-action' || action.includes('workflow') || action.includes('task.')) return 'workflow';
   if (log.type === 'digital-twin-update' || action.includes('digital-twin') || action.includes('twin')) return 'twin';
   if (log.type === 'regulatory-activity' || log.type === 'rulebook-citation' || action.includes('compliance') || action.includes('control.')) return 'compliance';
@@ -202,9 +275,13 @@ export class ImmutableAuditLog {
 
   append(log: AuditRecordInput): AuditLogEntry {
     const previousHash = this.logs.at(-1)?.hash ?? 'genesis';
-    const custody = log.custody?.map((step) => ({ ...step })) ?? [{ actor: log.actor, action: 'created' as const, timestamp: log.timestamp }];
+    const actor = normalizeActor(log);
+    const target = inferTarget(log);
+    const entity = normalizeEntity(log, target);
+    const tenantScope = normalizeTenantScope(log, target);
+    const custody = log.custody?.map((step) => ({ ...step })) ?? [{ actor: actor.actorId, action: 'created' as const, timestamp: log.timestamp }];
     const evidence = normalizeEvidence(log);
-    const { timestampSources: _timestampSources, ...persistedLog } = log;
+    const { timestampSources: _timestampSources, integrityReference: _inputIntegrityReference, tenantScope: _inputTenantScope, entity: _inputEntity, actorId: _inputActorId, ...persistedLog } = log as AuditRecordInput & Partial<AuditLogEntry>;
     const timestampSynchronization = synchronizeTimestamps([
       { source: `${log.sourceService ?? 'audit-log'}.event`, timestamp: log.timestamp },
       ...custody.map((step) => ({ source: `custody:${step.action}:${step.actor}`, timestamp: step.timestamp })),
@@ -212,10 +289,21 @@ export class ImmutableAuditLog {
     ]);
     const unsigned = {
       ...persistedLog,
-      actorType: inferActorType(log),
+      auditEventId: log.auditEventId ?? log.id,
+      id: log.id,
+      actor,
+      actorId: actor.actorId,
+      actorType: actor.actorType,
+      entity,
       action: inferAction(log),
+      reason: inferReason(log),
       actionClass: classify({ ...log, action: inferAction(log) }),
-      target: inferTarget(log),
+      target,
+      subjectId: log.subjectId ?? entity.entityId,
+      tenantId: tenantScope.tenantId,
+      racetrackId: tenantScope.racetrackId,
+      tenantScope,
+      approvalReference: normalizeApprovalReference(log),
       payload: deepClone(log.payload),
       previousHash,
       custody,
@@ -224,7 +312,8 @@ export class ImmutableAuditLog {
       regulations: [...(log.regulations ?? [])],
       timestampSynchronization,
     };
-    const entry = Object.freeze({ ...unsigned, hash: digest(unsigned) });
+    const hash = digest(unsigned);
+    const entry = Object.freeze({ ...unsigned, hash, integrityReference: { hash, previousHash, algorithm: 'sha256' as const, chainScope: 'tenant' as const } });
     this.logs.push(entry);
     return this.clone(entry);
   }
@@ -234,7 +323,7 @@ export class ImmutableAuditLog {
   verify(): AuditVerificationResult {
     const failures: AuditVerificationResult['failures'] = [];
     this.logs.forEach((entry, index) => {
-      const { hash, ...unsigned } = entry;
+      const { hash, integrityReference: _integrityReference, ...unsigned } = entry;
       const expectedPrevious = index === 0 ? 'genesis' : this.logs[index - 1].hash;
       if (entry.previousHash !== expectedPrevious) failures.push({ id: entry.id, reason: 'previous-hash-mismatch' });
       if (hash !== digest(unsigned)) failures.push({ id: entry.id, reason: 'record-hash-mismatch' });
@@ -246,7 +335,7 @@ export class ImmutableAuditLog {
     const current = this.logs.find((entry) => entry.id === recordId);
     if (!current) throw new Error(`Unknown audit record ${recordId}`);
     const { hash: _hash, previousHash: _previousHash, ...base } = this.clone(current);
-    return this.append({ ...base, id: `${recordId}:custody:${(current.custody?.length ?? 0) + 1}`, type: 'system-event', actor: step.actor, actorType: inferActorType({ ...base, actor: step.actor, payload: current.payload }), timestamp: step.timestamp, action: step.action, actionClass: 'compliance', target: recordId, payload: { custodyFor: recordId, action: step.action, reason: step.reason }, custody: [...(current.custody ?? []), { ...step }], subjectId: current.subjectId, correlationId: current.correlationId, workflowId: current.workflowId, tenantId: current.tenantId, severity: current.severity, regulations: current.regulations, evidenceIds: current.evidenceIds, evidence: current.evidence, retainedUntil: current.retainedUntil, legalHold: step.action === 'placed-on-hold' });
+    return this.append({ ...base, id: `${recordId}:custody:${(current.custody?.length ?? 0) + 1}`, type: 'system-event', actor: step.actor, actorType: inferActorType({ ...base, actor: step.actor, payload: current.payload }), timestamp: step.timestamp, action: step.action, actionClass: 'compliance', target: recordId, reason: step.reason ?? step.action, payload: { custodyFor: recordId, action: step.action, reason: step.reason }, custody: [...(current.custody ?? []), { ...step }], subjectId: current.subjectId, correlationId: current.correlationId, workflowId: current.workflowId, tenantId: current.tenantId, racetrackId: current.racetrackId, severity: current.severity, regulations: current.regulations, evidenceIds: current.evidenceIds, evidence: current.evidence, retainedUntil: current.retainedUntil, legalHold: step.action === 'placed-on-hold' });
   }
 
   placeLegalHold(recordIds: string[], actor: string, timestamp: string, reason: string): AuditLogEntry[] {
@@ -258,7 +347,7 @@ export class ImmutableAuditLog {
   }
 
   forensicTimeline(filter: { subjectId?: string; workflowId?: string; correlationId?: string; actor?: string }): ForensicTimelineStep[] {
-    return this.records(filter).sort((a, b) => a.timestamp.localeCompare(b.timestamp)).map((entry, index) => ({ sequence: index + 1, id: entry.id, type: entry.type, actor: entry.actor, timestamp: entry.timestamp, subjectId: entry.subjectId, workflowId: entry.workflowId, correlationId: entry.correlationId, action: entry.action, actionClass: entry.actionClass, target: entry.target, decision: entry.decision, evidenceIds: [...(entry.evidenceIds ?? [])], payload: entry.payload }));
+    return this.records(filter).sort((a, b) => a.timestamp.localeCompare(b.timestamp)).map((entry, index) => ({ sequence: index + 1, id: entry.id, type: entry.type, actor: entry.actor.actorId, timestamp: entry.timestamp, subjectId: entry.subjectId, workflowId: entry.workflowId, correlationId: entry.correlationId, action: entry.action, actionClass: entry.actionClass, target: entry.target, decision: entry.decision, evidenceIds: [...(entry.evidenceIds ?? [])], payload: entry.payload }));
   }
 
   complianceReport(regulation: string) {
@@ -280,7 +369,7 @@ export class ImmutableAuditLog {
 
   evidencePath(query: AuditLedgerQuery = {}): AuditEvidencePath[] {
     const holds = this.activeLegalHolds();
-    return this.records(query).map((entry) => ({ recordId: entry.id, actionClass: entry.actionClass ?? classify(entry), action: entry.action ?? entry.type, target: entry.target, actor: entry.actor, timestamp: entry.timestamp, evidenceIds: [...(entry.evidenceIds ?? [])], evidence: (entry.evidence ?? []).map((item) => ({ ...item, legalHold: item.legalHold || holds.has(entry.id) })), hash: entry.hash, previousHash: entry.previousHash, legalHold: entry.legalHold || holds.has(entry.id) }));
+    return this.records(query).map((entry) => ({ recordId: entry.id, actionClass: entry.actionClass ?? classify(entry), action: entry.action ?? entry.type, target: entry.target, actor: entry.actor.actorId, timestamp: entry.timestamp, evidenceIds: [...(entry.evidenceIds ?? [])], evidence: (entry.evidence ?? []).map((item) => ({ ...item, legalHold: item.legalHold || holds.has(entry.id) })), hash: entry.hash, previousHash: entry.previousHash, legalHold: entry.legalHold || holds.has(entry.id) }));
   }
 
   coverageReport(requiredActionClasses: AuditActionClass[] = auditActionClasses, generatedAt = new Date().toISOString()): AuditCoverageReport {
@@ -300,8 +389,8 @@ export class ImmutableAuditLog {
       query: { ...query },
       verified: verification.valid,
       recordCount: records.length,
-      timeline: records.map((entry, index) => ({ sequence: index + 1, id: entry.id, type: entry.type, actor: entry.actor, timestamp: entry.timestamp, subjectId: entry.subjectId, workflowId: entry.workflowId, correlationId: entry.correlationId, action: entry.action, actionClass: entry.actionClass, target: entry.target, decision: entry.decision, evidenceIds: [...(entry.evidenceIds ?? [])], payload: deepClone(entry.payload) })),
-      actors: unique(records.map((entry) => entry.actor)),
+      timeline: records.map((entry, index) => ({ sequence: index + 1, id: entry.id, type: entry.type, actor: entry.actor.actorId, timestamp: entry.timestamp, subjectId: entry.subjectId, workflowId: entry.workflowId, correlationId: entry.correlationId, action: entry.action, actionClass: entry.actionClass, target: entry.target, decision: entry.decision, evidenceIds: [...(entry.evidenceIds ?? [])], payload: deepClone(entry.payload) })),
+      actors: unique(records.map((entry) => entry.actor.actorId)),
       subjects: unique(records.map((entry) => entry.subjectId)),
       workflows: unique(records.map((entry) => entry.workflowId)),
       correlations: unique(records.map((entry) => entry.correlationId)),
@@ -342,9 +431,9 @@ export class ImmutableAuditLog {
     for (const entry of this.logs) {
       const custodyFor = getPayloadField(entry.payload, 'custodyFor');
       const action = getPayloadField(entry.payload, 'action');
-      if (typeof custodyFor === 'string' && action === 'placed-on-hold') holds.set(custodyFor, { actor: entry.actor, timestamp: entry.timestamp, reason: typeof getPayloadField(entry.payload, 'reason') === 'string' ? String(getPayloadField(entry.payload, 'reason')) : undefined });
+      if (typeof custodyFor === 'string' && action === 'placed-on-hold') holds.set(custodyFor, { actor: entry.actor.actorId, timestamp: entry.timestamp, reason: typeof getPayloadField(entry.payload, 'reason') === 'string' ? String(getPayloadField(entry.payload, 'reason')) : undefined });
       if (typeof custodyFor === 'string' && action === 'released-from-hold') holds.delete(custodyFor);
-      if (entry.legalHold && !String(entry.id).includes(':custody:')) holds.set(entry.id, { actor: entry.actor, timestamp: entry.timestamp });
+      if (entry.legalHold && !String(entry.id).includes(':custody:')) holds.set(entry.id, { actor: entry.actor.actorId, timestamp: entry.timestamp });
     }
     if (recordId) return new Map([...holds.entries()].filter(([id]) => id === recordId));
     return holds;
@@ -354,7 +443,7 @@ export class ImmutableAuditLog {
     return this.all().filter((entry) => (!query.subjectId || entry.subjectId === query.subjectId || entry.target === query.subjectId)
       && (!query.workflowId || entry.workflowId === query.workflowId)
       && (!query.correlationId || entry.correlationId === query.correlationId)
-      && (!query.actor || entry.actor === query.actor)
+      && (!query.actor || entry.actor.actorId === query.actor)
       && (!query.actionClass || entry.actionClass === query.actionClass)
       && (!query.evidenceId || entry.evidenceIds?.includes(query.evidenceId))
       && (!query.regulation || entry.regulations?.includes(query.regulation))

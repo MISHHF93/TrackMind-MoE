@@ -102,9 +102,9 @@ test('protected execution validation rejects AI or service approval identities',
 
 test('Nexus event envelopes enforce versioned event contract and tenant-scoped subject', async () => {
   const { validateNexusEventEnvelope } = await import('../dist/index.js');
-  const valid = validateNexusEventEnvelope({ eventId: 'evt-1', eventType: 'race.race.startRequested.v1', tenantId: 'tenant-1', occurredAt: '2026-06-13T12:00:00Z', actor: { id: 'steward-1', type: 'human', roles: ['steward'] }, correlationId: 'corr-1', subject: { id: 'race-7', type: 'race', tenantId: 'tenant-1' }, payload: { status: 'pending-approval' }, evidence: ['approval-request'] });
+  const valid = validateNexusEventEnvelope({ eventId: 'evt-1', eventType: 'race.race.startRequested.v1', tenantId: 'tenant-1', racetrackId: 'main-track', actorId: 'steward-1', source: 'foundation-test', timestamp: '2026-06-13T12:00:00Z', version: 1, occurredAt: '2026-06-13T12:00:00Z', actor: { id: 'steward-1', type: 'human', roles: ['steward'] }, correlationId: 'corr-1', subject: { id: 'race-7', type: 'race', tenantId: 'tenant-1' }, payload: { status: 'pending-approval' }, evidence: ['approval-request'] });
   assert.equal(valid.allowed, true);
 
-  const invalid = validateNexusEventEnvelope({ eventId: 'evt-2', eventType: 'race-start-requested', tenantId: 'tenant-1', occurredAt: '2026-06-13T12:00:00Z', actor: { id: 'ai-1', type: 'ai-agent' }, correlationId: 'corr-2', subject: { id: 'race-7', type: 'race', tenantId: 'tenant-2' }, payload: {}, evidence: [] });
+  const invalid = validateNexusEventEnvelope({ eventId: 'evt-2', eventType: 'race-start-requested', tenantId: 'tenant-1', racetrackId: 'main-track', actorId: 'ai-1', source: 'foundation-test', timestamp: '2026-06-13T12:00:00Z', version: 1, occurredAt: '2026-06-13T12:00:00Z', actor: { id: 'ai-1', type: 'ai-agent' }, correlationId: 'corr-2', subject: { id: 'race-7', type: 'race', tenantId: 'tenant-2' }, payload: {}, evidence: [] });
   assert.equal(invalid.allowed, false);
 });

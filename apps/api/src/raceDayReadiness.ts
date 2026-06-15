@@ -1,3 +1,4 @@
+import type { CanonicalEventRef } from '@trackmind/shared';
 import type { ImmutableAuditLog } from './auditLog.js';
 import type { UniversalEventBus } from './eventBus.js';
 import type { ApiServiceDefinition } from './enterpriseApiGateway.js';
@@ -9,7 +10,7 @@ export type ReadinessSeverity = 'info' | 'advisory' | 'warning' | 'critical';
 
 export interface ReadinessCheck { domain: ReadinessDomain; label: string; score: number; status: ReadinessStatus; evidence: string[]; blockers: string[]; updatedAt: string; approvalRequired?: boolean; ownerRole: string; }
 export interface RaceDayReadinessInput { raceId: string; trackId: string; postTime: string; evaluatedAt: string; checks: ReadinessCheck[]; workforceReadiness?: WorkforceReadinessSummary; }
-export interface ReadinessEvent { id: string; raceId: string; type: 'readiness.evaluated' | 'readiness.warning' | 'readiness.approval-required' | 'readiness.blocked'; domain?: ReadinessDomain; severity: ReadinessSeverity; message: string; evidence: string[]; timestamp: string; }
+export interface ReadinessEvent extends Pick<CanonicalEventRef, 'eventId' | 'eventType' | 'tenantId' | 'racetrackId' | 'actorId' | 'source' | 'timestamp' | 'version'> { id: string; raceId: string; type: 'readiness.evaluated' | 'readiness.warning' | 'readiness.approval-required' | 'readiness.blocked'; domain?: ReadinessDomain; severity: ReadinessSeverity; message: string; evidence: string[]; }
 export interface OperationalWarning { id: string; raceId: string; domain: ReadinessDomain; severity: Exclude<ReadinessSeverity, 'info'>; message: string; recommendedAction: string; evidence: string[]; }
 export interface ReadinessApprovalRequirement { id: string; raceId: string; action: string; requiredRoles: string[]; reason: string; evidence: string[]; status: 'pending' | 'satisfied'; }
 export interface ReadinessAuditRecord { id: string; raceId: string; actor: string; timestamp: string; summaryHash: string; previousHash: string; score: number; status: ReadinessStatus; evidence: string[]; }
@@ -32,10 +33,15 @@ export class RaceDayReadinessService {
     const status: ReadinessStatus = checks.some((c) => c.status === 'blocked') || overallScore < 70 ? 'blocked' : checks.some((c) => c.status === 'watch') || overallScore < 90 ? 'watch' : 'ready';
     const warnings = checks.flatMap((check) => this.warningFor(input.raceId, check));
     const approvals = checks.filter((check) => check.approvalRequired || check.status !== 'ready').map((check) => ({ id: id('approval-readiness'), raceId: input.raceId, action: `${check.domain}-readiness-override`, requiredRoles: [check.ownerRole, 'steward'], reason: `${check.label} is ${check.status} with score ${check.score}`, evidence: check.evidence, status: 'pending' as const }));
+    const readinessEvent = (prefix: string, event: Omit<ReadinessEvent, 'id' | 'eventId' | 'eventType' | 'tenantId' | 'racetrackId' | 'actorId' | 'source' | 'timestamp' | 'version'>): ReadinessEvent => {
+      const eventId = id(prefix);
+      const [context, verb] = event.type.split('.');
+      return { eventId, eventType: `${context}.race-day.${verb}.v1` as CanonicalEventRef['eventType'], tenantId: 'trackmind', racetrackId: input.trackId, actorId: actor, source: 'race-day-readiness', timestamp: input.evaluatedAt, version: 1, id: eventId, ...event };
+    };
     const events: ReadinessEvent[] = [
-      { id: id('evt-ready'), raceId: input.raceId, type: 'readiness.evaluated', severity: status === 'ready' ? 'info' : status === 'watch' ? 'warning' : 'critical', message: `Race readiness ${status} at ${overallScore}`, evidence: checks.flatMap((c) => c.evidence), timestamp: input.evaluatedAt },
-      ...warnings.map((w): ReadinessEvent => ({ id: id('evt-warning'), raceId: input.raceId, type: w.severity === 'critical' ? 'readiness.blocked' : 'readiness.warning', domain: w.domain, severity: w.severity, message: w.message, evidence: w.evidence, timestamp: input.evaluatedAt })),
-      ...approvals.map((a): ReadinessEvent => ({ id: id('evt-approval'), raceId: input.raceId, type: 'readiness.approval-required', severity: 'warning', message: `Approval required: ${a.action}`, evidence: a.evidence, timestamp: input.evaluatedAt }))
+      readinessEvent('evt-ready', { raceId: input.raceId, type: 'readiness.evaluated', severity: status === 'ready' ? 'info' : status === 'watch' ? 'warning' : 'critical', message: `Race readiness ${status} at ${overallScore}`, evidence: checks.flatMap((c) => c.evidence) }),
+      ...warnings.map((w): ReadinessEvent => readinessEvent('evt-warning', { raceId: input.raceId, type: w.severity === 'critical' ? 'readiness.blocked' : 'readiness.warning', domain: w.domain, severity: w.severity, message: w.message, evidence: w.evidence })),
+      ...approvals.map((a): ReadinessEvent => readinessEvent('evt-approval', { raceId: input.raceId, type: 'readiness.approval-required', severity: 'warning', message: `Approval required: ${a.action}`, evidence: a.evidence }))
     ];
     const previousHash = this.auditChain.at(-1)?.summaryHash ?? 'genesis';
     const audit: ReadinessAuditRecord = { id: id('audit-readiness'), raceId: input.raceId, actor, timestamp: input.evaluatedAt, previousHash, score: overallScore, status, evidence: checks.flatMap((c) => c.evidence), summaryHash: hash({ input, overallScore, status, previousHash }) };
@@ -43,7 +49,7 @@ export class RaceDayReadinessService {
     const assessment = { raceId: input.raceId, trackId: input.trackId, postTime: input.postTime, evaluatedAt: input.evaluatedAt, overallScore, status, checks, events, warnings, approvals, audit };
     this.assessments.set(input.raceId, clone(assessment));
     this.deps.auditLog?.append({ id: audit.id, type: 'workflow-action', actor, timestamp: input.evaluatedAt, subjectId: input.raceId, severity: status === 'blocked' ? 'critical' : status === 'watch' ? 'warning' : 'info', payload: assessment, regulations: ['HISA','ARCI'] });
-    for (const event of events) void this.deps.eventBus?.publish({ type: event.type, payload: event, aggregateId: input.raceId, producer: 'race-day-readiness', metadata: { compliance: 'regulated', team: 'racing-operations', accountableRole: 'race-day-commander' } });
+    for (const event of events) void this.deps.eventBus?.publish({ id: event.eventId, type: event.eventType, tenantId: event.tenantId, racetrackId: event.racetrackId, actor: { id: event.actorId, type: 'service' }, subject: { id: input.raceId, type: 'race-readiness', tenantId: event.tenantId }, evidence: event.evidence, auditRef: audit.id, payload: event, aggregateId: input.raceId, producer: event.source, metadata: { compliance: 'regulated', team: 'racing-operations', accountableRole: 'race-day-commander' } });
     return clone(assessment);
   }
 

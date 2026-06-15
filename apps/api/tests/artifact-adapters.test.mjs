@@ -30,7 +30,7 @@ const securityActor = {
   roles: ['security'],
   tenantId: 'track-1',
   human: true,
-  permissions: ['security:read', 'security:sensitive:read', 'security:write', 'security:escalate', 'security:investigate'],
+  permissions: ['security:read', 'security:sensitive-read', 'security:manage', 'security:investigate'],
 };
 
 const artifactContext = { tenantId: 'tenant-track-1', racetrackId: 'main-track', trackId: 'main-track', timestamp: '2026-06-14T12:00:00.000Z', mock: false };

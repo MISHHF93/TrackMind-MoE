@@ -60,8 +60,14 @@ export interface EventTraceContext {
 }
 
 export type EventContextField =
+  | 'eventId'
+  | 'eventType'
+  | 'version'
+  | 'timestamp'
   | 'tenantId'
   | 'racetrackId'
+  | 'actorId'
+  | 'source'
   | 'correlationId'
   | 'causationId'
   | 'aggregateId'
@@ -114,11 +120,21 @@ export interface EventLineage {
 }
 
 export interface RaceDayEvent<T = unknown> {
-  id: string;
-  type: EventName;
+  eventId: string;
+  eventType: `${string}.${string}.${string}.v${number}` | string;
+  tenantId: string;
+  racetrackId: string;
+  actorId: string;
+  source: string;
+  timestamp: string;
   version: number;
-  occurredAt: string;
   payload: T;
+  /** Compatibility alias for eventId. */
+  id: string;
+  /** Compatibility alias for eventType without forcing callers to use the version suffix. */
+  type: EventName;
+  /** Compatibility alias for timestamp. */
+  occurredAt: string;
   correlationId: string;
   schemaRef: string;
   owner: EventOwner;
@@ -225,6 +241,7 @@ const id = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.rand
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === 'object' && !Array.isArray(value));
 const stringValue = (value: unknown): string | undefined => typeof value === 'string' && value.length > 0 ? value : undefined;
 const arrayOfStrings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.length > 0) : [];
+const unversionedEventName = (value: EventName | string): string => String(value).replace(/\.v\d+$/, '');
 
 export class EventSchemaRegistry {
   private readonly schemas = new Map<string, EventContract<any>>();
@@ -325,17 +342,29 @@ export class UniversalEventBus {
     const correlationId = input.correlationId ?? stringValue(input.metadata?.correlationId) ?? id('corr');
     const traceId = input.trace?.traceId ?? correlationId ?? id('trace');
     const context = this.deriveContext(input, schema);
+    const eventId = input.id ?? id('evt');
+    const timestamp = input.occurredAt ?? new Date().toISOString();
+    const eventType = this.schemaRegistry.ref(input.type, version);
+    const typeAlias = unversionedEventName(eventType) as EventName;
+    const source = input.producer ?? context.sourceService ?? schema.owner.service;
     const event: RaceDayEvent<T> = {
-      id: input.id ?? id('evt'),
-      type: input.type,
+      eventId,
+      eventType,
+      tenantId: context.tenantId ?? 'unknown-tenant',
+      racetrackId: context.racetrackId ?? 'unknown-racetrack',
+      actorId: context.actor?.id ?? source,
+      source,
+      timestamp,
       version,
-      occurredAt: input.occurredAt ?? new Date().toISOString(),
+      id: eventId,
+      type: typeAlias,
+      occurredAt: timestamp,
       payload: clone(input.payload),
       correlationId,
-      schemaRef: this.schemaRegistry.ref(input.type, version),
+      schemaRef: eventType,
       owner: clone(schema.owner),
       compliance: schema.compliance,
-      lineage: { causationId: input.causationId, parentEventIds: [...(input.parentEventIds ?? [])], producer: input.producer ?? schema.owner.service, aggregateId: input.aggregateId, sequence: ++this.sequence },
+      lineage: { causationId: input.causationId, parentEventIds: [...(input.parentEventIds ?? [])], producer: source, aggregateId: input.aggregateId, sequence: ++this.sequence },
       trace: { traceId, spanId: input.trace?.spanId ?? id('span'), parentSpanId: input.trace?.parentSpanId },
       context,
       metadata: { ...(schema.operationalMetadata ?? {}), ...(input.metadata ?? {}), tenantId: context.tenantId, racetrackId: context.racetrackId, auditRef: context.auditRef, digitalTwinRef: context.digitalTwinRef, approvalRef: context.approvalRef, workflowRef: context.workflowRef },
@@ -345,7 +374,7 @@ export class UniversalEventBus {
       this.emitEvent('event.validation.failed', event, { details: { errors: eventValidation.errors } });
       throw new Error(`event failed backbone validation: ${String(event.type)}@v${event.version}: ${eventValidation.errors.join('; ')}`);
     }
-    this.registerProducer({ name: event.lineage.producer, service: event.lineage.producer, emits: [event.type], owner: event.owner });
+    this.registerProducer({ name: event.lineage.producer, service: event.lineage.producer, emits: [event.eventType], owner: event.owner });
     this.eventStore.push(event);
     this.emitEvent('event.published', event);
     await this.deliver(event);
@@ -402,6 +431,11 @@ export class UniversalEventBus {
     const warnings: string[] = [];
     const schema = (() => { try { return this.schemaRegistry.get(event.type, event.version); } catch { return undefined; } })();
     if (!schema) errors.push(`event schema not registered: ${String(event.type)}@v${event.version}`);
+    if (!event.eventId) errors.push('eventId is required');
+    if (!event.eventType) errors.push('eventType is required');
+    if (!event.timestamp) errors.push('timestamp is required');
+    if (!event.actorId) errors.push('actorId is required');
+    if (!event.source) errors.push('source is required');
     if (!event.id) errors.push('event id is required');
     if (!event.occurredAt) errors.push('occurredAt is required');
     if (!event.correlationId) errors.push('correlationId is required');
@@ -435,7 +469,8 @@ export class UniversalEventBus {
   }
 
   private async deliver(event: RaceDayEvent, replay = false): Promise<void> {
-    for (const subscription of this.subscriptions.filter((candidate) => candidate.type === '*' || candidate.type === event.type)) {
+    const eventNames = new Set([String(event.type), String(event.eventType), unversionedEventName(event.type), unversionedEventName(event.eventType)]);
+    for (const subscription of this.subscriptions.filter((candidate) => candidate.type === '*' || eventNames.has(String(candidate.type)))) {
       let delivered = false;
       let reason = 'unknown';
       for (let attempt = 1; attempt <= subscription.retry.maxAttempts && !delivered; attempt += 1) {
@@ -450,14 +485,14 @@ export class UniversalEventBus {
         }
       }
       if (!delivered) {
-        this.deadLetters.push({ event: clone(event), handlerName: subscription.name, reason, attempts: subscription.retry.maxAttempts, failedAt: new Date().toISOString(), correlationId: event.correlationId, eventType: event.type, tenantId: event.context.tenantId, racetrackId: event.context.racetrackId, replayable: this.schemaRegistry.latest(event.type)?.standards?.replayable ?? true });
+        this.deadLetters.push({ event: clone(event), handlerName: subscription.name, reason, attempts: subscription.retry.maxAttempts, failedAt: new Date().toISOString(), correlationId: event.correlationId, eventType: event.eventType, tenantId: event.context.tenantId, racetrackId: event.context.racetrackId, replayable: this.schemaRegistry.latest(event.eventType)?.standards?.replayable ?? true });
         this.emitEvent('event.dead-lettered', event, { handlerName: subscription.name, attempt: subscription.retry.maxAttempts, details: { reason } });
       }
     }
   }
 
   private emitEvent(name: EventBusSignal['name'], event: RaceDayEvent, extra: Partial<EventBusSignal> = {}): void {
-    this.emit({ name, eventId: event.id, eventType: event.type, correlationId: event.correlationId, traceId: event.trace.traceId, ...extra });
+    this.emit({ name, eventId: event.eventId, eventType: event.eventType, correlationId: event.correlationId, traceId: event.trace.traceId, ...extra });
   }
 
   private emit(signal: Omit<EventBusSignal, 'timestamp'>): void {
@@ -505,8 +540,14 @@ export class UniversalEventBus {
     if (standards.approvalReferenceRequired) required.add('approvalRef');
     if (standards.workflowReferenceRequired) required.add('workflowRef');
     for (const field of required) {
+      if (field === 'eventId' && !event.eventId) errors.push('eventId is required by event standards');
+      if (field === 'eventType' && !event.eventType) errors.push('eventType is required by event standards');
+      if (field === 'version' && (!Number.isInteger(event.version) || event.version < 1)) errors.push('version is required by event standards');
+      if (field === 'timestamp' && !event.timestamp) errors.push('timestamp is required by event standards');
       if (field === 'tenantId' && !event.context.tenantId) errors.push('tenantId is required by event standards');
       if (field === 'racetrackId' && !event.context.racetrackId) errors.push('racetrackId is required by event standards');
+      if (field === 'actorId' && !event.actorId) errors.push('actorId is required by event standards');
+      if (field === 'source' && !event.source) errors.push('source is required by event standards');
       if (field === 'correlationId' && !event.correlationId) errors.push('correlationId is required by event standards');
       if (field === 'causationId' && !event.lineage.causationId) errors.push('causationId is required by event standards');
       if (field === 'aggregateId' && !event.lineage.aggregateId) errors.push('aggregateId is required by event standards');
@@ -522,15 +563,24 @@ export class UniversalEventBus {
     if (event.context.subject?.tenantId && event.context.tenantId && event.context.subject.tenantId !== event.context.tenantId) errors.push('subject tenantId must match event tenantId');
     const eventType = `${String(event.type).replace(/\.v\d+$/, '')}.v${event.version}` as `${string}.${string}.${string}.v${number}`;
     const envelopeValidation = validateNexusEventEnvelope({
-      eventId: event.id,
+      eventId: event.eventId,
       eventType,
-      tenantId: event.context.tenantId ?? '',
+      tenantId: event.tenantId,
+      racetrackId: event.racetrackId,
+      actorId: event.actorId,
+      source: event.source,
+      timestamp: event.timestamp,
+      version: event.version,
       occurredAt: event.occurredAt,
       actor: event.context.actor ?? { id: event.lineage.producer, type: 'service' },
       correlationId: event.correlationId,
-      subject: event.context.subject ?? { id: event.lineage.aggregateId ?? event.id, type: 'event', tenantId: event.context.tenantId ?? '' },
+      subject: event.context.subject ?? { id: event.lineage.aggregateId ?? event.eventId, type: 'event', tenantId: event.tenantId },
       payload: isRecord(event.payload) ? event.payload : { value: event.payload },
       evidence: event.context.evidence,
+      aggregateId: event.lineage.aggregateId,
+      auditRef: event.context.auditRef,
+      approvalRef: event.context.approvalRef,
+      digitalTwinRef: event.context.digitalTwinRef,
     });
     if (!envelopeValidation.allowed) errors.push(envelopeValidation.reason);
     return errors;
@@ -566,8 +616,9 @@ export class UniversalEventBus {
   }
 
   private matchesReplayFilter(event: RaceDayEvent, filter: EventReplayFilter): boolean {
-    return (!filter.type || event.type === filter.type)
-      && (!filter.types || filter.types.includes(event.type))
+    const eventNames = new Set([String(event.type), String(event.eventType), unversionedEventName(event.type), unversionedEventName(event.eventType)]);
+    return (!filter.type || eventNames.has(String(filter.type)))
+      && (!filter.types || filter.types.some((type) => eventNames.has(String(type))))
       && (!filter.correlationId || event.correlationId === filter.correlationId)
       && (!filter.tenantId || event.context.tenantId === filter.tenantId)
       && (!filter.racetrackId || event.context.racetrackId === filter.racetrackId)
@@ -589,11 +640,11 @@ export class EventConsumer {
   subscribe(type: EventName | '*', handler: Handler, retry?: Partial<RetryPolicy>): () => void { return this.bus.subscribe(type, handler, { name: this.name, retry }); }
 }
 
-export function bindAuditLogToEvents(bus: UniversalEventBus, auditLog: { append(record: { id: string; type: string; actor: string; actorType?: string; timestamp: string; action?: string; sourceService?: string; payload: unknown; subjectId?: string; tenantId?: string; workflowId?: string; correlationId?: string; severity?: string; regulations?: string[]; evidenceIds?: string[] }): unknown }, options: { consumerName?: string; includeTypes?: EventName[]; excludeTypes?: EventName[] } = {}): () => void {
+export function bindAuditLogToEvents(bus: UniversalEventBus, auditLog: { append(record: any): unknown }, options: { consumerName?: string; includeTypes?: EventName[]; excludeTypes?: EventName[] } = {}): () => void {
   return bus.subscribe('*', (event) => {
     if (options.includeTypes && !options.includeTypes.includes(event.type)) return;
     if (options.excludeTypes?.includes(event.type)) return;
-    auditLog.append({ id: `audit:${event.id}`, type: 'system-event', actor: event.context.actor?.id ?? event.lineage.producer, actorType: event.context.actor?.type ?? 'service', timestamp: event.occurredAt, action: String(event.type), sourceService: event.lineage.producer, payload: { eventId: event.id, eventType: event.type, schemaRef: event.schemaRef, trace: event.trace, lineage: event.lineage, context: event.context, metadata: event.metadata, payload: event.payload }, subjectId: event.context.subject?.id ?? event.lineage.aggregateId, tenantId: event.context.tenantId, workflowId: event.context.workflowRef, correlationId: event.correlationId, severity: event.compliance === 'restricted' ? 'critical' : event.compliance === 'regulated' ? 'warning' : 'info', regulations: arrayOfStrings(event.metadata.regulations), evidenceIds: event.context.evidence });
+    auditLog.append({ id: `audit:${event.eventId}`, type: 'system-event', actor: event.actorId, actorType: event.context.actor?.type ?? 'service', timestamp: event.timestamp, action: String(event.eventType), sourceService: event.source, payload: { eventId: event.eventId, eventType: event.eventType, tenantId: event.tenantId, racetrackId: event.racetrackId, actorId: event.actorId, source: event.source, timestamp: event.timestamp, version: event.version, schemaRef: event.schemaRef, trace: event.trace, lineage: event.lineage, context: event.context, metadata: event.metadata, payload: event.payload }, subjectId: event.context.subject?.id ?? event.lineage.aggregateId, tenantId: event.tenantId, racetrackId: event.racetrackId, workflowId: event.context.workflowRef, correlationId: event.correlationId, severity: event.compliance === 'restricted' ? 'critical' : event.compliance === 'regulated' ? 'warning' : 'info', regulations: arrayOfStrings(event.metadata.regulations), evidenceIds: event.context.evidence });
   }, { name: options.consumerName ?? 'audit-log-event-sink', retry: { maxAttempts: 1 } });
 }
 
@@ -615,7 +666,7 @@ export function createNexusEventCatalog(contracts: readonly NexusEventContract[]
       auditRequired: contract.auditRequired,
       digitalTwinReferenceRequired: contract.digitalTwinReferenceRequired,
       replayable: contract.replayable,
-      requiredMetadata: ['tenantId', 'racetrackId', 'correlationId', 'aggregateId', 'actor', 'subject', 'payload', 'auditRef', ...(contract.digitalTwinReferenceRequired ? ['digitalTwinRef' as const] : []), 'evidence'],
+      requiredMetadata: ['eventId', 'eventType', 'version', 'timestamp', 'tenantId', 'racetrackId', 'actorId', 'source', 'correlationId', 'aggregateId', 'actor', 'subject', 'payload', 'auditRef', ...(contract.digitalTwinReferenceRequired ? ['digitalTwinRef' as const] : []), 'evidence'],
       cqrsProjection: `${contract.aggregate.toLowerCase()}.read-model`,
       observabilitySignals: ['event.published', 'handler.delivered', 'event.dead-lettered', 'event.replayed'],
       frontendConsumers: ['operations-command', 'platform-health'],

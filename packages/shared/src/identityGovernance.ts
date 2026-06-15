@@ -1,19 +1,7 @@
+import type { Permission, Role } from './accessControl.js';
+
 export type IdentityKind = 'user' | 'service' | 'machine' | 'ai-agent' | 'workflow' | 'integration';
-export type GovernancePermission =
-  | 'identity:read'
-  | 'identity:write'
-  | 'policy:manage'
-  | 'access:request'
-  | 'access:approve'
-  | 'access:review'
-  | 'audit:read'
-  | 'compliance:report'
-  | 'tenant:admin'
-  | 'privileged:elevate'
-  | 'service:operate'
-  | 'workflow:execute'
-  | 'integration:invoke'
-  | 'ai-agent:act';
+export type GovernancePermission = Permission;
 
 export interface EntraTenantIntegration {
   tenantId: string;
@@ -31,7 +19,7 @@ export interface GovernedIdentity {
   kind: IdentityKind;
   displayName: string;
   entraObjectId?: string;
-  roles: string[];
+  roles: Role[];
   attributes: Record<string, string | number | boolean | string[]>;
   delegatedScopes?: string[];
   servicePrincipal?: boolean;
@@ -43,7 +31,7 @@ export interface AccessPolicy {
   tenantId: string;
   name: string;
   permissions: GovernancePermission[];
-  roles?: string[];
+  roles?: Role[];
   subjectKinds?: IdentityKind[];
   attributes?: Record<string, string | number | boolean>;
   conditions?: string[];

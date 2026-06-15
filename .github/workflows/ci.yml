@@ -18,8 +18,11 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npm test
-      - run: npm run build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest fastapi pydantic httpx
+      - run: npm run validate
       - name: Dependency audit
         run: npm audit --audit-level=high
       - name: Secret scan placeholder

@@ -4,13 +4,11 @@ This folder is reserved for the future Safety bounded-context service described 
 
 ## Current status
 
-- Placeholder only; no production runtime service is implemented here yet.
+- Contract scaffold only; `openapi.yaml` and `service.catalog.yaml` exist, but no production runtime service is implemented here yet.
 - Use `templates/service-template` before adding service code.
 - Preserve tenant isolation, audit logging, event contracts, and human-approval boundaries for protected actions.
 
-## TODO
+## Next Work
 
-- Define service catalog metadata.
-- Define OpenAPI and event contracts.
 - Add domain model, command handlers, and read models.
 - Add unit, contract, integration, security, and safety-boundary tests.

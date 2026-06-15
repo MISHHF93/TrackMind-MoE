@@ -24,6 +24,14 @@ test('audit ledger reconstructs forensic evidence across all Nexus action classe
   ledger.placeLegalHold(['audit-incident'], 'legal', '2026-06-13T00:11:00.000Z', 'regulatory inquiry');
 
   assert.equal(ledger.verify().valid, true);
+  const [first] = ledger.all();
+  assert.equal(first.auditEventId, 'audit-user');
+  assert.equal(first.actor.actorId, 'steward-1');
+  assert.equal(first.entity.entityId, 'race-7');
+  assert.equal(first.reason, 'inquiry.opened');
+  assert.equal(first.tenantScope.tenantId, 'track-1');
+  assert.equal(first.integrityReference.hash, first.hash);
+  assert.equal(first.integrityReference.previousHash, first.previousHash);
   const coverage = ledger.coverageReport(['user', 'service', 'workflow', 'api', 'ai', 'approval', 'config', 'asset', 'twin', 'incident', 'compliance'], '2026-06-13T00:12:00.000Z');
   assert.deepEqual(coverage.gaps, []);
   assert.equal(coverage.evidenceLinkedRecords, 12);
@@ -44,6 +52,7 @@ test('audit ledger exports compliance packages and honors releaseable legal hold
   assert.equal(exported.verified, true);
   assert.ok(exported.packageHash.startsWith('sha256:'));
   assert.ok(exported.evidenceManifest.some((item) => item.id === 'human-approval-record'));
+  assert.equal(exported.records.every((record) => record.auditEventId && record.actor.actorId && record.entity.entityId && record.tenantScope.tenantId && record.integrityReference.hash), true);
   assert.deepEqual(exported.records[0].payload, { redacted: true });
 
   ledger.releaseLegalHold(['audit-incident'], 'legal', '2026-06-13T00:13:00.000Z', 'inquiry closed');

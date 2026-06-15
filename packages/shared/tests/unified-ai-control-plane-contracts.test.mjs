@@ -56,7 +56,9 @@ test('unified AI control plane validates input and output recommendation schemas
     affectedAssets: ['sector:far-turn', 'twin:main-track:far-turn'],
     summary: 'Draft a far-turn surface intervention package for human review.',
     evidence: ['surface:moisture=27', 'inspection:standing-water'],
+    evidencePackage: { evidencePackageId: 'evidence-package:rec-surface-risk', evidence: [{ evidenceId: 'surface:moisture=27', kind: 'telemetry', source: 'surface' }], lineage: ['agent:surface', 'model:model-surface-risk-v1'], hash: 'sha256:rec-surface-risk' },
     confidence: 0.84,
+    confidenceScore: { raw: 0.84, calibrated: 0.8, band: 'medium', drivers: ['surface-telemetry', 'risk:high'] },
     modelVersion: 'model-surface-risk-v1',
     policyReferences: ['trackmind-ai-advisory-only-v1', 'approval-policy:steward'],
     riskLevel: 'high',
@@ -64,7 +66,9 @@ test('unified AI control plane validates input and output recommendation schemas
     requiresApproval: true,
     requiredApproverRoles: ['track-superintendent', 'steward'],
     approvalRequirement: { required: true, policy: 'steward', requiredApproverRoles: ['track-superintendent', 'steward'] },
-    auditReference: { auditEventIds: ['audit-rec-surface-risk'], eventIds: ['event-rec-surface-risk'], correlationId: 'corr-rec-surface-risk' },
+    auditReference: { auditEventIds: ['audit-rec-surface-risk'], eventIds: ['event-rec-surface-risk'], digitalTwinRefs: ['twin:main-track:far-turn'], correlationId: 'corr-rec-surface-risk', integrityRef: 'evidence-package:rec-surface-risk' },
+    advisoryOnly: true,
+    executionAllowed: false,
     blockedAutonomousExecution: true,
   };
   assert.deepEqual(validateAIRecommendationOutput(output), { valid: true, errors: [] });

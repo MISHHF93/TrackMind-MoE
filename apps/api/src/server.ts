@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { createTrackMindIntelligenceCoreMetadata, createTrackMindNexusUpgradePackage, createUnifiedDataModelWorkspace, hasPermission, nexusApiBasePath, protectedActions, type AIControlPlaneDraftResultDto, type AIControlPlaneWorkspaceDto, type Permission, type Role, type RosFacadeStateDto, type TrackCertificationCandidateDto, type TrackMindIntelligenceCoreDto, type TrackMindNexusUpgradePackage, type TUSTwinStandardDto } from '@trackmind/shared';
+import { apiEndpointContracts, createTrackMindIntelligenceCoreMetadata, createTrackMindNexusUpgradePackage, createUnifiedDataModelWorkspace, hasAnyPermission, hasPermission, isProtectedAction, isRole, nexusApiBasePath, permissionsForApprovalAction, roles, type AIControlPlaneDraftResultDto, type AIControlPlaneWorkspaceDto, type ApiResponse, type ApiResponseMetadata, type Permission, type Role, type RosFacadeStateDto, type TrackCertificationCandidateDto, type TrackMindIntelligenceCoreDto, type TrackMindNexusUpgradePackage, type TUSTwinStandardDto } from '@trackmind/shared';
 import { listAIAgentRegistryRecords, listExpertModelRegistry } from './aiControlPlane.js';
 import { createApiHubEventCatalog } from './apiHubAdapters.js';
 import { CentralizedApprovalService, type ApprovalActor, type ApprovalToken, type ControlledAction } from './approvals.js';
@@ -45,7 +45,8 @@ type SeededAIEvidencePackage = { id: string; recommendationId: string; evidence:
 type SeededAIAuditTrail = { id: string; subject: string };
 type SeededAIEvent = { id: string; subjectId: string };
 type SeededAIDigitalTwinImpact = { twinId: string; recommendationId: string };
-type SeededAIRecommendation = { id: string; agentId?: string; modelVersionId?: string; promptTemplateId?: string; createdAt?: string; approvalPolicy?: string; confidence: number; confidenceScore?: { calibrated?: number; band?: 'low' | 'medium' | 'high'; drivers?: string[] }; evidence?: string[]; affectedAssets?: string[]; riskLevel?: string; action?: string; target?: string; recommendation?: string; reason?: string; status?: string; activity?: string; lineage?: string[]; explainability?: { limitations: string[] } };
+type SeededAIRiskLevel = 'low' | 'medium' | 'high' | 'critical';
+type SeededAIRecommendation = { id: string; agentId?: string; modelVersionId?: string; promptTemplateId?: string; createdAt?: string; approvalPolicy?: string; confidence: number; confidenceScore?: { raw?: number; calibrated?: number; band?: 'low' | 'medium' | 'high'; drivers?: string[] }; evidence?: string[]; affectedAssets?: string[]; riskLevel?: SeededAIRiskLevel; action?: string; target?: string; recommendation?: string; reason?: string; status?: string; activity?: string; lineage?: string[]; explainability?: { limitations: string[] } };
 type SeededAIGovernanceWorkspace = { activeAgents: SeededAIAgent[]; modelVersions: SeededAIModelVersion[]; recommendationQueue: SeededAIRecommendation[]; safetyBlockedActions: SeededAIRecommendation[]; evaluationStatus: unknown; approvalRequirements: SeededAIApproval[]; safetyPolicies: SeededAIPolicy[]; evidencePackages: SeededAIEvidencePackage[]; auditTrails: SeededAIAuditTrail[]; events: SeededAIEvent[]; digitalTwinImpacts?: SeededAIDigitalTwinImpact[] };
 
 const now = () => new Date().toISOString();
@@ -63,8 +64,76 @@ function apiErrorBody(input: { code: string; message: string; path: string; requ
   return { ok: false, error: { code: input.code, message: input.message, details: input.details ?? [], path: input.path, requestId: input.requestId ?? createRequestId(), timestamp: now() } };
 }
 
+function apiMetadata(input: { requestId: string; path: string; method: HttpMethod; headers?: IncomingMessage['headers'] }): ApiResponseMetadata {
+  return {
+    requestId: input.requestId,
+    path: input.path,
+    method: input.method,
+    timestamp: now(),
+    tenantId: requestIdFromHeader(input.headers?.['x-trackmind-tenant-id']),
+    racetrackId: requestIdFromHeader(input.headers?.['x-trackmind-racetrack-id']),
+    organizationId: requestIdFromHeader(input.headers?.['x-trackmind-organization-id']),
+    role: requestIdFromHeader(input.headers?.['x-trackmind-role']),
+  };
+}
+
+function apiEnvelopeBody<T>(body: T, status: number, meta: ApiResponseMetadata): ApiResponse<T> {
+  const record = isRecord(body) ? body : undefined;
+  if (status >= 400) {
+    const sourceError = isRecord(record?.error) ? record.error : {};
+    return {
+      ok: false,
+      error: {
+        code: typeof sourceError.code === 'string' ? sourceError.code : status === 404 ? 'not_found' : status === 403 ? 'forbidden' : status === 401 ? 'unauthorized' : status === 400 ? 'bad_request' : 'api_error',
+        message: typeof sourceError.message === 'string' ? sourceError.message : 'TrackMind API request failed',
+        details: Array.isArray(sourceError.details) ? sourceError.details.map(String) : [],
+        path: typeof sourceError.path === 'string' ? sourceError.path : meta.path,
+        requestId: typeof sourceError.requestId === 'string' ? sourceError.requestId : meta.requestId,
+        timestamp: typeof sourceError.timestamp === 'string' ? sourceError.timestamp : meta.timestamp,
+      },
+      meta,
+    };
+  }
+  return { ok: true, data: body, meta };
+}
+
 function apiNotFound(message: string, path: string, requestId: string): { status: number; headers: Record<string, string>; body: JsonBody } {
   return { status: 404, headers: { 'x-trackmind-request-id': requestId }, body: apiErrorBody({ code: 'not_found', message, path, requestId }) };
+}
+
+function apiForbidden(message: string, path: string, requestId: string, details: string[] = []): { status: number; headers: Record<string, string>; body: JsonBody } {
+  return { status: 403, headers: { 'x-trackmind-request-id': requestId }, body: apiErrorBody({ code: 'forbidden', message, path, requestId, details }) };
+}
+
+function apiUnauthorized(message: string, path: string, requestId: string, details: string[] = []): { status: number; headers: Record<string, string>; body: JsonBody } {
+  return { status: 401, headers: { 'x-trackmind-request-id': requestId }, body: apiErrorBody({ code: 'unauthorized', message, path, requestId, details }) };
+}
+
+function endpointPathMatches(templatePath: string, actualPath: string): boolean {
+  const templateSegments = templatePath.split('/').filter(Boolean);
+  const actualSegments = actualPath.split('/').filter(Boolean);
+  if (templateSegments.length !== actualSegments.length) return false;
+  return templateSegments.every((segment, index) => (segment.startsWith('{') && segment.endsWith('}')) || segment === actualSegments[index]);
+}
+
+function contractForRequest(method: HttpMethod, path: string) {
+  const fullPath = `${nexusApiBasePath}${path}`;
+  return apiEndpointContracts.find((endpoint) => endpoint.method === method && endpointPathMatches(endpoint.path, fullPath));
+}
+
+function authorizeApiRequest(method: HttpMethod, path: string, headers: IncomingMessage['headers'] | undefined, requestId: string): { status: number; headers?: Record<string, string>; body: JsonBody } | undefined {
+  const contract = contractForRequest(method, path);
+  if (!contract || !headers) return undefined;
+  const rawRole = headerValue(headers, 'x-trackmind-role');
+  if (!rawRole) return apiUnauthorized(`Role header required for ${method} ${path}`, path, requestId, [`known roles: ${roles.join(', ')}`]);
+  if (!isRole(rawRole)) return apiForbidden(`Unknown TrackMind role: ${rawRole}`, path, requestId, [`known roles: ${roles.join(', ')}`]);
+  if (contract.roles !== 'authenticated' && !contract.roles.includes(rawRole)) {
+    return apiForbidden(`Role ${rawRole} is not allowed to call ${contract.operationId}`, path, requestId, [`allowed roles: ${contract.roles.join(', ')}`]);
+  }
+  if (!hasAnyPermission(rawRole, [contract.requiredPermission])) {
+    return apiForbidden(`Role ${rawRole} lacks permission ${contract.requiredPermission}`, path, requestId, [`permission: ${contract.requiredPermission}`]);
+  }
+  return undefined;
 }
 
 function structuredLog(level: 'info' | 'error', event: string, fields: Record<string, unknown>) {
@@ -83,28 +152,80 @@ function aiRecommendationGovernanceMetadata(input: {
   fallbackGeneratedAt: string;
   approvalPolicy?: string;
   approval?: AIApprovalRecord;
+  requiredApproverRoles?: string[];
+  confidence?: number;
+  riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+  evidence: string[];
+  lineage?: string[];
   auditIds: string[];
   eventIds: string[];
   digitalTwinRefs: string[];
 }) {
   const approvalReference = input.approval?.approvalRequestId ?? input.approval?.id;
+  const auditIds = nonEmptyRefs(input.auditIds, `AI recommendation ${input.id} auditReference.auditIds`);
+  const eventIds = nonEmptyRefs(input.eventIds, `AI recommendation ${input.id} auditReference.eventIds`);
+  const confidence = confidenceScore(input.confidence ?? 0.5, input.riskLevel ?? 'medium');
   return {
     recommendationId: input.id,
     modelVersion: input.modelVersionId ?? input.fallbackModelVersion,
     generatedAt: input.createdAt ?? input.fallbackGeneratedAt,
+    confidence,
+    riskLevel: input.riskLevel ?? 'medium',
+    evidencePackage: {
+      evidencePackageId: `evidence-package:${input.id}`,
+      evidence: nonEmptyRefs(input.evidence, `AI recommendation ${input.id} evidence`).map((evidenceId) => ({ evidenceId, kind: evidenceKind(evidenceId), source: evidenceId.split(':')[0] || 'ai-control-plane' })),
+      lineage: input.lineage?.length ? [...input.lineage] : [`ai-recommendation:${input.id}`],
+      hash: `sha256:${input.id}:${input.evidence.join('|')}`,
+    },
     approvalRequirement: {
       required: Boolean(input.approval) || (input.approvalPolicy ?? 'none') !== 'none',
       policy: input.approval?.policy ?? input.approvalPolicy ?? 'none',
+      requiredApproverRoles: [...(input.requiredApproverRoles ?? [])],
       requirementId: input.approval?.id,
       workflowId: input.approval?.workflowRecordId ?? input.approval?.approvalRequestId,
     },
     auditReference: {
-      auditIds: [...input.auditIds],
-      eventIds: [...input.eventIds],
+      auditIds,
+      eventIds,
       digitalTwinRefs: [...input.digitalTwinRefs],
       approvalReference,
+      correlationId: input.id,
+      integrityRef: `evidence-package:${input.id}`,
     },
+    advisoryOnly: true,
+    executionAllowed: false,
+    blockedAutonomousExecution: true,
   };
+}
+
+function nonEmptyRefs(values: string[], label: string): string[] {
+  const refs = [...new Set(values.filter(Boolean))];
+  if (refs.length === 0) throw new Error(`${label} requires at least one reference`);
+  return refs;
+}
+
+function confidenceScore(raw: number, riskLevel: 'low' | 'medium' | 'high' | 'critical') {
+  const penalty = riskLevel === 'critical' ? 0.08 : riskLevel === 'high' ? 0.04 : riskLevel === 'medium' ? 0.02 : 0;
+  const calibrated = Math.max(0, Math.min(1, Number((raw - penalty).toFixed(4))));
+  const band = calibrated >= 0.85 ? 'high' : calibrated >= 0.65 ? 'medium' : 'low';
+  return { raw, calibrated, band, drivers: ['api-dto-projection', `risk:${riskLevel}`] };
+}
+
+function rawAIConfidence(input: unknown, fallback = 0.5): number {
+  if (typeof input === 'number') return input;
+  if (input && typeof input === 'object' && typeof (input as { raw?: unknown }).raw === 'number') return (input as { raw: number }).raw;
+  return fallback;
+}
+
+function evidenceKind(evidenceId: string): 'event' | 'audit' | 'digital-twin' | 'telemetry' | 'approval' | 'document' | 'model' | 'policy' {
+  if (evidenceId.startsWith('event:') || evidenceId.startsWith('ai-event-')) return 'event';
+  if (evidenceId.startsWith('audit:') || evidenceId.startsWith('immutable-audit-')) return 'audit';
+  if (evidenceId.startsWith('twin:')) return 'digital-twin';
+  if (evidenceId.startsWith('telemetry:')) return 'telemetry';
+  if (evidenceId.startsWith('approval:') || evidenceId.startsWith('approval-')) return 'approval';
+  if (evidenceId.startsWith('model:')) return 'model';
+  if (evidenceId.startsWith('policy:')) return 'policy';
+  return 'document';
 }
 
 function createSurfaceFacadeInput(timestamp: string): SurfaceIntelligenceInput {
@@ -253,7 +374,8 @@ function createSeededAIGovernanceWorkspace(timestamp: string, mock: boolean): Js
     const audits = workspace.auditTrails.filter((audit) => audit.subject === rec.id).map((audit) => audit.id);
     const events = workspace.events.filter((event) => event.subjectId === rec.id).map((event) => event.id);
     const digitalTwinRefs = (workspace.digitalTwinImpacts ?? []).filter((impact) => impact.recommendationId === rec.id).map((impact) => impact.twinId);
-    return { ...rec, ...aiRecommendationGovernanceMetadata({ id: rec.id, modelVersionId: rec.modelVersionId, fallbackModelVersion: agent.modelVersionId, createdAt: rec.createdAt, fallbackGeneratedAt: timestamp, approvalPolicy: rec.approvalPolicy, approval, auditIds: audits, eventIds: events, digitalTwinRefs }) };
+    const confidence = rawAIConfidence(rec.confidence);
+    return { ...rec, confidenceValue: confidence, ...aiRecommendationGovernanceMetadata({ id: rec.id, modelVersionId: rec.modelVersionId, fallbackModelVersion: agent.modelVersionId, createdAt: rec.createdAt, fallbackGeneratedAt: timestamp, approvalPolicy: rec.approvalPolicy, approval, requiredApproverRoles: approval?.requiredRoles, confidence, riskLevel: rec.riskLevel, evidence: rec.evidence ?? [], lineage: rec.lineage, auditIds: audits, eventIds: events, digitalTwinRefs }) };
   };
   return {
     generatedAt: timestamp,
@@ -303,7 +425,7 @@ function createSeededAIControlPlaneWorkspace(timestamp: string, mock: boolean): 
     const calibrated = rec.confidenceScore?.calibrated ?? rec.confidence;
     return {
       id: rec.id,
-      ...aiRecommendationGovernanceMetadata({ id: rec.id, modelVersionId: rec.modelVersionId, fallbackModelVersion: agent.modelVersionId, createdAt: rec.createdAt, fallbackGeneratedAt: timestamp, approvalPolicy: rec.approvalPolicy, approval, auditIds, eventIds, digitalTwinRefs }),
+      ...aiRecommendationGovernanceMetadata({ id: rec.id, modelVersionId: rec.modelVersionId, fallbackModelVersion: agent.modelVersionId, createdAt: rec.createdAt, fallbackGeneratedAt: timestamp, approvalPolicy: rec.approvalPolicy, approval, requiredApproverRoles: approval?.requiredRoles, confidence: rawAIConfidence(rec.confidence, rec.confidenceScore?.raw), riskLevel: rec.riskLevel, evidence: rec.evidence ?? [], lineage: rec.lineage, auditIds, eventIds, digitalTwinRefs }),
       agentId: rec.agentId ?? agent.id,
       modelVersionId: rec.modelVersionId ?? agent.modelVersionId,
       promptTemplateId: rec.promptTemplateId ?? agent.promptTemplateId,
@@ -312,13 +434,13 @@ function createSeededAIControlPlaneWorkspace(timestamp: string, mock: boolean): 
       recommendation: rec.recommendation ?? rec.reason,
       status: blocked ? 'safety-blocked' : rec.status,
       activity: rec.activity,
-      confidence: { raw: rec.confidence, calibrated, band: rec.confidenceScore?.band ?? (calibrated >= 0.8 ? 'high' : 'medium'), drivers: rec.confidenceScore?.drivers ?? [`raw:${rec.confidence}`] },
+      confidenceValue: calibrated,
       evidence: rec.evidence,
       affectedAssets: rec.affectedAssets ?? [],
       risk: { level: blocked ? 'critical' : rec.riskLevel, drivers: [rec.action ?? 'protected-action', rec.approvalPolicy, ...(rec.affectedAssets ?? [])], humanReviewRequired: true },
-      governorDecision: { allowed: false, reason: blocked ? rec.reason : 'Human approval required before any protected or operational action.', approvalRequired: true, approvalPolicy: rec.approvalPolicy, approvalRequirementId: approval?.id },
+      governorDecision: { allowed: false, canExecute: false, reason: blocked ? rec.reason : 'Human approval required before any protected or operational action.', approvalRequired: true, approvalPolicy: rec.approvalPolicy, approvalRequirementId: approval?.id },
       approvalWorkflow: approval ? { id: approval.id, requiredRoles: approval.requiredRoles, status: approval.status, evidence: approval.evidence, draftOnly: true } : undefined,
-      references: { auditIds, eventIds, digitalTwinRefs, evidencePackageId: evidencePackage?.id },
+      references: { auditIds, eventIds, digitalTwinRefs, evidencePackageId: evidencePackage?.id ?? `evidence-package:${rec.id}` },
       mock,
     };
   };
@@ -389,29 +511,46 @@ function createAIRecommendationDtos(aiGovernance: JsonBody): JsonBody {
   const recommendations = [...(workspace.recommendationQueue ?? []), ...(workspace.safetyBlockedActions ?? [])];
   return recommendations.map((recommendation) => {
     const auditReference = (recommendation as any).auditReference ?? { auditIds: [], eventIds: [], digitalTwinRefs: [] };
-    const auditIds = Array.isArray(auditReference.auditIds) ? auditReference.auditIds : [];
-    const eventIds = Array.isArray(auditReference.eventIds) ? auditReference.eventIds : [];
+    const auditIds = nonEmptyRefs(Array.isArray(auditReference.auditIds) ? auditReference.auditIds : [], `AI recommendation ${recommendation.id} auditReference.auditIds`);
+    const eventIds = nonEmptyRefs(Array.isArray(auditReference.eventIds) ? auditReference.eventIds : [], `AI recommendation ${recommendation.id} auditReference.eventIds`);
     const digitalTwinRefs = Array.isArray(auditReference.digitalTwinRefs) ? auditReference.digitalTwinRefs : recommendation.affectedAssets?.filter((asset) => asset.startsWith('twin:')) ?? [];
-    const approvalRequirement = (recommendation as any).approvalRequirement ?? { required: recommendation.approvalPolicy !== 'none', policy: recommendation.approvalPolicy ?? 'none' };
+    const approvalRequirementSource = (recommendation as any).approvalRequirement ?? { required: recommendation.approvalPolicy !== 'none', policy: recommendation.approvalPolicy ?? 'none' };
+    const approvalRequirement = {
+      ...approvalRequirementSource,
+      requiredApproverRoles: Array.isArray(approvalRequirementSource.requiredApproverRoles) ? approvalRequirementSource.requiredApproverRoles : [],
+    };
+    const confidence = typeof (recommendation as any).confidence === 'object' && typeof (recommendation as any).confidence.raw === 'number'
+      ? (recommendation as any).confidence
+      : confidenceScore(recommendation.confidenceScore?.raw ?? rawAIConfidence(recommendation.confidence), recommendation.riskLevel ?? 'medium');
     return {
       id: recommendation.id,
       recommendationId: (recommendation as any).recommendationId ?? recommendation.id,
       recommendation: recommendation.recommendation ?? recommendation.reason ?? 'AI recommendation requires human review.',
-      confidence: recommendation.confidenceScore?.calibrated ?? recommendation.confidence,
-      evidence: recommendation.evidence ?? [],
+      confidence,
+      confidenceValue: confidence.calibrated,
+      evidence: nonEmptyRefs(recommendation.evidence ?? [], `AI recommendation ${recommendation.id} evidence`),
+      evidencePackage: (recommendation as any).evidencePackage ?? {
+        evidencePackageId: `evidence-package:${recommendation.id}`,
+        evidence: (recommendation.evidence ?? []).map((evidenceId) => ({ evidenceId, kind: evidenceKind(evidenceId), source: evidenceId.split(':')[0] || 'ai-control-plane' })),
+        lineage: recommendation.lineage ?? [`ai-recommendation:${recommendation.id}`],
+        hash: `sha256:${recommendation.id}:${(recommendation.evidence ?? []).join('|')}`,
+      },
       modelVersion: (recommendation as any).modelVersion ?? recommendation.modelVersionId ?? 'unknown-model',
       generatedAt: (recommendation as any).generatedAt ?? recommendation.createdAt ?? now(),
       approvalRequirement,
       auditReference,
       requiresApproval: Boolean(approvalRequirement.required),
-      eventId: eventIds[0] ?? `event:${recommendation.id}`,
-      auditId: auditIds[0] ?? `audit:${recommendation.id}`,
+      eventId: eventIds[0],
+      auditId: auditIds[0],
       tenantId: (recommendation as any).tenantId ?? 'trackmind',
       racetrackId: (recommendation as any).racetrackId ?? 'main-track',
       correlationId: (recommendation as any).correlationId ?? recommendation.id,
       causationId: (recommendation as any).causationId,
       digitalTwinRefs,
       riskLevel: recommendation.riskLevel,
+      advisoryOnly: true,
+      executionAllowed: false,
+      blockedAutonomousExecution: true,
       mock: false,
     };
   });
@@ -435,7 +574,7 @@ function createAIControlPlaneDraftResult(path: string, body: unknown): AIControl
 
 function createSecurityOperationsFacade(timestamp: string): JsonBody {
   const service = new SecurityOperationsService(() => timestamp);
-  const commander: SecurityActor = { id: 'sec-commander', roles: ['security'], tenantId: 'trackmind', human: true, permissions: ['security:read', 'security:write', 'security:escalate', 'security:investigate'] };
+  const commander: SecurityActor = { id: 'sec-commander', roles: ['security'], tenantId: 'trackmind', human: true, permissions: ['security:read', 'security:manage', 'security:investigate'] };
   service.checkCredential(commander, { credentialId: 'cred-live-1', holderDisplayName: 'Contractor A', holderLegalName: 'Contractor Alpha', zoneId: 'zone-backstretch-medication', status: 'expired' });
   const access = service.recordAccessEvent(commander, { zoneId: 'zone-backstretch-medication', credentialId: 'cred-live-1', personDisplayName: 'Contractor A', personLegalName: 'Contractor Alpha', decision: 'denied', reason: 'Credential expired', occurredAt: timestamp });
   const incident = service.getWorkspace({ ...commander, permissions: ['security:read'] }).incidents[0];
@@ -449,12 +588,12 @@ function createSecurityOperationsFacade(timestamp: string): JsonBody {
   return { ...workspace, mock: false };
 }
 
-function createAuditLedgerFacade(timestamp: string, facadeEvents: Array<{ id: string; type: string; actor: string; subjectId?: string }>): JsonBody {
+function createAuditLedgerFacade(timestamp: string, facadeEvents: Array<{ id: string; type: string; actor?: unknown; actorId?: string; subjectId?: string }>): JsonBody {
   const ledger = new ImmutableAuditLog();
-  ledger.append({ id: 'audit-api-read-1', type: 'user-action', actor: 'auditor-ui', actorType: 'api', timestamp, action: 'audit.read', actionClass: 'api', apiRoute: '/api/v1/audit/events', subjectId: 'audit-ledger', correlationId: 'audit-facade', sourceService: 'trackmind-api', evidenceIds: ['api-contract:listAuditEvents'], regulations: ['SOC-2', 'ISO-27001'], payload: { sourceEvents: facadeEvents.map((event) => event.id) } });
-  ledger.append({ id: 'audit-approval-1', type: 'approval', actor: 'centralized-approval-service', actorType: 'service', timestamp, action: 'approval.requested', actionClass: 'approval', subjectId: 'race-7', correlationId: 'audit-facade', sourceService: 'approval-engine', evidenceIds: ['human-approval-record'], regulations: ['HISA', 'ARCI'], payload: { action: 'race-start', target: 'race-7', evidence: ['human-approval-record'] } });
-  ledger.append({ id: 'audit-twin-1', type: 'digital-twin-update', actor: 'digital-twin-runtime', actorType: 'service', timestamp, action: 'digital-twin.state.patch', actionClass: 'twin', subjectId: 'twin:race-7', correlationId: 'audit-facade', sourceService: 'digital-twin-runtime', evidenceIds: ['evt-twin-race-7'], regulations: ['HISA'], payload: { twinId: 'twin:race-7', patch: { status: 'watch' }, sourceEventId: 'evt-twin-race-7' } });
-  const incident = ledger.append({ id: 'audit-incident-1', type: 'security-event', actor: 'security-operator', actorType: 'human', timestamp, action: 'incident.investigation.opened', actionClass: 'incident', subjectId: 'incident:surface-review', correlationId: 'audit-facade', evidence: [{ id: 'ev-video-1', uri: 'evidence://video/head-on', description: 'Head-on camera clip', source: 'camera-12', collectedAt: timestamp }], regulations: ['SOC-2', 'HISA'], payload: { incidentId: 'incident:surface-review', severity: 'warning' } });
+  ledger.append({ id: 'audit-api-read-1', type: 'user-action', actor: 'auditor-ui', actorType: 'api', timestamp, action: 'audit.read', reason: 'Audit ledger read requested by dashboard facade.', actionClass: 'api', apiRoute: '/api/v1/audit/events', subjectId: 'audit-ledger', correlationId: 'audit-facade', sourceService: 'trackmind-api', tenantId: 'trackmind', racetrackId: 'main-track', evidenceIds: ['api-contract:listAuditEvents'], regulations: ['SOC-2', 'ISO-27001'], payload: { sourceEvents: facadeEvents.map((event) => event.id) } });
+  ledger.append({ id: 'audit-approval-1', type: 'approval', actor: 'centralized-approval-service', actorType: 'service', timestamp, action: 'approval.requested', reason: 'Race start requires explicit human approval.', actionClass: 'approval', subjectId: 'race-7', correlationId: 'audit-facade', sourceService: 'approval-engine', tenantId: 'trackmind', racetrackId: 'main-track', evidenceIds: ['human-approval-record'], regulations: ['HISA', 'ARCI'], payload: { action: 'race-start', target: 'race-7', approvalId: 'approval-race-start', evidence: ['human-approval-record'] } });
+  ledger.append({ id: 'audit-twin-1', type: 'digital-twin-update', actor: 'digital-twin-runtime', actorType: 'service', timestamp, action: 'digital-twin.state.patch', reason: 'Approved operational event queued a Digital Twin state patch.', actionClass: 'twin', subjectId: 'twin:race-7', correlationId: 'audit-facade', sourceService: 'digital-twin-runtime', tenantId: 'trackmind', racetrackId: 'main-track', evidenceIds: ['evt-twin-race-7'], regulations: ['HISA'], payload: { twinId: 'twin:race-7', patch: { status: 'watch' }, sourceEventId: 'evt-twin-race-7' } });
+  const incident = ledger.append({ id: 'audit-incident-1', type: 'security-event', actor: 'security-operator', actorType: 'human', timestamp, action: 'incident.investigation.opened', reason: 'Surface review created a regulator-facing investigation dossier.', actionClass: 'incident', subjectId: 'incident:surface-review', correlationId: 'audit-facade', tenantId: 'trackmind', racetrackId: 'main-track', evidence: [{ id: 'ev-video-1', uri: 'evidence://video/head-on', description: 'Head-on camera clip', source: 'camera-12', collectedAt: timestamp }], regulations: ['SOC-2', 'HISA'], payload: { incidentId: 'incident:surface-review', severity: 'warning' } });
   ledger.placeLegalHold([incident.id], 'compliance-officer', timestamp, 'Regulator-facing surface review');
   const retentionPolicies: RetentionPolicy[] = [{ id: 'regulated-7-year', eventTypes: ['approval', 'digital-twin-update', 'security-event'], retainForDays: 2555, regulatoryBasis: 'regulated-racing-records' }];
   return {
@@ -708,7 +847,7 @@ export function createApiFacadeState(): ApiFacadeState {
   };
   return {
     approvals: contract.approvals,
-    auditEvents: contract.auditEvents.length ? contract.auditEvents : [{ id: 'audit-live-1', type: 'api.facade.started', actor: 'trackmind-api', timestamp, severity: 'info', previousHash: 'genesis', hash: 'sha256:api-facade', mock: false }],
+    auditEvents: contract.auditEvents.length ? contract.auditEvents : [{ auditEventId: 'audit-live-1', id: 'audit-live-1', type: 'api.facade.started', actor: { actorId: 'trackmind-api', actorType: 'service' }, actorId: 'trackmind-api', entity: { entityId: 'api-facade', entityType: 'api-route', tenantId: 'trackmind', racetrackId: 'main-track' }, action: 'api.facade.started', reason: 'API facade started with canonical audit fallback.', timestamp, tenantScope: { tenantId: 'trackmind', racetrackId: 'main-track' }, integrityReference: { previousHash: 'genesis', hash: 'sha256:api-facade', algorithm: 'sha256', chainScope: 'tenant' }, severity: 'info', previousHash: 'genesis', hash: 'sha256:api-facade', mock: false }],
     auditLedger,
     trackMap: {
       trackId: 'main-track',
@@ -791,12 +930,12 @@ export function createApiFacadeState(): ApiFacadeState {
         { id: 'weather-status', title: 'Weather status', domain: 'weather', status: surfaceWorkspace.weatherObservation.forecastRainMm > 10 ? 'warning' : 'advisory', value: `${surfaceWorkspace.weatherObservation.forecastRainMm}mm forecast rain`, detail: 'Weather is currently surfaced through the Surface Intelligence facade; no separate live weather service is claimed.', source: 'service', drillDownPath: '/surface', roleView: 'all', configurable: true },
         { id: 'active-incidents', title: 'Active incidents', domain: 'security', status: security.incidents.length ? 'warning' : 'nominal', value: `${security.incidents.length} active incident`, detail: `Security incidents load from /api/v1/security-operations/workspace; open escalations ${security.dashboard.openEscalations ?? 0}.`, source: 'service', drillDownPath: '/security', roleView: 'all', configurable: true },
         { id: 'pending-approvals', title: 'Pending approvals', domain: 'approvals', status: contract.approvals.length ? 'warning' : 'nominal', value: `${contract.approvals.length} pending approval`, detail: 'Approval queue loads from /api/v1/approvals/requests; protected controls stay locked without a live approval token.', source: 'service', drillDownPath: '/approvals', roleView: 'all', configurable: true },
-        { id: 'steward-inquiries', title: 'Steward inquiries', domain: 'stewards', status: stewardCenter.inquiries.length ? 'warning' : 'nominal', value: `${stewardCenter.inquiries.length} inquiry under review`, detail: 'Steward Center loads inquiry evidence, audit, events, and approval refs; official results stay locked.', source: 'service', drillDownPath: '/stewards', roleView: ['admin', 'steward'], configurable: true },
-        { id: 'workforce-readiness', title: 'Workforce readiness', domain: 'workforce', status: workforce.readiness.status === 'ready' ? 'nominal' : workforce.readiness.status === 'watch' ? 'warning' : 'critical', value: `${workforce.readiness.coveragePct}% covered`, detail: `${workforce.readiness.checkedIn}/${workforce.readiness.demand} checked in; compliance ${workforce.compliance.status}.`, source: 'service', drillDownPath: '/workforce', roleView: 'all', configurable: true },
-        { id: 'asset-health', title: 'Asset health', domain: 'assets', status: 'warning', value: `${contract.assets.length} assets`, detail: 'Asset and twin records are exposed through /api/v1/assets and /api/v1/digital-twin/state.', source: 'digital-twin', drillDownPath: '/assets', roleView: 'all', configurable: true },
+        { id: 'steward-inquiries', title: 'Steward inquiries', domain: 'stewards', status: stewardCenter.inquiries.length ? 'warning' : 'nominal', value: `${stewardCenter.inquiries.length} inquiry under review`, detail: 'Steward Center loads inquiry evidence, audit, events, and approval refs; official results stay locked.', source: 'service', drillDownPath: '/compliance', roleView: ['admin', 'steward'], configurable: true },
+        { id: 'workforce-readiness', title: 'Workforce readiness', domain: 'workforce', status: workforce.readiness.status === 'ready' ? 'nominal' : workforce.readiness.status === 'watch' ? 'warning' : 'critical', value: `${workforce.readiness.coveragePct}% covered`, detail: `${workforce.readiness.checkedIn}/${workforce.readiness.demand} checked in; compliance ${workforce.compliance.status}.`, source: 'service', drillDownPath: '/facilities', roleView: 'all', configurable: true },
+        { id: 'asset-health', title: 'Asset health', domain: 'assets', status: 'warning', value: `${contract.assets.length} assets`, detail: 'Asset and twin records are exposed through /api/v1/assets and /api/v1/digital-twin/state.', source: 'digital-twin', drillDownPath: '/facilities', roleView: 'all', configurable: true },
         { id: 'facility-readiness', title: 'Facility readiness', domain: 'facilities', status: facilitiesMaintenance.readiness.status === 'ready' ? 'nominal' : 'warning', value: `${facilitiesMaintenance.readiness.score}% ready`, detail: 'Facilities maintenance reads RACR assets, Digital Twins, approvals, work orders, and predictive hooks.', source: 'service', drillDownPath: '/facilities', roleView: 'all', configurable: true },
         { id: 'emergency-resources', title: 'Emergency resources', domain: 'emergency', status: emergency.events.length ? 'warning' : 'nominal', value: `${emergency.resources.length} resources`, detail: `EmergencyOperationsPlatform exposes ${emergency.workflowIntegrations.length} workflow integrations and an active human command checklist; AI may block ${String(emergency.emergencyActions.aiMayBlock)}.`, source: 'service', drillDownPath: '/emergency', roleView: 'all', configurable: true },
-        { id: 'ai-recommendations', title: 'AI recommendations', domain: 'ai-governance', status: 'advisory', value: `${contract.aiRecommendations.length} governed recommendation`, detail: 'AI output remains recommendation-only and approval-aware.', source: 'service', drillDownPath: '/ai-governance', roleView: ['admin'], configurable: true },
+        { id: 'ai-recommendations', title: 'AI recommendations', domain: 'ai-governance', status: 'advisory', value: `${contract.aiRecommendations.length} governed recommendation`, detail: 'AI output remains recommendation-only and approval-aware.', source: 'service', drillDownPath: '/settings', roleView: ['admin'], configurable: true },
         { id: 'audit-activity', title: 'Audit activity', domain: 'audit', status: 'nominal', value: `${contract.auditEvents.length || 1} visible audit rows`, detail: 'Audit activity loads from /api/v1/audit/events with hash-chain references; platform totals remain separate observability metrics.', source: 'service', drillDownPath: '/audit', roleView: ['admin', 'read-only-auditor'], configurable: true },
         { id: 'event-timeline', title: 'Event timeline', domain: 'platform', status: 'advisory', value: 'Event stream ready', detail: 'Timeline combines OperationsCommandCenterDto.liveEvents with readiness, emergency, and AI events; stream is telemetry only.', source: 'event-stream', drillDownPath: '/operations', roleView: 'all', configurable: true },
       ],
@@ -855,8 +994,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
-const knownRoles: Role[] = ['admin','steward','veterinarian','track-superintendent','security','ticketing-manager','finance','racing-secretary','compliance-officer','read-only-auditor'];
-
 function headerValue(headers: IncomingMessage['headers'] | undefined, name: string): string | undefined {
   const value = headers?.[name.toLowerCase()];
   return stringValue(Array.isArray(value) ? value[0] : value);
@@ -890,10 +1027,11 @@ function collaborationQuery(params: URLSearchParams): CollaborationThreadQuery &
   };
 }
 
-function kpiPrincipal(params: URLSearchParams, headers?: IncomingMessage['headers']): { tenantId?: string; racetrackId?: string; role?: Role } {
+function kpiPrincipal(params: URLSearchParams, headers?: IncomingMessage['headers']): { organizationId?: string; tenantId?: string; racetrackId?: string; role?: Role } {
   const headerRole = headerValue(headers, 'x-trackmind-role');
-  const role = headerRole && knownRoles.includes(headerRole as Role) ? headerRole as Role : undefined;
+  const role = headerRole && isRole(headerRole) ? headerRole : undefined;
   return {
+    organizationId: stringValue(params.get('organizationId')) ?? headerValue(headers, 'x-trackmind-organization-id'),
     tenantId: stringValue(params.get('tenantId')) ?? headerValue(headers, 'x-trackmind-tenant-id'),
     racetrackId: stringValue(params.get('racetrackId')) ?? headerValue(headers, 'x-trackmind-racetrack-id'),
     role,
@@ -930,36 +1068,6 @@ function collaborationError(error: unknown): { status: number; body: JsonBody } 
   return { status, body: { ok: false, error: { code: status === 403 ? 'forbidden' : status === 401 ? 'unauthorized' : 'bad_request', message } } };
 }
 
-const controlledActionPermissions: Partial<Record<string, Permission[]>> = {
-  'race-start': ['race:request-start'],
-  'race-stop': ['incident:manage'],
-  'race-cancellation': ['race:request-start'],
-  'official-results': ['race:finalize-results'],
-  'modify-official-results': ['race:finalize-results'],
-  'scratch-horse': ['horse:scratch', 'vet:review'],
-  'race-office-scratch': ['horse:scratch', 'vet:review'],
-  'clear-vet-flag': ['vet:clear-flag'],
-  'veterinary-clearance': ['vet:clear-flag'],
-  'steward-ruling': ['discipline:issue'],
-  'steward-decision': ['discipline:issue'],
-  payout: ['finance:payout'],
-  'emergency-action': ['incident:manage'],
-  'emergency-personnel-override': ['incident:manage'],
-  'starting-gate-move': ['race:request-start', 'track:readings'],
-  'race-distance-configuration': ['race:request-start', 'track:readings'],
-  'race-status-change': ['race:request-start'],
-  'race-office-configuration': ['race:request-start'],
-  'surface-irrigation': ['track:readings'],
-  'surface-harrowing': ['track:readings'],
-  'surface-rolling': ['track:readings'],
-  'surface-track-closure-recommendation': ['track:readings', 'incident:manage'],
-  'track-closure': ['track:readings', 'incident:manage'],
-  'track-reopen': ['track:readings', 'incident:manage'],
-  'safety-critical-control': ['incident:manage', 'track:readings', 'security:manage'],
-  'facility-maintenance-execution': ['track:readings'],
-  'compliance-filing-approval': ['compliance:audit'],
-};
-
 function badRequest(message: string): { status: number; body: JsonBody } {
   return { status: 400, body: { ok: false, error: { code: 'bad_request', message } } };
 }
@@ -986,13 +1094,14 @@ function approvalBoundaryContext(body: unknown): { input?: Record<string, unknow
 }
 
 function actorRoles(input: Record<string, unknown>): Role[] {
-  return stringArray(input.roles).filter((role): role is Role => ['admin','steward','veterinarian','track-superintendent','security','ticketing-manager','finance','racing-secretary','compliance-officer','read-only-auditor'].includes(role));
+  return stringArray(input.roles).filter(isRole);
 }
 
-function actorTypeFrom(input: Record<string, unknown>): 'human' | 'ai-agent' | 'service' {
-  const actorType = stringValue(input.actorType) ?? 'human';
+function actorTypeFrom(input: Record<string, unknown>): 'human' | 'ai-agent' | 'service' | undefined {
+  const actorType = stringValue(input.actorType);
   if (actorType === 'ai-agent' || actorType === 'service') return actorType;
-  return 'human';
+  if (actorType === 'human') return 'human';
+  return undefined;
 }
 
 function validateProtectedApprovalBoundary(body: unknown, approvalService: CentralizedApprovalService, options: { requireHumanActor: boolean; fallbackEventType: string; message: string }): { status: number; body: JsonBody } {
@@ -1002,14 +1111,14 @@ function validateProtectedApprovalBoundary(body: unknown, approvalService: Centr
   const actor = stringValue(input.actorId) ?? stringValue(input.actor);
   if (!actor) return badRequest('Approval boundary context missing: actorId');
   const actorType = actorTypeFrom(input);
+  if (!actorType) return badRequest('Approval boundary context missing: actorType');
   if (options.requireHumanActor && actorType !== 'human') return forbidden('Controlled action requests require an authenticated human actor; AI agents and services may create drafts only.');
   const action = stringValue(input.action)!;
   const normalizedAction = action === 'execute-gate-move' ? 'starting-gate-move' : action;
-  const isProtected = protectedActions.includes(normalizedAction as (typeof protectedActions)[number]) || normalizedAction in controlledActionPermissions;
-  if (!isProtected) return badRequest(`Unsupported controlled action: ${action}`);
+  if (!isProtectedAction(normalizedAction)) return badRequest(`Unsupported controlled action: ${action}`);
   const roles = actorRoles(input);
   if (roles.length === 0) return forbidden('Controlled action requests require actor roles for RBAC enforcement.');
-  const requiredPermissions = controlledActionPermissions[normalizedAction] ?? ['incident:manage'];
+  const requiredPermissions = permissionsForApprovalAction(normalizedAction);
   if (!roles.some((role) => requiredPermissions.some((permission) => hasPermission(role, permission)))) {
     return forbidden(`Actor lacks required role permission for ${normalizedAction}`);
   }
@@ -1399,7 +1508,7 @@ function racingDataDigitalTwinSyncDescriptor(racingData: RacingDataApiFacadeStat
     targetTwinRefs,
     sourceEnvelopeIds: envelopes.map((envelope) => envelope.envelopeId),
     syncMode: 'approval-required',
-    draftApprovalApi: '/api/v1/racing-data/digital-twin/sync-draft-requests',
+    draftApprovalApi: '/api/v1/racing-data/sync/digital-twins',
     directMutationAllowed: false,
     safetyCriticalStateMutationAllowed: false,
     lineage: racingData.lineage[0]?.lineage ?? envelopes[0]?.lineage,
@@ -1447,6 +1556,8 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   const requestUrl = new URL(pathname, 'http://localhost');
   const path = requestUrl.pathname.startsWith(nexusApiBasePath) ? requestUrl.pathname.slice(nexusApiBasePath.length) || '/' : requestUrl.pathname;
   const requestId = requestUrl.searchParams.get('requestId') ?? createRequestId();
+  const authorization = authorizeApiRequest(method, path, headers, requestId);
+  if (authorization) return authorization;
   if (method === 'GET' && path === '/health') return { status: 200, headers: { 'x-trackmind-request-id': requestId }, body: { ok: true, service: 'trackmind-api', status: 'healthy', time: now(), requestId, observability: { structuredLogs: true, requestIdHeader: 'x-trackmind-request-id', serviceHealthEndpoint: `${nexusApiBasePath}/platform/health`, eventStreamEndpoint: `${nexusApiBasePath}/events/stream` } } };
   if (method === 'GET' && path === '/approvals/requests') return { status: 200, body: state.approvals };
   const apexResponse = await state.apex.handle(method, path, body);
@@ -1537,18 +1648,18 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'GET' && path === '/workforce-operations/workspace') return { status: 200, body: state.workforce };
   if (method === 'GET' && path === '/compliance/control-library') return { status: 200, body: state.compliance };
   if (method === 'GET' && path === '/federation/workspace') return { status: 200, body: state.federation };
-  const kpiScopeError = path.startsWith('/kpis') || path.startsWith('/artifacts/kpis') ? kpiScopeMismatch(requestUrl.searchParams, headers) : undefined;
+  const kpiScopeError = path.startsWith('/kpis') ? kpiScopeMismatch(requestUrl.searchParams, headers) : undefined;
   if (kpiScopeError) return { status: 403, body: apiErrorBody({ code: 'forbidden', message: kpiScopeError, path, requestId }) };
-  if (method === 'GET' && (path === '/kpis' || path === '/artifacts/kpis')) return { status: 200, body: filterKPIWorkspace(state.kpis as ReturnType<typeof createKPIWorkspace>, kpiPrincipal(requestUrl.searchParams, headers)) };
-  if (method === 'GET' && (path === '/kpis/model-context' || path === '/artifacts/kpis/model-context')) return { status: 200, body: filterKPIWorkspace(state.kpis as ReturnType<typeof createKPIWorkspace>, kpiPrincipal(requestUrl.searchParams, headers)).modelReadableContext };
-  const kpiSnapshotMatch = path.match(/^\/(?:artifacts\/)?kpis\/([^/]+)\/snapshots$/);
+  if (method === 'GET' && path === '/kpis') return { status: 200, body: filterKPIWorkspace(state.kpis as ReturnType<typeof createKPIWorkspace>, kpiPrincipal(requestUrl.searchParams, headers)) };
+  if (method === 'GET' && path === '/kpis/model-context') return { status: 200, body: filterKPIWorkspace(state.kpis as ReturnType<typeof createKPIWorkspace>, kpiPrincipal(requestUrl.searchParams, headers)).modelReadableContext };
+  const kpiSnapshotMatch = path.match(/^\/kpis\/([^/]+)\/snapshots$/);
   if (method === 'GET' && kpiSnapshotMatch) {
     const workspace = filterKPIWorkspace(state.kpis as ReturnType<typeof createKPIWorkspace>, kpiPrincipal(requestUrl.searchParams, headers));
     const kpiId = decodeURIComponent(kpiSnapshotMatch[1]);
     const kpi = workspace.kpis.find((item) => item.kpiId === kpiId);
     return kpi ? { status: 200, body: kpi.historicalSnapshots } : apiNotFound(`No KPI artifact for ${kpiId}`, path, requestId);
   }
-  const kpiDetailMatch = path.match(/^\/(?:artifacts\/)?kpis\/([^/]+)$/);
+  const kpiDetailMatch = path.match(/^\/kpis\/([^/]+)$/);
   if (method === 'GET' && kpiDetailMatch) {
     const workspace = filterKPIWorkspace(state.kpis as ReturnType<typeof createKPIWorkspace>, kpiPrincipal(requestUrl.searchParams, headers));
     const kpiId = decodeURIComponent(kpiDetailMatch[1]);
@@ -1573,11 +1684,6 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'GET' && path === '/racing-data/ingestion-jobs') return { status: 200, body: state.racingData.ingestionJobs };
   if (method === 'GET' && path.startsWith('/racing-data/ingestion-jobs/')) {
     const jobId = decodeURIComponent(path.slice('/racing-data/ingestion-jobs/'.length));
-    const job = state.racingData.ingestionJobs.find((item) => item.jobId === jobId);
-    return job ? { status: 200, body: job } : apiNotFound(`No racing data ingestion job for ${jobId}`, path, requestId);
-  }
-  if (method === 'GET' && path.startsWith('/racing-data/ingest/jobs/')) {
-    const jobId = decodeURIComponent(path.slice('/racing-data/ingest/jobs/'.length));
     const job = state.racingData.ingestionJobs.find((item) => item.jobId === jobId);
     return job ? { status: 200, body: job } : apiNotFound(`No racing data ingestion job for ${jobId}`, path, requestId);
   }
@@ -1608,7 +1714,6 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'GET' && path === '/racing-data/canonical/entries') return { status: 200, body: state.racingData.canonical.entries };
   if (method === 'GET' && path === '/racing-data/canonical/results') return { status: 200, body: state.racingData.canonical.results };
   if (method === 'GET' && path === '/racing-data/entity-resolution') return { status: 200, body: racingDataEntityResolution(state.racingData) };
-  if (method === 'GET' && path === '/racing-data/quality-reports') return { status: 200, body: state.racingData.dataQualityReports };
   if (method === 'GET' && path === '/racing-data/data-quality/reports') return { status: 200, body: state.racingData.dataQualityReports };
   if (method === 'GET' && path === '/racing-data/lineage') return { status: 200, body: racingDataLineageReport(state.racingData) };
   if (method === 'GET' && path.startsWith('/racing-data/lineage/')) {
@@ -1617,8 +1722,8 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     return lineage ? { status: 200, body: lineage } : apiNotFound(`No racing data lineage for ${artifactId}`, path, requestId);
   }
   if (method === 'GET' && path === '/racing-data/digital-twin/sync-descriptor') return { status: 200, body: racingDataDigitalTwinSyncDescriptor(state.racingData) };
-  if (method === 'GET' && (path === '/racing-data/license-policies' || path === '/data-usage-policies')) return { status: 200, body: state.racingDataPolicies };
-  if (method === 'GET' && (path === '/racing-data/license-policies/supported-operations' || path === '/data-usage-policies/supported-operations')) return { status: 200, body: (state.racingDataPolicies as any).supportedOperations };
+  if (method === 'GET' && path === '/racing-data/license-policies') return { status: 200, body: state.racingDataPolicies };
+  if (method === 'GET' && path === '/racing-data/license-policies/supported-operations') return { status: 200, body: (state.racingDataPolicies as any).supportedOperations };
   if (method === 'GET' && path === '/compliance/track-certification-candidate') return { status: 200, body: state.trackCertification };
   if (method === 'GET' && path === '/ai-governance/workspace') return { status: 200, body: state.aiGovernance };
   if (method === 'GET' && path === '/ai/recommendations') return { status: 200, body: createAIRecommendationDtos(state.aiGovernance) };
@@ -1672,28 +1777,8 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     if (!licenseDecision.allowed) return { status: 403, body: createRacingDataLicenseDenied('ingest', provider, licenseDecision.details) };
     return { status: 202, body: createRacingDataDraftResult('ingest', 'racing-data.ingestion-job.draft.created', providerId) };
   }
-  if (method === 'POST' && path.startsWith('/racing-data/ingest/')) {
-    const providerId = decodeURIComponent(path.slice('/racing-data/ingest/'.length));
-    const provider = findRacingDataProvider(state.racingData, providerId);
-    if (!provider) return apiNotFound(`No racing data provider for ${providerId}`, path, requestId);
-    const licenseDecision = isRacingDataLicenseAllowed(provider.license, 'ingest', ['race-day-operations']);
-    if (!licenseDecision.allowed) return { status: 403, body: createRacingDataLicenseDenied('ingest', provider, licenseDecision.details) };
-    return { status: 202, body: createRacingDataDraftResult('ingest', 'racing-data.ingest.draft.created', providerId) };
-  }
   if (method === 'POST' && path === '/racing-data/entity-resolution/review') return { status: 202, body: createRacingDataDraftResult('entity-resolution review', 'racing-data.entity-resolution.review.draft.created', (body as any)?.providerId) };
-  if (method === 'POST' && (path === '/racing-data/feature-store/exports/draft-requests' || path === '/racing-data/data-lake/exports/draft-requests')) {
-    const input = (body ?? {}) as Record<string, any>;
-    const providerId = input.providerId ?? 'provider-official-feed';
-    const provider = findRacingDataProvider(state.racingData, providerId);
-    if (!provider) return apiNotFound(`No racing data provider for ${providerId}`, path, requestId);
-    const featureStore = path.includes('/feature-store/');
-    const operation = featureStore ? 'feature-store export' : 'data-lake export';
-    const requiredScopes = featureStore ? ['ai-training' as const] : ['analytics' as const];
-    const licenseDecision = isRacingDataLicenseAllowed(provider.license, operation, requiredScopes);
-    if (!licenseDecision.allowed) return { status: 403, body: createRacingDataLicenseDenied(operation, provider, licenseDecision.details) };
-    return { status: 202, body: createRacingDataDraftResult(operation, featureStore ? 'racing-data.feature-store-export.draft.created' : 'racing-data.data-lake-export.draft.created', providerId) };
-  }
-  if (method === 'POST' && (path === '/racing-data/exports/feature-store' || path === '/racing-data/exports/data-lake' || path === '/racing-data/sync/digital-twins' || path === '/racing-data/digital-twin/sync-draft-requests')) {
+  if (method === 'POST' && (path === '/racing-data/exports/feature-store' || path === '/racing-data/exports/data-lake' || path === '/racing-data/sync/digital-twins')) {
     const input = (body ?? {}) as Record<string, any>;
     const providerId = input.providerId ?? 'provider-official-feed';
     const provider = findRacingDataProvider(state.racingData, providerId);
@@ -1710,7 +1795,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     return validateProtectedApprovalBoundary(body, state.approvalService, { requireHumanActor: false, fallbackEventType: eventType, message });
   }
   if (method === 'POST' && (path === '/ai-control-plane/recommendations/draft' || path === '/ai-control-plane/recommendations/evaluate')) return { status: 202, body: createAIControlPlaneDraftResult(path, body) };
-  if (method === 'POST' && (path === '/racing-data/license-policies/check' || path === '/data-usage-policies/check')) {
+  if (method === 'POST' && path === '/racing-data/license-policies/check') {
     const input = (body ?? {}) as Record<string, any>;
     if (!input.providerId || !input.operation) return { status: 400, body: { ok: false, error: { code: 'bad_request', message: 'providerId and operation are required' } } };
     const checkedAt = input.requestedAt ?? now();
@@ -1772,7 +1857,9 @@ export function createTrackMindApiServer() {
       url.searchParams.set('requestId', requestId);
       const result = await handleApiRequest((req.method ?? 'GET') as HttpMethod, `${url.pathname}${url.search}`, await readBody(req), state, req.headers);
       res.writeHead(result.status, { ...jsonHeaders, 'x-trackmind-request-id': requestId, ...(result.headers ?? {}) });
-      res.end(typeof result.body === 'string' && result.headers?.['content-type']?.startsWith('text/event-stream') ? result.body : JSON.stringify(result.body));
+      const isEventStream = typeof result.body === 'string' && result.headers?.['content-type']?.startsWith('text/event-stream');
+      const responseBody = isEventStream ? result.body : apiEnvelopeBody(result.body, result.status, apiMetadata({ requestId, path: url.pathname, method: (req.method ?? 'GET') as HttpMethod, headers: req.headers }));
+      res.end(isEventStream ? responseBody : JSON.stringify(responseBody));
       structuredLog('info', 'api.request.completed', { requestId, method: req.method ?? 'GET', path: url.pathname, status: result.status, durationMs: Date.now() - startedAt });
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : String(error);
@@ -1782,7 +1869,8 @@ export function createTrackMindApiServer() {
       const path = req.url ?? '/';
       structuredLog('error', 'api.request.failed', { requestId, method: req.method ?? 'GET', path, status, code, durationMs: Date.now() - startedAt, message: rawMessage });
       res.writeHead(status, { ...jsonHeaders, 'x-trackmind-request-id': requestId });
-      res.end(JSON.stringify(apiErrorBody({ code, message: badJson ? 'Invalid JSON request body' : 'TrackMind API request failed', path, requestId, details: badJson ? [rawMessage] : [] })));
+      const errorBody = apiErrorBody({ code, message: badJson ? 'Invalid JSON request body' : 'TrackMind API request failed', path, requestId, details: badJson ? [rawMessage] : [] });
+      res.end(JSON.stringify(apiEnvelopeBody(errorBody, status, apiMetadata({ requestId, path, method: (req.method ?? 'GET') as HttpMethod, headers: req.headers }))));
     }
   });
 }

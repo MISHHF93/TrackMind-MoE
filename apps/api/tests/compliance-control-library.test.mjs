@@ -103,7 +103,7 @@ test('compliance event contracts publish regulated evidence events', async () =>
   lib.createControl({ id: 'ctrl-event', frameworkIds: ['ISO-42001'], title: 'Evented control', description: 'Publishes compliance events', status: 'implemented', ownerId: 'owner-compliance', obligationIds: [], digitalTwinRefs: ['workflow:evented'] }, 'owner-compliance', '2026-06-13T00:00:00.000Z');
   lib.collectEvidence('ctrl-event', 'owner-compliance', { id: 'ev-event', uri: 'audit://evented', description: 'Evented evidence', content: { ok: true } }, '2026-06-13T00:01:00.000Z');
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.ok(bus.governanceCatalog().some((schema) => schema.type === 'compliance.evidence.collected'));
+  assert.ok(bus.governanceCatalog().some((schema) => schema.type === 'compliance.evidence.collected.v1'));
   assert.equal(bus.events({ type: 'compliance.evidence.collected' })[0].compliance, 'regulated');
 });
 

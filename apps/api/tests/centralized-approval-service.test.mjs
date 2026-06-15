@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ApprovalStore, CentralizedApprovalService, ImmutableAuditLog, InMemoryEventBus, RaceOperationsPlatform } from '../dist/index.js';
+import { ApprovalStore, CentralizedApprovalService, ImmutableAuditLog, InMemoryEventBus, RaceOperationsPlatform, canonicalApprovalRequest, defaultApprovalPolicies } from '../dist/index.js';
+import { protectedActions } from '../../../packages/shared/dist/index.js';
 
 const human = (id, roles) => ({ id, roles, human: true });
 const ai = { id: 'ai-race-agent', roles: ['admin'], human: false };
@@ -80,6 +81,16 @@ test('approval delegation, expiration, escalation, and workflow references are t
   const escalated = service.evaluateEscalations('2026-06-13T18:03:00Z').find((item) => item.id === slow.id);
   assert.equal(escalated.status, 'escalated');
   assert.ok(escalated.escalatedToRoles.includes('admin'));
+  const canonical = canonicalApprovalRequest(escalated, { policies: defaultApprovalPolicies(), auditRefs: ['audit-approval-escalated'], eventRefs: ['approval.escalated'] });
+  assert.equal(canonical.approvalRequestId, slow.id);
+  assert.equal(canonical.status, 'escalated');
+  assert.equal(canonical.auditLinkage.auditIds[0], 'audit-approval-escalated');
+  assert.ok(canonical.escalation.some((rule) => rule.approverRoles.includes('admin')));
+});
+
+test('default approval policies cover every protected regulated action', () => {
+  const policyActions = new Set(defaultApprovalPolicies().map((policy) => policy.action));
+  for (const action of protectedActions) assert.ok(policyActions.has(action), `${action} missing approval policy`);
 });
 
 test('escalated approvals can be completed by escalation roles but still expire', () => {

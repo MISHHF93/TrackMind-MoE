@@ -180,15 +180,18 @@ test('control-plane registry seeds existing Responsible AI governance structures
   assert.equal(governed.activity, 'recommend');
   assert.ok(governed.explainability.humanReviewRequired);
 
-  const draftOutput = recommendationDraftToSharedAIOutput(draft, { tenantId: 'tenant-ai', racetrackId: 'track-ai' });
+  const traceOptions = { tenantId: 'tenant-ai', racetrackId: 'track-ai', auditEventIds: ['immutable-audit-draft-1'], eventIds: ['ai-event-draft-1'], digitalTwinRefs: ['twin:surface:far-turn'] };
+  const draftOutput = recommendationDraftToSharedAIOutput(draft, traceOptions);
   assert.deepEqual(validateAIRecommendationOutput(draftOutput), { valid: true, errors: [] });
   assert.equal(draftOutput.tenantId, 'tenant-ai');
   assert.equal(draftOutput.modelVersion, draft.modelId);
   assert.ok(draftOutput.policyReferences.includes('trackmind-ai-advisory-only-v1'));
   assert.equal(draftOutput.approvalRequirement.required, draftOutput.requiresApproval);
+  assert.equal(draftOutput.advisoryOnly, true);
+  assert.equal(draftOutput.executionAllowed, false);
   assert.equal(draftOutput.blockedAutonomousExecution, true);
 
-  const governedOutput = governanceRecommendationToSharedAIOutput(governed, { tenantId: 'tenant-ai', racetrackId: 'track-ai' });
+  const governedOutput = governanceRecommendationToSharedAIOutput(governed, { ...traceOptions, auditEventIds: ['immutable-audit-governed-1'], eventIds: ['ai-event-governed-1'] });
   assert.deepEqual(validateAIRecommendationOutput(governedOutput), { valid: true, errors: [] });
   assert.equal(governedOutput.modelVersion, governed.modelVersionId);
   assert.ok(governedOutput.auditReference.auditEventIds.length > 0);

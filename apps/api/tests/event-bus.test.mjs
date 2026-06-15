@@ -26,6 +26,10 @@ test('universal event bus registers governed schemas and enriches published even
   const event = await bus.publish({ type: 'race-start-requested', payload: { raceId: 'RACE-1', requestedBy: 'steward-1' }, correlationId: 'corr-1', causationId: 'cmd-1', parentEventIds: ['track-ok-1'], aggregateId: 'race:RACE-1', trace: { traceId: 'trace-1' } });
 
   assert.equal(event.version, 2);
+  assert.equal(event.eventId, event.id);
+  assert.equal(event.eventType, 'race-start-requested.v2');
+  assert.equal(event.timestamp, event.occurredAt);
+  assert.equal(event.source, 'race-ops');
   assert.equal(event.schemaRef, 'race-start-requested.v2');
   assert.equal(event.owner.service, 'race-ops');
   assert.equal(event.compliance, 'regulated');
@@ -86,6 +90,13 @@ test('nexus event catalog enforces service metadata and propagates audit context
   });
 
   assert.equal(event.schemaRef, 'asset.registry.changed.v1');
+  assert.equal(event.eventType, 'asset.registry.changed.v1');
+  assert.equal(event.eventId, event.id);
+  assert.equal(event.tenantId, 'trk-1');
+  assert.equal(event.racetrackId, 'main-track');
+  assert.equal(event.actorId, 'asset-service');
+  assert.equal(event.source, 'asset-registry');
+  assert.equal(event.timestamp, event.occurredAt);
   assert.equal(event.context.tenantId, 'trk-1');
   assert.equal(event.context.racetrackId, 'main-track');
   assert.equal(event.context.auditRef, 'audit-asset-1');
@@ -102,7 +113,7 @@ test('nexus event catalog enforces service metadata and propagates audit context
   assert.ok(audit.evidenceIds.includes('audit-asset-1'));
 
   const catalog = bus.eventCatalog({ eventTypePrefix: 'asset.' });
-  assert.ok(catalog.events.some((contract) => contract.schemaRef === 'asset.registry.changed.v1' && contract.standards.auditRequired));
+  assert.ok(catalog.events.some((contract) => contract.schemaRef === 'asset.registry.changed.v1' && contract.standards?.auditRequired));
 });
 
 test('dead letters retain tenant correlation context for operational replay', async () => {

@@ -70,7 +70,7 @@ test('AI safety policy allows advisory activities only and blocks ungoverned pro
   assert.ok(ws.governorReviews.some((review) => review.recommendationId === blocked.id && review.blockedAutonomousExecution === true && review.requiredApproverRoles.includes('racing-secretary')));
 });
 
-test('AI Governor policy blocks protected controls and allows automatic advisory actions', () => {
+test('AI Governor policy blocks protected controls and keeps advisory actions non-executable', () => {
   const governor = new ResponsibleAIGovernor(new ApprovalStore());
   for (const action of ['START_RACE','STOP_RACE','DECLARE_WINNER','MODIFY_OFFICIAL_RESULT','SCRATCH_HORSE','CLEAR_VET_FLAG','ISSUE_STEWARD_RULING','TRIGGER_PAYOUT','EXECUTE_GATE_MOVE','CLOSE_TRACK','REOPEN_TRACK','OVERRIDE_EMERGENCY_PERSONNEL']) {
     const review = governor.reviewAutonomousPermission({ action, recommendationId:`rec-${action}`, riskLevel:'low', requiresApproval:false, evidence:['policy-test'] });
@@ -82,9 +82,9 @@ test('AI Governor policy blocks protected controls and allows automatic advisory
 
   for (const action of ['SUMMARIZE','CLASSIFY','FORECAST','DETECT_ANOMALY','DRAFT_WORK_ORDER','CREATE_RECOMMENDATION','NOTIFY_HUMANS','GENERATE_REPORT','UPDATE_DASHBOARD']) {
     const review = governor.reviewAutonomousPermission({ action, recommendationId:`rec-${action}`, riskLevel:'low', requiresApproval:false, evidence:['advisory-evidence'] });
-    assert.equal(review.canExecute, true, action);
-    assert.equal(review.decision, 'approved', action);
-    assert.equal(review.blockedAutonomousExecution, false, action);
+    assert.equal(review.canExecute, false, action);
+    assert.equal(review.decision, 'blocked', action);
+    assert.equal(review.blockedAutonomousExecution, true, action);
   }
 });
 
@@ -104,17 +104,18 @@ test('low-risk automation fails when any autonomous permission predicate is unme
 
   const riskDenied = governor.reviewAutonomousPermission({ action:'SUMMARIZE', recommendationId:'rec-risk', riskLevel:'medium', requiresApproval:false, evidence:['evidence'] });
   assert.equal(riskDenied.canExecute, false);
-  assert.equal(riskDenied.policyAllowsAutomation, true);
+  assert.equal(riskDenied.policyAllowsAutomation, false);
 });
 
-test('low-risk advisory recommendations can execute when Governor policy permits automation', () => {
+test('low-risk advisory recommendations remain advisory and cannot execute', () => {
   const p = governedPlatform();
   const rec = p.recordRecommendation({ id:'rec-summarize', agentId:'agent-surface-ops', modelVersionId:model.id, promptTemplateId:'prompt-surface-v4', activity:'summarize', action:'SUMMARIZE', target:'race-7-dashboard', recommendation:'Summarize race readiness evidence for the dashboard.', confidence:.84, affectedAssets:['dashboard:race-7'], evidence:['readiness:watch','surface:moisture=19'], lineage:['agent:agent-surface-ops','model:model-surface-advisor-v2','prompt:prompt-surface-v4'], approvalPolicy:'none', riskLevel:'low', createdAt:'2026-06-14T03:30:00Z' });
   assert.equal(rec.status, 'queued');
-  assert.equal(rec.governorReview.canExecute, true);
-  const executed = p.executeRecommendation(rec.id, 'agent-surface-ops');
-  assert.equal(executed.executed, true);
-  assert.equal(p.governanceWorkspace().governorReviews.find((review) => review.recommendationId === rec.id).decision, 'approved');
+  assert.equal(rec.governorReview.canExecute, false);
+  const blocked = p.executeRecommendation(rec.id, 'agent-surface-ops');
+  assert.equal(blocked.executed, false);
+  assert.equal(blocked.executionAllowed, false);
+  assert.equal(p.governanceWorkspace().governorReviews.find((review) => review.recommendationId === rec.id).decision, 'blocked');
 });
 
 test('AI recommendations create approval drafts, mapped roles, metadata, and blocked autonomous execution logs', () => {
@@ -169,11 +170,11 @@ test('AI recommendations create approval drafts, mapped roles, metadata, and blo
 test('AI artifact adapters keep protected recommendations blocked and preserve confidence risk and evidence', () => {
   const p = governedPlatform();
   const rec = p.recordRecommendation({ id:'rec-artifact-race-start', agentId:'agent-surface-ops', modelVersionId:model.id, promptTemplateId:'prompt-surface-v4', activity:'create-draft-action', action:'race-start', target:'race-7', recommendation:'Draft race start readiness package for human review only.', confidence:.91, affectedAssets:['race:race-7','gate:1'], evidence:['readiness:watch','gate:gps-verified'], lineage:['agent:agent-surface-ops','model:model-surface-advisor-v2','prompt:prompt-surface-v4'], approvalPolicy:'none', riskLevel:'critical', createdAt:'2026-06-14T05:00:00Z' });
-  const artifact = governanceRecommendationToRecommendationArtifact(rec, { tenantId:'track-1', racetrackId:'main-track' });
+  const artifact = governanceRecommendationToRecommendationArtifact(rec, { tenantId:'track-1', racetrackId:'main-track', auditEventIds:['immutable-audit-artifact-race-start'], eventIds:['ai-event-artifact-race-start'] });
 
   assert.deepEqual(validateAIOutputArtifact(artifact), { valid: true, errors: [] });
   assert.equal(artifact.outputClass, 'Recommendation');
-  assert.equal(artifact.confidence, .91);
+  assert.equal(artifact.confidence, .83);
   assert.equal(artifact.riskLevel, 'critical');
   assert.deepEqual(artifact.evidence, ['readiness:watch','gate:gps-verified']);
   assert.equal(artifact.approvalRequired, true);
@@ -188,9 +189,10 @@ test('AI artifact adapters keep protected recommendations blocked and preserve c
 test('approval-required AI recommendation adapts to Recommendation Insight and Forecast artifacts without execution authority', () => {
   const p = governedPlatform();
   const rec = p.recordRecommendation({ id:'rec-artifact-weather', agentId:'agent-surface-ops', modelVersionId:model.id, promptTemplateId:'prompt-surface-v4', activity:'forecast', action:'forecast', target:'race-7', recommendation:'Forecast elevated weather risk and request steward review.', confidence:.82, affectedAssets:['race:race-7','track:main'], evidence:['weather:lightning=6mi','forecast:rain=18mm'], lineage:['agent:agent-surface-ops','model:model-surface-advisor-v2','prompt:prompt-surface-v4'], approvalPolicy:'single-human', riskLevel:'high', createdAt:'2026-06-14T05:10:00Z' });
-  const recommendation = governanceRecommendationToRecommendationArtifact(rec, { tenantId:'track-1', racetrackId:'main-track', domain:'weather', type:'forecast' });
-  const insight = governanceRecommendationToInsightArtifact(rec, { tenantId:'track-1', racetrackId:'main-track', domain:'weather', type:'forecast' });
-  const forecast = governanceRecommendationToForecastArtifact(rec, { tenantId:'track-1', racetrackId:'main-track', domain:'weather', type:'forecast', horizon:'2h' });
+  const artifactRefs = { tenantId:'track-1', racetrackId:'main-track', domain:'weather', type:'forecast', auditEventIds:['immutable-audit-artifact-weather'], eventIds:['ai-event-artifact-weather'] };
+  const recommendation = governanceRecommendationToRecommendationArtifact(rec, artifactRefs);
+  const insight = governanceRecommendationToInsightArtifact(rec, artifactRefs);
+  const forecast = governanceRecommendationToForecastArtifact(rec, { ...artifactRefs, horizon:'2h' });
   const ws = p.governanceWorkspace();
 
   assert.equal(rec.status, 'pending-approval');
@@ -204,7 +206,7 @@ test('approval-required AI recommendation adapts to Recommendation Insight and F
   for (const artifact of [recommendation, insight, forecast]) {
     assert.deepEqual(validateAIOutputArtifact(artifact), { valid: true, errors: [] });
     assert.equal(artifact.approvalRequired, true);
-    assert.equal(artifact.confidence, .82);
+    assert.equal(artifact.confidence, .78);
     assert.equal(artifact.riskLevel, 'high');
     assert.deepEqual(artifact.evidence, ['weather:lightning=6mi','forecast:rain=18mm']);
     assert.equal(artifact.executionAllowed, false);

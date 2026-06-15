@@ -1,9 +1,9 @@
 import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
-import type { KPIArtifact } from '@trackmind/shared';
-import type { AdvisoryAIRecommendation, WorkspaceCardAction, WorkspacePanel, WorkspaceViewModel } from '../domain/workspaceModel';
+import type { WorkspaceCardAction, WorkspacePanel, WorkspaceViewModel } from '../domain/workspaceModel';
 import { backendSupportLabels } from '../domain/support';
 import type { AppRoute } from '../routes/routes';
+import { ActionButtons, AlertPanel, ApprovalCard, AuditCard, DataTable, EmptyState, ErrorState, KPICard, LoadingState, MetricCard, PageHeader, RecommendationCard, SectionCard, StatusBadge, TagList, WorkspaceRecordCard, supportStatusToTone } from '../components/ui';
 
 interface WorkspacePageProps {
   route: AppRoute;
@@ -26,57 +26,22 @@ export function WorkspacePage({ route, state }: WorkspacePageProps): ReactElemen
   }, []);
 
   if (state.loading) {
-    return <section className="workspace-state">Loading {route.label} from {route.dataSource}</section>;
+    return <LoadingState label={route.label} source={route.dataSource} />;
   }
 
   if (state.error || !state.data) {
-    return (
-      <section className="workspace-state workspace-state--error">
-        <h1>{route.label}</h1>
-        <p>{state.error ?? 'No route data returned.'}</p>
-        <p>Support status: {supportLabel}. This screen fails closed.</p>
-      </section>
-    );
+    return <ErrorState title={route.label} message={state.error ?? 'No route data returned.'} detail={`Support status: ${supportLabel}. This screen fails closed.`} />;
   }
 
   const { data } = state;
   return (
     <section className="workspace">
-      <header className="workspace-header">
-        <div>
-          <p className="eyebrow">{route.navigationGroup} / {supportLabel}</p>
-          <h1>{route.label}</h1>
-          <p>{route.dataSource}</p>
-        </div>
-        <div className="contract-card">
-          <strong>Contract surface</strong>
-          <div className="contract-meta" aria-label="Route contract summary">
-            <span className={`status-chip status-chip--${route.supportStatus}`}>{supportLabel}</span>
-            <span>{route.backendPaths.length} endpoint{route.backendPaths.length === 1 ? '' : 's'}</span>
-            <span>{route.sharedTypes.length} shared type{route.sharedTypes.length === 1 ? '' : 's'}</span>
-            <span>{route.databaseSupport} data</span>
-          </div>
-          <div className="route-map" aria-label="Route navigation map">
-            <span>Canonical route</span>
-            <button type="button" onClick={() => navigateWithinShell(route.path)}>{route.path}</button>
-            {(route.aliases?.length ?? 0) > 0 ? (
-              <>
-                <span>Aliases</span>
-                <div className="route-chip-list">
-                  {route.aliases?.map((alias) => (
-                    <button type="button" onClick={() => navigateWithinShell(alias)} key={alias}>{alias}</button>
-                  ))}
-                </div>
-              </>
-            ) : null}
-          </div>
-          <dl className="contract-list">
-            <div><dt>APIs</dt><dd>{route.backendPaths.length ? route.backendPaths.join(', ') : 'No backend route'}</dd></div>
-            <div><dt>Shared DTOs</dt><dd>{route.sharedTypes.join(', ') || 'none'}</dd></div>
-            <div><dt>Boundary</dt><dd>{route.limitations[0] ?? 'Read-only governed route.'}</dd></div>
-          </dl>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow={`${route.navigationGroup} / ${supportLabel}`}
+        title={route.label}
+        description={route.dataSource}
+        accessory={<RouteContractCard route={route} supportLabel={supportLabel} />}
+      />
 
       {focus ? (
         <aside className="focus-banner" aria-label="Focused evidence context">
@@ -86,168 +51,146 @@ export function WorkspacePage({ route, state }: WorkspacePageProps): ReactElemen
         </aside>
       ) : null}
 
-      <div className="metric-grid">
+      <div className="metric-grid" aria-label={`${route.label} metrics`}>
         {data.metrics.map((metric) => (
-          <article className={`metric metric--${metric.tone}`} key={metric.label}>
-            <span>{metric.label}</span>
-            <strong>{metric.value}</strong>
-            <small>{metric.detail}</small>
-            <CardActions actions={metric.actions ?? actionsForMetric(metric.label, metric.value, metric.detail, route.path)} />
-          </article>
+          <MetricCard
+            metric={metric}
+            actions={<ActionButtons actions={metric.actions ?? actionsForMetric(metric.label, metric.value, metric.detail, route.path)} onNavigate={navigateWithinShell} />}
+            key={metric.label}
+          />
         ))}
       </div>
 
       <div className="workspace-grid">
-        <section className="panel-stack">
-          <h2>Backend-Derived Workspace</h2>
+        <SectionCard title="Backend-Derived Workspace" description="Service data is rendered as cards, badges, and evidence chips.">
           {data.panels.length === 0 ? (
-            <EmptyState message="No records returned by the adapter." />
+            <EmptyState message="No records returned by the adapter." actions={<ActionButtons actions={[{ label: 'Open audit', path: '/audit', detail: 'Review available evidence for this route.' }]} onNavigate={navigateWithinShell} />} />
           ) : (
-            data.panels.map((panel) => <RecordCard panel={panel} routePath={route.path} key={panel.id} />)
+            data.panels.map((panel) => (
+              <WorkspaceRecordCard
+                panel={panel}
+                actions={<ActionButtons actions={panel.actions ?? actionsForPanel(panel, route.path)} onNavigate={navigateWithinShell} />}
+                key={panel.id}
+              />
+            ))
           )}
-        </section>
+        </SectionCard>
 
-        <section className="panel-stack">
-          <h2>Approval And Audit Boundary</h2>
-          <article className="record-card">
-            <h3>Human Approval Queue</h3>
-            <p>{data.approvals.length} approval record(s) are visible. Regulated actions can only request approval.</p>
-            <CardActions actions={[{ label: 'Open approvals', path: '/approvals', detail: 'Review human approval queue.' }]} />
-          </article>
-          <article className="record-card">
-            <h3>Audit Evidence</h3>
-            <p>{data.auditEvents.length} audit event(s) available through the adapter.</p>
-            <CardActions actions={[{ label: 'Open audit ledger', path: '/audit', detail: 'Review hash-chained evidence.' }]} />
-          </article>
-          <article className="record-card record-card--locked">
-            <h3>Execution Guardrail</h3>
+        <SectionCard title="Approval And Audit Boundary" description="Regulated actions stay human-governed, approval-backed, and audit-linked.">
+          <ApprovalBoundary approvals={data.approvals} auditEvents={data.auditEvents} />
+          <AlertPanel title="Execution Guardrail" tone="critical">
             <p>Direct race starts, race stops, results, scratches, medication decisions, emergency actions, payouts, discipline, and enforcement are not rendered as buttons.</p>
-            <CardActions actions={[{ label: 'Review policy', path: '/settings', detail: 'Open governed AI/control policy.' }]} />
-          </article>
-        </section>
+            <ActionButtons actions={[{ label: 'Review policy', path: '/settings', detail: 'Open governed AI/control policy.' }]} onNavigate={navigateWithinShell} />
+          </AlertPanel>
+        </SectionCard>
       </div>
 
-      <section className="panel-stack">
-        <h2>Governed KPI Artifacts</h2>
+      <SectionCard title="Governed KPI Artifacts" description="KPI artifacts are rendered from typed contract fields with audit and model-use metadata.">
         {data.kpis.length === 0 ? (
-          <EmptyState message="No KPI artifacts are visible for this route and role." />
+          <EmptyState message="No KPI artifacts are visible for this route and role." actions={<ActionButtons actions={[{ label: 'Open audit', path: '/audit', detail: 'Review available KPI evidence.' }]} onNavigate={navigateWithinShell} />} />
         ) : (
           <div className="kpi-grid">
             {data.kpis.map((kpi) => (
-              <KPICard kpi={kpi} key={kpi.kpiId} />
+              <KPICard
+                kpi={kpi}
+                modelContext={data.modelReadableKpiContext.find((context) => context.kpiId === kpi.kpiId)}
+                actions={<ActionButtons actions={[
+                  { label: 'Open audit trail', path: `/audit?kpi=${encodeURIComponent(kpi.kpiId)}`, detail: 'Open KPI audit references.' },
+                  { label: 'Open approvals', path: '/approvals', detail: 'Review approval boundary.' },
+                ]} onNavigate={navigateWithinShell} />}
+                key={kpi.kpiId}
+              />
             ))}
           </div>
         )}
-      </section>
+      </SectionCard>
 
-      <section className="panel-stack">
-        <h2>Advisory AI</h2>
+      <SectionCard title="Advisory AI" description="Recommendations expose evidence, confidence, model version, approval state, and audit references without execution controls.">
         {data.aiRecommendations.length === 0 ? (
-          <EmptyState message="No AI recommendations returned for this route." />
+          <EmptyState message="No AI recommendations returned for this route." actions={<ActionButtons actions={[{ label: 'Review policy', path: '/settings', detail: 'Open advisory-only AI policy.' }]} onNavigate={navigateWithinShell} />} />
         ) : (
           <div className="ai-grid">
             {data.aiRecommendations.slice(0, 6).map((recommendation) => (
-              <AICard recommendation={recommendation} key={recommendation.recommendationId} />
+              <RecommendationCard
+                recommendation={recommendation}
+                actions={<RecommendationActions recommendation={recommendation} />}
+                key={recommendation.recommendationId}
+              />
             ))}
           </div>
         )}
-      </section>
+      </SectionCard>
     </section>
   );
 }
 
-function RecordCard({ panel, routePath }: { panel: WorkspacePanel; routePath: string }): ReactElement {
-  const defaultActions = actionsForPanel(panel, routePath);
+function RouteContractCard({ route, supportLabel }: { route: AppRoute; supportLabel: string }): ReactElement {
   return (
-    <article className="record-card">
-      <div>
-        <span className={`status-pill status-pill--${panel.status}`}>{panel.status}</span>
-        <h3>{panel.title}</h3>
+    <div className="contract-card">
+      <div className="contract-card__header">
+        <strong>Contract surface</strong>
+        <div className="contract-meta" aria-label="Route contract summary">
+          <StatusBadge label={supportLabel} tone={supportStatusToTone(route.supportStatus)} />
+          <StatusBadge label={`${route.backendPaths.length} endpoint${route.backendPaths.length === 1 ? '' : 's'}`} />
+          <StatusBadge label={`${route.sharedTypes.length} shared type${route.sharedTypes.length === 1 ? '' : 's'}`} />
+          <StatusBadge label={`${route.databaseSupport} data`} tone={route.databaseSupport === 'none' ? 'warning' : 'advisory'} />
+        </div>
       </div>
-      <p>{panel.body}</p>
-      <small>Evidence: {panel.evidence.join(' | ')}</small>
-      <CardActions actions={panel.actions ?? defaultActions} />
-    </article>
-  );
-}
-
-function KPICard({ kpi }: { kpi: KPIArtifact }): ReactElement {
-  return (
-    <article className={`kpi-card kpi-card--${kpi.status}`}>
-      <div className="kpi-card__header">
-        <span>{kpi.domain}</span>
-        <button type="button" onClick={() => navigateWithinShell(`/audit?kpi=${encodeURIComponent(kpi.kpiId)}`)}>Audit link</button>
-      </div>
-      <h3>{kpi.name}</h3>
-      <div className="kpi-card__value">
-        <strong>{kpi.value}</strong>
-        <span>{kpi.unit}</span>
-      </div>
-      <dl>
-        <div><dt>Status</dt><dd>{kpi.status}</dd></div>
-        <div><dt>Trend</dt><dd>{kpi.trend}</dd></div>
-        <div><dt>Confidence</dt><dd>{Math.round(kpi.confidence * 100)}%</dd></div>
-        <div><dt>Data quality</dt><dd>{Math.round(kpi.dataQualityScore * 100)}%</dd></div>
-        <div><dt>Last updated</dt><dd>{kpi.lastCalculatedAt}</dd></div>
-        <div><dt>Threshold</dt><dd>{kpi.threshold.description}</dd></div>
-      </dl>
-      <p>{kpi.description}</p>
-      <small>Audit refs: {kpi.auditReference.auditEventIds.join(', ')}</small>
-      <CardActions actions={[
-        { label: 'Open audit trail', path: `/audit?kpi=${encodeURIComponent(kpi.kpiId)}`, detail: 'Open KPI audit references.' },
-        { label: 'Open approvals', path: '/approvals', detail: 'Review approval boundary.' },
-      ]} />
-    </article>
-  );
-}
-
-function AICard({ recommendation }: { recommendation: AdvisoryAIRecommendation }): ReactElement {
-  return (
-    <article className={`ai-card ai-card--${recommendation.riskLevel ?? 'medium'}`}>
-      <div className="ai-card__header">
-        <span>{recommendation.recommendationId}</span>
-        <strong>{Math.round(recommendation.confidence * 100)}%</strong>
-      </div>
-      <h3>{recommendation.recommendation}</h3>
-      <dl>
-        <div><dt>Model</dt><dd>{recommendation.modelVersion}</dd></div>
-        <div><dt>Governor</dt><dd>{recommendation.governorAllowed === false ? 'Execution blocked' : 'Advisory only'}</dd></div>
-        <div><dt>Generated</dt><dd>{recommendation.generatedAt}</dd></div>
-        <div><dt>Approval</dt><dd>{recommendation.approvalRequirement.required ? recommendation.approvalRequirement.policy : 'Not required'}</dd></div>
-        <div><dt>Audit</dt><dd>{recommendation.auditReference.auditIds.join(', ') || recommendation.auditId}</dd></div>
-        <div><dt>Risk</dt><dd>{recommendation.riskLevel ?? 'medium'}</dd></div>
-      </dl>
-      {recommendation.governorReason ? <p>Governor reason: {recommendation.governorReason}</p> : null}
-      <p>Evidence: {recommendation.evidence.join(' | ')}</p>
-      <div className="action-row" aria-label="Allowed AI actions">
-        <button type="button" onClick={() => navigateWithinShell(`/audit?recommendation=${encodeURIComponent(recommendation.recommendationId)}`)} title="Open audit references for this recommendation.">Open audit trail</button>
-        {recommendation.approvalRequirement.required ? (
-          <button type="button" onClick={() => navigateWithinShell(`/approvals?recommendation=${encodeURIComponent(recommendation.recommendationId)}`)} title="Open human approval queue for this recommendation.">Open approval queue</button>
-        ) : (
-          <span className="action-note">No approval request is required for this advisory record.</span>
-        )}
-        <button type="button" onClick={() => navigateWithinShell('/settings')} title="Open advisory-only AI policy.">Review policy</button>
-        <span className="action-note">Draft, evaluate, and execution flows require governed backend endpoints.</span>
-      </div>
-    </article>
-  );
-}
-
-function CardActions({ actions }: { actions: WorkspaceCardAction[] }): ReactElement {
-  return (
-    <div className="card-actions" aria-label="Card actions">
-      {actions.map((action) => (
-        <button type="button" title={action.detail} onClick={() => navigateWithinShell(action.path)} key={`${action.label}-${action.path}`}>{action.label}</button>
-      ))}
+      <DataTable
+        ariaLabel="Route contract summary"
+        rows={[
+          { label: 'Canonical route', value: <button type="button" onClick={() => navigateWithinShell(route.path)}>{route.path}</button> },
+          { label: 'Boundary', value: route.limitations[0] ?? 'Read-only governed route.' },
+        ]}
+      />
+      <TagList label="APIs" values={route.backendPaths} emptyLabel="No backend route" />
+      <TagList label="Shared DTOs" values={route.sharedTypes} emptyLabel="No shared DTOs" />
     </div>
   );
 }
 
-function EmptyState({ message }: { message: string }): ReactElement {
+function ApprovalBoundary({ approvals, auditEvents }: { approvals: WorkspaceViewModel['approvals']; auditEvents: WorkspaceViewModel['auditEvents'] }): ReactElement {
+  const approvalPreview = approvals.slice(0, 2);
+  const auditPreview = auditEvents.slice(0, 2);
   return (
-    <div className="empty-state">
-      {message}
-      <CardActions actions={[{ label: 'Open audit', path: '/audit', detail: 'Review available evidence for this route.' }]} />
+    <div className="boundary-grid">
+      {approvalPreview.length ? (
+        approvalPreview.map((approval) => (
+          <ApprovalCard
+            approval={approval}
+            actions={<ActionButtons actions={[{ label: 'Open approvals', path: `/approvals?approval=${encodeURIComponent(approval.id)}`, detail: 'Review human approval queue.' }]} onNavigate={navigateWithinShell} />}
+            key={approval.id}
+          />
+        ))
+      ) : (
+        <EmptyState message="No pending approval records are visible for this route." actions={<ActionButtons actions={[{ label: 'Open approvals', path: '/approvals', detail: 'Review human approval queue.' }]} onNavigate={navigateWithinShell} />} />
+      )}
+      {auditPreview.length ? (
+        auditPreview.map((event) => (
+          <AuditCard
+            event={event}
+            actions={<ActionButtons actions={[{ label: 'Open audit ledger', path: `/audit?event=${encodeURIComponent(event.auditEventId)}`, detail: 'Review hash-chained evidence.' }]} onNavigate={navigateWithinShell} />}
+            key={event.id}
+          />
+        ))
+      ) : (
+        <EmptyState message="No audit events are visible for this route." actions={<ActionButtons actions={[{ label: 'Open audit', path: '/audit', detail: 'Review audit ledger.' }]} onNavigate={navigateWithinShell} />} />
+      )}
+    </div>
+  );
+}
+
+function RecommendationActions({ recommendation }: { recommendation: WorkspaceViewModel['aiRecommendations'][number] }): ReactElement {
+  return (
+    <div className="action-row" aria-label="Allowed AI actions">
+      <button type="button" onClick={() => navigateWithinShell(`/audit?recommendation=${encodeURIComponent(recommendation.recommendationId)}`)} title="Open audit references for this recommendation.">Open audit trail</button>
+      {recommendation.approvalRequirement.required ? (
+        <button type="button" onClick={() => navigateWithinShell(`/approvals?recommendation=${encodeURIComponent(recommendation.recommendationId)}`)} title="Open human approval queue for this recommendation.">Open approval queue</button>
+      ) : (
+        <span className="action-note">No approval request is required for this advisory record.</span>
+      )}
+      <button type="button" onClick={() => navigateWithinShell('/settings')} title="Open advisory-only AI policy.">Review policy</button>
+      <span className="action-note">Draft, evaluate, and execution flows require governed backend endpoints.</span>
     </div>
   );
 }
@@ -261,7 +204,7 @@ function actionsForPanel(panel: WorkspacePanel, routePath: string): WorkspaceCar
   if (content.includes('audit') || content.includes('hash') || content.includes('evidence')) {
     actions.push({ label: 'Open audit', path: '/audit', detail: 'Review audit evidence.' });
   }
-  if (content.includes('policy') || content.includes('protected') || content.includes('execution') || content.includes('mock-adapter') || content.includes('documented-stub')) {
+  if (content.includes('policy') || content.includes('protected') || content.includes('execution') || content.includes('documented-stub')) {
     actions.push({ label: 'Open policy', path: '/settings', detail: 'Review advisory and protected-action policies.' });
   }
   if (content.includes('incident') || content.includes('emergency')) {
