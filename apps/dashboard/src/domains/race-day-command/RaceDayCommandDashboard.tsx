@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ApprovalChip, ConfidenceBadge, DataTable, EvidencePanel, EventTimeline, MetricStrip, NexusCard, RecommendationCard, RiskBadge, SafetyCriticalActionButton, StatusIndicator, WorkspaceFrame, WorkspaceLayout } from '../../components/nexus-ui.js';
+import { DataTable, EvidencePanel, EventTimeline, MetricStrip, NexusCard, RecommendationCard, RiskBadge, SafetyCriticalActionButton, StatusIndicator, WorkspaceFrame, WorkspaceLayout } from '../../components/nexus-ui.js';
 import type { NexusRole } from '../../types.js';
 import { raceDayRealtimeSources, useApprovalNotifications, useAzureSignalRSync, useRaceStateWebSocket, type RaceDayLiveSnapshot, type SignalRSyncSnapshot } from './realtime.js';
 

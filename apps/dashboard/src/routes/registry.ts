@@ -84,7 +84,6 @@ const routeComponentById: Record<CanonicalRoute['id'], string> = {
 };
 
 const navItemById = new Map(navItems.map((item) => [item.id, item]));
-const domainScreenById = new Map(domainScreens.map((screen) => [screen.id, screen]));
 const routeMapById = new Map(canonicalRouteMap.map((entry) => [entry.id, entry]));
 const sectionLabelById = new Map(navSections.map((section) => [section.id, section.label]));
 

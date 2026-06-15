@@ -3,7 +3,6 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CommandCenter, loadCommandCenter } from './App.js';
 import { createNexusClient } from './api/client.js';

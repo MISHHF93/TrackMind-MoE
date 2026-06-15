@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { AdapterMode, ApprovalDto, AuditEventDto, CollaborationActivityDto, CollaborationAssignmentDto, CollaborationDecisionRecordDto, CollaborationEvidencePacketDto, CollaborationMentionDto, CollaborationThreadDto, CollaborationWorkspaceDto, GeospatialLayerDto, TrackMapDto } from '../types.js';
+import type { AdapterMode, ApprovalDto, AuditEventDto, GeospatialLayerDto, TrackMapDto } from '../types.js';
 
 export type NexusTone = 'ok' | 'info' | 'nominal' | 'advisory' | 'warning' | 'critical' | 'low' | 'medium' | 'high' | 'healthy' | 'degraded' | 'offline' | (string & {});
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';

@@ -374,8 +374,6 @@ export function commandCenterApprovalActions() {
   ];
 }
 
-const listText = (items: string[] | undefined) => items?.length ? items.join(', ') : 'none';
-
 type KpiDashboardItem = { label: string; value: string; detail: string };
 type TrendCardItem = { label: string; value: string; trend: string; source: string; coverage: string };
 
@@ -1311,7 +1309,6 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
   const pendingApprovalCount = data.approvals.filter((approval) => approval.status === 'pending-approval' || approval.status === 'pending').length;
   const assetHealth = data.trackMap.assets.reduce<Record<string, number>>((summary, asset) => ({ ...summary, [asset.status]: (summary[asset.status] ?? 0) + 1 }), {});
   const twinHealth = data.digitalTwinState.reduce<Record<string, number>>((summary, twin) => ({ ...summary, [twin.health]: (summary[twin.health] ?? 0) + 1 }), {});
-  const widgetById = new Map<string, { value: string; detail: string; source: string }>(data.operations.widgets.map((widget) => [widget.id, widget]));
   const sourceLabel = (source: string) => {
     if (source === 'service') return 'backend service feed';
     if (source === 'event-stream') return 'event stream feed';
@@ -1489,12 +1486,8 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
     ...tusStandard.assets.flatMap((asset) => asset.audit.map((audit) => ({ id: `${asset.assetId}-${audit.id}`, label: `${asset.assetId} TUS audit`, detail: `${audit.action} by ${audit.actor}; evidence ${audit.evidence.join(', ') || 'none'}` }))),
   ];
   const facilityFeatures = featuresByLayer('facility');
-  const maintenanceFeatures = featuresByLayer('maintenance');
   const workforceFeatures = featuresByLayer('workforce');
-  const facilityScore = data.readiness.domainScores.find((score) => score.domain === 'facility');
-  const staffingScore = data.readiness.domainScores.find((score) => score.domain === 'staffing');
   const facilityWarnings = data.readiness.warnings.filter((warning) => warning.domain === 'facility');
-  const staffingWarnings = data.readiness.warnings.filter((warning) => warning.domain === 'staffing');
   const employeeNameById = new Map(workforceOperations.employees.map((employee) => [employee.identity.id, employee.identity.displayName]));
   const facilityApprovalActions = commandCenterApprovalActions().filter((action) => ['facility-work-order', 'return-to-service'].includes(action.id));
   const workforceApprovalActions = commandCenterApprovalActions().filter((action) => action.id === 'emergency-staffing');
@@ -1506,30 +1499,10 @@ export function CommandCenter({ data, roles, authenticated = true, tenantId = 's
     ...expiredCertifications.map((cert) => ({ id: `expired-${cert.id}`, title: `${employeeNameById.get(cert.identityId) ?? cert.identityId} ${cert.kind}`, status: 'expired', detail: `Certification expired ${cert.expiresAt}; roles ${cert.requiredForRoles.join(', ')}`, evidence: cert.evidence })),
     ...overdueTraining.map((record) => ({ id: `overdue-${record.id}`, title: `${employeeNameById.get(record.identityId) ?? record.identityId} ${record.title}`, status: 'overdue', detail: `Training due ${record.dueAt}; roles ${record.requiredForRoles.join(', ')}`, evidence: record.evidence })),
   ];
-  const assetHealthRows = [
-    ...data.facilitiesMaintenance.assets.map((asset) => ({ id: asset.assetId, title: asset.name, status: asset.readinessStatus, source: asset.sourceOfTruth, detail: `${asset.assetType}; health ${asset.healthScore}; predicted failure risk ${asset.predictedFailureRisk}%; twin ${asset.twinId ?? 'pending'}`, evidence: [`asset:${asset.assetId}`, `health:${asset.healthScore}`, ...(asset.openWorkOrderIds ?? [])], incomplete: false })),
-    ...data.trackMap.assets.map((asset) => ({ id: asset.id, title: asset.label, status: asset.status, source: 'asset-registry / track-map', detail: `${asset.type} in ${asset.sectorId}`, evidence: [`asset:${asset.id}`], incomplete: false })),
-    ...data.digitalTwinState.map((twin) => ({ id: twin.twinId, title: `${twin.assetId} twin`, status: twin.health, source: 'digital-twin', detail: `Version ${twin.version}; updated ${twin.lastUpdatedAt}`, evidence: [`twin:${twin.twinId}`], incomplete: false })),
-    ...facilityFeatures.map((feature) => ({ id: feature.id, title: feature.label, status: feature.status, source: feature.source, detail: `Facility overlay ${propertyText(feature.properties, 'assetId', propertyText(feature.properties, 'facility', 'facility placeholder/incomplete'))}; health ${propertyText(feature.properties, 'healthScore', 'placeholder/incomplete')}`, evidence: [`feature:${feature.id}`, feature.source], incomplete: !data.facilitiesMaintenance.assets.some((asset) => `facility:${asset.assetId}` === feature.id || asset.name === feature.label) })),
-  ];
   const facilityInspectionRows = [
     ...data.facilitiesMaintenance.inspections.map((inspection) => ({ id: inspection.id, title: `${inspection.assetId} inspection`, status: inspection.status, source: 'facilities-maintenance', detail: `Score ${inspection.score}; next due ${inspection.nextInspectionDueAt}; findings ${inspection.findings.join(', ') || 'none'}; twin ${inspection.twinId ?? 'pending'}`, evidence: [inspection.eventId, inspection.auditId], incomplete: false })),
     ...facilityFeatures.map((feature) => ({ id: `${feature.id}-inspection`, title: feature.label, status: feature.status, source: feature.source, detail: `Map overlay inspection ${propertyText(feature.properties, 'inspection')}; readiness ${propertyText(feature.properties, 'readinessStatus')}; maintenance ${propertyText(feature.properties, 'maintenanceStatus')}`, evidence: [`feature:${feature.id}`, ...facilityWarnings.flatMap((warning) => warning.evidence)], incomplete: !data.facilitiesMaintenance.inspections.some((inspection) => `facility:${inspection.assetId}` === feature.id) })),
     ...data.barnOperations.inspections.map((inspection) => ({ id: inspection.id, title: `${inspection.barnId} inspection`, status: inspection.status, source: 'barn-operations', detail: `Score ${inspection.score}; findings ${inspection.findings.join(', ')}`, evidence: [inspection.eventId, inspection.auditId], incomplete: false })),
-  ];
-  const maintenanceWorkOrders = [
-    ...data.facilitiesMaintenance.workOrders.map((order) => ({ id: order.id, title: order.title, status: order.status, source: 'facilities-maintenance', detail: `${order.assetId}; priority ${order.priority}; impact ${order.operationalImpact}; approval ${order.approvalRequestId ?? 'not required'}; workflow ${order.workflowInstanceId ?? 'pending'}`, evidence: [...order.evidence, order.eventId, order.auditId], incomplete: false })),
-    ...maintenanceFeatures.map((feature) => {
-      const workOrder = propertyText(feature.properties, 'workOrder');
-      return { id: feature.id, title: feature.label, status: feature.status, source: feature.source, detail: `Map maintenance overlay work order ${workOrder}; linked feature ${feature.id}`, evidence: [`feature:${feature.id}`], incomplete: workOrder === 'placeholder/incomplete' };
-    }),
-    ...data.surfaceIntelligence.recommendations.map((recommendation) => ({ id: recommendation.id, title: `${recommendation.type} recommendation`, status: recommendation.executionState, source: 'surface-intelligence', detail: `${recommendation.recommendation}; priority ${recommendation.priority}; approval required ${String(recommendation.requiresHumanApproval)}`, evidence: [recommendation.eventId, recommendation.auditId], incomplete: false })),
-  ];
-  const workforceAssignments = [
-    ...workforceOperations.assignments.map((assignment) => ({ id: assignment.id, title: `${employeeNameById.get(assignment.identityId) ?? assignment.identityId} ${assignment.role}`, status: assignment.status, source: 'workforce-operations', detail: `Shift ${assignment.shiftId}; zone ${assignment.zoneId}; certs ${assignment.certificationKinds.join(', ')}; emergency critical ${String(assignment.emergencyCritical)}; twin ${assignment.digitalTwinRef}`, evidence: [assignment.eventId ?? `assignment:${assignment.id}`, assignment.auditId ?? `audit:${assignment.id}`], incomplete: false })),
-    ...workforceFeatures.map((feature) => ({ id: feature.id, title: feature.label, status: feature.status, source: feature.source, detail: `Map workforce overlay checked in ${propertyText(feature.properties, 'checkedIn')}; shift ${propertyText(feature.properties, 'shift')}; assignment ${propertyText(feature.properties, 'assignment')}`, evidence: [`feature:${feature.id}`, ...staffingWarnings.flatMap((warning) => warning.evidence)], incomplete: workforceOperations.assignments.length === 0 })),
-    ...data.emergencyOperations.commandRoles.map((role) => ({ id: role.id, title: role.role, status: 'nominal', source: 'emergency-operations', detail: `Assigned to ${role.assignee}; permissions ${role.permissions.join(', ')}`, evidence: [`role:${role.id}`], incomplete: false })),
-    ...data.barnOperations.trainers.map((trainer) => ({ id: trainer.id, title: `${trainer.trainerId} barn assignment`, status: trainer.active ? 'nominal' : 'warning', source: 'barn-operations', detail: `Barn ${trainer.barnId}; assigned by ${trainer.assignedBy}; active ${String(trainer.active)}`, evidence: [trainer.eventId, trainer.auditId], incomplete: false })),
   ];
   const certificationTrainingRows = [
     ...workforceOperations.certifications.map((cert) => ({ id: cert.id, title: `${employeeNameById.get(cert.identityId) ?? cert.identityId} ${cert.kind}`, status: cert.status, source: 'workforce-operations', detail: `Expires ${cert.expiresAt}; roles ${cert.requiredForRoles.join(', ')}; event ${cert.eventId ?? 'pending'}; audit ${cert.auditId ?? 'pending'}`, evidence: cert.evidence, incomplete: false })),

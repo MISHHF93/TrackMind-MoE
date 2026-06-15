@@ -14,7 +14,6 @@ type EntryRow = {
 };
 
 const listText = (items: string[] | undefined) => items?.length ? items.join(', ') : 'none';
-const approvalStatus = (state: string) => state === 'approved' ? 'approved' : state === 'rejected' ? 'rejected' : state === 'pending' ? 'pending-approval' : 'pending';
 const lifecycleTone = (status: string) => /cancel|blocked|official/i.test(status) ? 'critical' : /ready|approved|open/i.test(status) ? 'low' : /pending|watch|placeholder|incomplete/i.test(status) ? 'high' : 'medium';
 const conditionText = (conditions: RaceOfficeConditionDto) => conditions.placeholder
   ? `PLACEHOLDER race conditions - missing ${listText(conditions.missingFields)}`

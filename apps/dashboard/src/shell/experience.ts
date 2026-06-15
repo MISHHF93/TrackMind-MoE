@@ -1,5 +1,5 @@
-import { createTrackMindTenantUxBoundaryMetadata, hasPermission, type Permission, type Role, type TrackMindTenantUxBoundaryMetadata } from '@trackmind/shared';
-import { activeNavItem, canonicalPathForRoute, navItems, navSections, type NavDeepLink, type NavItem, type NavSection, type RouteBadgeSource, type RouteDataState, type RouteIconKey, type RouteSafetyPosture } from './navigation.js';
+import { createTrackMindTenantUxBoundaryMetadata, type Permission, type Role, type TrackMindTenantUxBoundaryMetadata } from '@trackmind/shared';
+import { activeNavItem, canonicalPathForRoute, navItems, navSections, type NavItem, type NavSection, type RouteBadgeSource, type RouteDataState, type RouteIconKey, type RouteSafetyPosture } from './navigation.js';
 import { canonicalBreadcrumbsForPath, canonicalCommandPaletteItems } from '../routes/registry.js';
 
 export interface TenantOption {
@@ -36,27 +36,6 @@ export function breadcrumbForPath(path: string, items: NavItem[] = navItems): st
   const current = canonicalPathForRoute(path);
   const deepLink = match.deepLinks?.find((link) => current === link.path || current.startsWith(`${link.path}/`));
   return ['Nexus', section?.label ?? 'Operations', match.breadcrumbLabel, deepLink?.label].filter((crumb, index, crumbs): crumb is string => Boolean(crumb) && (index === 0 || crumb !== crumbs[index - 1]));
-}
-
-function paletteItemsForNavItem(item: NavItem): CommandPaletteItem[] {
-  const base = {
-    iconKey: item.iconKey,
-    workspaceGroup: item.workspaceGroup,
-    badgeSource: item.badgeSource,
-    breadcrumbLabel: item.breadcrumbLabel,
-    dataState: item.dataState,
-    safetyPosture: item.safetyPosture,
-  };
-  const topLevel = { id: `go-${item.id}`, label: `Go to ${item.label}`, path: item.path, keywords: [item.id, item.label.toLowerCase(), item.path, item.iconKey, item.workspaceGroup, item.breadcrumbLabel.toLowerCase(), item.dataState.mode, item.safetyPosture.posture], required: item.required, ...base };
-  const deepLinks = (item.deepLinks ?? []).map((link: NavDeepLink) => ({
-    id: `go-${item.id}-${link.id}`,
-    label: `Go to ${item.label}: ${link.label}`,
-    path: link.path,
-    keywords: [item.id, item.label.toLowerCase(), item.iconKey, item.workspaceGroup, item.breadcrumbLabel.toLowerCase(), link.id, link.label.toLowerCase(), link.path, item.dataState.mode, item.safetyPosture.posture, ...link.keywords.map((keyword) => keyword.toLowerCase())],
-    required: item.required,
-    ...base,
-  }));
-  return [topLevel, ...deepLinks];
 }
 
 export function commandPaletteItems(roles: Role[]): CommandPaletteItem[] {
