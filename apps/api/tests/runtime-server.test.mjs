@@ -168,12 +168,54 @@ test('runtime operations command center exposes stabilized widget sources', asyn
   for (const required of ['Race readiness','Surface conditions','Weather status','Active incidents','Pending approvals','Steward inquiries','Asset health','Workforce readiness','Emergency resources','Facility readiness','AI recommendations','Audit activity','Event timeline']) {
     assert.ok(titles.includes(required), `missing ${required}`);
   }
-  assert.ok(response.body.widgets.every((widget) => ['service','event-stream','digital-twin','approved-mock-adapter'].includes(widget.source)));
+  assert.ok(response.body.widgets.every((widget) => ['service','event-stream','digital-twin'].includes(widget.source)));
   assert.ok(response.body.widgets.every((widget) => widget.drillDownPath.startsWith('/')));
   assert.equal(response.body.widgets.find((widget) => widget.id === 'weather-status').source, 'service');
   assert.match(response.body.widgets.find((widget) => widget.id === 'weather-status').detail, /no separate live weather service is claimed/i);
-  assert.equal(response.body.widgets.find((widget) => widget.id === 'emergency-resources').source, 'approved-mock-adapter');
+  assert.equal(response.body.widgets.find((widget) => widget.id === 'emergency-resources').source, 'service');
   assert.ok(response.body.dataLineage.some((lineage) => lineage.domain === 'events' && lineage.reference === '/api/v1/events/stream'));
+});
+
+test('runtime API workspaces reject placeholder facades on service-backed routes', async () => {
+  const state = createApiFacadeState();
+  const repairedRoutes = [
+    '/api/v1/facilities-maintenance/workspace',
+    '/api/v1/emergency-operations/workspace',
+    '/api/v1/race-operations/race-office',
+    '/api/v1/race-day-readiness/dashboard',
+    '/api/v1/operations/command-center',
+  ];
+
+  for (const route of repairedRoutes) {
+    const response = await handleApiRequest('GET', route, undefined, state);
+    assert.equal(response.status, 200, route);
+    assert.doesNotMatch(JSON.stringify(response.body), /"placeholder"\s*:\s*true|declarationsPlaceholder|horse-live-placeholder|approved-mock-adapter/, route);
+    if ('mock' in response.body) assert.equal(response.body.mock, false, route);
+  }
+
+  const facilities = await handleApiRequest('GET', '/api/v1/facilities-maintenance/workspace', undefined, state);
+  assert.ok(facilities.body.assets.some((asset) => asset.sourceOfTruth === 'racetrack-asset-registry'));
+  assert.ok(facilities.body.inspections.length > 0);
+  assert.ok(facilities.body.workOrders.length > 0);
+  assert.ok(facilities.body.approvals.length > 0);
+  assert.ok(facilities.body.twins.length > 0);
+
+  const emergency = await handleApiRequest('GET', '/api/v1/emergency-operations/workspace', undefined, state);
+  assert.equal(emergency.body.emergencyActions.aiMayBlock, false);
+  assert.ok(emergency.body.workflowIntegrations.length > 0);
+  assert.ok(emergency.body.checklist.length > 0);
+  assert.ok(emergency.body.resources.length > 0);
+  assert.ok(emergency.body.events.some((event) => event.type === 'emergency.workflow.activated'));
+
+  const raceOffice = await handleApiRequest('GET', '/api/v1/race-operations/race-office', undefined, state);
+  assert.ok(raceOffice.body.cards[0].entries.every((entry) => entry.declared && !entry.placeholder));
+  assert.ok(raceOffice.body.cards[0].entries.every((entry) => entry.horseId !== 'horse-live-placeholder'));
+  assert.equal(raceOffice.body.readiness[0].activeEntries, 2);
+
+  const readiness = await handleApiRequest('GET', '/api/v1/race-day-readiness/dashboard', undefined, state);
+  assert.ok(readiness.body.latestAssessment.checks.length >= 9);
+  assert.ok(readiness.body.auditRecords.length > 0);
+  assert.ok(readiness.body.events.some((event) => event.type === 'readiness.evaluated'));
 });
 
 test('runtime API facade exposes Tier 4 canonical workflow templates', async () => {

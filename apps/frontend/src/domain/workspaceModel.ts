@@ -7,6 +7,13 @@ export interface WorkspaceMetric {
   value: string;
   tone: 'nominal' | 'advisory' | 'warning' | 'critical';
   detail: string;
+  actions?: WorkspaceCardAction[];
+}
+
+export interface WorkspaceCardAction {
+  label: string;
+  path: string;
+  detail?: string;
 }
 
 export interface WorkspacePanel {
@@ -15,6 +22,7 @@ export interface WorkspacePanel {
   body: string;
   status: 'implemented' | 'facade-only' | 'documented-stub' | 'mock-adapter';
   evidence: string[];
+  actions?: WorkspaceCardAction[];
 }
 
 export type AdvisoryAIRecommendation = AIRecommendationDto & {
@@ -38,10 +46,10 @@ export interface WorkspaceViewModel {
   kpis: KPIArtifact[];
 }
 
-export function countMetric(label: string, count: number, detail: string, tone: WorkspaceMetric['tone'] = 'nominal'): WorkspaceMetric {
-  return { label, value: String(count), detail, tone };
+export function countMetric(label: string, count: number, detail: string, tone: WorkspaceMetric['tone'] = 'nominal', actions?: WorkspaceCardAction[]): WorkspaceMetric {
+  return { label, value: String(count), detail, tone, actions };
 }
 
-export function textMetric(label: string, value: string, detail: string, tone: WorkspaceMetric['tone'] = 'advisory'): WorkspaceMetric {
-  return { label, value, detail, tone };
+export function textMetric(label: string, value: string, detail: string, tone: WorkspaceMetric['tone'] = 'advisory', actions?: WorkspaceCardAction[]): WorkspaceMetric {
+  return { label, value, detail, tone, actions };
 }

@@ -53,7 +53,3 @@ export async function getJson<T>(path: string, init?: RequestInit): Promise<Adap
     };
   }
 }
-
-export function ready<T>(source: AdapterSource, data: T): AdapterResult<T> {
-  return { status: Array.isArray(data) && data.length === 0 ? 'empty' : 'ready', source, data };
-}

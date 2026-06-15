@@ -4,9 +4,14 @@ import { test } from 'node:test';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
+const repoRoot = resolve(root, '../..');
 
 async function source(path) {
   return readFile(resolve(root, path), 'utf8');
+}
+
+async function repoSource(path) {
+  return readFile(resolve(repoRoot, path), 'utf8');
 }
 
 test('frontend has one canonical entrypoint and app shell', async () => {
@@ -39,7 +44,26 @@ test('route constants cover required backend-driven sections', async () => {
   }
   assert.match(routes, /supportStatus: 'mock-adapter'/);
   assert.match(routes, /backendPaths: \[\]/);
-  for (const alias of ['/operations', '/command-center', '/starting-gate', '/api-hub', '/api-hub-dashboard', '/audit-ledger']) {
+  for (const alias of [
+    '/operations',
+    '/command-center',
+    '/race-day-readiness',
+    '/starting-gate',
+    '/horse-profile',
+    '/approval-queue',
+    '/emergency-operations',
+    '/control-library',
+    '/facility-maintenance',
+    '/tickets',
+    '/payouts',
+    '/multi-track',
+    '/api-hub',
+    '/api-hub-dashboard',
+    '/racing-data',
+    '/audit-ledger',
+    '/platform-health',
+    '/ai-policy',
+  ]) {
     assert.match(routes, new RegExp(alias.replace(/\//g, '\\/')), `${alias} compatibility alias missing`);
   }
   assert.match(routes, /normalized\.startsWith\(`\$\{alias\}\/`\)/);
@@ -57,10 +81,27 @@ test('components do not call raw fetch or render forbidden execution controls', 
   }
   assert.match(page, /Request approval/);
   assert.match(page, /Open audit trail/);
-  assert.match(page, /disabled title="Read-only until a governed endpoint is wired\."/);
+  assert.doesNotMatch(page, /disabled title="Read-only until a governed endpoint is wired\."/);
+  assert.match(page, /CardActions/);
+  assert.match(page, /Open approvals/);
   assert.match(page, /navigateWithinShell/);
+  assert.match(page, /Contract surface/);
+  assert.match(page, /Route contract summary/);
+  assert.match(page, /Route navigation map/);
+  assert.match(page, /Canonical route/);
   assert.match(page, /Governed KPI Artifacts/);
   assert.match(page, /Data quality/);
+});
+
+test('app shell renders grouped route navigation from metadata', async () => {
+  const shell = await source('src/shell/AppShell.tsx');
+  assert.match(shell, /navigationOrder/);
+  assert.match(shell, /className="nav-group"/);
+  assert.match(shell, /route-button/);
+  assert.match(shell, /route-button--active/);
+  assert.match(shell, /route\.navigationGroup === group/);
+  assert.match(shell, /Global route shortcuts/);
+  assert.match(shell, /navigate\('\/dashboard'\)/);
 });
 
 test('frontend route filtering honors required roles and tenant scope headers', async () => {
@@ -100,4 +141,24 @@ test('frontend KPI adapter uses the central API service layer', async () => {
   assert.match(services, /getJson<KPIWorkspaceDto>/);
   assert.match(services, /requireReady/);
   assert.match(services, /routeKpiDomains/);
+});
+
+test('frontend backend route paths are declared in shared endpoint contracts', async () => {
+  const routes = await source('src/routes/routes.ts');
+  const sharedContracts = await repoSource('packages/shared/src/apiContracts.ts');
+
+  const routeBackendPaths = [...routes.matchAll(/backendPaths: \[([^\]]*)\]/g)]
+    .flatMap((match) => [...match[1].matchAll(/'([^']+)'/g)].map((pathMatch) => pathMatch[1]))
+    .filter((path) => path.startsWith('/api/v1/'));
+  const sharedEndpointPaths = [...sharedContracts.matchAll(/path:'([^']+)'/g)].map((match) => match[1]);
+
+  assert.ok(routeBackendPaths.length > 0, 'frontend routes should declare backend paths');
+  for (const backendPath of routeBackendPaths) {
+    const declared = sharedEndpointPaths.some((contractPath) => {
+      if (contractPath === backendPath) return true;
+      const templatePattern = contractPath.replace(/\{[^/]+\}/g, '[^/]+');
+      return new RegExp(`^${templatePattern}$`).test(backendPath);
+    });
+    assert.ok(declared, `${backendPath} missing from shared apiEndpointContracts`);
+  }
 });

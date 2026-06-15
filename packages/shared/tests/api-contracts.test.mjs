@@ -11,7 +11,6 @@ const externalOrDeferredResponseSchemas = new Set([
   'CanonicalRacingDataEnvelope',
   'DataQualityReport',
   'RacingDataLineageRecord',
-  'FacilitiesMaintenanceWorkspaceDto',
   'WorkforceOperationsDto',
   'TrackMindNexusUpgradePackage',
   'ServerSentEventStream',
@@ -57,8 +56,8 @@ test('racing data workspace aggregate route has a first-class shared contract', 
   assert.ok(apiEndpointContracts.some((endpoint) => endpoint.path === '/api/v1/racing-data' && endpoint.response === 'RacingDataWorkspaceDto'));
 });
 
-test('shared API contract schemas cover race office, surface, track configuration, stewarding, barn, asset, facility, and workflow DTOs', () => {
-  for (const schemaName of ['RaceMeetDto','RaceDayDto','RaceOfficeWorkspaceDto','SurfaceIntelligenceDto','TrackMapDto','TrackConfigurationSummaryDto','TrackConfigurationWorkOrderDto','TrackConfigurationVerificationDto','StewardCenterDto','StreamingDataSourceDto','StreamingDataSnapshotDto','DomainAssetDto','BarnDto','StallDto','TrackFacilityDto','WorkflowContractDto','WorkflowTemplateRegistryDto','UniversalArtifactRegistryDto','UniversalArtifactSchemaCatalogDto','UniversalArtifactTrainingInputsDto','UniversalArtifactStorageMapDto','UniversalArtifactDraftRegistrationResultDto']) {
+test('shared API contract schemas cover race office, readiness, facilities, surface, track configuration, stewarding, barn, asset, and workflow DTOs', () => {
+  for (const schemaName of ['RaceMeetDto','RaceDayDto','RaceOfficeWorkspaceDto','RaceDayReadinessDashboardDto','FacilitiesMaintenanceWorkspaceDto','SurfaceIntelligenceDto','TrackMapDto','TrackConfigurationSummaryDto','TrackConfigurationWorkOrderDto','TrackConfigurationVerificationDto','StewardCenterDto','StreamingDataSourceDto','StreamingDataSnapshotDto','DomainAssetDto','BarnDto','StallDto','TrackFacilityDto','WorkflowContractDto','WorkflowTemplateRegistryDto','UniversalArtifactRegistryDto','UniversalArtifactSchemaCatalogDto','UniversalArtifactTrainingInputsDto','UniversalArtifactStorageMapDto','UniversalArtifactDraftRegistrationResultDto']) {
     assert.ok(apiContractSchemas[schemaName], `${schemaName} missing`);
   }
 });

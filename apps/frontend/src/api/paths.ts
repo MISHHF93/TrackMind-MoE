@@ -13,6 +13,7 @@ export const apiPaths = {
   raceDay: {
     races: '/races',
     raceOffice: '/race-operations/race-office',
+    readiness: '/race-day-readiness/dashboard',
   },
   equine: {
     horse: '/equine-intelligence/horses/horse-1',
@@ -49,8 +50,6 @@ export const apiPaths = {
     policy: '/ai-control-plane/policy',
   },
 } as const;
-
-export type ApiPath = typeof apiPaths;
 
 export function apiUrl(path: string): string {
   return `${API_BASE_URL}${path}`;

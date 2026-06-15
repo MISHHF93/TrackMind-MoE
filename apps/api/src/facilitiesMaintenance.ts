@@ -166,6 +166,87 @@ export class FacilitiesMaintenanceService {
     return seeded.map(clone);
   }
 
+  seedFacilityAssetsSync(principal: AssetPrincipal, now = new Date().toISOString()): RegistryAsset[] {
+    const seeded: RegistryAsset[] = [];
+    for (const asset of racetrackAssetControlRegistry.filter((candidate) => candidate.domain === 'facilities')) {
+      const existing = this.assetRegistry.query({ assetIds: [asset.assetId] }, this.readPrincipal(principal)).assets[0];
+      if (existing) {
+        if (!this.preventivePlans.has(existing.assetId)) this.preventivePlans.set(existing.assetId, this.defaultPlan(existing, now));
+        seeded.push(existing);
+        continue;
+      }
+      const maintenanceStatus = this.maintenanceFromState(asset.state);
+      const registryAsset: RegistryAsset = {
+        assetId: asset.assetId,
+        tenantId: principal.tenantId ?? 'track-1',
+        externalIds: [`racr:${asset.assetId}`],
+        name: this.displayName(asset.assetType, asset.assetId),
+        assetClass: 'physical',
+        assetType: asset.assetType,
+        domain: asset.domain,
+        lifecycleStatus: 'active',
+        riskLevel: asset.riskLevel,
+        safetyCritical: asset.riskLevel === 'critical' || asset.controls.some((control) => control.executionMode === 'human-only' || Boolean(control.protectedAction)),
+        maintenance: { status: maintenanceStatus, lastInspectionAt: String((asset.state as Record<string, unknown>).lastInspection ?? now), nextInspectionDueAt: addDays(now, asset.riskLevel === 'high' ? 7 : 14) },
+        maintenanceHistory: [],
+        ownership: { ownerAgent: asset.ownerAgent, stewardTeam: 'facilities-maintenance' },
+        location: asset.location,
+        state: asset.state,
+        controls: asset.controls,
+        sensors: asset.sensors,
+        telemetryBindings: asset.sensors.map((sensor) => ({ bindingId: `binding:${asset.assetId}:${sensor.id}`, sourceId: sensor.id, sensorId: sensor.id, stream: `telemetry.${principal.tenantId ?? 'track-1'}.${sensor.type}`, schemaRef: `telemetry.${sensor.type}.v1`, required: sensor.required, metric: sensor.verifies[0] ?? sensor.type })),
+        regulations: asset.regulations,
+        complianceMappings: asset.regulations.map((regulation) => ({ framework: regulation.authority, controlId: regulation.reference, obligation: `Comply with ${regulation.reference}`, evidenceRefs: regulation.appliesTo.map((item) => `control:${item}`) })),
+        lifecycleHistory: [{ status: 'active', changedAt: now, changedBy: principal.id, reason: 'service-backed API runtime seed' }],
+        riskAssessments: [{ level: asset.riskLevel, assessedAt: now, assessedBy: principal.id, rationale: 'Initial runtime registry classification', safetyCritical: asset.riskLevel === 'critical', approvalRequired: asset.riskLevel === 'critical' || asset.riskLevel === 'high', evidence: ['racetrack-asset-control-registry'] }],
+        tags: ['facilities', asset.assetType.toLowerCase(), 'maintenance'],
+        digitalTwin: { twinId: `twin:${asset.assetId}`, relationship: 'represents', modelVersion: `dtmi:trackmind:${asset.assetType};1`, synchronizedAt: now },
+        approvalPolicyId: asset.riskLevel === 'high' || asset.riskLevel === 'critical' ? 'critical-asset-dual-control' : 'standard-asset-approval',
+        createdAt: now,
+        updatedAt: now,
+        version: 1,
+        metadata: { azureTwinModel: `dtmi:trackmind:${asset.assetType};1`, sourceRegistry: 'racetrack-asset-control-registry', seededBy: 'facilities-maintenance-service' },
+      };
+      const saved = this.assetRegistry.repository.save(registryAsset);
+      this.assetRegistry.cache.invalidate();
+      this.twins.registerAsset(saved, principal.id, `seed:${asset.assetId}`);
+      this.preventivePlans.set(saved.assetId, this.defaultPlan(saved, now));
+      seeded.push(saved);
+    }
+    return seeded.map(clone);
+  }
+
+  recordInspectionSync(input: { assetId: string; inspectedBy: string; checklist: string[]; findings: string[]; score: number; nextInspectionDueAt?: string }, principal: AssetPrincipal, now = new Date().toISOString()): FacilityInspectionRecord {
+    const asset = this.assetRegistry.get(input.assetId, this.readPrincipal(principal));
+    const status = this.inspectionStatus(input.score);
+    const maintenanceStatus: MaintenanceStatus = status === 'failed' ? 'out-of-service' : status === 'watch' ? 'due' : 'ok';
+    const record: FacilityInspectionRecord = {
+      id: id('inspection'),
+      assetId: asset.assetId,
+      inspectedBy: input.inspectedBy,
+      inspectedAt: now,
+      checklist: [...input.checklist],
+      findings: [...input.findings],
+      status,
+      score: clampScore(input.score),
+      nextInspectionDueAt: input.nextInspectionDueAt ?? addDays(now, status === 'failed' ? 1 : status === 'watch' ? 7 : 30),
+      eventId: id('evt-facility-inspection'),
+      auditId: id('audit-facility-inspection'),
+      twinId: asset.digitalTwin?.twinId,
+    };
+    this.inspections.push(record);
+    const updated = this.assetRegistry.repository.save({
+      ...asset,
+      maintenance: { ...asset.maintenance, status: maintenanceStatus, lastInspectionAt: now, lastInspector: input.inspectedBy, nextInspectionDueAt: record.nextInspectionDueAt, notes: input.findings.join('; ') },
+      updatedAt: now,
+      version: asset.version + 1,
+    });
+    this.assetRegistry.cache.invalidate();
+    this.twins.registerAsset(updated, input.inspectedBy, record.eventId);
+    this.auditLog.append({ id: record.auditId, type: 'workflow-action', actor: input.inspectedBy, timestamp: now, payload: record, subjectId: asset.assetId, tenantId: asset.tenantId, racetrackId: assetRacetrackId(asset), severity: status === 'failed' ? 'critical' : status === 'watch' ? 'warning' : 'info', regulations: asset.regulations.map((item) => item.authority), evidenceIds: record.findings });
+    return clone(record);
+  }
+
   async recordInspection(input: { assetId: string; inspectedBy: string; checklist: string[]; findings: string[]; score: number; nextInspectionDueAt?: string; approvalToken?: ApprovalToken }, principal: AssetPrincipal): Promise<FacilityInspectionRecord> {
     const asset = this.assetRegistry.get(input.assetId, this.readPrincipal(principal));
     const status = this.inspectionStatus(input.score);

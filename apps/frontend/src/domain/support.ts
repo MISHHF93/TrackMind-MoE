@@ -45,6 +45,13 @@ export interface RouteSupportMetadata {
   limitations: string[];
 }
 
+export const backendSupportLabels: Record<BackendSupportStatus, string> = {
+  'live-api': 'Live API',
+  'facade-api': 'Facade API',
+  'documented-stub': 'Documented Stub',
+  'mock-adapter': 'Mock Adapter',
+};
+
 export const defaultTenantContext = {
   tenantId: 'trackmind',
   racetrackId: 'main-track',

@@ -11,16 +11,18 @@ import { createCommandCenterContractSnapshot } from './commandCenterV1.js';
 import { CollaborationService, type CollaborationActivityQuery, type CollaborationCreateAssignmentInput, type CollaborationCreateCommentInput, type CollaborationCreateDecisionInput, type CollaborationPrincipal, type CollaborationThreadQuery } from './collaborationService.js';
 import { seededComplianceLibrary } from './complianceControlLibrary.js';
 import { createComplianceReportingController, type ComplianceReportingController } from './compliance/index.js';
-import { createMockEmergencyOperationsWorkspace } from './emergencyOperations.js';
+import { EmergencyOperationsPlatform } from './emergencyOperations.js';
 import { createCqrsCommandHandler, type CqrsCommandHandler, type RaceStartCommandBody, type SafetyCriticalCommandBody } from './events/index.js';
 import { createNexusEventCatalog } from './eventBus.js';
-import { createMockFacilitiesMaintenanceWorkspace } from './facilitiesMaintenance.js';
+import { FacilitiesMaintenanceService } from './facilitiesMaintenance.js';
 import { createFederationWorkspace } from './federation.js';
 import { createTrackCertificationCandidate } from './franchiseCertification.js';
 import { createKPIWorkspace, filterKPIWorkspace } from './kpiArtifacts.js';
 import { createMockPlatformHealth } from './platformObservability.js';
 import { createRacingDataApiFacadeState, createRacingDataDraftResult, createRacingDataLicenseDenied, findRacingDataProvider, findRacingDataStatus, isRacingDataLicenseAllowed, type RacingDataApiFacadeState } from './racingDataApiHub.js';
 import { seededRacingDataLicensePolicyService } from './racingDataLicensePolicy.js';
+import { RaceDayReadinessService } from './raceDayReadiness.js';
+import { RaceOperationsPlatform, type RaceTelemetrySignal } from './raceOperationsPlatform.js';
 import { ResponsibleAIGovernancePlatform } from './responsibleAiGovernor.js';
 import { createSafetyIntelligenceController, type SafetyIntelligenceController } from './safetyIntelligence/index.js';
 import { SecurityOperationsService, type SecurityActor } from './securityOps.js';
@@ -122,6 +124,107 @@ function createSurfaceFacadeInput(timestamp: string): SurfaceIntelligenceInput {
     ],
     observations: [{ id: 'surface-observation-live-1', sectionId: 'far-turn', observedAt: timestamp, role: 'jockey', severity: 4, note: 'uneven footing on turn' }],
   };
+}
+
+function createServiceBackedFacilitiesWorkspace(timestamp: string): JsonBody {
+  const service = new FacilitiesMaintenanceService();
+  const principal = { id: 'facilities-supervisor', tenantId: 'track-1', scopes: ['assets:read', 'assets:write', 'assets:approve'] };
+  service.seedFacilityAssetsSync(principal, timestamp);
+  service.recordInspectionSync({
+    assetId: 'GRANDSTAND_HVAC_01',
+    inspectedBy: principal.id,
+    checklist: ['filter pressure', 'airflow', 'motor temperature'],
+    findings: ['filter pressure elevated', 'airflow verified for patron areas'],
+    score: 84,
+    nextInspectionDueAt: '2026-06-15T12:00:00.000Z',
+  }, principal, timestamp);
+  service.createPreventiveMaintenancePlan({
+    assetId: 'GRANDSTAND_HVAC_01',
+    cadenceDays: 7,
+    checklist: ['replace filters', 'verify airflow', 'capture return-to-service evidence'],
+    nextDueAt: '2026-06-15T12:00:00.000Z',
+  }, principal);
+  service.createWorkOrder({
+    assetId: 'GRANDSTAND_HVAC_01',
+    title: 'Replace grandstand HVAC filters',
+    priority: 'high',
+    requestedBy: principal.id,
+    dueAt: '2026-06-14T20:00:00.000Z',
+    tasks: ['lockout unit', 'replace filters', 'verify airflow'],
+    evidence: ['inspection-hvac-live', 'telemetry:filterDeltaPressure=68'],
+    operationalImpact: 'operational-impact',
+    scheduledFor: '2026-06-14T18:00:00.000Z',
+  }, principal);
+  return service.workspace(principal);
+}
+
+function createServiceBackedEmergencyWorkspace(workforce: Record<string, any>, timestamp: string): JsonBody {
+  const platform = new EmergencyOperationsPlatform();
+  platform.registerWorkflowDefinitions('trackmind');
+  platform.registerEmergencyPlan({ id: 'plan-fire', name: 'Barn fire and evacuation plan', scenarios: ['fire-incident', 'evacuation'], ownerRole: 'incident-commander', activationCriteria: ['alarm activation', 'smoke report', 'human commander declaration'], communicationChannels: ['radio', 'public-address', 'mass-notification'], evacuationZoneIds: ['zone-barn'], drillCadenceDays: 90 });
+  platform.registerEmergencyPlan({ id: 'plan-weather', name: 'Severe weather shelter plan', scenarios: ['severe-weather'], ownerRole: 'weather-lead', activationCriteria: ['lightning within 10 miles', 'tornado warning', 'human weather lead override'], communicationChannels: ['radio', 'sms', 'public-address'], evacuationZoneIds: ['zone-grandstand'], drillCadenceDays: 60 });
+  const workflow = platform.createEmergencyWorkflow({
+    id: 'wf-fire-1',
+    planId: 'plan-fire',
+    activatedBy: 'Avery Chen',
+    activatedByRoles: ['admin'],
+    incident: { id: 'inc-100', scenario: 'fire-incident', severity: 'critical', location: 'Barn 2', reportedAt: timestamp, populationAtRisk: 40, affectedAssets: [{ assetId: 'barn:2', zone: 'zone-barn', risk: 'critical', dependencies: ['power-feed-2'] }, { assetId: 'grandstand', zone: 'zone-grandstand', risk: 'major' }], systems: [{ system: 'workflow-engine', status: 'online', dataFeeds: ['workflow-state'] }, { system: 'digital-twin-runtime', status: 'online', dataFeeds: ['asset-state', 'occupancy'] }, { system: 'access-control', status: 'degraded', dataFeeds: ['badges'] }, { system: 'platform-observability', status: 'online', dataFeeds: ['logs', 'metrics', 'traces'] }] },
+    commandRoles: [{ id: 'role-ic', role: 'incident-commander', assignee: 'Avery Chen', permissions: ['activate-workflow', 'override-ai', 'dispatch-resource', 'send-communication', 'close-incident'] }, { id: 'role-med', role: 'medical-lead', assignee: 'Dr. Rivera', permissions: ['dispatch-resource', 'send-communication'] }, { id: 'role-fire', role: 'fire-lead', assignee: 'Captain Morgan', permissions: ['dispatch-resource', 'override-ai'] }, { id: 'role-weather', role: 'weather-lead', assignee: 'Sam Patel', permissions: ['send-communication', 'override-ai'] }, { id: 'role-evac', role: 'evacuation-lead', assignee: 'Jordan Lee', permissions: ['dispatch-resource', 'send-communication'] }],
+    resources: [{ id: 'res-ambulance', kind: 'medical', label: 'EMS ambulance', status: 'assigned', zoneId: 'zone-grandstand', coordinates: { latitude: 38.044, longitude: -76.949 }, capacity: 2 }, { id: 'res-equine-ambulance', kind: 'medical', label: 'Equine ambulance', status: 'available', zoneId: 'zone-track', coordinates: { latitude: 38.052, longitude: -76.951 }, capacity: 1 }, { id: 'res-fire', kind: 'fire', label: 'Mutual-aid fire unit', status: 'assigned', zoneId: 'zone-barn', coordinates: { latitude: 38.061, longitude: -76.955 }, capacity: 4 }, { id: 'res-shelter', kind: 'shelter', label: 'Grandstand shelter level 1', status: 'available', zoneId: 'zone-grandstand', coordinates: { latitude: 38.043, longitude: -76.952 }, capacity: 900 }],
+    workforceResources: workforce.emergencyResources ?? [],
+    workforceReadiness: workforce.readiness,
+    evacuationZones: [{ id: 'zone-barn', name: 'Barn zone', status: 'evacuating', route: ['north service gate', 'lot A'], assemblyArea: 'Lot A', capacity: 120 }, { id: 'zone-grandstand', name: 'Grandstand', status: 'open', route: ['main concourse', 'south plaza'], assemblyArea: 'South Plaza', capacity: 1200 }],
+    communicationChecklist: [{ id: 'comm-radio', audience: 'field teams', channel: 'radio', message: 'Barn 2 evacuation in progress', completed: false }, { id: 'comm-pa', audience: 'patrons', channel: 'public-address', message: 'Avoid backstretch service road', completed: false }, { id: 'comm-regulator', audience: 'regulators', channel: 'email', message: 'Critical emergency workflow activated under human incident command', completed: false }],
+    aiRecommendationId: 'ai-fire-advice-1',
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+  });
+  platform.recordCommunication(workflow.id, 'comm-radio', 'Avery Chen');
+  platform.runSimulationExercise('drill-weather-1', 'severe-weather', ['ops', 'security', 'facilities']);
+  platform.completeDrill('drill-weather-1', 'Sam Patel', ['Shelter capacity reconciled with digital twin']);
+  platform.afterActionReport('inc-100', [{ finding: 'Access-control feed failed over slowly', severity: 'major', owner: 'security' }]);
+  return platform.workspace(false);
+}
+
+function createServiceBackedRaceOperations(timestamp: string) {
+  const platform = new RaceOperationsPlatform({ approvalService: new CentralizedApprovalService(), tenantId: 'trackmind' });
+  const actor = { id: 'racing-secretary-live', roles: ['racing-secretary'] as Role[], human: true };
+  const raceDate = timestamp.slice(0, 10);
+  const meet = platform.createMeet({ id: 'meet-2026', name: 'TrackMind Service-Backed Meet', trackId: 'main-track', startsOn: raceDate, endsOn: raceDate, status: 'open', officialConfig: { stewards: ['steward-live'], racingSecretary: actor.id, commission: 'state-racing-commission', rulesVersion: '2026.06', scratchDeadlineMinutes: 45, maxFieldSize: 14 } }, actor);
+  const day = platform.createRaceDay({ id: 'day-live', meetId: meet.id, trackId: meet.trackId, raceDate, status: 'entries-open' }, actor);
+  const race = platform.createRaceCard(day.id, { id: 'race-7', trackId: meet.trackId, raceDate, raceNumber: 7, scheduledPostTime: timestamp, conditions: { surface: 'dirt', distanceFurlongs: 8, classLevel: 'Allowance', purse: 85000, eligibility: ['three-year-olds-and-up'], medicationRules: ['HISA medication controls'], surfaceRequirements: ['track-superintendent-clearance'] } }, actor);
+  platform.addEntry(race.id, { id: 'entry-rail-runner', horseId: 'horse-1', trainerId: 'trainer-1', ownerId: 'owner-1' }, actor.id);
+  platform.addEntry(race.id, { id: 'entry-turn-signal', horseId: 'horse-2', trainerId: 'trainer-2', ownerId: 'owner-2' }, actor.id);
+  platform.declareEntry(race.id, 'entry-rail-runner', 'jockey-1', 124, actor.id);
+  platform.declareEntry(race.id, 'entry-turn-signal', 'jockey-2', 122, actor.id);
+  platform.closeDeclarations(race.id, actor.id);
+  platform.drawPostPositions(race.id, 7, actor.id);
+  platform.assignGates(race.id, 'G', 'starter-live');
+  platform.coordinateStaffing(race.id, { stewards: ['steward-live'], veterinarians: ['vet-live'], gateCrew: ['gate-crew-alpha'], outriders: ['outrider-1'], trackMaintenance: ['surface-team-alpha'], security: ['security-post-1'] }, 'operations');
+  platform.allocateResources(race.id, [{ id: 'resource-gate-main', type: 'starting-gate', zone: 'backstretch', status: 'allocated' }, { id: 'resource-ambulance-eq', type: 'ambulance', zone: 'track', status: 'standby' }, { id: 'resource-camera-headon', type: 'camera', zone: 'finish', status: 'allocated' }], 'operations');
+  const telemetry: RaceTelemetrySignal[] = [{ streamId: 'gate-status', type: 'gate', observedAt: timestamp, healthy: true, value: 'locked' }, { streamId: 'surface-condition', type: 'surface', observedAt: timestamp, healthy: true, value: 'good' }, { streamId: 'weather', type: 'weather', observedAt: timestamp, healthy: true, value: 'clear' }];
+  platform.assessReadiness(race.id, telemetry, 'operations');
+  return { platform, workspace: platform.raceOfficeWorkspace(timestamp, false) };
+}
+
+function createServiceBackedReadiness(input: { racePlatform: RaceOperationsPlatform; workforce: Record<string, any>; facilities: Record<string, any>; security: Record<string, any>; timestamp: string }): JsonBody {
+  const service = new RaceDayReadinessService();
+  const race = input.racePlatform.listRaces()[0];
+  const workforceCheck = input.workforce.readiness?.raceDayCheck;
+  const checks = [
+    { domain: 'track', label: 'Track readiness', score: 92, status: 'ready', evidence: ['surface-condition:good'], blockers: [], updatedAt: input.timestamp, ownerRole: 'track-superintendent' },
+    { domain: 'gate', label: 'Gate readiness', score: 90, status: 'ready', evidence: ['gate-status:locked'], blockers: [], updatedAt: input.timestamp, ownerRole: 'starter' },
+    workforceCheck ?? { domain: 'staffing', label: 'Staffing readiness', score: input.workforce.readiness?.score ?? 80, status: input.workforce.readiness?.status ?? 'watch', evidence: input.workforce.readiness?.raceDayCheck?.evidence ?? ['workforce:service-backed'], blockers: input.workforce.readiness?.emergencyGaps ?? [], updatedAt: input.timestamp, ownerRole: 'operations' },
+    { domain: 'veterinary', label: 'Veterinary readiness', score: 88, status: 'watch', evidence: ['vet-live:review-required'], blockers: ['veterinary clearance pending'], updatedAt: input.timestamp, approvalRequired: true, ownerRole: 'veterinarian' },
+    { domain: 'stewards', label: 'Steward readiness', score: 94, status: 'ready', evidence: ['steward-live:on-duty'], blockers: [], updatedAt: input.timestamp, ownerRole: 'steward' },
+    { domain: 'emergency', label: 'Emergency readiness', score: input.workforce.readiness?.status === 'blocked' ? 70 : 86, status: input.workforce.readiness?.status === 'blocked' ? 'blocked' : 'watch', evidence: ['emergency-workflow:wf-fire-1'], blockers: input.workforce.readiness?.emergencyGaps ?? ['active emergency workflow requires command review'], updatedAt: input.timestamp, approvalRequired: true, ownerRole: 'incident-commander' },
+    { domain: 'security', label: 'Security readiness', score: input.security.incidents?.length ? 82 : 96, status: input.security.incidents?.length ? 'watch' : 'ready', evidence: input.security.incidents?.flatMap((incident: any) => incident.eventIds ?? []) ?? ['security:no-open-incidents'], blockers: input.security.incidents?.length ? ['security incidents under review'] : [], updatedAt: input.timestamp, ownerRole: 'security' },
+    { domain: 'weather', label: 'Weather readiness', score: 90, status: 'ready', evidence: ['weather:operational'], blockers: [], updatedAt: input.timestamp, ownerRole: 'operations' },
+    { domain: 'facility', label: 'Facility readiness', score: input.facilities.readiness?.score ?? 0, status: input.facilities.readiness?.status ?? 'blocked', evidence: input.facilities.readiness?.evidence ?? ['facilities:missing'], blockers: input.facilities.readiness?.status === 'ready' ? [] : ['facility maintenance watch'], updatedAt: input.timestamp, approvalRequired: input.facilities.readiness?.status !== 'ready', ownerRole: 'facilities-supervisor' },
+  ] as any[];
+  const assessment = service.evaluate({ raceId: race.id, trackId: race.trackId, postTime: race.scheduledPostTime, evaluatedAt: input.timestamp, checks, workforceReadiness: input.workforce.readiness }, 'race-day-readiness-service');
+  const dashboard = service.dashboard(input.timestamp);
+  return { ...dashboard, races: dashboard.races.map((row) => ({ raceId: row.raceId, trackId: row.trackId, postTime: row.postTime, score: row.score, status: row.status, warnings: row.warnings, approvals: row.approvals, mock: false })), latestAssessment: assessment, mock: false };
 }
 
 function createSeededAIGovernanceWorkspace(timestamp: string, mock: boolean): JsonBody {
@@ -535,8 +638,7 @@ export function createApiFacadeState(): ApiFacadeState {
   const artifacts = createUniversalArtifactFrameworkState(timestamp);
   const barnOperations = createSeededBarnOperationsService().snapshot();
   const workforce = seedWorkforceOperations({}, 'track-1', timestamp).dashboard(timestamp);
-  const emergencyWorkspace = createMockEmergencyOperationsWorkspace();
-  const facilitiesMaintenance = createMockFacilitiesMaintenanceWorkspace(timestamp);
+  const facilitiesMaintenance = createServiceBackedFacilitiesWorkspace(timestamp) as any;
   const compliance = seededComplianceLibrary().dashboard();
   const racingData = createRacingDataApiFacadeState(timestamp);
   const racingDataPolicyAudit = new ImmutableAuditLog();
@@ -549,12 +651,15 @@ export function createApiFacadeState(): ApiFacadeState {
   const surfaceWorkspace = buildSurfaceIntelligenceWorkspace(createSurfaceFacadeInput(timestamp));
   const stewardCenter = { inquiries: listStewardInquiries(), permissions: { canRead: true, canDraft: true, canFinalize: false, canExportAppeal: true }, mock: false };
   const security = createSecurityOperationsFacade(timestamp) as any;
-  const emergency = { ...emergencyWorkspace, resources: [...emergencyWorkspace.resources, ...workforce.emergencyResources], workforceReadiness: workforce.readiness, mock: false };
+  const emergency = createServiceBackedEmergencyWorkspace(workforce, timestamp) as any;
+  const raceOperations = createServiceBackedRaceOperations(timestamp);
+  const raceOffice = raceOperations.workspace as any;
+  const readinessDashboard = createServiceBackedReadiness({ racePlatform: raceOperations.platform, workforce, facilities: facilitiesMaintenance, security, timestamp }) as any;
   const certificationReadiness = {
-    averageScore: Math.round((87 + workforce.readiness.score) / 2),
-    domainScores: ['track','gate','staffing','veterinary','stewards','emergency','security','weather','facility'].map((domain) => ({ domain, averageScore: domain === 'staffing' ? workforce.readiness.score : domain === 'gate' ? 82 : 92, blocked: domain === 'staffing' && workforce.readiness.status === 'blocked' ? 1 : 0, watch: domain === 'staffing' && workforce.readiness.status === 'watch' ? 1 : domain === 'gate' ? 1 : 0 })),
-    auditRecords: [{ id: 'audit-readiness', raceId: 'race-7', actor: 'api-facade', timestamp, summaryHash: 'sha256:readiness', previousHash: 'genesis', score: 87, status: 'watch', evidence: ['api-facade', ...workforce.readiness.raceDayCheck.evidence] }],
-    events: [{ id: 'evt-readiness', raceId: 'race-7', type: 'readiness.evaluated', severity: 'warning', message: 'Race readiness evaluated by API facade.', evidence: ['api-facade', ...workforce.readiness.raceDayCheck.evidence], timestamp }],
+    averageScore: readinessDashboard.averageScore,
+    domainScores: readinessDashboard.domainScores,
+    auditRecords: readinessDashboard.auditRecords,
+    events: readinessDashboard.events,
   };
   const trackCertification = createTrackCertificationCandidate({ trackId: 'main-track', generatedAt: timestamp, compliance, readiness: certificationReadiness, platformHealth: platformHealth as Parameters<typeof createTrackCertificationCandidate>[0]['platformHealth'], aiGovernance: aiGovernance as any, digitalTwinState: contract.digitalTwinState, auditLedger, mock: false });
   const tusStandardization = createTUSStandardizationFacade(timestamp);
@@ -634,7 +739,7 @@ export function createApiFacadeState(): ApiFacadeState {
         overlays: ['sector','gate','rail','barn','stall','facility','camera','emergency','measurement','incident','maintenance','workforce','twin','simulation'].map((layer) => ({ id: layer, name: layer, layer, visible: true, opacity: 1 })),
         features: [
           ...contract.assets.map((asset, index) => ({ id: asset.id, layer: asset.type === 'gate' ? 'gate' : asset.type === 'camera' ? 'camera' : 'measurement', label: asset.label, status: asset.status === 'warning' ? 'warning' : 'nominal', source: asset.twinId ? 'digital-twin' : 'asset-registry', coordinates: { latitude: 38.04 + index / 1000, longitude: -76.95 - index / 1000 }, properties: { sectorId: asset.sectorId } })),
-          ...facilitiesMaintenance.assets.map((asset, index) => ({ id: `facility:${asset.assetId}`, layer: 'facility', label: asset.name, status: asset.readinessStatus === 'ready' ? 'nominal' : asset.readinessStatus === 'watch' ? 'warning' : 'critical', source: 'asset-registry', coordinates: { latitude: 38.043 + index / 1000, longitude: -76.952 - index / 1000 }, properties: { assetId: asset.assetId, twinId: asset.twinId, healthScore: asset.healthScore } })),
+          ...facilitiesMaintenance.assets.map((asset: any, index: number) => ({ id: `facility:${asset.assetId}`, layer: 'facility', label: asset.name, status: asset.readinessStatus === 'ready' ? 'nominal' : asset.readinessStatus === 'watch' ? 'warning' : 'critical', source: 'asset-registry', coordinates: { latitude: 38.043 + index / 1000, longitude: -76.952 - index / 1000 }, properties: { assetId: asset.assetId, twinId: asset.twinId, healthScore: asset.healthScore } })),
           { id: 'rail:portable', layer: 'rail', label: 'Portable Rail B', status: 'nominal', source: 'track-configuration', coordinates: { latitude: 38.047, longitude: -76.946 }, properties: { offsetMeters: 6 } },
           { id: 'barn:2', layer: 'barn', label: 'Barn 2', status: 'nominal', source: 'asset-registry', coordinates: { latitude: 38.061, longitude: -76.955 }, properties: { capacity: 40 } },
           { id: 'stall:12A', layer: 'stall', label: 'Stall 12A', status: 'standby', source: 'asset-registry', coordinates: { latitude: 38.0605, longitude: -76.9545 }, properties: { barnId: 'barn-2', occupancyHorseId: 'horse-1' } },
@@ -681,7 +786,7 @@ export function createApiFacadeState(): ApiFacadeState {
       generatedAt: timestamp,
       activeLayoutId: 'race-day-commander',
       widgets: [
-        { id: 'race-readiness', title: 'Race readiness', domain: 'race-office', status: 'advisory', value: 'Race 7 watch', detail: 'Live facade reads readiness, approvals, twins, and audits from wired services.', source: 'service', drillDownPath: '/race-office', roleView: 'all', configurable: true },
+        { id: 'race-readiness', title: 'Race readiness', domain: 'race-office', status: readinessDashboard.blocked > 0 ? 'critical' : readinessDashboard.watch > 0 ? 'warning' : 'nominal', value: `Race 7 ${readinessDashboard.races[0]?.status ?? 'watch'}`, detail: 'Race office and readiness widgets are backed by RaceOperationsPlatform and RaceDayReadinessService.', source: 'service', drillDownPath: '/race-office', roleView: 'all', configurable: true },
         { id: 'surface-conditions', title: 'Surface conditions', domain: 'surface', status: surfaceWorkspace.overallScore >= 80 ? 'nominal' : surfaceWorkspace.overallScore >= 60 ? 'warning' : 'critical', value: `${surfaceWorkspace.overallScore} surface score`, detail: `${surfaceWorkspace.recommendations.length} approval-gated recommendations from /api/v1/surface-intelligence/workspace.`, source: 'service', drillDownPath: '/surface', roleView: 'all', configurable: true },
         { id: 'weather-status', title: 'Weather status', domain: 'weather', status: surfaceWorkspace.weatherObservation.forecastRainMm > 10 ? 'warning' : 'advisory', value: `${surfaceWorkspace.weatherObservation.forecastRainMm}mm forecast rain`, detail: 'Weather is currently surfaced through the Surface Intelligence facade; no separate live weather service is claimed.', source: 'service', drillDownPath: '/surface', roleView: 'all', configurable: true },
         { id: 'active-incidents', title: 'Active incidents', domain: 'security', status: security.incidents.length ? 'warning' : 'nominal', value: `${security.incidents.length} active incident`, detail: `Security incidents load from /api/v1/security-operations/workspace; open escalations ${security.dashboard.openEscalations ?? 0}.`, source: 'service', drillDownPath: '/security', roleView: 'all', configurable: true },
@@ -690,7 +795,7 @@ export function createApiFacadeState(): ApiFacadeState {
         { id: 'workforce-readiness', title: 'Workforce readiness', domain: 'workforce', status: workforce.readiness.status === 'ready' ? 'nominal' : workforce.readiness.status === 'watch' ? 'warning' : 'critical', value: `${workforce.readiness.coveragePct}% covered`, detail: `${workforce.readiness.checkedIn}/${workforce.readiness.demand} checked in; compliance ${workforce.compliance.status}.`, source: 'service', drillDownPath: '/workforce', roleView: 'all', configurable: true },
         { id: 'asset-health', title: 'Asset health', domain: 'assets', status: 'warning', value: `${contract.assets.length} assets`, detail: 'Asset and twin records are exposed through /api/v1/assets and /api/v1/digital-twin/state.', source: 'digital-twin', drillDownPath: '/assets', roleView: 'all', configurable: true },
         { id: 'facility-readiness', title: 'Facility readiness', domain: 'facilities', status: facilitiesMaintenance.readiness.status === 'ready' ? 'nominal' : 'warning', value: `${facilitiesMaintenance.readiness.score}% ready`, detail: 'Facilities maintenance reads RACR assets, Digital Twins, approvals, work orders, and predictive hooks.', source: 'service', drillDownPath: '/facilities', roleView: 'all', configurable: true },
-        { id: 'emergency-resources', title: 'Emergency resources', domain: 'emergency', status: emergency.events.length ? 'warning' : 'nominal', value: `${emergency.resources.length} resources`, detail: `Emergency workspace includes ${emergency.resources.length - emergencyWorkspace.resources.length} workforce resources; AI may block ${String(emergency.emergencyActions.aiMayBlock)}.`, source: 'approved-mock-adapter', drillDownPath: '/emergency', roleView: 'all', configurable: true },
+        { id: 'emergency-resources', title: 'Emergency resources', domain: 'emergency', status: emergency.events.length ? 'warning' : 'nominal', value: `${emergency.resources.length} resources`, detail: `EmergencyOperationsPlatform exposes ${emergency.workflowIntegrations.length} workflow integrations and an active human command checklist; AI may block ${String(emergency.emergencyActions.aiMayBlock)}.`, source: 'service', drillDownPath: '/emergency', roleView: 'all', configurable: true },
         { id: 'ai-recommendations', title: 'AI recommendations', domain: 'ai-governance', status: 'advisory', value: `${contract.aiRecommendations.length} governed recommendation`, detail: 'AI output remains recommendation-only and approval-aware.', source: 'service', drillDownPath: '/ai-governance', roleView: ['admin'], configurable: true },
         { id: 'audit-activity', title: 'Audit activity', domain: 'audit', status: 'nominal', value: `${contract.auditEvents.length || 1} visible audit rows`, detail: 'Audit activity loads from /api/v1/audit/events with hash-chain references; platform totals remain separate observability metrics.', source: 'service', drillDownPath: '/audit', roleView: ['admin', 'read-only-auditor'], configurable: true },
         { id: 'event-timeline', title: 'Event timeline', domain: 'platform', status: 'advisory', value: 'Event stream ready', detail: 'Timeline combines OperationsCommandCenterDto.liveEvents with readiness, emergency, and AI events; stream is telemetry only.', source: 'event-stream', drillDownPath: '/operations', roleView: 'all', configurable: true },
@@ -699,36 +804,11 @@ export function createApiFacadeState(): ApiFacadeState {
       liveEvents: [{ id: 'evt-live-api', timestamp, type: 'nexus.api.facade.started', domain: 'platform', summary: 'Runtime API facade is serving command-center contracts.', severity: 'info', source: 'event-stream' }, { id: 'evt-surface-live', timestamp, type: 'surface.reading.updated', domain: 'surface', summary: `Surface score ${surfaceWorkspace.overallScore}; weather forecast ${surfaceWorkspace.weatherObservation.forecastRainMm}mm rain.`, severity: surfaceWorkspace.weatherObservation.forecastRainMm > 10 ? 'warning' : 'info', source: 'service' }, { id: 'evt-security-live', timestamp, type: 'security.incident.summary', domain: 'security', summary: `${security.incidents.length} security incidents loaded for command center.`, severity: security.incidents.length ? 'warning' : 'info', source: 'service' }, { id: 'evt-workforce-live', timestamp, type: 'workforce.readiness.evaluated', domain: 'operations', summary: `Workforce readiness ${workforce.readiness.status} at ${workforce.readiness.score}.`, severity: workforce.readiness.status === 'blocked' ? 'critical' : workforce.readiness.status === 'watch' ? 'warning' : 'info', source: 'service' }, { id: 'evt-facility-readiness', timestamp, type: 'facilities.readiness.evaluated', domain: 'facilities', summary: `Facilities readiness ${facilitiesMaintenance.readiness.score}% with approval-gated work orders.`, severity: 'warning', source: 'service' }],
       alerts: [{ id: 'alert-approval', title: 'Protected actions remain approval-gated', severity: 'advisory', acknowledged: false, actionPath: '/approvals', evidence: ['centralized-approval-service'] }, { id: 'alert-security', title: 'Security incident watch', severity: security.incidents.length ? 'warning' : 'advisory', acknowledged: false, actionPath: '/security', evidence: security.incidents.flatMap((incident: any) => incident.eventIds) }, { id: 'alert-facilities', title: 'Facilities maintenance watch', severity: 'warning', acknowledged: false, actionPath: '/facilities', evidence: ['facilities-maintenance', 'racr:GRANDSTAND_HVAC_01'] }],
       aiRecommendations: contract.aiRecommendations.map((rec) => ({ id: rec.id, recommendationId: rec.recommendationId, recommendation: rec.recommendation, confidence: rec.confidence, evidence: rec.evidence, modelVersion: rec.modelVersion, generatedAt: rec.generatedAt, approvalRequirement: rec.approvalRequirement, auditReference: rec.auditReference, requiresApproval: rec.requiresApproval, actionPath: rec.actionPath })),
-      dataLineage: [{ domain: 'readiness', source: 'service', reference: '/api/v1/race-day-readiness/dashboard' }, { domain: 'surface-weather', source: 'service', reference: '/api/v1/surface-intelligence/workspace' }, { domain: 'security-incidents', source: 'service', reference: '/api/v1/security-operations/workspace' }, { domain: 'approvals', source: 'service', reference: '/api/v1/approvals/requests' }, { domain: 'stewards', source: 'service', reference: '/api/v1/stewarding/inquiries' }, { domain: 'assets', source: 'digital-twin', reference: '/api/v1/digital-twin/state' }, { domain: 'workforce', source: 'service', reference: '/api/v1/workforce-operations/workspace' }, { domain: 'emergency', source: 'approved-mock-adapter', reference: '/api/v1/emergency-operations/workspace' }, { domain: 'facilities', source: 'service', reference: '/api/v1/facilities-maintenance/workspace' }, { domain: 'ai', source: 'service', reference: '/api/v1/ai-governance/workspace' }, { domain: 'audit', source: 'service', reference: '/api/v1/audit/events' }, { domain: 'events', source: 'event-stream', reference: '/api/v1/events/stream' }],
+      dataLineage: [{ domain: 'readiness', source: 'service', reference: '/api/v1/race-day-readiness/dashboard' }, { domain: 'surface-weather', source: 'service', reference: '/api/v1/surface-intelligence/workspace' }, { domain: 'security-incidents', source: 'service', reference: '/api/v1/security-operations/workspace' }, { domain: 'approvals', source: 'service', reference: '/api/v1/approvals/requests' }, { domain: 'stewards', source: 'service', reference: '/api/v1/stewarding/inquiries' }, { domain: 'assets', source: 'digital-twin', reference: '/api/v1/digital-twin/state' }, { domain: 'workforce', source: 'service', reference: '/api/v1/workforce-operations/workspace' }, { domain: 'emergency', source: 'service', reference: '/api/v1/emergency-operations/workspace' }, { domain: 'facilities', source: 'service', reference: '/api/v1/facilities-maintenance/workspace' }, { domain: 'ai', source: 'service', reference: '/api/v1/ai-governance/workspace' }, { domain: 'audit', source: 'service', reference: '/api/v1/audit/events' }, { domain: 'events', source: 'event-stream', reference: '/api/v1/events/stream' }],
       mock: false,
     },
-    readiness: {
-      generatedAt: timestamp, averageScore: Math.round((87 + workforce.readiness.score) / 2), ready: 0, watch: 1, blocked: workforce.readiness.status === 'blocked' ? 1 : 0,
-      races: contract.races,
-      warnings: [{ id: 'warn-approval', raceId: 'race-7', domain: 'gate', severity: 'warning', message: 'Starting-gate action requires approval token.', recommendedAction: 'Review approval center before execution.', evidence: ['approval-token-required'] }, ...(workforce.readiness.status !== 'ready' ? [{ id: 'warn-workforce', raceId: 'race-7', domain: 'staffing', severity: workforce.readiness.status === 'blocked' ? 'critical' : 'warning', message: `Workforce readiness ${workforce.readiness.status}.`, recommendedAction: 'Resolve staffing, certification, and emergency check-in gaps before race start.', evidence: workforce.readiness.raceDayCheck.evidence }] : [])],
-      approvals: contract.approvals.map((a) => ({ id: a.id, raceId: a.target, action: String(a.action), requiredRoles: ['steward'], reason: 'Controlled action approval required', evidence: a.evidence, status: 'pending' })),
-      events: [{ id: 'evt-readiness', raceId: 'race-7', type: 'readiness.evaluated', severity: 'warning', message: 'Race readiness evaluated by API facade.', evidence: ['api-facade', ...workforce.readiness.raceDayCheck.evidence], timestamp }],
-      auditRecords: [{ id: 'audit-readiness', raceId: 'race-7', actor: 'api-facade', timestamp, summaryHash: 'sha256:readiness', previousHash: 'genesis', score: 87, status: 'watch', evidence: ['api-facade', ...workforce.readiness.raceDayCheck.evidence] }],
-      domainScores: ['track','gate','staffing','veterinary','stewards','emergency','security','weather','facility'].map((domain) => ({ domain, averageScore: domain === 'staffing' ? workforce.readiness.score : domain === 'gate' ? 82 : 92, blocked: domain === 'staffing' && workforce.readiness.status === 'blocked' ? 1 : 0, watch: domain === 'staffing' && workforce.readiness.status === 'watch' ? 1 : domain === 'gate' ? 1 : 0 })),
-      mock: false,
-    },
-    raceOffice: {
-      meets: [{ id: 'meet-2026', name: 'TrackMind Live Facade Meet', trackId: 'main-track', startsOn: timestamp.slice(0, 10), endsOn: timestamp.slice(0, 10), status: 'open', officialConfig: { stewards: ['steward-live'], racingSecretary: 'racing-secretary-live', commission: 'state-racing-commission', rulesVersion: '2026.06', scratchDeadlineMinutes: 45, maxFieldSize: 14 }, updatedAt: timestamp }],
-      raceDays: [{ id: 'day-live', meetId: 'meet-2026', trackId: 'main-track', raceDate: timestamp.slice(0, 10), status: 'entries-open', raceIds: ['race-7'], updatedAt: timestamp }],
-      cards: [{ id: 'race-7', trackId: 'main-track', raceDate: timestamp.slice(0, 10), raceNumber: 7, scheduledPostTime: contract.races[0]?.postTime ?? timestamp, status: 'watch', conditions: { surface: 'placeholder', eligibility: [], placeholder: true, missingFields: ['condition-book-live-feed'] }, entries: [{ id: 'entry-live-placeholder', horseId: 'horse-live-placeholder', trainerId: 'trainer-pending', ownerId: 'owner-pending', declared: false, placeholder: true }], approvals: { racingOffice: 'pending', stewards: 'pending', veterinarian: 'pending' }, regulatoryControls: ['HISA','ARCI','state-racing-commission'], twinLinks: ['track:main-track','race:race-7'], telemetryStreams: ['gate-status','surface-condition','weather'], declarationsPlaceholder: true, updatedAt: timestamp }],
-      readiness: [{ raceId: 'race-7', ready: false, activeEntries: 0, blockers: ['approval-token-required','condition-book-live-feed-placeholder','declaration-feed-placeholder'], assessedAt: timestamp, telemetryStreams: ['gate-status','surface-condition','weather'] }],
-      lifecycle: [{ raceId: 'race-7', status: 'watch', nextAction: 'request race-start approval', approvalRequired: true, eventType: 'race.readiness.assessed', auditId: 'audit-readiness', updatedAt: timestamp }],
-      approvalControls: [
-        { id: 'race-office-start-live', label: 'Request race-start approval', action: 'race-start', target: 'race-7', reason: 'Race start requires backend approval before execution.', requiredRoles: ['racing-secretary','steward','veterinarian'], evidence: ['readiness-assessment','human-approval-record'], approvalApi: 'POST /api/v1/approvals/controlled-actions', locked: true, safetyCritical: true },
-        { id: 'race-office-scratch-live', label: 'Request scratch approval', action: 'race-office-scratch', target: 'race-7', reason: 'Scratches require veterinarian and steward approval.', requiredRoles: ['veterinarian','steward'], evidence: ['scratch-reason','human-approval-record'], approvalApi: 'POST /api/v1/approvals/controlled-actions', locked: true, safetyCritical: true },
-        { id: 'race-office-cancel-live', label: 'Request race cancellation approval', action: 'race-cancellation', target: 'race-7', reason: 'Race cancellation requires steward approval.', requiredRoles: ['steward'], evidence: ['readiness-blockers','human-approval-record'], approvalApi: 'POST /api/v1/approvals/controlled-actions', locked: true, safetyCritical: true },
-        { id: 'race-office-status-live', label: 'Request lifecycle status approval', action: 'race-status-change', target: 'race-7', reason: 'Lifecycle status changes require backend authorization.', requiredRoles: ['steward'], evidence: ['race-status','audit-trail','human-approval-record'], approvalApi: 'POST /api/v1/approvals/controlled-actions', locked: true, safetyCritical: true },
-        { id: 'race-office-distance-live', label: 'Draft race distance configuration', action: 'race-distance-configuration', target: 'race-7', reason: 'Distance changes use the track-configuration draft workflow.', requiredRoles: ['racing-secretary','track-superintendent','steward'], evidence: ['distance-sheet','gps-verification','human-approval-record'], approvalApi: 'POST /api/v1/track-configuration/draft-requests', locked: true, safetyCritical: true },
-        { id: 'race-office-results-live', label: 'Request official results approval', action: 'official-results', target: 'race-7', reason: 'Official results publication is protected and steward-owned.', requiredRoles: ['steward'], evidence: ['result-chart','inquiry-clearance','human-approval-record'], approvalApi: 'POST /api/v1/approvals/controlled-actions', locked: true, safetyCritical: true },
-        { id: 'race-office-config-live', label: 'Request official configuration approval', action: 'race-office-configuration', target: 'meet-2026', reason: 'Official configuration changes require racing office and steward approval.', requiredRoles: ['racing-secretary','steward'], evidence: ['official-roster','rules-version'], approvalApi: 'POST /api/v1/approvals/controlled-actions', locked: true, safetyCritical: true },
-      ],
-      mock: false,
-    },
+    readiness: readinessDashboard,
+    raceOffice,
     surface: { ...surfaceWorkspace, mock: false },
     equine: equineWorkspace,
     barn: { ...barnOperations, mock: false },

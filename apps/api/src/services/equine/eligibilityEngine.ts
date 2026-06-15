@@ -46,8 +46,8 @@ export class EquineEligibilityEngine {
       },
       {
         ruleId: 'hisa-medication-withdrawal-clear',
-        description: 'Medication withdrawal periods must be cleared at eligibility time.',
-        passed: horse.eligibility.medicationWithdrawalPeriods.every((period) => period.cleared || period.withdrawalUntil <= at),
+        description: 'Medication withdrawal periods must have explicit clearance before eligibility changes.',
+        passed: horse.eligibility.medicationWithdrawalPeriods.every((period) => period.cleared),
         evidenceLinks: horse.eligibility.medicationWithdrawalPeriods.map((period) => `medication://${period.medication}/withdrawal/${period.withdrawalUntil}`),
       },
       {

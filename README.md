@@ -46,6 +46,8 @@ TrackMind-MoE never directly automates race starts/stops, official results, scra
 
 ## Getting started
 
+Run these commands from the repository root that contains this `package.json`. In wrapped checkouts, that may be the inner `TrackMind-MoE-main` directory.
+
 ```bash
 npm install
 npm test
@@ -57,10 +59,12 @@ python -m pytest apps/agents
 node scripts/performance-smoke.mjs
 ```
 
-Python stubs can be run with FastAPI tooling after installing `fastapi` and `uvicorn`:
+Python stubs and router checks can be run after installing the agent/router requirements and test runner:
 
 ```bash
+python -m pip install -r apps/agents/router/requirements.txt pytest
 uvicorn apps.agents.trackmind_agents.main:app --reload
+uvicorn apps.agents.router.main:app --reload
 ```
 
 Docker Compose provides a local PostgreSQL baseline:
@@ -68,3 +72,19 @@ Docker Compose provides a local PostgreSQL baseline:
 ```bash
 docker compose -f infra/docker/docker-compose.yml up
 ```
+
+## Vercel frontend deployment
+
+The Vite dashboard builds from `apps/frontend` and the root build copies the deployable assets into root `dist` for Vercel. The checked-in `vercel.json` expects:
+
+```bash
+npm run build
+```
+
+and serves:
+
+```text
+dist
+```
+
+The dashboard route (`/dashboard`) is a client-side React route. Backend data is loaded from `VITE_TRACKMIND_API_BASE_URL`, which defaults to `/api/v1` for local Vite proxy development. On Vercel, configure `VITE_TRACKMIND_API_BASE_URL` to the public deployed API URL, including `/api/v1`, unless you add Vercel API functions for the backend.
