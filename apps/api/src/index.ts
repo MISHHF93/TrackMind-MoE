@@ -33,6 +33,7 @@ export * from './geospatialOperations.js';
 export * from './horseSafety.js';
 export * from './integrityAndVision.js';
 export * from './iot.js';
+export * from './kpiArtifacts.js';
 export * from './moeRouter.js';
 export * from './operationsCenter.js';
 export * from './platformObservability.js';

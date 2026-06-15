@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { apiEndpointContracts, nexusWorkspaceIds } from '@trackmind/shared';
+import { apiContractSchemas, apiEndpointContracts, nexusWorkspaceIds, validateContract, validateKPIArtifact, validateModelReadableKPIContext } from '@trackmind/shared';
 import { handleApiRequest, createApiFacadeState, createTrackMindApiServer } from '../dist/index.js';
 
 test('runtime API facade serves dashboard live-client endpoints', async () => {
@@ -12,6 +12,7 @@ test('runtime API facade serves dashboard live-client endpoints', async () => {
     '/api/v1/track-configuration/map',
     '/api/v1/track-surface/measurements',
     '/api/v1/operations/command-center',
+    '/api/v1/races',
     '/api/v1/race-day-readiness/dashboard',
     '/api/v1/starting-gate/position',
     '/api/v1/race-distance/configuration',
@@ -29,10 +30,16 @@ test('runtime API facade serves dashboard live-client endpoints', async () => {
     '/api/v1/security-operations/workspace',
     '/api/v1/emergency-operations/workspace',
     '/api/v1/compliance/control-library',
+    '/api/v1/kpis',
+    '/api/v1/kpis/model-context',
+    '/api/v1/artifacts/kpis',
+    '/api/v1/artifacts/kpis/model-context',
+    '/api/v1/ai/recommendations',
     '/api/v1/ai-governance/workspace',
     '/api/v1/ai-control-plane/workspace',
     '/api/v1/ai-control-plane/policy',
     '/api/v1/ai-control-plane/models',
+    '/api/v1/ai-control-plane/features',
     '/api/v1/ai-control-plane/recommendations',
     '/api/v1/ai-control-plane/blocked-actions',
     '/api/v1/ai-control-plane/events',
@@ -55,6 +62,73 @@ test('runtime API facade serves dashboard live-client endpoints', async () => {
   for (const route of routes) {
     const response = await handleApiRequest('GET', route, undefined, state);
     assert.equal(response.status, 200, route);
+  }
+});
+
+test('runtime API facade implements declared shared route contracts for races and AI recommendations', async () => {
+  const state = createApiFacadeState();
+  const expectedRoutes = ['/api/v1/races', '/api/v1/ai/recommendations', '/api/v1/ai-control-plane/features'];
+
+  for (const path of expectedRoutes) {
+    assert.ok(apiEndpointContracts.some((endpoint) => endpoint.path === path), `${path} missing from shared contract manifest`);
+    const response = await handleApiRequest('GET', path, undefined, state);
+    assert.equal(response.status, 200, path);
+    assert.ok(Array.isArray(response.body), `${path} should return an array`);
+    assert.ok(response.body.length > 0, `${path} should expose seeded backend data`);
+  }
+
+  const races = await handleApiRequest('GET', '/api/v1/races', undefined, state);
+  assert.deepEqual(validateContract('RaceDto', races.body[0], apiContractSchemas.RaceDto), { valid: true, errors: [] });
+
+  const recommendations = await handleApiRequest('GET', '/api/v1/ai/recommendations', undefined, state);
+  assert.deepEqual(validateContract('AIRecommendationDto', recommendations.body[0], apiContractSchemas.AIRecommendationDto), { valid: true, errors: [] });
+
+  const features = await handleApiRequest('GET', '/api/v1/ai-control-plane/features', undefined, state);
+  assert.deepEqual(validateContract('FeatureRecordDto', features.body[0], apiContractSchemas.FeatureRecordDto), { valid: true, errors: [] });
+});
+
+test('runtime KPI facade exposes governed artifacts, snapshots, filtering, and model context', async () => {
+  const state = createApiFacadeState();
+  const adminHeaders = { 'x-trackmind-role': 'admin' };
+  const auditorHeaders = { 'x-trackmind-role': 'read-only-auditor' };
+
+  for (const path of ['/api/v1/kpis', '/api/v1/kpis/model-context', '/api/v1/kpis/kpi-race-day-operations', '/api/v1/kpis/kpi-race-day-operations/snapshots', '/api/v1/artifacts/kpis', '/api/v1/artifacts/kpis/kpi-race-day-operations', '/api/v1/artifacts/kpis/kpi-race-day-operations/snapshots', '/api/v1/artifacts/kpis/model-context']) {
+    const response = await handleApiRequest('GET', path, undefined, state, adminHeaders);
+    assert.equal(response.status, 200, path);
+  }
+
+  for (const path of ['/api/v1/kpis', '/api/v1/kpis/{kpiId}', '/api/v1/kpis/{kpiId}/snapshots', '/api/v1/kpis/model-context', '/api/v1/artifacts/kpis', '/api/v1/artifacts/kpis/{kpiId}', '/api/v1/artifacts/kpis/{kpiId}/snapshots', '/api/v1/artifacts/kpis/model-context']) {
+    assert.ok(apiEndpointContracts.some((endpoint) => endpoint.path === path), `${path} missing from shared contract manifest`);
+  }
+
+  const workspace = await handleApiRequest('GET', '/api/v1/kpis?tenantId=trackmind&racetrackId=main-track', undefined, state, adminHeaders);
+  assert.equal(workspace.body.kpis.length, 20);
+  assert.equal(workspace.body.governance.aiMutationAllowed, false);
+  assert.equal(workspace.body.governance.regulatedExecutionAllowed, false);
+  assert.deepEqual(validateContract('KPIWorkspaceDto', workspace.body, apiContractSchemas.KPIWorkspaceDto), { valid: true, errors: [] });
+  assert.ok(workspace.body.kpis.every((kpi) => validateKPIArtifact(kpi).valid));
+  assert.ok(workspace.body.kpis.some((kpi) => kpi.domain === 'multi-track-federation' && kpi.visibility === 'federation-aggregate'));
+
+  const queryRoleOnly = await handleApiRequest('GET', '/api/v1/kpis?role=admin&tenantId=trackmind&racetrackId=main-track', undefined, state);
+  assert.ok(queryRoleOnly.body.kpis.length < workspace.body.kpis.length);
+
+  const mismatch = await handleApiRequest('GET', '/api/v1/kpis?tenantId=trackmind&racetrackId=main-track', undefined, state, { ...adminHeaders, 'x-trackmind-tenant-id': 'different-tenant' });
+  assert.equal(mismatch.status, 403);
+
+  const auditor = await handleApiRequest('GET', '/api/v1/kpis?tenantId=trackmind&racetrackId=main-track', undefined, state, auditorHeaders);
+  assert.ok(auditor.body.kpis.length < workspace.body.kpis.length);
+  assert.ok(auditor.body.kpis.every((kpi) => kpi.visibility !== 'veterinary-restricted'));
+
+  const context = await handleApiRequest('GET', '/api/v1/kpis/model-context', undefined, state, adminHeaders);
+  assert.ok(context.body.length > 0);
+  assert.ok(context.body.every((entry) => validateModelReadableKPIContext(entry).valid));
+  assert.ok(context.body.every((entry) => entry.prohibitedUse.includes('modify KPI values')));
+  assert.ok(context.body.every((entry) => entry.prohibitedUse.includes('execute regulated actions')));
+  assert.ok(context.body.every((entry) => entry.prohibitedUse.includes('expose raw cross-track records')));
+
+  for (const path of ['/api/v1/kpis/execute', '/api/v1/artifacts/kpis/execute', '/api/v1/artifacts/kpis/kpi-race-day-operations/execute']) {
+    const response = await handleApiRequest('POST', path, { action: 'race-start' }, state);
+    assert.equal(response.status, 404, path);
   }
 });
 

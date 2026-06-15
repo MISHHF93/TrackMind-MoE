@@ -1,6 +1,6 @@
 # Architecture
 
-TrackMind-MoE combines a PostgreSQL operational store, race-day event bus, expert-agent stubs, digital twin, IoT ingestion, rulebook RAG interface, React dashboard, and Azure deployment baseline. Critical AI outputs are recommendations until human approval is recorded.
+TrackMind-MoE combines PostgreSQL migrations/seeds for the target operational store, an in-memory/reference race-day event bus, expert-agent stubs, reference Digital Twin and IoT facades, a rulebook RAG interface, Azure deployment baseline, and a canonical backend-driven React frontend shell. Critical AI outputs remain recommendations until human approval is recorded.
 
 ## Build intent
 
@@ -12,10 +12,10 @@ See `docs/architecture/universal-artifact-framework.md` for the TrackMind Univer
 
 See `docs/architecture/racing-data-api-hub.md` for the TrackMind Racing Data API Hub. It defines the provider-agnostic licensed ingestion architecture for racing data, including adapter-ready source categories, no-scraping/no-public-redistribution assumptions, provider registry and connector contracts, raw landing, validation, normalization, canonical racing artifacts, entity resolution, data quality, API and frontend workspace expectations, Digital Twin/event/audit integration, and AI training restrictions without implying that external providers are already integrated or licensed.
 
-## Design, Theme, and Collaboration Architecture
+## Frontend Architecture
 
-The active dashboard design language is the TrackMind Nexus command-center shell in `apps/dashboard/src/App.tsx`, `apps/dashboard/src/server.tsx`, `apps/dashboard/src/components/nexus-ui.tsx`, and `apps/dashboard/src/shell/navigation.ts`. Theme variables use the `--tm-*` token namespace for color, typography, spacing, radius, elevation, density, layout, status, risk, and map geometry. Legacy aliases such as `--bg`, `--panel`, `--border`, `--text`, `--muted`, `--ok`, `--warn`, and `--critical` are quarantine aliases only; new component rules should consume `--tm-*` tokens directly.
+`apps/frontend` is the active canonical shell after removing the old dashboard and temporary shell. It is an AI Stack-first command surface with route-scoped artifacts, approval-safe read-only action rails, backend-declared dependencies, explicit mock/stub labeling, and tenant/racetrack context propagation. Theme variables use a single TrackMind token namespace for color, typography, spacing, radius, elevation, density, layout, status, risk, and audit/KPI signals.
 
-Route metadata is centralized in `routeMetadataById` and `navItems`. Every routed workspace should carry TrackMind OS component IDs, Universal Schema coverage, readiness status, role visibility, and mock/live posture through that registry instead of local route-only metadata. Deprecated UI areas stay visible only as compatibility or placeholder labels: legacy one-page routes redirect to canonical workspaces, the old combined facilities/workforce hub is removed, revenue/wagering/finance telemetry is explicitly not connected, and simulation, predictive maintenance, weather, watchlist, evidence viewer, and appeal package views remain labeled placeholders until live governed services exist.
+Route metadata lives in one registry in `apps/frontend/src/routes/routes.ts`. Every routed workspace carries readiness status, role visibility, mock/live posture, approval boundaries, backend paths, aliases for deliberate legacy compatibility, and audit references through that registry.
 
-Collaboration is route-scoped, artifact-attached, and draft-only. `packages/shared/src/collaborationContracts.ts` owns the canonical object and event contracts, while dashboard collaboration panels attach comments, assignments, decisions, evidence packets, approval discussions, and incident rooms to concrete route artifacts, audit refs, workflow refs, approval refs, event refs, and Digital Twin refs. Browser collaboration controls must not mutate operational state; posts remain `collaborationOnly`, `draftOnlyPosts`, and `mutatesOperationalState: false` unless a backend approval workflow later issues an explicit authorization path.
+Collaboration is route-scoped, artifact-attached, and draft-only. `packages/shared/src/collaborationContracts.ts` owns the canonical object and event contracts. Future browser collaboration controls must not mutate operational state; posts remain `collaborationOnly`, `draftOnlyPosts`, and `mutatesOperationalState: false` unless a backend approval workflow later issues an explicit authorization path.

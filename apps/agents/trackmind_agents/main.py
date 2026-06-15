@@ -18,12 +18,41 @@ ExpertDomain = Literal[
     "TicketingFanExperience",
     "SecuritySOC",
     "FacilitiesIoT",
+    "MaintenanceOps",
     "FinanceRevenue",
     "LegalRegulatory",
     "ResponsibleAIGovernor",
+    "ExecutiveDecisionSupport",
 ]
 
 EXPERTS: set[str] = set(ExpertDomain.__args__)  # type: ignore[attr-defined]
+KPIDomain = Literal[
+    "race-day-operations",
+    "equine-welfare",
+    "safety-incidents",
+    "stewarding",
+    "compliance",
+    "security",
+    "facilities",
+    "ticketing",
+    "finance",
+    "fan-experience",
+    "racing-data-hub",
+    "multi-track-federation",
+    "ai-governance",
+    "audit-integrity",
+    "approval-workflows",
+    "tenant-operations",
+    "system-health",
+    "data-quality",
+    "veterinary-privacy",
+    "deployment-readiness",
+]
+KPITrend = Literal["up", "down", "flat", "insufficient-history"]
+KPIStatus = Literal["nominal", "watch", "warning", "critical", "blocked", "readiness-only"]
+KPIApprovalSensitivity = Literal["none", "approval-visible", "approval-required-for-threshold-change", "regulated-advisory-only"]
+KPI_ALLOWED_USES = {"generate advisory recommendations", "explain KPI drivers", "identify evidence gaps"}
+KPI_REQUIRED_PROHIBITED_USES = {"modify KPI values", "execute regulated actions", "bypass human approval", "expose raw cross-track records"}
 
 
 class AgentRequest(BaseModel):
@@ -56,6 +85,37 @@ class ExpertRecommendation(BaseModel):
     approvalRequirement: ApprovalRequirement
     auditReference: AuditReference
     requiredApprovals: list[str] = Field(default_factory=list)
+
+
+class ModelReadableKPIContext(BaseModel):
+    kpiId: str = Field(min_length=1)
+    domain: KPIDomain
+    name: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    currentValue: float
+    unit: str = Field(min_length=1)
+    trend: KPITrend
+    status: KPIStatus
+    confidence: float = Field(ge=0.0, le=1.0)
+    dataQualityScore: float = Field(ge=0.0, le=1.0)
+    sourceSummary: str = Field(min_length=1)
+    allowedUse: list[str] = Field(min_length=1)
+    prohibitedUse: list[str] = Field(min_length=1)
+    approvalSensitivity: KPIApprovalSensitivity
+    lastCalculatedAt: str = Field(min_length=1)
+
+
+class KPIContextValidationRequest(BaseModel):
+    contexts: list[ModelReadableKPIContext] = Field(default_factory=list, max_length=100)
+
+
+class KPIContextValidationResponse(BaseModel):
+    accepted: bool
+    contextCount: int
+    allowedUse: list[str]
+    prohibitedUse: list[str]
+    mutationAllowed: Literal[False]
+    regulatedExecutionAllowed: Literal[False]
 
 
 class RulebookDocument(BaseModel):
@@ -92,6 +152,30 @@ def expert(domain: str, body: AgentRequest) -> ExpertRecommendation:
         approvalRequirement=ApprovalRequirement(required=True, policy="human-review-required", requirementId=approval_reference),
         auditReference=AuditReference(auditIds=[audit_id], eventIds=[event_id], digitalTwinRefs=[], approvalReference=approval_reference),
         requiredApprovals=["human-review"],
+    )
+
+
+@app.post("/kpi-context/validate", response_model=KPIContextValidationResponse)
+def validate_kpi_context(body: KPIContextValidationRequest) -> KPIContextValidationResponse:
+    for context in body.contexts:
+        prohibited_use = set(context.prohibitedUse)
+        allowed_use = set(context.allowedUse)
+        missing_prohibited_use = KPI_REQUIRED_PROHIBITED_USES.difference(prohibited_use)
+        unsafe_allowed_use = KPI_REQUIRED_PROHIBITED_USES.intersection(allowed_use)
+        unknown_allowed_use = allowed_use.difference(KPI_ALLOWED_USES)
+        if missing_prohibited_use:
+            raise HTTPException(status_code=422, detail=f"KPI context missing prohibited uses: {sorted(missing_prohibited_use)}")
+        if unsafe_allowed_use:
+            raise HTTPException(status_code=422, detail=f"KPI context allowed prohibited uses: {sorted(unsafe_allowed_use)}")
+        if unknown_allowed_use:
+            raise HTTPException(status_code=422, detail=f"KPI context allowed uses are not governed: {sorted(unknown_allowed_use)}")
+    return KPIContextValidationResponse(
+        accepted=True,
+        contextCount=len(body.contexts),
+        allowedUse=sorted(KPI_ALLOWED_USES),
+        prohibitedUse=sorted(KPI_REQUIRED_PROHIBITED_USES),
+        mutationAllowed=False,
+        regulatedExecutionAllowed=False,
     )
 
 

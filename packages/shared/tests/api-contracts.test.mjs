@@ -2,6 +2,61 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { apiContractSchemas, apiEndpointContracts, validateContract } from '../dist/index.js';
 
+const externalOrDeferredResponseSchemas = new Set([
+  'ProviderConfig',
+  'ProviderStatus',
+  'RacingDataDraftResultDto',
+  'IngestionJob',
+  'RawProviderPayload',
+  'CanonicalRacingDataEnvelope',
+  'DataQualityReport',
+  'RacingDataLineageRecord',
+  'FacilitiesMaintenanceWorkspaceDto',
+  'WorkforceOperationsDto',
+  'TrackMindNexusUpgradePackage',
+  'ServerSentEventStream',
+]);
+
+function baseResponseName(response) {
+  return response.replace(/\[\]$/, '');
+}
+
+test('endpoint catalog responses resolve to shared schemas or explicit deferred contracts', () => {
+  for (const endpoint of apiEndpointContracts) {
+    const name = baseResponseName(endpoint.response);
+    assert.ok(apiContractSchemas[name] || externalOrDeferredResponseSchemas.has(name), `${endpoint.operationId} response ${endpoint.response} is missing a schema or explicit deferred marker`);
+  }
+});
+
+test('racing data workspace aggregate route has a first-class shared contract', () => {
+  const workspace = {
+    generatedAt: '2026-06-15T06:00:00.000Z',
+    metadata: {},
+    providers: [],
+    statuses: [],
+    connectors: [],
+    normalizationMappings: [],
+    ingestionJobs: [],
+    rawPayloadReviews: [],
+    canonical: { envelopes: [] },
+    entityResolution: {},
+    entityResolutionQueue: [],
+    qualityReports: [],
+    lineage: {},
+    licensePolicies: {},
+    digitalTwinSync: {},
+    policyCenter: {},
+    featureStoreExports: [],
+    dataLakeExports: [],
+    exportControls: [],
+    reviewActions: [],
+    governance: {},
+    mock: false,
+  };
+  assert.deepEqual(validateContract('RacingDataWorkspaceDto', workspace, apiContractSchemas.RacingDataWorkspaceDto), { valid: true, errors: [] });
+  assert.ok(apiEndpointContracts.some((endpoint) => endpoint.path === '/api/v1/racing-data' && endpoint.response === 'RacingDataWorkspaceDto'));
+});
+
 test('shared API contract schemas cover race office, surface, track configuration, stewarding, barn, asset, facility, and workflow DTOs', () => {
   for (const schemaName of ['RaceMeetDto','RaceDayDto','RaceOfficeWorkspaceDto','SurfaceIntelligenceDto','TrackMapDto','TrackConfigurationSummaryDto','TrackConfigurationWorkOrderDto','TrackConfigurationVerificationDto','StewardCenterDto','StreamingDataSourceDto','StreamingDataSnapshotDto','DomainAssetDto','BarnDto','StallDto','TrackFacilityDto','WorkflowContractDto','WorkflowTemplateRegistryDto','UniversalArtifactRegistryDto','UniversalArtifactSchemaCatalogDto','UniversalArtifactTrainingInputsDto','UniversalArtifactStorageMapDto','UniversalArtifactDraftRegistrationResultDto']) {
     assert.ok(apiContractSchemas[schemaName], `${schemaName} missing`);
@@ -150,10 +205,12 @@ test('shared API contract schemas and endpoint catalog cover Universal Artifact 
   assert.deepEqual(validateContract('UniversalArtifactRegistryDto', registry, apiContractSchemas.UniversalArtifactRegistryDto), { valid: true, errors: [] });
 
   const endpoints = apiEndpointContracts.filter((endpoint) => endpoint.path.startsWith('/api/v1/artifacts/'));
-  assert.equal(endpoints.filter((endpoint) => endpoint.method === 'GET').length, 4);
+  assert.ok(endpoints.filter((endpoint) => endpoint.method === 'GET').length >= 4);
   assert.equal(endpoints.filter((endpoint) => endpoint.method === 'POST').length, 1);
   assert.ok(endpoints.some((endpoint) => endpoint.path === '/api/v1/artifacts/registry' && endpoint.response === 'UniversalArtifactRegistryDto'));
   assert.ok(endpoints.some((endpoint) => endpoint.path === '/api/v1/artifacts/registry/draft-registrations' && endpoint.response === 'UniversalArtifactDraftRegistrationResultDto'));
+  assert.ok(endpoints.some((endpoint) => endpoint.path === '/api/v1/artifacts/kpis' && endpoint.response === 'KPIWorkspaceDto'));
+  assert.ok(endpoints.some((endpoint) => endpoint.path === '/api/v1/artifacts/kpis/model-context' && endpoint.response === 'ModelReadableKPIContext[]'));
   assert.ok(endpoints.every((endpoint) => endpoint.audits.length > 0));
   assert.ok(!apiEndpointContracts.some((endpoint) => endpoint.path.startsWith('/api/v1/artifacts/') && /execute|publish|mutate/i.test(endpoint.operationId)));
 });

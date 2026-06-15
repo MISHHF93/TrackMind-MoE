@@ -175,15 +175,33 @@ export interface UnifiedAIInput {
 
 export interface AIRecommendationOutput {
   recommendationId: string;
+  tenantId: string;
+  racetrackId: string;
   type: AIRecommendationType;
+  recommendationType: AIRecommendationType;
   domain: AIControlPlaneDomain;
   affectedAssets: string[];
   summary: string;
   evidence: string[];
   confidence: number;
+  modelVersion: string;
+  policyReferences: string[];
   riskLevel: AIRiskLevel;
+  generatedAt: string;
+  expiresAt?: string;
   requiresApproval: boolean;
   requiredApproverRoles: string[];
+  approvalRequirement: {
+    required: boolean;
+    policy: string;
+    requiredApproverRoles: string[];
+  };
+  auditReference: {
+    auditEventIds: string[];
+    eventIds: string[];
+    correlationId: string;
+    integrityRef?: string;
+  };
   blockedAutonomousExecution: boolean;
 }
 
@@ -314,15 +332,29 @@ export const aiControlPlaneContractSchemas = {
   ],
   AIRecommendationOutput: [
     { path: 'recommendationId', required: true, type: 'string' },
+    { path: 'tenantId', required: true, type: 'string' },
+    { path: 'racetrackId', required: true, type: 'string' },
     { path: 'type', required: true, type: 'string', values: aiRecommendationTypes },
+    { path: 'recommendationType', required: true, type: 'string', values: aiRecommendationTypes },
     { path: 'domain', required: true, type: 'string', values: aiControlPlaneDomains },
     { path: 'affectedAssets', required: true, type: 'array' },
     { path: 'summary', required: true, type: 'string' },
     { path: 'evidence', required: true, type: 'array' },
     { path: 'confidence', required: true, type: 'number', min: 0, max: 1 },
+    { path: 'modelVersion', required: true, type: 'string' },
+    { path: 'policyReferences', required: true, type: 'array' },
     { path: 'riskLevel', required: true, type: 'string', values: aiRiskLevels },
+    { path: 'generatedAt', required: true, type: 'string' },
     { path: 'requiresApproval', required: true, type: 'boolean' },
     { path: 'requiredApproverRoles', required: true, type: 'array' },
+    { path: 'approvalRequirement', required: true, type: 'object' },
+    { path: 'approvalRequirement.required', required: true, type: 'boolean' },
+    { path: 'approvalRequirement.policy', required: true, type: 'string' },
+    { path: 'approvalRequirement.requiredApproverRoles', required: true, type: 'array' },
+    { path: 'auditReference', required: true, type: 'object' },
+    { path: 'auditReference.auditEventIds', required: true, type: 'array' },
+    { path: 'auditReference.eventIds', required: true, type: 'array' },
+    { path: 'auditReference.correlationId', required: true, type: 'string' },
     { path: 'blockedAutonomousExecution', required: true, type: 'boolean' },
   ],
   AIControlPolicyConfig: [
@@ -351,10 +383,14 @@ export function validateAIRecommendationOutput(output: unknown): AIControlPlaneV
   const result = validateContract('AIRecommendationOutput', output, aiControlPlaneContractSchemas.AIRecommendationOutput);
   const errors = [...result.errors];
   const recommendation = output as Partial<AIRecommendationOutput>;
+  if (recommendation.type !== recommendation.recommendationType) errors.push('AIRecommendationOutput.recommendationType must match type');
   if (Array.isArray(recommendation.affectedAssets) && recommendation.affectedAssets.length === 0) errors.push('AIRecommendationOutput.affectedAssets requires at least one asset');
   if (Array.isArray(recommendation.evidence) && recommendation.evidence.length === 0) errors.push('AIRecommendationOutput.evidence requires at least one evidence reference');
+  if (Array.isArray(recommendation.policyReferences) && recommendation.policyReferences.length === 0) errors.push('AIRecommendationOutput.policyReferences requires at least one policy reference');
   if (recommendation.requiresApproval && Array.isArray(recommendation.requiredApproverRoles) && recommendation.requiredApproverRoles.length === 0) errors.push('AIRecommendationOutput.requiredApproverRoles is required when approval is required');
   if (recommendation.requiresApproval && recommendation.blockedAutonomousExecution !== true) errors.push('AIRecommendationOutput.blockedAutonomousExecution must be true when approval is required');
+  if (recommendation.approvalRequirement && recommendation.approvalRequirement.required !== recommendation.requiresApproval) errors.push('AIRecommendationOutput.approvalRequirement.required must match requiresApproval');
+  if (recommendation.approvalRequirement && recommendation.requiresApproval && recommendation.approvalRequirement.requiredApproverRoles.length === 0) errors.push('AIRecommendationOutput.approvalRequirement.requiredApproverRoles is required when approval is required');
   if ((recommendation.riskLevel === 'high' || recommendation.riskLevel === 'critical') && recommendation.requiresApproval !== true) errors.push('AIRecommendationOutput high and critical risk recommendations require approval');
   return { valid: errors.length === 0, errors };
 }
@@ -524,9 +560,9 @@ function baseOutputArtifact<TClass extends AIOutputArtifactClass>(
     artifactId: metadata.artifactId ?? fallbackArtifactId,
     artifactClass: outputClass,
     outputClass,
-    tenantId: metadata.tenantId ?? 'unknown-tenant',
-    racetrackId: metadata.racetrackId ?? 'unknown-racetrack',
-    createdAt: metadata.createdAt ?? new Date().toISOString(),
+    tenantId: metadata.tenantId ?? output.tenantId,
+    racetrackId: metadata.racetrackId ?? output.racetrackId,
+    createdAt: metadata.createdAt ?? output.generatedAt,
     sourceSystem: metadata.sourceSystem ?? 'ai-control-plane',
     summary: output.summary,
     affectedAssets: [...output.affectedAssets],
@@ -536,7 +572,7 @@ function baseOutputArtifact<TClass extends AIOutputArtifactClass>(
     executionAllowed: false,
     blockedAutonomousExecution: true,
     evidence: uniqueStrings([...(metadata.evidence ?? []), ...output.evidence]),
-    lineage: uniqueStrings([...(metadata.lineage ?? []), `ai-output:${output.recommendationId}`, `ai-domain:${output.domain}`, `ai-type:${output.type}`]),
+    lineage: uniqueStrings([...(metadata.lineage ?? []), `ai-output:${output.recommendationId}`, `ai-domain:${output.domain}`, `ai-type:${output.type}`, `model:${output.modelVersion}`, ...output.policyReferences.map((ref) => `policy:${ref}`), ...output.auditReference.auditEventIds.map((ref) => `audit:${ref}`), ...output.auditReference.eventIds.map((ref) => `event:${ref}`)]),
     curated: metadata.curated ?? true,
     confidence: output.confidence,
     riskLevel: output.riskLevel,

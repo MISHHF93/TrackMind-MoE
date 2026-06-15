@@ -1,0 +1,23 @@
+{
+  "name": "@trackmind/frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "vite --host 127.0.0.1 --port 5173",
+    "test": "node tests/frontend-contracts.test.mjs"
+  },
+  "dependencies": {
+    "@trackmind/shared": "file:../../packages/shared",
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest"
+  }
+}

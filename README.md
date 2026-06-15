@@ -2,12 +2,14 @@
 
 TrackMind-MoE is a racetrack AI operating-system monorepo. It coordinates race-day operations, safety, compliance, facilities, fan experience, security, and finance through a Mixture-of-Experts (MoE) agent router with mandatory Responsible AI governance.
 
-The system treats a racetrack as a live digital twin: horses, people, restricted zones, sensors, cameras, tickets, incidents, and official racing workflows are connected through auditable events. AI recommendations are advisory by default and require human approval before downstream actions in safety-critical or regulated domains.
+The system models a racetrack as a target/reference Digital Twin: horses, people, restricted zones, sensors, cameras, tickets, incidents, and official racing workflows are represented through auditable contracts and in-memory/facade services unless a durable integration is explicitly documented. AI recommendations are advisory by default and require human approval before downstream actions in safety-critical or regulated domains.
+
+The current backend-first rebuild execution anchor is documented in `docs/architecture/BACKEND_FIRST_REBUILD_EXECUTION.md`. It defines the route-contract-first rebuild order, target user layout, required artifacts, AI governance boundary, and source tree shape for keeping the active frontend shell aligned to backend contracts.
 
 ## Monorepo layout
 
 - `apps/api` — TypeScript Node.js API domain services, RBAC, event bus, approvals, audit, IoT, safety, stewarding, ticketing, and security modules.
-- `apps/dashboard` — React race-day command dashboard.
+- `apps/frontend` — canonical React/Vite frontend shell rebuilt from backend contracts, shared DTOs, route metadata, explicit mock adapters, governed KPI cards, and advisory-only AI context.
 - `apps/agents` — FastAPI-compatible Python service stubs for expert agents and rulebook RAG.
 - `packages/shared` — shared TypeScript types and policy constants.
 - `db` — PostgreSQL migrations and seed data.
@@ -22,9 +24,11 @@ The Racing Operating System and TrackMind Standardization Framework are document
 
 The TrackMind Universal Artifact Framework is documented in `docs/architecture/universal-artifact-framework.md`. It defines the canonical path from inputs, events, artifacts, Digital Twins, feature metadata, AI models, recommendations, approvals, outputs, and audits while keeping storage, model-training, federation, and certification claims limited to documented contracts and readiness metadata unless production infrastructure exists.
 
+TrackMind KPI artifacts are documented in `docs/architecture/kpi-artifacts.md`. KPI values are governed artifacts with owners, thresholds, source events/entities, confidence, data quality, audit references, model-readable metadata, and historical snapshots. Current KPI values are deterministic readiness/facade calculations, not production telemetry or certification proof.
+
 The TrackMind Racing Data API Hub is documented in `docs/architecture/racing-data-api-hub.md`. It defines the provider-agnostic licensed ingestion architecture for racing data, including adapter-ready provider categories, no-scraping and no-public-redistribution assumptions, raw landing, validation, normalization, canonical artifacts, entity resolution, data quality, API surfaces, frontend workspace expectations, Digital Twin/event/audit integration, and AI training restrictions without claiming that external providers are currently integrated or licensed.
 
-Enterprise domains are organized across `services`, `digital-twin`, `ai`, `workflows`, `compliance`, `integrations`, `infra`, `tests`, and `deploy` so future teams can add production modules with consistent tenant isolation, CQRS/event sourcing patterns, observability, compliance evidence, and human-governed AI automation.
+Enterprise domains are organized across the current `services`, `digital-twin`, `ai`, `workflows`, `compliance`, `infra`, `tests`, and deployment scaffolding so future teams can add production modules with consistent tenant isolation, CQRS/event sourcing patterns, observability, compliance evidence, and human-governed AI automation.
 
 ## Multi-Track Federation
 
@@ -45,6 +49,12 @@ TrackMind-MoE never directly automates race starts/stops, official results, scra
 ```bash
 npm install
 npm test
+npm run build
+npm run typecheck
+npm run start:api
+npm run start:frontend
+python -m pytest apps/agents
+node scripts/performance-smoke.mjs
 ```
 
 Python stubs can be run with FastAPI tooling after installing `fastapi` and `uvicorn`:

@@ -1,0 +1,11 @@
+route,iterations,statusFailures,totalMs,averageMs,p95Ms,maxMs
+/api/v1/health,150,0,9.090,0.059,0.020,6.298
+/api/v1/platform/health,150,0,7.937,0.052,0.069,2.095
+/api/v1/ai-governance/workspace,150,0,1.659,0.011,0.015,0.082
+/api/v1/ai-control-plane/workspace,150,0,2.198,0.014,0.013,0.594
+/api/v1/approvals/requests,150,0,1.417,0.009,0.028,0.260
+/api/v1/audit/events,150,0,2.776,0.018,0.016,0.919
+/api/v1/starting-gate/position,150,0,140.023,0.931,3.379,18.003
+/api/v1/race-operations/race-office,150,0,2.041,0.013,0.013,0.334
+/api/v1/digital-twin/state,150,0,48.940,0.325,0.585,2.345
+/api/v1/tus/data-model,150,0,0.813,0.005,0.008,0.068

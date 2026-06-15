@@ -2,14 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createStewardInquiry,
+  governanceRecommendationToSharedAIOutput,
   listAIAgentRegistryRecords,
   listExpertModelRegistry,
   recommendationDraftToGovernanceRecord,
+  recommendationDraftToSharedAIOutput,
   ResponsibleAIGovernancePlatform,
   routeAIExpertModel,
   runAIExpertRecommendation,
   seedAIControlPlaneGovernance,
 } from '../dist/index.js';
+import { validateAIRecommendationOutput } from '../../../packages/shared/dist/index.js';
 
 const at = '2026-06-14T12:00:00.000Z';
 
@@ -176,4 +179,17 @@ test('control-plane registry seeds existing Responsible AI governance structures
   assert.equal(governed.status, 'pending-approval');
   assert.equal(governed.activity, 'recommend');
   assert.ok(governed.explainability.humanReviewRequired);
+
+  const draftOutput = recommendationDraftToSharedAIOutput(draft, { tenantId: 'tenant-ai', racetrackId: 'track-ai' });
+  assert.deepEqual(validateAIRecommendationOutput(draftOutput), { valid: true, errors: [] });
+  assert.equal(draftOutput.tenantId, 'tenant-ai');
+  assert.equal(draftOutput.modelVersion, draft.modelId);
+  assert.ok(draftOutput.policyReferences.includes('trackmind-ai-advisory-only-v1'));
+  assert.equal(draftOutput.approvalRequirement.required, draftOutput.requiresApproval);
+  assert.equal(draftOutput.blockedAutonomousExecution, true);
+
+  const governedOutput = governanceRecommendationToSharedAIOutput(governed, { tenantId: 'tenant-ai', racetrackId: 'track-ai' });
+  assert.deepEqual(validateAIRecommendationOutput(governedOutput), { valid: true, errors: [] });
+  assert.equal(governedOutput.modelVersion, governed.modelVersionId);
+  assert.ok(governedOutput.auditReference.auditEventIds.length > 0);
 });

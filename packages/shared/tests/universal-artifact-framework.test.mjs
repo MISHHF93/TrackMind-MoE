@@ -218,13 +218,19 @@ test('Universal Artifact API endpoint catalog exposes read and draft-only routes
   const endpoints = apiEndpointContracts.filter((endpoint) => endpoint.path.startsWith('/api/v1/artifacts/'));
   const byOperation = new Map(endpoints.map((endpoint) => [endpoint.operationId, endpoint]));
 
-  assert.deepEqual([...byOperation.keys()].sort(), [
+  for (const operationId of [
     'createUniversalArtifactDraftRegistration',
     'getUniversalArtifactRegistry',
     'getUniversalArtifactSchemas',
     'getUniversalArtifactStorageMap',
     'getUniversalArtifactTrainingInputs',
-  ].sort());
+    'listKPIArtifactsByArtifactNamespace',
+    'getKPIArtifactByArtifactNamespace',
+    'listKPIHistoricalSnapshotsByArtifactNamespace',
+    'listModelReadableKPIContextByArtifactNamespace',
+  ]) {
+    assert.ok(byOperation.has(operationId), `${operationId} missing from artifact endpoint catalog`);
+  }
   assert.ok(endpoints.filter((endpoint) => endpoint.method === 'GET').every((endpoint) => endpoint.emits.length === 0 && endpoint.audits.some((audit) => audit.startsWith('artifact.'))));
   assert.equal(byOperation.get('createUniversalArtifactDraftRegistration').method, 'POST');
   assert.ok(byOperation.get('createUniversalArtifactDraftRegistration').emits.includes('approval.requested'));

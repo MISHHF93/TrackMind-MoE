@@ -17,6 +17,7 @@ import { createNexusEventCatalog } from './eventBus.js';
 import { createMockFacilitiesMaintenanceWorkspace } from './facilitiesMaintenance.js';
 import { createFederationWorkspace } from './federation.js';
 import { createTrackCertificationCandidate } from './franchiseCertification.js';
+import { createKPIWorkspace, filterKPIWorkspace } from './kpiArtifacts.js';
 import { createMockPlatformHealth } from './platformObservability.js';
 import { createRacingDataApiFacadeState, createRacingDataDraftResult, createRacingDataLicenseDenied, findRacingDataProvider, findRacingDataStatus, isRacingDataLicenseAllowed, type RacingDataApiFacadeState } from './racingDataApiHub.js';
 import { seededRacingDataLicensePolicyService } from './racingDataLicensePolicy.js';
@@ -46,7 +47,7 @@ type SeededAIRecommendation = { id: string; agentId?: string; modelVersionId?: s
 type SeededAIGovernanceWorkspace = { activeAgents: SeededAIAgent[]; modelVersions: SeededAIModelVersion[]; recommendationQueue: SeededAIRecommendation[]; safetyBlockedActions: SeededAIRecommendation[]; evaluationStatus: unknown; approvalRequirements: SeededAIApproval[]; safetyPolicies: SeededAIPolicy[]; evidencePackages: SeededAIEvidencePackage[]; auditTrails: SeededAIAuditTrail[]; events: SeededAIEvent[]; digitalTwinImpacts?: SeededAIDigitalTwinImpact[] };
 
 const now = () => new Date().toISOString();
-const jsonHeaders = { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization, x-trackmind-request-id, x-trackmind-tenant-id, x-trackmind-racetrack-id', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
+const jsonHeaders = { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization, x-trackmind-request-id, x-trackmind-tenant-id, x-trackmind-racetrack-id, x-trackmind-organization-id, x-trackmind-role', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
 
 function createRequestId() {
   return `tm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -125,16 +126,16 @@ function createSurfaceFacadeInput(timestamp: string): SurfaceIntelligenceInput {
 
 function createSeededAIGovernanceWorkspace(timestamp: string, mock: boolean): JsonBody {
   const platform = new ResponsibleAIGovernancePlatform({ approvalService: new CentralizedApprovalService() });
-  const model = { id:'model-surface-advisor-v2', name:'Surface Advisor', version:'2.0.0', owner:'ai-governance', purpose:'Recommend safe track-surface interventions', criticality:'safety-critical' as const, dataClassification:'restricted' as const, intendedUse:['surface-maintenance-advice','race-readiness-prioritization'], prohibitedUse:['autonomous-track-closure','autonomous-race-start'], lineage:['dataset:surface-readings-v5','training-run:2026-06-01'], evidence:['model-card','validation-report'], registeredAt:timestamp };
+  const model = { id:'model-surface-advisor-v2', name:'Surface Advisor', version:'2.0.0', owner:'ai-governance', purpose:'Recommend safe track-surface interventions', criticality:'safety-critical' as const, dataClassification:'restricted' as const, intendedUse:['surface-maintenance-advice','race-readiness-prioritization'], prohibitedUse:['autonomous-track-closure','autonomous-race-start'], lineage:['dataset:surface-readings-v5','training-run:2026-06-01'], evidence:['ai/model-cards/surface-advisor-v2.md','ai/evaluations/surface-advisor-v2-readiness.md'], registeredAt:timestamp };
   platform.registerModel(model);
   platform.recordEvaluation({ modelId:model.id, evaluatedAt:timestamp, evaluator:'rai-lab', metrics:{ accuracy:.93, calibration:.91 }, explainability:{ method:'rationale-trace', score:.94, artifacts:['rationale-report'] }, safety:{ passed:true, controls:['human-approval','restricted-action-blocks','advisory-only-policy'], redTeamFindings:0 }, fairness:{ score:.9, segments:['race-type','surface'] }, privacy:{ personalDataUsed:false, controls:['minimization'] }, security:{ threatModelReviewed:true, vulnerabilitiesOpen:0 }, quality:{ reliability:.92, maintainability:.9, performanceEfficiency:.88 } });
   platform.assessRisk({ modelId:model.id, assessedAt:timestamp, assessor:'erm', impact:5, likelihood:3, mitigations:['human approval required','rollback runbook','monitor drift'] });
   platform.approveForDeployment(model.id, 'ai-governance-board', ['approval-minutes']);
-  platform.publishPromptTemplate({ id:'prompt-surface-v4', name:'Surface intervention prompt', version:'4.0.0', owner:'prompt-review-board', template:'Recommend, summarize, classify, prioritize, forecast, simulate, or draft only with cited evidence and approvals.', evidence:['prompt-review-minutes'], status:'approved', allowedActivities:['recommend','summarize','classify','prioritize','forecast','simulate','create-draft-action'] });
+  platform.publishPromptTemplate({ id:'prompt-surface-v4', name:'Surface intervention prompt', version:'4.0.0', owner:'prompt-review-board', template:'Recommend, summarize, classify, prioritize, forecast, simulate, or draft only with cited evidence and approvals.', evidence:['ai/prompt-cards/surface-intervention-v4.md'], status:'approved', allowedActivities:['recommend','summarize','classify','prioritize','forecast','simulate','create-draft-action'] });
   platform.registerAgent({ id:'agent-surface-ops', name:'Surface Ops Agent', owner:'track-superintendent', modelVersionId:model.id, promptTemplateId:'prompt-surface-v4', status:'active', allowedActions:['recommend-harrow','prioritize-maintenance','race-start'], restrictedActions:['race-start','close-track'], allowedActivities:['recommend','prioritize','forecast','simulate','create-draft-action'], digitalTwinRefs:['twin:sector:far-turn','twin:asset:sensor-44'] });
   platform.recordInputIngestion({ id:'input-surface-live-1', source:'surface-telemetry', actor:'surface-ingestion-service', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade', inputRef:'event:surface.reading.updated', inputHash:'sha256:surface-live-1', dataClassification:'restricted', evidence:['surface:moisture=19'], ingestedAt:timestamp, digitalTwinRefs:['twin:sector:far-turn'] });
   platform.recordFeatureBuild({ id:'features-surface-live-1', inputId:'input-surface-live-1', featureSetId:'surface-risk-v1', actor:'feature-builder', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade', causationId:'input-surface-live-1', features:['moistureDeviation','sensorWarning','readinessTrend'], evidence:['feature-store:surface-risk-v1'], builtAt:timestamp, digitalTwinRefs:['twin:sector:far-turn'] });
-  platform.recordModelSelection({ id:'selection-surface-live-1', featureBuildId:'features-surface-live-1', modelVersionId:model.id, actor:'model-router', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade', causationId:'features-surface-live-1', candidateModelIds:[model.id], selectionReason:'Highest approved surface advisory model for track conditions.', evidence:['model-card','validation-report'], selectedAt:timestamp, digitalTwinRefs:['twin:sector:far-turn'] });
+  platform.recordModelSelection({ id:'selection-surface-live-1', featureBuildId:'features-surface-live-1', modelVersionId:model.id, actor:'model-router', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade', causationId:'features-surface-live-1', candidateModelIds:[model.id], selectionReason:'Highest approved surface advisory model for track conditions.', evidence:['ai/model-cards/surface-advisor-v2.md','ai/evaluations/surface-advisor-v2-readiness.md'], selectedAt:timestamp, digitalTwinRefs:['twin:sector:far-turn'] });
   const rec = platform.recordRecommendation({ id:'rec-harrow-7', agentId:'agent-surface-ops', modelVersionId:model.id, promptTemplateId:'prompt-surface-v4', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade', causationId:'selection-surface-live-1', activity:'recommend', action:'recommend-harrow', target:'sector:far-turn', recommendation:'Dispatch a human-approved harrow pass before Race 7.', confidence:.86, affectedAssets:['sector:far-turn','asset:sensor-44'], evidence:['surface:moisture=19','sensor-44:warning'], lineage:['agent:agent-surface-ops','model:model-surface-advisor-v2','prompt:prompt-surface-v4','event:surface.reading.updated'], approvalPolicy:'single-human', riskLevel:'high', createdAt:timestamp, digitalTwinRefs:['twin:sector:far-turn','twin:asset:sensor-44'] });
   platform.recordRecommendation({ id:'rec-maintenance-priority', agentId:'agent-surface-ops', modelVersionId:model.id, promptTemplateId:'prompt-surface-v4', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade-maintenance', causationId:'selection-surface-live-1', activity:'prioritize', action:'prioritize-maintenance', target:'sector:far-turn', recommendation:'Prioritize far-turn maintenance review in the next human superintendent workflow.', confidence:.82, affectedAssets:['sector:far-turn','work-order:surface-review'], evidence:['surface:compaction=276','inspection:standing-water'], lineage:['agent:agent-surface-ops','model:model-surface-advisor-v2','prompt:prompt-surface-v4','event:surface.inspection.recorded'], approvalPolicy:'single-human', riskLevel:'high', createdAt:timestamp, digitalTwinRefs:['twin:sector:far-turn'] });
   platform.recordRecommendation({ id:'rec-race-start', agentId:'agent-surface-ops', modelVersionId:model.id, promptTemplateId:'prompt-surface-v4', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade-blocked', causationId:'selection-surface-live-1', activity:'create-draft-action', action:'race-start', target:'race-7', recommendation:'Draft race-start readiness package for human steward, race office, and veterinarian review only.', confidence:.91, affectedAssets:['race:race-7','gate:1','approval:race-start'], evidence:['readiness:watch','gate:gps-verified'], lineage:['agent:agent-surface-ops','model:model-surface-advisor-v2','prompt:prompt-surface-v4','policy:protected-action'], approvalPolicy:'none', riskLevel:'critical', createdAt:timestamp, digitalTwinRefs:['twin:race-7','twin:gate-1'] });
@@ -238,6 +239,79 @@ function createSeededAIControlPlaneWorkspace(timestamp: string, mock: boolean): 
 
 function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
+}
+
+function createAIControlPlaneFeatureRecords(aiControlPlane: JsonBody, timestamp: string): JsonBody {
+  const featureStore = ((aiControlPlane as any)?.featureStoreSummary ?? {}) as { telemetryStreams?: string[]; datasets?: string[]; evidenceRefs?: string[]; lineageRefs?: string[] };
+  const streams = featureStore.telemetryStreams?.length ? featureStore.telemetryStreams : ['surface.reading.updated'];
+  const evidence = unique([...(featureStore.evidenceRefs ?? []), ...(featureStore.datasets ?? []), ...(featureStore.lineageRefs ?? [])]);
+  return streams.map((stream, index) => ({
+    id: `feature-record-${stream.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`,
+    schemaVersion: 'trackmind.feature-store.v1',
+    metadata: {
+      tenantId: 'trackmind',
+      racetrackId: 'main-track',
+      domain: stream.includes('gate') ? 'gate' : stream.includes('weather') ? 'weather' : 'surface',
+      correlationId: `corr-ai-feature-${index + 1}`,
+      asOf: timestamp,
+      source: 'ai-control-plane-feature-store',
+      assetId: stream.includes('gate') ? 'gate:main' : stream.includes('weather') ? 'track:main' : 'sector:far-turn',
+    },
+    features: {
+      telemetryStream: stream,
+      advisoryOnly: true,
+      autonomousExecutionAllowed: false,
+    },
+    scores: {
+      readiness: 0.86,
+      evidenceCoverage: evidence.length > 0 ? 0.9 : 0.5,
+      policyCoverage: 1,
+    },
+    dataQuality: {
+      score: 0.88,
+      completenessScore: 0.9,
+      freshnessScore: 0.86,
+      outlierScore: 0.08,
+      outlierQualityScore: 0.92,
+      missingFields: [],
+      staleAfterMinutes: 15,
+    },
+    evidence: evidence.length ? evidence : ['feature-store:seeded-control-plane'],
+    placeholder: true,
+  }));
+}
+
+function createAIRecommendationDtos(aiGovernance: JsonBody): JsonBody {
+  const workspace = aiGovernance as SeededAIGovernanceWorkspace;
+  const recommendations = [...(workspace.recommendationQueue ?? []), ...(workspace.safetyBlockedActions ?? [])];
+  return recommendations.map((recommendation) => {
+    const auditReference = (recommendation as any).auditReference ?? { auditIds: [], eventIds: [], digitalTwinRefs: [] };
+    const auditIds = Array.isArray(auditReference.auditIds) ? auditReference.auditIds : [];
+    const eventIds = Array.isArray(auditReference.eventIds) ? auditReference.eventIds : [];
+    const digitalTwinRefs = Array.isArray(auditReference.digitalTwinRefs) ? auditReference.digitalTwinRefs : recommendation.affectedAssets?.filter((asset) => asset.startsWith('twin:')) ?? [];
+    const approvalRequirement = (recommendation as any).approvalRequirement ?? { required: recommendation.approvalPolicy !== 'none', policy: recommendation.approvalPolicy ?? 'none' };
+    return {
+      id: recommendation.id,
+      recommendationId: (recommendation as any).recommendationId ?? recommendation.id,
+      recommendation: recommendation.recommendation ?? recommendation.reason ?? 'AI recommendation requires human review.',
+      confidence: recommendation.confidenceScore?.calibrated ?? recommendation.confidence,
+      evidence: recommendation.evidence ?? [],
+      modelVersion: (recommendation as any).modelVersion ?? recommendation.modelVersionId ?? 'unknown-model',
+      generatedAt: (recommendation as any).generatedAt ?? recommendation.createdAt ?? now(),
+      approvalRequirement,
+      auditReference,
+      requiresApproval: Boolean(approvalRequirement.required),
+      eventId: eventIds[0] ?? `event:${recommendation.id}`,
+      auditId: auditIds[0] ?? `audit:${recommendation.id}`,
+      tenantId: (recommendation as any).tenantId ?? 'trackmind',
+      racetrackId: (recommendation as any).racetrackId ?? 'main-track',
+      correlationId: (recommendation as any).correlationId ?? recommendation.id,
+      causationId: (recommendation as any).causationId,
+      digitalTwinRefs,
+      riskLevel: recommendation.riskLevel,
+      mock: false,
+    };
+  });
 }
 
 function createAIControlPlaneDraftResult(path: string, body: unknown): AIControlPlaneDraftResultDto {
@@ -430,6 +504,7 @@ export interface ApiFacadeState {
   workforce: JsonBody;
   compliance: JsonBody;
   federation: JsonBody;
+  kpis: JsonBody;
   racingData: RacingDataApiFacadeState;
   racingDataPolicies: JsonBody;
   aiGovernance: JsonBody;
@@ -485,6 +560,7 @@ export function createApiFacadeState(): ApiFacadeState {
   const tusStandardization = createTUSStandardizationFacade(timestamp);
   const nexusUpgrade = createTrackMindNexusUpgradePackage(timestamp);
   const federation = createFederationWorkspace(timestamp, false);
+  const kpis = createKPIWorkspace({ generatedAt: timestamp, tenantId: 'trackmind', organizationId: 'org-trackmind-network', racetrackId: 'main-track' });
   const ros = createRosMetadataFacade(timestamp, nexusUpgrade, aiControlPlane as AIControlPlaneWorkspaceDto, tusStandardization, trackCertification);
   const approvalService = new CentralizedApprovalService();
   const apex = createApexDomainControllers();
@@ -611,7 +687,7 @@ export function createApiFacadeState(): ApiFacadeState {
         { id: 'active-incidents', title: 'Active incidents', domain: 'security', status: security.incidents.length ? 'warning' : 'nominal', value: `${security.incidents.length} active incident`, detail: `Security incidents load from /api/v1/security-operations/workspace; open escalations ${security.dashboard.openEscalations ?? 0}.`, source: 'service', drillDownPath: '/security', roleView: 'all', configurable: true },
         { id: 'pending-approvals', title: 'Pending approvals', domain: 'approvals', status: contract.approvals.length ? 'warning' : 'nominal', value: `${contract.approvals.length} pending approval`, detail: 'Approval queue loads from /api/v1/approvals/requests; protected controls stay locked without a live approval token.', source: 'service', drillDownPath: '/approvals', roleView: 'all', configurable: true },
         { id: 'steward-inquiries', title: 'Steward inquiries', domain: 'stewards', status: stewardCenter.inquiries.length ? 'warning' : 'nominal', value: `${stewardCenter.inquiries.length} inquiry under review`, detail: 'Steward Center loads inquiry evidence, audit, events, and approval refs; official results stay locked.', source: 'service', drillDownPath: '/stewards', roleView: ['admin', 'steward'], configurable: true },
-        { id: 'workforce-readiness', title: 'Workforce readiness', domain: 'operations', status: workforce.readiness.status === 'ready' ? 'nominal' : workforce.readiness.status === 'watch' ? 'warning' : 'critical', value: `${workforce.readiness.coveragePct}% covered`, detail: `${workforce.readiness.checkedIn}/${workforce.readiness.demand} checked in; compliance ${workforce.compliance.status}.`, source: 'service', drillDownPath: '/operations', roleView: 'all', configurable: true },
+        { id: 'workforce-readiness', title: 'Workforce readiness', domain: 'workforce', status: workforce.readiness.status === 'ready' ? 'nominal' : workforce.readiness.status === 'watch' ? 'warning' : 'critical', value: `${workforce.readiness.coveragePct}% covered`, detail: `${workforce.readiness.checkedIn}/${workforce.readiness.demand} checked in; compliance ${workforce.compliance.status}.`, source: 'service', drillDownPath: '/workforce', roleView: 'all', configurable: true },
         { id: 'asset-health', title: 'Asset health', domain: 'assets', status: 'warning', value: `${contract.assets.length} assets`, detail: 'Asset and twin records are exposed through /api/v1/assets and /api/v1/digital-twin/state.', source: 'digital-twin', drillDownPath: '/assets', roleView: 'all', configurable: true },
         { id: 'facility-readiness', title: 'Facility readiness', domain: 'facilities', status: facilitiesMaintenance.readiness.status === 'ready' ? 'nominal' : 'warning', value: `${facilitiesMaintenance.readiness.score}% ready`, detail: 'Facilities maintenance reads RACR assets, Digital Twins, approvals, work orders, and predictive hooks.', source: 'service', drillDownPath: '/facilities', roleView: 'all', configurable: true },
         { id: 'emergency-resources', title: 'Emergency resources', domain: 'emergency', status: emergency.events.length ? 'warning' : 'nominal', value: `${emergency.resources.length} resources`, detail: `Emergency workspace includes ${emergency.resources.length - emergencyWorkspace.resources.length} workforce resources; AI may block ${String(emergency.emergencyActions.aiMayBlock)}.`, source: 'approved-mock-adapter', drillDownPath: '/emergency', roleView: 'all', configurable: true },
@@ -663,6 +739,7 @@ export function createApiFacadeState(): ApiFacadeState {
     workforce: { ...workforce, mock: false },
     compliance: { ...compliance, trackCertificationCandidate: trackCertification, franchiseOperatingStandards: trackCertification.operatingStandards, mock: false },
     federation,
+    kpis,
     racingData,
     racingDataPolicies: { ...racingDataPolicies, mock: false },
     aiGovernance,
@@ -698,6 +775,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
+const knownRoles: Role[] = ['admin','steward','veterinarian','track-superintendent','security','ticketing-manager','finance','racing-secretary','compliance-officer','read-only-auditor'];
+
+function headerValue(headers: IncomingMessage['headers'] | undefined, name: string): string | undefined {
+  const value = headers?.[name.toLowerCase()];
+  return stringValue(Array.isArray(value) ? value[0] : value);
+}
+
+function filterOperationsForRole(operations: JsonBody, role?: Role): JsonBody {
+  if (!isRecord(operations)) return operations;
+  const roleCanView = (roleView: unknown) => roleView === 'all' || !Array.isArray(roleView) || Boolean(role && roleView.includes(role));
+  const widgets = Array.isArray(operations.widgets) ? operations.widgets.filter((widget) => isRecord(widget) && roleCanView(widget.roleView)) : operations.widgets;
+  const savedLayouts = Array.isArray(operations.savedLayouts) ? operations.savedLayouts.filter((layout) => isRecord(layout) && roleCanView(layout.role)) : operations.savedLayouts;
+  return { ...operations, widgets, savedLayouts };
+}
+
 function numberValue(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value !== 'string' || value.length === 0) return undefined;
@@ -716,6 +808,30 @@ function collaborationQuery(params: URLSearchParams): CollaborationThreadQuery &
     limit: numberValue(params.get('limit')),
     offset: numberValue(params.get('offset')),
   };
+}
+
+function kpiPrincipal(params: URLSearchParams, headers?: IncomingMessage['headers']): { tenantId?: string; racetrackId?: string; role?: Role } {
+  const headerRole = headerValue(headers, 'x-trackmind-role');
+  const role = headerRole && knownRoles.includes(headerRole as Role) ? headerRole as Role : undefined;
+  return {
+    tenantId: stringValue(params.get('tenantId')) ?? headerValue(headers, 'x-trackmind-tenant-id'),
+    racetrackId: stringValue(params.get('racetrackId')) ?? headerValue(headers, 'x-trackmind-racetrack-id'),
+    role,
+  };
+}
+
+function kpiScopeMismatch(params: URLSearchParams, headers?: IncomingMessage['headers']): string | undefined {
+  const checks = [
+    ['tenantId', 'x-trackmind-tenant-id'],
+    ['racetrackId', 'x-trackmind-racetrack-id'],
+    ['organizationId', 'x-trackmind-organization-id'],
+  ] as const;
+  for (const [paramName, headerName] of checks) {
+    const queryValue = stringValue(params.get(paramName));
+    const scopedHeader = headerValue(headers, headerName);
+    if (queryValue && scopedHeader && queryValue !== scopedHeader) return `${paramName} query/header scope mismatch`;
+  }
+  return undefined;
 }
 
 function collaborationPrincipal(input: Record<string, unknown>, scope: 'collaboration:read' | 'collaboration:write'): CollaborationPrincipal {
@@ -1108,7 +1224,7 @@ function racingDataExportControls(featureStoreExports: JsonBody[], dataLakeExpor
     backendAllowed: manifest.backendAllowed,
     draftOnly: manifest.draftOnly,
     disabledReason: Array.isArray(manifest.blockedReasons) ? manifest.blockedReasons.join(' ') : 'Export remains disabled until backend approval returns backendAllowed=true.',
-    approvalApi: manifest.surface === 'feature-store' ? 'POST /api/v1/racing-data/feature-store/exports/draft-requests' : 'POST /api/v1/racing-data/data-lake/exports/draft-requests',
+    approvalApi: manifest.surface === 'feature-store' ? 'POST /api/v1/racing-data/exports/feature-store' : 'POST /api/v1/racing-data/exports/data-lake',
   }));
 }
 
@@ -1246,7 +1362,7 @@ function findRacingDataRawPayloadReview(racingData: RacingDataApiFacadeState, pa
   return racingDataRawPayloadReviews(racingData).find((review) => isRecord(review) && isRecord(review.payload) && review.payload.payloadId === payloadId);
 }
 
-export async function handleApiRequest(method: HttpMethod, pathname: string, body?: unknown, state = createApiFacadeState()): Promise<{ status: number; headers?: Record<string, string>; body: JsonBody }> {
+export async function handleApiRequest(method: HttpMethod, pathname: string, body?: unknown, state = createApiFacadeState(), headers?: IncomingMessage['headers']): Promise<{ status: number; headers?: Record<string, string>; body: JsonBody }> {
   if (method === 'OPTIONS') return { status: 204, body: null };
   const requestUrl = new URL(pathname, 'http://localhost');
   const path = requestUrl.pathname.startsWith(nexusApiBasePath) ? requestUrl.pathname.slice(nexusApiBasePath.length) || '/' : requestUrl.pathname;
@@ -1314,6 +1430,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'GET' && path === '/track-configuration/map') return { status: 200, body: state.trackMap };
   if (method === 'GET' && path === '/track-surface/measurements') return { status: 200, body: createCommandCenterContractSnapshot().surfaceMeasurements };
   if (method === 'GET' && path === '/operations/command-center') return { status: 200, body: state.operations };
+  if (method === 'GET' && path === '/races') return { status: 200, body: (state.readiness as any).races ?? [] };
   if (method === 'GET' && path === '/race-day-readiness/dashboard') return { status: 200, body: state.readiness };
   if (method === 'GET' && path === '/assets/search') return { status: 200, body: state.assetRegistry };
   if (method === 'GET' && path === '/assets/standard') return { status: 200, body: (state.tusStandardization as any).assets };
@@ -1340,6 +1457,24 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'GET' && path === '/workforce-operations/workspace') return { status: 200, body: state.workforce };
   if (method === 'GET' && path === '/compliance/control-library') return { status: 200, body: state.compliance };
   if (method === 'GET' && path === '/federation/workspace') return { status: 200, body: state.federation };
+  const kpiScopeError = path.startsWith('/kpis') || path.startsWith('/artifacts/kpis') ? kpiScopeMismatch(requestUrl.searchParams, headers) : undefined;
+  if (kpiScopeError) return { status: 403, body: apiErrorBody({ code: 'forbidden', message: kpiScopeError, path, requestId }) };
+  if (method === 'GET' && (path === '/kpis' || path === '/artifacts/kpis')) return { status: 200, body: filterKPIWorkspace(state.kpis as ReturnType<typeof createKPIWorkspace>, kpiPrincipal(requestUrl.searchParams, headers)) };
+  if (method === 'GET' && (path === '/kpis/model-context' || path === '/artifacts/kpis/model-context')) return { status: 200, body: filterKPIWorkspace(state.kpis as ReturnType<typeof createKPIWorkspace>, kpiPrincipal(requestUrl.searchParams, headers)).modelReadableContext };
+  const kpiSnapshotMatch = path.match(/^\/(?:artifacts\/)?kpis\/([^/]+)\/snapshots$/);
+  if (method === 'GET' && kpiSnapshotMatch) {
+    const workspace = filterKPIWorkspace(state.kpis as ReturnType<typeof createKPIWorkspace>, kpiPrincipal(requestUrl.searchParams, headers));
+    const kpiId = decodeURIComponent(kpiSnapshotMatch[1]);
+    const kpi = workspace.kpis.find((item) => item.kpiId === kpiId);
+    return kpi ? { status: 200, body: kpi.historicalSnapshots } : apiNotFound(`No KPI artifact for ${kpiId}`, path, requestId);
+  }
+  const kpiDetailMatch = path.match(/^\/(?:artifacts\/)?kpis\/([^/]+)$/);
+  if (method === 'GET' && kpiDetailMatch) {
+    const workspace = filterKPIWorkspace(state.kpis as ReturnType<typeof createKPIWorkspace>, kpiPrincipal(requestUrl.searchParams, headers));
+    const kpiId = decodeURIComponent(kpiDetailMatch[1]);
+    const kpi = workspace.kpis.find((item) => item.kpiId === kpiId);
+    return kpi ? { status: 200, body: kpi } : apiNotFound(`No KPI artifact for ${kpiId}`, path, requestId);
+  }
   if (method === 'GET' && path === '/racing-data') return { status: 200, body: racingDataWorkspace(state.racingData) };
   if (method === 'GET' && path === '/racing-data/providers') return { status: 200, body: state.racingData.providers };
   if (method === 'GET' && path === '/racing-data/providers/statuses') return { status: 200, body: state.racingData.statuses };
@@ -1406,9 +1541,11 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'GET' && (path === '/racing-data/license-policies/supported-operations' || path === '/data-usage-policies/supported-operations')) return { status: 200, body: (state.racingDataPolicies as any).supportedOperations };
   if (method === 'GET' && path === '/compliance/track-certification-candidate') return { status: 200, body: state.trackCertification };
   if (method === 'GET' && path === '/ai-governance/workspace') return { status: 200, body: state.aiGovernance };
+  if (method === 'GET' && path === '/ai/recommendations') return { status: 200, body: createAIRecommendationDtos(state.aiGovernance) };
   if (method === 'GET' && path === '/ai-control-plane/workspace') return { status: 200, body: state.aiControlPlane };
   if (method === 'GET' && path === '/ai-control-plane/policy') return { status: 200, body: (state.aiControlPlane as any).policy };
   if (method === 'GET' && path === '/ai-control-plane/models') return { status: 200, body: (state.aiControlPlane as any).modelRegistry };
+  if (method === 'GET' && path === '/ai-control-plane/features') return { status: 200, body: createAIControlPlaneFeatureRecords(state.aiControlPlane, now()) };
   if (method === 'GET' && path === '/ai-control-plane/recommendations') return { status: 200, body: (state.aiControlPlane as any).recommendations };
   if (method === 'GET' && path === '/ai-control-plane/blocked-actions') return { status: 200, body: (state.aiControlPlane as any).blockedActions };
   if (method === 'GET' && path === '/ai-control-plane/events') return { status: 200, body: (state.aiControlPlane as any).events };
@@ -1553,7 +1690,7 @@ export function createTrackMindApiServer() {
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
       url.searchParams.set('requestId', requestId);
-      const result = await handleApiRequest((req.method ?? 'GET') as HttpMethod, `${url.pathname}${url.search}`, await readBody(req), state);
+      const result = await handleApiRequest((req.method ?? 'GET') as HttpMethod, `${url.pathname}${url.search}`, await readBody(req), state, req.headers);
       res.writeHead(result.status, { ...jsonHeaders, 'x-trackmind-request-id': requestId, ...(result.headers ?? {}) });
       res.end(typeof result.body === 'string' && result.headers?.['content-type']?.startsWith('text/event-stream') ? result.body : JSON.stringify(result.body));
       structuredLog('info', 'api.request.completed', { requestId, method: req.method ?? 'GET', path: url.pathname, status: result.status, durationMs: Date.now() - startedAt });

@@ -48,15 +48,23 @@ test('unified AI control plane validates input and output recommendation schemas
 
   const output = {
     recommendationId: 'rec-surface-risk',
+    tenantId: 'tenant-1',
+    racetrackId: 'track-1',
     type: 'risk-assessment',
+    recommendationType: 'risk-assessment',
     domain: 'surface',
     affectedAssets: ['sector:far-turn', 'twin:main-track:far-turn'],
     summary: 'Draft a far-turn surface intervention package for human review.',
     evidence: ['surface:moisture=27', 'inspection:standing-water'],
     confidence: 0.84,
+    modelVersion: 'model-surface-risk-v1',
+    policyReferences: ['trackmind-ai-advisory-only-v1', 'approval-policy:steward'],
     riskLevel: 'high',
+    generatedAt: '2026-06-14T20:00:00.000Z',
     requiresApproval: true,
     requiredApproverRoles: ['track-superintendent', 'steward'],
+    approvalRequirement: { required: true, policy: 'steward', requiredApproverRoles: ['track-superintendent', 'steward'] },
+    auditReference: { auditEventIds: ['audit-rec-surface-risk'], eventIds: ['event-rec-surface-risk'], correlationId: 'corr-rec-surface-risk' },
     blockedAutonomousExecution: true,
   };
   assert.deepEqual(validateAIRecommendationOutput(output), { valid: true, errors: [] });

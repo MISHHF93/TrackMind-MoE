@@ -30,6 +30,86 @@ def test_unknown_expert_domain_is_rejected():
     assert response.status_code == 404
 
 
+def test_kpi_context_export_is_metadata_only_for_agents():
+    context = {
+        "kpiId": "kpi-race-day-operations",
+        "domain": "race-day-operations",
+        "name": "Race-day readiness score",
+        "description": "Readiness score derived from governed event metadata.",
+        "currentValue": 87,
+        "unit": "score",
+        "trend": "flat",
+        "status": "watch",
+        "confidence": 0.82,
+        "dataQualityScore": 0.79,
+        "sourceSummary": "2 event refs; 1 entity refs; deterministic seeded facade calculation",
+        "allowedUse": ["generate advisory recommendations"],
+        "prohibitedUse": ["modify KPI values", "execute regulated actions", "bypass human approval", "expose raw cross-track records"],
+        "approvalSensitivity": "regulated-advisory-only",
+        "lastCalculatedAt": "2026-06-15T05:00:00.000Z",
+    }
+
+    response = client.post("/kpi-context/validate", json={"contexts": [context]})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["accepted"] is True
+    assert body["contextCount"] == 1
+    assert body["mutationAllowed"] is False
+    assert body["regulatedExecutionAllowed"] is False
+    assert "modify KPI values" in body["prohibitedUse"]
+    assert "execute regulated actions" in body["prohibitedUse"]
+    assert "expose raw cross-track records" in body["prohibitedUse"]
+
+
+def test_kpi_context_rejects_missing_execution_guardrails():
+    context = {
+        "kpiId": "kpi-race-day-operations",
+        "domain": "race-day-operations",
+        "name": "Race-day readiness score",
+        "description": "Unsafe context",
+        "currentValue": 87,
+        "unit": "score",
+        "trend": "flat",
+        "status": "watch",
+        "confidence": 0.82,
+        "dataQualityScore": 0.79,
+        "sourceSummary": "source refs",
+        "allowedUse": ["generate advisory recommendations"],
+        "prohibitedUse": ["modify KPI values"],
+        "approvalSensitivity": "regulated-advisory-only",
+        "lastCalculatedAt": "2026-06-15T05:00:00.000Z",
+    }
+
+    response = client.post("/kpi-context/validate", json={"contexts": [context]})
+
+    assert response.status_code == 422
+
+
+def test_kpi_context_rejects_allowed_protected_actions():
+    context = {
+        "kpiId": "kpi-race-day-operations",
+        "domain": "race-day-operations",
+        "name": "Race-day readiness score",
+        "description": "Unsafe context",
+        "currentValue": 87,
+        "unit": "score",
+        "trend": "flat",
+        "status": "watch",
+        "confidence": 0.82,
+        "dataQualityScore": 0.79,
+        "sourceSummary": "source refs",
+        "allowedUse": ["generate advisory recommendations", "execute regulated actions"],
+        "prohibitedUse": ["modify KPI values", "execute regulated actions", "bypass human approval", "expose raw cross-track records"],
+        "approvalSensitivity": "regulated-advisory-only",
+        "lastCalculatedAt": "2026-06-15T05:00:00.000Z",
+    }
+
+    response = client.post("/kpi-context/validate", json={"contexts": [context]})
+
+    assert response.status_code == 422
+
+
 def test_rag_ingest_rejects_unbounded_documents():
     response = client.post(
         "/rag/ingest",

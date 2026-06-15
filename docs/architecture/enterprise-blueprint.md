@@ -1,6 +1,6 @@
 # TrackMind Nexus Enterprise Blueprint
 
-TrackMind Nexus is an Azure-first enterprise monorepo for Thoroughbred racetrack operations. It organizes racetrack domains as independently deployable services connected by event sourcing, CQRS read models, Digital Twin state, Mixture-of-Experts AI recommendations, and human-governed automation.
+TrackMind Nexus is an Azure-first enterprise monorepo blueprint for Thoroughbred racetrack operations. The current repository contains shared contracts, in-memory/reference services, database migrations, scaffolds, and a canonical frontend shell; independently deployable services, durable event sourcing, production CQRS read models, Azure Digital Twins, and managed automation are target architecture unless explicitly implemented.
 
 ## Platform goals
 
@@ -31,16 +31,16 @@ flowchart LR
 
 ## Domain repository map
 
-- `apps/` contains user-facing applications, including operations dashboards, administrative portals, and mobile field tools.
+- `apps/` contains current user-facing and API applications: `apps/api`, `apps/frontend`, and `apps/agents`.
 - `services/` contains bounded-context backend services for race operations, safety, stewarding, tenancy, event ingestion, and future domains.
 - `digital-twin/` contains ontology, simulation, synchronization, and connector assets for Azure Digital Twins.
 - `ai/` contains MoE routing, expert agents, evaluation harnesses, model cards, and responsible AI controls.
 - `workflows/` contains durable workflow definitions and workers for human-in-the-loop processes.
 - `compliance/` contains control catalogs, evidence collection, policy-as-code mappings, and audit runbooks.
-- `integrations/` contains adapter-ready patterns for HISA-aligned, wagering, weather, camera, IoT, and payment/fan-system categories; a category mention is not a claim that any external provider is integrated, licensed, or approved.
-- `infra/` contains Azure Bicep/Terraform modules, environment overlays, Azure Policy, managed identities, network, observability, and security baselines.
+- Integration categories such as HISA-aligned, wagering, weather, camera, IoT, and payment/fan-system adapters are target patterns; a category mention is not a claim that any external provider is integrated, licensed, or approved.
+- `infra/` contains the current Azure and Docker deployment baseline plus policy/environment scaffolding; Terraform, Helm, Kubernetes, and production overlays are target assets unless present in the repository.
 - `tests/` contains cross-service contract, end-to-end, performance, and security tests.
-- `deploy/` contains CI/CD templates, release automation, Helm/Kubernetes assets, and operational scripts.
+- Deployment assets are currently limited to repository scaffolding and pipeline-style templates; Helm/Kubernetes assets are target architecture unless added explicitly.
 
 ## Azure reference services
 

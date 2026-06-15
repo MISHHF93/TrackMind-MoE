@@ -107,6 +107,8 @@ export interface AIAgentRegistryRecord {
 
 export interface AIExpertRequest<TFeatures = unknown> {
   id?: string;
+  tenantId?: string;
+  racetrackId?: string;
   domain: AIControlPlaneDomain;
   recommendationType: AIRecommendationType;
   features: TFeatures;
@@ -126,6 +128,8 @@ export interface ExpertDraftAction {
 
 export interface ExpertRecommendationDraft {
   id: string;
+  tenantId: string;
+  racetrackId: string;
   modelId: ExpertModelId;
   agentId: string;
   promptTemplateId: string;
@@ -260,17 +264,36 @@ export interface AIRecommendationArtifactAdapterOptions extends AIArtifactAdapte
 }
 
 export function recommendationDraftToSharedAIOutput(draft: ExpertRecommendationDraft, options: AIRecommendationArtifactAdapterOptions = {}): SharedAIRecommendationOutput {
+  const type = options.type ?? sharedRecommendationTypeByExpertType[draft.recommendationType];
+  const requiredApproverRoles = [...draft.requiredApprovals];
+  const requiresApproval = requiredApproverRoles.length > 0 || draft.riskLevel === 'high' || draft.riskLevel === 'critical' || draft.protectedActions.length > 0;
   return {
     recommendationId: draft.id,
-    type: options.type ?? sharedRecommendationTypeByExpertType[draft.recommendationType],
+    tenantId: options.tenantId ?? draft.tenantId,
+    racetrackId: options.racetrackId ?? draft.racetrackId,
+    type,
+    recommendationType: type,
     domain: options.domain ?? sharedDomainByExpertDomain[draft.domain],
     affectedAssets: [...draft.affectedAssets],
     summary: draft.recommendation,
     evidence: [...draft.evidence],
     confidence: draft.confidence,
+    modelVersion: draft.modelId,
+    policyReferences: policyReferencesForDraft(draft),
     riskLevel: draft.riskLevel,
-    requiresApproval: draft.requiredApprovals.length > 0 || draft.riskLevel === 'high' || draft.riskLevel === 'critical' || draft.protectedActions.length > 0,
-    requiredApproverRoles: [...draft.requiredApprovals],
+    generatedAt: draft.createdAt,
+    requiresApproval,
+    requiredApproverRoles,
+    approvalRequirement: {
+      required: requiresApproval,
+      policy: approvalPolicyForDraft(draft),
+      requiredApproverRoles,
+    },
+    auditReference: {
+      auditEventIds: [],
+      eventIds: [],
+      correlationId: `ai-draft:${draft.id}`,
+    },
     blockedAutonomousExecution: true,
   };
 }
@@ -289,17 +312,35 @@ export function recommendationDraftToForecastArtifact(draft: ExpertRecommendatio
 
 export function governanceRecommendationToSharedAIOutput(record: RecommendationRecord, options: AIRecommendationArtifactAdapterOptions = {}): SharedAIRecommendationOutput {
   const requiresApproval = record.approvalPolicy !== 'none' || record.riskLevel === 'high' || record.riskLevel === 'critical';
+  const type = options.type ?? sharedTypeForGovernanceRecord(record);
+  const requiredApproverRoles = requiresApproval ? approverRolesForGovernanceRecord(record) : [];
   return {
     recommendationId: record.id,
-    type: options.type ?? sharedTypeForGovernanceRecord(record),
+    tenantId: options.tenantId ?? record.tenantId ?? 'unknown-tenant',
+    racetrackId: options.racetrackId ?? record.racetrackId ?? 'unknown-racetrack',
+    type,
+    recommendationType: type,
     domain: options.domain ?? sharedDomainForGovernanceRecord(record),
     affectedAssets: [...record.affectedAssets],
     summary: record.recommendation,
     evidence: [...record.evidence],
     confidence: record.confidence,
+    modelVersion: record.modelVersionId,
+    policyReferences: policyReferencesForGovernanceRecord(record),
     riskLevel: record.riskLevel,
+    generatedAt: record.createdAt,
     requiresApproval,
-    requiredApproverRoles: requiresApproval ? approverRolesForGovernanceRecord(record) : [],
+    requiredApproverRoles,
+    approvalRequirement: {
+      required: requiresApproval,
+      policy: record.approvalPolicy,
+      requiredApproverRoles,
+    },
+    auditReference: {
+      auditEventIds: [`audit:ai-recommendation:${record.id}`],
+      eventIds: [`event:ai-recommendation:${record.id}`],
+      correlationId: record.correlationId ?? record.id,
+    },
     blockedAutonomousExecution: true,
   };
 }
@@ -575,6 +616,24 @@ function approverRolesForGovernanceRecord(record: RecommendationRecord): string[
   return ['compliance-officer'];
 }
 
+function policyReferencesForDraft(draft: ExpertRecommendationDraft): string[] {
+  return uniqueStrings([
+    'trackmind-ai-advisory-only-v1',
+    `approval-policy:${approvalPolicyForDraft(draft)}`,
+    ...draft.protectedActions.map((action) => `protected-action:${action}`),
+    ...draft.governanceControls.flatMap((control) => control.controls.map((item) => `${control.framework}:${item}`)),
+  ]);
+}
+
+function policyReferencesForGovernanceRecord(record: RecommendationRecord): string[] {
+  return uniqueStrings([
+    'trackmind-ai-advisory-only-v1',
+    `approval-policy:${record.approvalPolicy}`,
+    `action:${record.action}`,
+    ...record.lineage.filter((item) => item.startsWith('policy:') || item.startsWith('control:')),
+  ]);
+}
+
 function uniqueStrings(values: readonly (string | undefined)[]): string[] {
   return [...new Set(values.filter((value): value is string => typeof value === 'string' && value.length > 0))];
 }
@@ -680,12 +739,14 @@ function agentRegistryRecord(model: ExpertModelRegistryRecord, timestamp: string
   };
 }
 
-function draft(request: AIExpertRequest, model: ExpertModelRegistryRecord, body: Omit<ExpertRecommendationDraft, 'id' | 'modelId' | 'agentId' | 'promptTemplateId' | 'domain' | 'expertDomain' | 'recommendationType' | 'governanceControls' | 'advisoryOnly' | 'blockedAutonomousExecution' | 'protectedControlExecutionAllowed' | 'createdAt' | 'lineage' | 'limitations'>): ExpertRecommendationDraft {
+function draft(request: AIExpertRequest, model: ExpertModelRegistryRecord, body: Omit<ExpertRecommendationDraft, 'id' | 'tenantId' | 'racetrackId' | 'modelId' | 'agentId' | 'promptTemplateId' | 'domain' | 'expertDomain' | 'recommendationType' | 'governanceControls' | 'advisoryOnly' | 'blockedAutonomousExecution' | 'protectedControlExecutionAllowed' | 'createdAt' | 'lineage' | 'limitations'>): ExpertRecommendationDraft {
   const createdAt = request.requestedAt ?? new Date().toISOString();
   const id = request.id ?? `ai-draft-${model.controlPlaneDomain}-${stableHash(JSON.stringify({ domain: request.domain, recommendationType: request.recommendationType, createdAt }))}`;
   return {
     ...body,
     id,
+    tenantId: request.tenantId ?? 'control-plane-tenant',
+    racetrackId: request.racetrackId ?? 'control-plane-racetrack',
     modelId: model.id,
     agentId: `agent-${model.controlPlaneDomain}`,
     promptTemplateId: `prompt-${model.controlPlaneDomain}-v1`,

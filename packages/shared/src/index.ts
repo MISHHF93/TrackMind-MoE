@@ -28,6 +28,7 @@ export * from './unifiedDataModel.js';
 export * from './nexusUpgrade.js';
 
 export * from './aiControlPlane.js';
+export * from './kpiArtifacts.js';
 
 export * from './universalSchema.js';
 

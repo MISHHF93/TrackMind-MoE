@@ -17,7 +17,7 @@ flowchart LR
 
 - `apps/api/tests/apex-domain-services.test.mjs`
 - `apps/api/tests/cqrs-event-architecture.test.mjs`
-- `apps/dashboard/tests/race-day-command-dashboard.test.mjs`
+- `apps/frontend/tests/frontend-contracts.test.mjs` verifies the canonical frontend shell, route registry, scoped API adapter headers, mock isolation, KPI adapter wiring, Vite proxy boundary, and absence of direct regulated action controls.
 
 ## Certificates
 
