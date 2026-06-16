@@ -4,6 +4,7 @@ import { operatingModule } from '../../domain/operatingSystem';
 import type { WorkspaceViewModel } from '../../domain/workspaceModel';
 import type { AppRoute } from '../../routes/routes';
 import { ExperienceLayout, OperatingModuleConsole } from '../../components/experience';
+import { AIOperatingConsole, ContextDegradationBanner } from '../../components/aiOperating';
 import { AlertPanel, ApprovalCard, AuditCard, EmptyState, KPICard, PageHeader, RecommendationCard, SectionCard, StatusBadge, supportStatusToTone } from '../../components/ui';
 import { experienceFromViewModel } from './buildExperience';
 
@@ -73,6 +74,14 @@ export function RouteExperience({
       ) : null}
 
       {renderFocusBanner}
+
+      <ContextDegradationBanner degradations={data.contextDegraded ?? []} />
+
+      <AIOperatingConsole
+        operating={data.aiOperating}
+        recommendations={aiRecommendations}
+        renderRecommendationActions={renderRecommendationActions}
+      />
 
       <ExperienceLayout
         experience={experience}

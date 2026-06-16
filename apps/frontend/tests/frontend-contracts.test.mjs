@@ -225,9 +225,15 @@ test('frontend route experiences organize workspaces into functional lanes', asy
   assert.match(buildExperience, /buildFacilitiesExperience/);
   assert.match(routeExperience, /Governance rail/);
   assert.match(routeExperience, /OperatingModuleConsole/);
+  assert.match(routeExperience, /AIOperatingConsole/);
+  assert.match(routeExperience, /ContextDegradationBanner/);
   assert.match(routeExperience, /Showing \$\{approvalPreview\.length\} of \$\{approvals\.length\}/);
   assert.match(buildExperience, /recordWiringForPanel/);
   assert.match(buildExperience, /wiredRecord/);
+  const services = await source('src/api/services.ts');
+  assert.match(services, /buildAIOperatingContext/);
+  assert.match(services, /contextDegraded/);
+  assert.match(services, /mergeUniqueRecommendations/);
 });
 
 test('codex issue follow-up keeps card data defensive and copy accurate', async () => {

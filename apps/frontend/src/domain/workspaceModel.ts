@@ -1,5 +1,7 @@
 import type { AIRecommendationDto, AuditEventDto, ApprovalDto, KPI, ModelReadableKPIContext } from '@trackmind/shared';
 import type { AdapterSource } from '../api/client';
+import type { AIOperatingContext, ContextDegradation } from './aiOperatingModel';
+import { emptyAIOperatingContext } from './aiOperatingModel';
 import type { RouteSupportMetadata } from './support';
 
 export interface WorkspaceMetric {
@@ -45,6 +47,8 @@ export interface WorkspaceViewModel {
   auditEvents: AuditEventDto[];
   kpis: KPI[];
   modelReadableKpiContext: ModelReadableKPIContext[];
+  contextDegraded: ContextDegradation[];
+  aiOperating: AIOperatingContext;
 }
 
 export function countMetric(label: string, count: number, detail: string, tone: WorkspaceMetric['tone'] = 'nominal', actions?: WorkspaceCardAction[]): WorkspaceMetric {
@@ -99,5 +103,7 @@ export function createUnavailableWorkspace(route: RouteSupportMetadata, reason: 
     auditEvents: [],
     kpis: [],
     modelReadableKpiContext: [],
+    contextDegraded: [],
+    aiOperating: emptyAIOperatingContext(),
   };
 }

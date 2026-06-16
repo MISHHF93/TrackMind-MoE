@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
 import { backendSupportLabels, canViewRoute, defaultTenantContext, regulatedActionNames, type NavigationGroup } from '../domain/support';
-import { operatingModule, operatingPhaseLabels } from '../domain/operatingSystem';
+import { operatingModule } from '../domain/operatingSystem';
 import { currentPathname, currentSearch, navigate } from '../routes/navigation';
 import { routeForPathname, routeById, routes, type AppRoute } from '../routes/routes';
 import { Router } from '../routes/Router';
@@ -118,9 +118,9 @@ export function AppShell(): ReactElement {
           </RenderErrorBoundary>
         </main>
 
-        <aside className="intelligence-panel" aria-label="Contextual intelligence panel">
-          <h2>{activeOperating ? operatingPhaseLabels[activeOperating.phase] : 'Safety & Governance'}</h2>
-          <p>{activeOperating ? activeOperating.mission : 'Every workspace shows the operating picture, supporting evidence, and the human approval boundary in one governed racetrack surface.'}</p>
+        <aside className="intelligence-panel" aria-label="AI operating intelligence panel">
+          <h2>AI Operating Layer</h2>
+          <p>{activeOperating ? activeOperating.mission : 'The AI operating layer routes expert advisories across every racetrack console while humans retain command authority.'}</p>
           {activeOperating ? (
             <p className="intelligence-panel__functional">{activeOperating.functionalToday}</p>
           ) : null}

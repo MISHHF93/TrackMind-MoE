@@ -5,6 +5,7 @@ import { backendSupportLabels, canViewRoute, defaultTenantContext } from '../dom
 import { routeById, routeForPathname, type AppRoute } from '../routes/routes';
 import { currentSearch, navigate } from '../routes/navigation';
 import { ActionButtons, AlertPanel, ApprovalCard, AuditCard, DataTable, EmptyState, ErrorState, KPICard, LoadingState, MetricCard, PageHeader, RecommendationCard, SectionCard, StatusBadge, TagList, Timeline, WorkspaceRecordCard, supportStatusToTone, workspacePanelStatusLabel } from '../components/ui';
+import { AIOperatingConsole, ContextDegradationBanner } from '../components/aiOperating';
 import { RouteExperience } from './experiences/RouteExperience';
 
 interface WorkspacePageProps {
@@ -45,6 +46,8 @@ export function WorkspacePage({ route, state }: WorkspacePageProps): ReactElemen
   const kpis = Array.isArray(data.kpis) ? data.kpis.filter(isRenderableKpi) : [];
   const modelReadableKpiContext = Array.isArray(data.modelReadableKpiContext) ? data.modelReadableKpiContext.filter(isRenderableKpiContext) : [];
   const aiRecommendations = Array.isArray(data.aiRecommendations) ? data.aiRecommendations.filter(isRenderableRecommendation) : [];
+  const contextDegraded = Array.isArray(data.contextDegraded) ? data.contextDegraded : [];
+  const aiOperating = data.aiOperating;
   if (route.id === 'dashboard') {
     return (
       <DashboardWorkspace
@@ -59,6 +62,8 @@ export function WorkspacePage({ route, state }: WorkspacePageProps): ReactElemen
         kpis={kpis}
         modelReadableKpiContext={modelReadableKpiContext}
         aiRecommendations={aiRecommendations}
+        contextDegraded={contextDegraded}
+        aiOperating={aiOperating}
         generatedAt={data.generatedAt}
         source={data.source}
       />
@@ -108,6 +113,8 @@ function DashboardWorkspace({
   kpis,
   modelReadableKpiContext,
   aiRecommendations,
+  contextDegraded,
+  aiOperating,
   generatedAt,
   source,
 }: {
@@ -122,6 +129,8 @@ function DashboardWorkspace({
   kpis: WorkspaceViewModel['kpis'];
   modelReadableKpiContext: WorkspaceViewModel['modelReadableKpiContext'];
   aiRecommendations: WorkspaceViewModel['aiRecommendations'];
+  contextDegraded: WorkspaceViewModel['contextDegraded'];
+  aiOperating: WorkspaceViewModel['aiOperating'];
   generatedAt?: string;
   source: WorkspaceViewModel['source'];
 }): ReactElement {
@@ -155,6 +164,14 @@ function DashboardWorkspace({
           <button type="button" onClick={() => navigateWithinShell(route.path)}>Clear context</button>
         </aside>
       ) : null}
+
+      <ContextDegradationBanner degradations={contextDegraded} />
+
+      <AIOperatingConsole
+        operating={aiOperating}
+        recommendations={aiRecommendations}
+        renderRecommendationActions={(recommendation) => <RecommendationActions recommendation={recommendation} />}
+      />
 
       <section className="dashboard-hero" aria-label="Command center overview">
         <div className="dashboard-hero__copy">

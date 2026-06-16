@@ -3,6 +3,7 @@ import type {
   AIGovernanceWorkspaceDto,
   AIControlPlanePolicyDto,
   AIControlPlaneRecommendationDto,
+  AIControlPlaneWorkspaceDto,
   AIConfidenceScoreDto,
   AIRecommendationDto,
   ApprovalDto,
@@ -22,11 +23,14 @@ import type {
   RacingDataWorkspaceDto,
   SecurityOperationsDto,
   SurfaceIntelligenceDto,
+  SurfaceRecommendationDto,
   TrackMapDto,
   BarnOperationsDto,
 } from '@trackmind/shared';
 import { getJson, type AdapterResult } from './client';
 import { apiPaths } from './paths';
+import type { AIOperatingContext, ContextDegradation } from '../domain/aiOperatingModel';
+import { emptyAIOperatingContext, expertKeywordsForRoute } from '../domain/aiOperatingModel';
 import { countMetric, textMetric, type AdvisoryAIRecommendation, type WorkspaceCardAction, type WorkspacePanel, type WorkspaceViewModel } from '../domain/workspaceModel';
 import { routeById } from '../routes/routes';
 import type { DomainRouteId } from '../domain/support';
@@ -296,7 +300,22 @@ function normalizeRiskLevel(value: unknown): AIRiskLevel {
   return value === 'low' || value === 'medium' || value === 'high' || value === 'critical' ? value : 'medium';
 }
 
-function vm(routeId: DomainRouteId, source: WorkspaceViewModel['source'], partial: Omit<WorkspaceViewModel, 'route' | 'source'>): WorkspaceViewModel {
+function advisoryEvidencePackage(id: string, evidence: string[]) {
+  return {
+    evidencePackageId: id,
+    evidence: evidence.map((reference, index) => ({
+      evidenceId: `${id}-evidence-${index + 1}`,
+      kind: 'document' as const,
+      uri: reference,
+      description: reference,
+      source: 'frontend-adapter',
+      collectedAt: 'adapter',
+    })),
+    lineage: evidence,
+  };
+}
+
+function vm(routeId: DomainRouteId, source: WorkspaceViewModel['source'], partial: Omit<WorkspaceViewModel, 'route' | 'source'> & Partial<Pick<WorkspaceViewModel, 'contextDegraded' | 'aiOperating'>>): WorkspaceViewModel {
   const domains = new Set(routeKpiDomains[routeId]);
   const allKpis = Array.isArray(partial.kpis) ? partial.kpis.filter(isUnknownRecord) : [];
   const allModelContext = Array.isArray(partial.modelReadableKpiContext) ? partial.modelReadableKpiContext.filter(isUnknownRecord) : [];
@@ -306,31 +325,192 @@ function vm(routeId: DomainRouteId, source: WorkspaceViewModel['source'], partia
     route: routeById[routeId],
     source,
     ...partial,
+    contextDegraded: partial.contextDegraded ?? [],
+    aiOperating: partial.aiOperating ?? emptyAIOperatingContext(),
     kpis,
     modelReadableKpiContext: allModelContext.filter((context) => visibleKpiIds.has(context.kpiId)),
   };
 }
 
-async function commonContext() {
-  const [approvals, audit, controlPlaneRecommendations, ai, kpiWorkspace] = await Promise.all([
+function degradationFromResult(path: string, label: string, result: AdapterResult<unknown>): ContextDegradation | undefined {
+  if (result.status === 'ready' || result.status === 'empty') return undefined;
+  return { path, label, message: result.message ?? `${label} is unavailable for this role or scope.` };
+}
+
+function mergeUniqueRecommendations(...lists: AdvisoryAIRecommendation[][]): AdvisoryAIRecommendation[] {
+  const seen = new Set<string>();
+  const merged: AdvisoryAIRecommendation[] = [];
+  lists.flat().forEach((item) => {
+    const key = item.recommendationId || item.id;
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(item);
+  });
+  return merged;
+}
+
+function aiCardsFromCommandCenter(items: OperationsCommandCenterDto['aiRecommendations'] | undefined): AdvisoryAIRecommendation[] {
+  return (Array.isArray(items) ? items : []).filter(isUnknownRecord).map((item) => {
+    const itemId = textValue(item.id, 'command-center-ai');
+    return {
+      id: itemId,
+      recommendationId: itemId,
+      recommendation: textValue(item.recommendation, 'Command center AI advisory unavailable.'),
+      confidence: normalizeConfidence({ calibrated: item.confidenceValue, band: item.confidenceValue >= 0.8 ? 'high' : item.confidenceValue >= 0.5 ? 'medium' : 'low' }),
+      confidenceValue: numberValue(item.confidenceValue, Number.NaN),
+      evidence: stringArray(item.evidence),
+      evidencePackage: advisoryEvidencePackage(itemId, stringArray(item.evidence)),
+      modelVersion: 'command-center-advisory',
+      generatedAt: 'command-center',
+      approvalRequirement: { required: item.requiresApproval !== false, policy: 'Command center advisory routing', requiredApproverRoles: [] },
+      auditReference: { auditIds: [], eventIds: [], digitalTwinRefs: [] },
+      requiresApproval: item.requiresApproval !== false,
+      eventId: 'command-center',
+      auditId: 'command-center',
+      digitalTwinRefs: [],
+      riskLevel: 'medium',
+      advisoryOnly: true,
+      executionAllowed: false,
+      blockedAutonomousExecution: true,
+      governorAllowed: false,
+      governorReason: 'Command center advisories route operators; protected execution remains backend-governed.',
+      actionLabel: 'route-operator',
+      target: textValue(item.actionPath, '/dashboard'),
+      status: 'advisory',
+      mock: false,
+    };
+  });
+}
+
+function aiCardsFromSurfaceRecommendations(recommendations: SurfaceRecommendationDto[] | undefined): AdvisoryAIRecommendation[] {
+  return (Array.isArray(recommendations) ? recommendations : []).map((item) => ({
+    id: item.id,
+    recommendationId: item.id,
+    recommendation: item.recommendation,
+    confidence: normalizeConfidence({ band: item.priority === 'critical' || item.priority === 'high' ? 'high' : 'medium' }),
+    confidenceValue: item.priority === 'critical' ? 0.92 : item.priority === 'high' ? 0.82 : 0.65,
+    evidence: [item.eventId, item.auditId, item.sectorId, item.type],
+    evidencePackage: advisoryEvidencePackage(item.id, [item.eventId, item.auditId, item.sectorId, item.type]),
+    modelVersion: 'model-surface-advisor-v2',
+    generatedAt: 'surface-intelligence',
+    approvalRequirement: { required: true, policy: 'Surface operational actions require human approval', requiredApproverRoles: ['track-superintendent', 'admin'] },
+    auditReference: { auditIds: [item.auditId], eventIds: [item.eventId], digitalTwinRefs: [item.sectorId] },
+    requiresApproval: true,
+    eventId: item.eventId,
+    auditId: item.auditId,
+    digitalTwinRefs: [item.sectorId],
+    riskLevel: item.priority === 'critical' ? 'critical' : item.priority === 'high' ? 'high' : 'medium',
+    advisoryOnly: true,
+    executionAllowed: false,
+    blockedAutonomousExecution: true,
+    governorAllowed: false,
+    governorReason: 'Surface recommendations remain approval-gated; irrigation and maintenance execution are not frontend controls.',
+    actionLabel: item.type,
+    target: item.sectorId,
+    status: item.executionState,
+    mock: false,
+  }));
+}
+
+function aiCardsFromEquineRisk(recommendations: EquineIntelligenceDto['aiRiskRecommendations'] | undefined): AdvisoryAIRecommendation[] {
+  return (Array.isArray(recommendations) ? recommendations : []).map((item) => ({
+    id: item.id,
+    recommendationId: item.id,
+    recommendation: item.summary,
+    confidence: normalizeConfidence({ band: item.veterinarianReviewRequired ? 'high' : 'medium' }),
+    confidenceValue: item.veterinarianReviewRequired ? 0.88 : 0.7,
+    evidence: [item.status, item.proposedOperationalAction ?? 'equine-advisory'].filter((value): value is string => Boolean(value)),
+    evidencePackage: advisoryEvidencePackage(item.id, [item.status, item.proposedOperationalAction ?? 'equine-advisory'].filter((value): value is string => Boolean(value))),
+    modelVersion: 'model-equine-advisory-v1',
+    generatedAt: 'equine-intelligence',
+    approvalRequirement: { required: item.veterinarianReviewRequired, policy: 'Equine welfare advisories require veterinarian review when flagged', requiredApproverRoles: item.veterinarianReviewRequired ? ['veterinarian', 'admin'] : [] },
+    auditReference: { auditIds: [], eventIds: [], digitalTwinRefs: [] },
+    requiresApproval: item.veterinarianReviewRequired,
+    eventId: item.id,
+    auditId: item.id,
+    digitalTwinRefs: [],
+    riskLevel: item.veterinarianReviewRequired ? 'high' : 'medium',
+    advisoryOnly: true,
+    executionAllowed: false,
+    blockedAutonomousExecution: true,
+    governorAllowed: false,
+    governorReason: 'Equine AI advisories are non-diagnostic and cannot clear horses or authorize medication from the frontend.',
+    actionLabel: item.proposedOperationalAction ?? 'equine-review',
+    target: 'horse-profile',
+    status: item.status,
+    mock: false,
+  }));
+}
+
+function buildAIOperatingContext(routeId: DomainRouteId, workspace: AIControlPlaneWorkspaceDto | undefined, recommendationCount: number): AIOperatingContext {
+  if (!workspace) return emptyAIOperatingContext();
+  const keywords = expertKeywordsForRoute(routeId);
+  const expertModules = (Array.isArray(workspace.expertModules) ? workspace.expertModules : []).map((module) => ({
+    id: module.id,
+    name: module.name,
+    owner: module.owner,
+    modelVersionId: module.modelVersionId,
+    restrictedActions: Array.isArray(module.restrictedActions) ? module.restrictedActions : [],
+    allowedActivities: Array.isArray(module.allowedActivities) ? module.allowedActivities : [],
+  }));
+  const routed = expertModules.filter((module) => keywords.some((keyword) => module.id.toLowerCase().includes(keyword) || module.name.toLowerCase().includes(keyword)));
+  const blockedCount = Array.isArray(workspace.blockedActions) ? workspace.blockedActions.length : 0;
+  const modelCount = Array.isArray(workspace.modelRegistry?.models) ? workspace.modelRegistry.models.length : 0;
+  const eventCount = Array.isArray(workspace.events) ? workspace.events.length : 0;
+  const posture: AIOperatingContext['posture'] = blockedCount > 0 ? 'blocked' : routed.length > 0 ? 'routing' : 'advisory';
+  const routedNames = routed.map((module) => module.name).join(', ') || 'platform executive intelligence';
+  return {
+    policyId: workspace.policy?.policyId ?? 'trackmind-ai-advisory-only-v1',
+    advisoryOnly: true,
+    executionAllowed: false,
+    posture,
+    summary: blockedCount > 0
+      ? `AI operating layer is routing ${routedNames} while ${blockedCount} protected action(s) remain governor-blocked. Human approval is required before any backend workflow proceeds.`
+      : `AI operating layer is routing ${routedNames} across ${recommendationCount} active advisory recommendation(s). The frontend remains review-only; execution stays in backend workflows.`,
+    expertModules,
+    routedExpertIds: routed.map((module) => module.id),
+    blockedActionCount: blockedCount,
+    queuedRecommendationCount: recommendationCount,
+    modelCount,
+    eventCount,
+  };
+}
+
+async function commonContext(routeId: DomainRouteId) {
+  const [approvals, audit, controlPlaneRecommendations, aiGovernance, aiWorkspace, kpiWorkspace] = await Promise.all([
     getJson<ApprovalDto[]>(apiPaths.approvals.list),
     getJson<AuditEventDto[]>(apiPaths.audit.events),
     getJson<AIControlPlaneRecommendationDto[]>(apiPaths.dashboard.aiControlPlaneRecommendations),
     getJson<AIGovernanceWorkspaceDto>(apiPaths.dashboard.aiGovernanceWorkspace),
+    getJson<AIControlPlaneWorkspaceDto>(apiPaths.dashboard.aiControlPlaneWorkspace),
     getJson<KPIWorkspaceDto>(apiPaths.kpis.workspace),
   ]);
-  const approvalsData = Array.isArray(approvals.data) ? approvals.data : [];
-  const auditData = Array.isArray(audit.data) ? audit.data : [];
-  const controlPlaneData = Array.isArray(controlPlaneRecommendations.data) ? controlPlaneRecommendations.data : [];
-  const aiData = ai.data;
-  const kpiData = kpiWorkspace.data;
+  const contextDegraded = [
+    degradationFromResult(apiPaths.approvals.list, 'Approval queue', approvals),
+    degradationFromResult(apiPaths.audit.events, 'Audit ledger', audit),
+    degradationFromResult(apiPaths.dashboard.aiControlPlaneRecommendations, 'AI recommendations', controlPlaneRecommendations),
+    degradationFromResult(apiPaths.dashboard.aiGovernanceWorkspace, 'AI governance workspace', aiGovernance),
+    degradationFromResult(apiPaths.dashboard.aiControlPlaneWorkspace, 'AI control plane', aiWorkspace),
+    degradationFromResult(apiPaths.kpis.workspace, 'KPI workspace', kpiWorkspace),
+  ].filter((entry): entry is ContextDegradation => Boolean(entry));
+  const approvalsData = approvals.status === 'ready' || approvals.status === 'empty' ? (Array.isArray(approvals.data) ? approvals.data : []) : [];
+  const auditData = audit.status === 'ready' || audit.status === 'empty' ? (Array.isArray(audit.data) ? audit.data : []) : [];
+  const controlPlaneData = controlPlaneRecommendations.status === 'ready' || controlPlaneRecommendations.status === 'empty'
+    ? (Array.isArray(controlPlaneRecommendations.data) ? controlPlaneRecommendations.data : [])
+    : [];
+  const aiData = aiGovernance.status === 'ready' ? aiGovernance.data : undefined;
+  const aiWorkspaceData = aiWorkspace.status === 'ready' ? aiWorkspace.data : undefined;
+  const kpiData = kpiWorkspace.status === 'ready' ? kpiWorkspace.data : undefined;
   const governedCards = aiCardsFromControlPlane(controlPlaneData);
+  const aiRecommendations = governedCards.length > 0 ? governedCards : aiCardsFromGovernance(aiData);
   return {
     approvals: approvalsData,
     auditEvents: auditData,
-    aiRecommendations: governedCards.length > 0 ? governedCards : aiCardsFromGovernance(aiData),
+    aiRecommendations,
     kpis: Array.isArray(kpiData?.kpis) ? kpiData.kpis.filter(isUnknownRecord) : [],
     modelReadableKpiContext: Array.isArray(kpiData?.modelReadableContext) ? kpiData.modelReadableContext.filter(isUnknownRecord) : [],
+    contextDegraded,
+    aiOperating: buildAIOperatingContext(routeId, aiWorkspaceData, aiRecommendations.length),
   };
 }
 
@@ -340,7 +520,7 @@ const dashboardService = {
     const [operations, health, context] = await Promise.all([
       getJson<OperationsCommandCenterDto>(apiPaths.dashboard.operations),
       getJson<PlatformHealthWorkspaceDto>(apiPaths.dashboard.platformHealth),
-      commonContext(),
+      commonContext('dashboard'),
     ]);
     const operationsData = requireReady(operations, 'Operations command center');
     const healthData = health.status === 'ready' && health.data ? health.data : {
@@ -354,6 +534,7 @@ const dashboardService = {
     const lineage = Array.isArray(operationsData.dataLineage) ? operationsData.dataLineage : [];
     const alerts = Array.isArray(operationsData.alerts) ? operationsData.alerts : [];
     const liveEvents = Array.isArray(operationsData.liveEvents) ? operationsData.liveEvents : [];
+    const mergedAi = mergeUniqueRecommendations(aiCardsFromCommandCenter(operationsData.aiRecommendations), context.aiRecommendations);
     return vm('dashboard', operations.source, {
       generatedAt: operationsData.generatedAt ?? healthData.generatedAt,
       metrics: [
@@ -384,6 +565,8 @@ const dashboardService = {
         ...liveEvents.slice(0, 2).map((event) => ({ id: `supplemental-${event.id}`, title: `Supplemental event snapshot: ${event.summary}`, body: `${event.severity} static command-center event metadata from ${event.source}; no streaming subscription is active in this card.`, status: 'facade-only' as const, evidence: [event.type, event.domain] })),
       ],
       ...context,
+      aiRecommendations: mergedAi,
+      aiOperating: { ...context.aiOperating, queuedRecommendationCount: mergedAi.length },
     });
   },
 };
@@ -397,7 +580,7 @@ const raceDayService = {
       getJson<RaceDayReadinessDashboardDto>(apiPaths.raceDay.readiness),
       getJson<SurfaceIntelligenceDto>(apiPaths.raceDay.surface),
       getJson<TrackMapDto>(apiPaths.raceDay.trackConfiguration),
-      commonContext(),
+      commonContext('raceDay'),
     ]);
     const raceRows = requireReady(races, 'Race summaries');
     const raceOfficeData = requireReady(raceOffice, 'Race office workspace');
@@ -448,6 +631,7 @@ const raceDayService = {
         { label: 'View audit context note', path: '/audit?trackConfiguration=map', detail: 'Review audit workspace with a track configuration context note; records are not filtered by this link.' },
       ],
     }];
+    const mergedAi = mergeUniqueRecommendations(context.aiRecommendations, aiCardsFromSurfaceRecommendations(surfaceData.recommendations));
     return vm('raceDay', races.source, {
       generatedAt: readinessData.generatedAt || raceOfficeData.cards[0]?.updatedAt || raceOfficeData.raceDays[0]?.updatedAt || '',
       metrics: [
@@ -457,9 +641,12 @@ const raceDayService = {
         countMetric('Track sectors', trackData.sectors.length, 'Track map sectors from /track-configuration/map'),
         countMetric('Approval controls', readinessData.approvals.length + approvalControls.length, 'Race-day controls remain approval-only', 'warning'),
         textMetric('Direct execution', 'Locked', 'Race starts, stops, results, scratches, cancellations, and configuration changes are not exposed as frontend execution actions', 'critical'),
+        countMetric('AI surface advisories', surfaceData.recommendations.length, 'Surface expert recommendations merged into the AI operating layer', surfaceData.recommendations.length ? 'advisory' : 'nominal'),
       ],
       panels: [...racePanels, ...warningPanels, ...controlPanels, ...surfacePanels, ...trackPanels],
       ...context,
+      aiRecommendations: mergedAi,
+      aiOperating: { ...context.aiOperating, queuedRecommendationCount: mergedAi.length },
     });
   },
 };
@@ -467,7 +654,7 @@ const raceDayService = {
 const equineService = {
   support: 'facade-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const [horse, barnOperations, context] = await Promise.all([getJson<EquineIntelligenceDto>(apiPaths.equine.horse), getJson<BarnOperationsDto>(apiPaths.equine.barnOperations), commonContext()]);
+    const [horse, barnOperations, context] = await Promise.all([getJson<EquineIntelligenceDto>(apiPaths.equine.horse), getJson<BarnOperationsDto>(apiPaths.equine.barnOperations), commonContext('equine')]);
     const data = requireReady(horse, 'Equine intelligence horse profile');
     const barnData = requireReady(barnOperations, 'Barn operations workspace');
     const eligibilityRuleIds = data.eligibilityRules?.map((rule) => rule.id) ?? data.eligibilityStatus.failedRules;
@@ -479,6 +666,7 @@ const equineService = {
       { id: 'equine-activity', title: 'Race and workout activity', body: `${data.raceHistory.length} race record(s), ${data.workoutHistory.length} workout(s), ${transportationRecordCount} transport record(s) in the profile.`, status: 'facade-only', evidence: ['raceHistory', 'workoutHistory', 'transportationRecords'] },
       ...barnData.readiness.slice(0, 2).map((readiness) => ({ id: readiness.barnId, title: `Barn ${readiness.barnId}`, body: `${readiness.status} barn readiness at ${readiness.score}; ${readiness.occupiedStalls}/${readiness.capacity} stalls occupied; blockers ${readiness.blockers.join(', ') || 'none'}.`, status: 'facade-only' as const, evidence: ['BarnOperationsDto', readiness.barnId], actions: [{ label: 'View barn context', path: '/equine', detail: 'Review the Equine workspace barn operations summary.' }, { label: 'View audit context note', path: `/audit?barn=${encodeURIComponent(readiness.barnId)}`, detail: 'Review audit workspace with a barn context note; records are not filtered by this link.' }] })),
     ];
+    const mergedAi = mergeUniqueRecommendations(context.aiRecommendations, aiCardsFromEquineRisk(data.aiRiskRecommendations));
     return vm('equine', horse.source, {
       metrics: [
         textMetric('Lifecycle', data.horse.lifecycleStatus, 'Horse lifecycle from EquineIntelligenceDto'),
@@ -486,9 +674,12 @@ const equineService = {
         textMetric('Veterinary status', data.veterinaryStatus.status, 'Detailed veterinary records are omitted from this facade', 'advisory'),
         countMetric('Barn readiness rows', barnData.readiness.length, 'Barn operations workspace uses the /barn-operations/workspace API facade', 'nominal', [{ label: 'View audit context', path: '/audit', detail: 'Review available barn operations evidence.' }]),
         countMetric('Twin refs', data.digitalTwinReferences.length, 'Equine digital twin references attached to this profile'),
+        countMetric('AI welfare advisories', data.aiRiskRecommendations.length, 'Equine expert advisories merged into the AI operating layer', data.aiRiskRecommendations.length ? 'advisory' : 'nominal'),
       ],
       panels,
       ...context,
+      aiRecommendations: mergedAi,
+      aiOperating: { ...context.aiOperating, queuedRecommendationCount: mergedAi.length },
     });
   },
 };
@@ -496,7 +687,7 @@ const equineService = {
 const approvalsService = {
   support: 'live-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const context = await commonContext();
+    const context = await commonContext('approvals');
     return vm('approvals', 'live-api', {
       metrics: [countMetric('Approval records', context.approvals.length, 'View-only approval request records', context.approvals.length ? 'warning' : 'nominal')],
       panels: context.approvals.length
@@ -510,7 +701,7 @@ const approvalsService = {
 const incidentsService = {
   support: 'facade-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const [security, emergency, context] = await Promise.all([getJson<SecurityOperationsDto>(apiPaths.incidents.security), getJson<EmergencyOperationsDto>(apiPaths.incidents.emergency), commonContext()]);
+    const [security, emergency, context] = await Promise.all([getJson<SecurityOperationsDto>(apiPaths.incidents.security), getJson<EmergencyOperationsDto>(apiPaths.incidents.emergency), commonContext('incidents')]);
     const securityData = requireReady(security, 'Security operations workspace');
     const emergencyData = requireReady(emergency, 'Emergency operations workspace');
     const incidentRows = [
@@ -535,7 +726,7 @@ const incidentsService = {
 const complianceService = {
   support: 'facade-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const [library, context] = await Promise.all([getJson<ComplianceControlLibraryDto>(apiPaths.compliance.library), commonContext()]);
+    const [library, context] = await Promise.all([getJson<ComplianceControlLibraryDto>(apiPaths.compliance.library), commonContext('compliance')]);
     const libraryData = requireReady(library, 'Compliance control library');
     const controls = libraryData.controls;
     const readinessStatus = `${libraryData.readiness.score}% score, ${libraryData.readiness.openFindings} open finding(s)`;
@@ -557,7 +748,7 @@ const complianceService = {
 const securityService = {
   support: 'facade-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const [security, context] = await Promise.all([getJson<SecurityOperationsDto>(apiPaths.security.workspace), commonContext()]);
+    const [security, context] = await Promise.all([getJson<SecurityOperationsDto>(apiPaths.security.workspace), commonContext('security')]);
     const data = requireReady(security, 'Security operations workspace');
     const cameraHealth = data.dashboard.cameraHealth;
     return vm('security', security.source, {
@@ -577,7 +768,7 @@ const securityService = {
 const facilitiesService = {
   support: 'live-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const [facilities, context] = await Promise.all([getJson<FacilitiesMaintenanceWorkspaceDto>(apiPaths.facilities.workspace), commonContext()]);
+    const [facilities, context] = await Promise.all([getJson<FacilitiesMaintenanceWorkspaceDto>(apiPaths.facilities.workspace), commonContext('facilities')]);
     const data = requireReady(facilities, 'Facilities maintenance workspace');
     const assetPanels: WorkspacePanel[] = data.assets.slice(0, 4).map((asset) => ({
       id: asset.assetId,
@@ -625,7 +816,7 @@ const facilitiesService = {
 const ticketingService = {
   support: 'facade-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const [ticketing, context] = await Promise.all([getJson<FinanceTicketingWorkspaceDto>(apiPaths.finance.ticketing), commonContext()]);
+    const [ticketing, context] = await Promise.all([getJson<FinanceTicketingWorkspaceDto>(apiPaths.finance.ticketing), commonContext('ticketing')]);
     const data = requireReady(ticketing, 'Finance ticketing workspace');
     const summary = data.summary ?? { activeTickets: 0, refundedTickets: 0, voidTickets: 0, grossTicketRevenueCents: Number.NaN, protectedPayouts: 0, raceDayIds: [] };
     const evidence = arrayEvidence(data.evidence, ['FinanceTicketingWorkspaceDto']);
@@ -657,7 +848,7 @@ const ticketingService = {
 const financeService = {
   support: 'facade-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const [finance, context] = await Promise.all([getJson<FinanceTicketingWorkspaceDto>(apiPaths.finance.ticketing), commonContext()]);
+    const [finance, context] = await Promise.all([getJson<FinanceTicketingWorkspaceDto>(apiPaths.finance.ticketing), commonContext('finance')]);
     const data = requireReady(finance, 'Finance workspace');
     const summary = data.summary ?? { activeTickets: 0, refundedTickets: 0, voidTickets: 0, grossTicketRevenueCents: Number.NaN, protectedPayouts: 0, raceDayIds: [] };
     const evidence = arrayEvidence(data.evidence, ['FinanceTicketingWorkspaceDto']);
@@ -704,7 +895,7 @@ const financeService = {
 const federationService = {
   support: 'facade-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const [federation, context] = await Promise.all([getJson<FederationWorkspaceDto>(apiPaths.federation.workspace), commonContext()]);
+    const [federation, context] = await Promise.all([getJson<FederationWorkspaceDto>(apiPaths.federation.workspace), commonContext('federation')]);
     const data = requireReady(federation, 'Federation workspace');
     return vm('federation', federation.source, {
       metrics: [
@@ -739,7 +930,7 @@ function formatCurrency(cents: unknown): string {
 const dataHubService = {
   support: 'facade-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const [workspace, context] = await Promise.all([getJson<RacingDataWorkspaceDto>(apiPaths.dataHub.workspace), commonContext()]);
+    const [workspace, context] = await Promise.all([getJson<RacingDataWorkspaceDto>(apiPaths.dataHub.workspace), commonContext('dataHub')]);
     const data = requireReady(workspace, 'Racing Data API Hub workspace');
     const providerStatuses = Array.isArray(data.statuses) ? data.statuses.map(asRecord) : [];
     const statusByProviderId = new Map<string, UnknownRecord>();
@@ -797,7 +988,7 @@ const dataHubService = {
 const auditService = {
   support: 'live-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const [audit, context] = await Promise.all([getJson<AuditEventDto[]>(apiPaths.audit.events), commonContext()]);
+    const [audit, context] = await Promise.all([getJson<AuditEventDto[]>(apiPaths.audit.events), commonContext('audit')]);
     const auditData = requireReady(audit, 'Audit events');
     const events = Array.isArray(auditData) ? auditData : [];
     const critical = events.filter((event) => event.severity === 'critical').length;
@@ -829,7 +1020,7 @@ const auditService = {
 const adminService = {
   support: 'facade-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const [health, context] = await Promise.all([getJson<PlatformHealthWorkspaceDto>(apiPaths.admin.platformHealth), commonContext()]);
+    const [health, context] = await Promise.all([getJson<PlatformHealthWorkspaceDto>(apiPaths.admin.platformHealth), commonContext('admin')]);
     const data = requireReady(health, 'Platform health');
     const services = Array.isArray(data.services) ? data.services : [];
     const approvalEngine = data.approvalEngine ?? { pending: 0 };
@@ -855,7 +1046,7 @@ const adminService = {
 const settingsService = {
   support: 'facade-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const [policy, context] = await Promise.all([getJson<AIControlPlanePolicyDto>(apiPaths.settings.policy), commonContext()]);
+    const [policy, context] = await Promise.all([getJson<AIControlPlanePolicyDto>(apiPaths.settings.policy), commonContext('settings')]);
     const data = requireReady(policy, 'AI control-plane policy');
     const protectedActions = Array.isArray(data.protectedActions) ? data.protectedActions : [];
     const governanceMapping = Array.isArray(data.governanceMapping) ? data.governanceMapping : [];

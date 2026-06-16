@@ -15,6 +15,10 @@ export const apiPaths = {
     platformHealth: '/platform/health',
     aiControlPlaneRecommendations: '/ai-control-plane/recommendations',
     aiGovernanceWorkspace: '/ai-governance/workspace',
+    aiControlPlaneWorkspace: '/ai-control-plane/workspace',
+    aiControlPlaneModels: '/ai-control-plane/models',
+    aiControlPlaneBlockedActions: '/ai-control-plane/blocked-actions',
+    aiControlPlaneEvents: '/ai-control-plane/events',
   },
   kpis: {
     workspace: '/kpis',
@@ -71,6 +75,7 @@ export const commonContextApiPaths = [
   apiPaths.audit.events,
   apiPaths.dashboard.aiControlPlaneRecommendations,
   apiPaths.dashboard.aiGovernanceWorkspace,
+  apiPaths.dashboard.aiControlPlaneWorkspace,
   apiPaths.kpis.workspace,
 ] as const;
 
@@ -108,6 +113,10 @@ const pathSources: Record<string, ApiAdapterSource> = {
   [apiPaths.dashboard.platformHealth]: 'facade-api',
   [apiPaths.dashboard.aiControlPlaneRecommendations]: 'live-api',
   [apiPaths.dashboard.aiGovernanceWorkspace]: 'facade-api',
+  [apiPaths.dashboard.aiControlPlaneWorkspace]: 'facade-api',
+  [apiPaths.dashboard.aiControlPlaneModels]: 'facade-api',
+  [apiPaths.dashboard.aiControlPlaneBlockedActions]: 'live-api',
+  [apiPaths.dashboard.aiControlPlaneEvents]: 'facade-api',
   [apiPaths.kpis.workspace]: 'live-api',
   [apiPaths.raceDay.races]: 'facade-api',
   [apiPaths.raceDay.raceOffice]: 'facade-api',
