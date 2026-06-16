@@ -18,7 +18,7 @@ interface WorkspacePageProps {
 export function WorkspacePage({ route, state }: WorkspacePageProps): ReactElement {
   const supportLabel = backendSupportLabels[route.supportStatus];
   const [search, setSearch] = useState(() => currentSearch());
-  const focus = focusFromSearch(search);
+  const focus = focusFromSearch(search, route.id);
 
   useEffect(() => {
     const onPopState = () => setSearch(currentSearch());
@@ -52,19 +52,19 @@ export function WorkspacePage({ route, state }: WorkspacePageProps): ReactElemen
       />
 
       {focus ? (
-        <aside className="focus-banner" aria-label="Navigation context">
-          <strong>Navigation context</strong>
+        <aside className="focus-banner" aria-label="Navigation context note">
+          <strong>Navigation context note</strong>
           <span>{focus.label}: {focus.value}</span>
           <button type="button" onClick={() => navigateWithinShell(route.path)}>Clear context</button>
         </aside>
       ) : null}
 
       <div className="metric-grid" aria-label={`${route.label} metrics`}>
-        {metrics.map((metric) => (
+        {metrics.map((metric, index) => (
           <MetricCard
             metric={metric}
-            actions={<ActionButtons actions={metric.actions ?? actionsForMetric(metric.label, metric.value, metric.detail, route.path)} onNavigate={navigateWithinShell} />}
-            key={metric.label}
+            actions={<ActionButtons actions={metric.actions ?? actionsForMetric(metric.label, metric.value, metric.detail, route.path, route.id)} onNavigate={navigateWithinShell} />}
+            key={`${metric.label}-${index}`}
           />
         ))}
       </div>
@@ -72,13 +72,13 @@ export function WorkspacePage({ route, state }: WorkspacePageProps): ReactElemen
       <div className="workspace-grid">
         <SectionCard title="Route Data Cards" description="Cards show the route data and evidence returned by wired API or facade adapters. They do not execute regulated operations.">
           {panels.length === 0 ? (
-            <EmptyState message="No records returned by the adapter." actions={<ActionButtons actions={[{ label: 'Open audit', path: '/audit', detail: 'Review available evidence for this route.' }]} onNavigate={navigateWithinShell} />} />
+            <EmptyState message="No records returned by the adapter." actions={<ActionButtons actions={[{ label: 'View audit context', path: '/audit', detail: 'Review available evidence for this route.' }]} onNavigate={navigateWithinShell} />} />
           ) : (
-            panels.map((panel) => (
+            panels.map((panel, index) => (
               <WorkspaceRecordCard
                 panel={panel}
                 actions={<ActionButtons actions={panel.actions ?? actionsForPanel(panel, route.path)} onNavigate={navigateWithinShell} />}
-                key={panel.id}
+                key={`${panel.id || 'panel'}-${index}`}
               />
             ))
           )}
@@ -88,25 +88,25 @@ export function WorkspacePage({ route, state }: WorkspacePageProps): ReactElemen
           <ApprovalBoundary approvals={approvals} auditEvents={auditEvents} />
           <AlertPanel title="Execution Guardrail" tone="critical">
             <p>Direct race starts, race stops, results, scratches, medication decisions, emergency actions, payouts, discipline, and enforcement are not rendered as buttons.</p>
-            <ActionButtons actions={[{ label: 'Review AI policy', path: '/settings', detail: 'Open advisory-only AI policy context.' }]} onNavigate={navigateWithinShell} />
+            <ActionButtons actions={[{ label: 'Review AI policy', path: '/settings', detail: 'Review advisory-only AI policy context.' }]} onNavigate={navigateWithinShell} />
           </AlertPanel>
         </SectionCard>
       </div>
 
       <SectionCard title="Governed KPI Artifacts" description="KPI artifacts are rendered from typed contract fields with audit and model-use metadata.">
         {kpis.length === 0 ? (
-          <EmptyState message="No KPI artifacts are visible for this route and role." actions={<ActionButtons actions={[{ label: 'Open audit', path: '/audit', detail: 'Review available KPI evidence.' }]} onNavigate={navigateWithinShell} />} />
+          <EmptyState message="No KPI artifacts are visible for this route and role." actions={<ActionButtons actions={[{ label: 'View audit context', path: '/audit', detail: 'Review available KPI evidence.' }]} onNavigate={navigateWithinShell} />} />
         ) : (
           <div className="kpi-grid">
-            {kpis.map((kpi) => (
+            {kpis.map((kpi, index) => (
               <KPICard
                 kpi={kpi}
                 modelContext={modelReadableKpiContext.find((context) => context.kpiId === kpi.kpiId)}
                 actions={<ActionButtons actions={[
-                  { label: 'View audit context', path: `/audit?kpi=${encodeURIComponent(kpi.kpiId)}`, detail: 'Open audit workspace with KPI context.' },
-                  { label: 'Open approvals workspace', path: '/approvals', detail: 'Review approval boundary.' },
+                  { label: 'View audit context', path: `/audit?kpi=${encodeURIComponent(kpi.kpiId)}`, detail: 'Review audit workspace with KPI context.' },
+                  { label: 'View approval context', path: '/approvals', detail: 'Review approval boundary.' },
                 ]} onNavigate={navigateWithinShell} />}
-                key={kpi.kpiId}
+                key={`${kpi.kpiId || 'kpi'}-${index}`}
               />
             ))}
           </div>
@@ -115,14 +115,14 @@ export function WorkspacePage({ route, state }: WorkspacePageProps): ReactElemen
 
       <SectionCard title="Advisory AI" description="Recommendations expose evidence, confidence, model version, approval state, and audit references without execution controls.">
         {aiRecommendations.length === 0 ? (
-          <EmptyState message="No AI recommendations returned for this route." actions={<ActionButtons actions={[{ label: 'Review AI policy', path: '/settings', detail: 'Open advisory-only AI policy.' }]} onNavigate={navigateWithinShell} />} />
+          <EmptyState message="No AI recommendations returned for this route." actions={<ActionButtons actions={[{ label: 'Review AI policy', path: '/settings', detail: 'Review advisory-only AI policy.' }]} onNavigate={navigateWithinShell} />} />
         ) : (
           <div className="ai-grid">
-            {aiRecommendations.slice(0, 6).map((recommendation) => (
+            {aiRecommendations.slice(0, 6).map((recommendation, index) => (
               <RecommendationCard
                 recommendation={recommendation}
                 actions={<RecommendationActions recommendation={recommendation} />}
-                key={recommendation.recommendationId}
+                key={`${recommendation.recommendationId || 'recommendation'}-${index}`}
               />
             ))}
           </div>
@@ -163,26 +163,32 @@ function ApprovalBoundary({ approvals, auditEvents }: { approvals: WorkspaceView
   return (
     <div className="boundary-grid">
       {approvalPreview.length ? (
-        approvalPreview.map((approval) => (
+        approvalPreview.map((approval, index) => {
+          const approvalId = approval.id ?? approval.approvalRequestId ?? `approval-${index}`;
+          return (
           <ApprovalCard
             approval={approval}
-            actions={<ActionButtons actions={[{ label: 'View approval context', path: `/approvals?approval=${encodeURIComponent(approval.id)}`, detail: 'Open approvals workspace with approval context.' }]} onNavigate={navigateWithinShell} />}
-            key={approval.id}
+            actions={<ActionButtons actions={[{ label: 'View approval context note', path: `/approvals?approval=${encodeURIComponent(approvalId)}`, detail: 'Review approvals workspace with a context note; records are not filtered by this link.' }]} onNavigate={navigateWithinShell} />}
+            key={approvalId}
           />
-        ))
+        );
+        })
       ) : (
-        <EmptyState message="No pending approval records are visible for this route." actions={<ActionButtons actions={[{ label: 'Open approvals workspace', path: '/approvals', detail: 'Review human approval queue.' }]} onNavigate={navigateWithinShell} />} />
+        <EmptyState message="No pending approval records are visible for this route." actions={<ActionButtons actions={[{ label: 'View approval context', path: '/approvals', detail: 'Review human approval queue.' }]} onNavigate={navigateWithinShell} />} />
       )}
       {auditPreview.length ? (
-        auditPreview.map((event) => (
+        auditPreview.map((event, index) => {
+          const eventId = event.auditEventId ?? event.id ?? `event-${index}`;
+          return (
           <AuditCard
             event={event}
-            actions={<ActionButtons actions={[{ label: 'View audit context', path: `/audit?event=${encodeURIComponent(event.auditEventId)}`, detail: 'Open audit workspace with event context.' }]} onNavigate={navigateWithinShell} />}
-            key={event.id}
+            actions={<ActionButtons actions={[{ label: 'View audit context note', path: `/audit?event=${encodeURIComponent(eventId)}`, detail: 'Review audit workspace with a context note; records are not filtered by this link.' }]} onNavigate={navigateWithinShell} />}
+            key={eventId}
           />
-        ))
+        );
+        })
       ) : (
-        <EmptyState message="No audit events are visible for this route." actions={<ActionButtons actions={[{ label: 'Open audit', path: '/audit', detail: 'Review audit ledger.' }]} onNavigate={navigateWithinShell} />} />
+        <EmptyState message="No audit events are visible for this route." actions={<ActionButtons actions={[{ label: 'View audit context', path: '/audit', detail: 'Review audit ledger.' }]} onNavigate={navigateWithinShell} />} />
       )}
     </div>
   );
@@ -191,13 +197,13 @@ function ApprovalBoundary({ approvals, auditEvents }: { approvals: WorkspaceView
 function RecommendationActions({ recommendation }: { recommendation: WorkspaceViewModel['aiRecommendations'][number] }): ReactElement {
   return (
     <div className="action-row" aria-label="Allowed AI actions">
-      <button type="button" onClick={() => navigateWithinShell(`/audit?recommendation=${encodeURIComponent(recommendation.recommendationId)}`)} title="Open audit workspace with recommendation context.">View audit context</button>
+      <button type="button" onClick={() => navigateWithinShell(`/audit?recommendation=${encodeURIComponent(recommendation.recommendationId)}`)} title="Review audit workspace with a recommendation context note.">View audit context note</button>
       {recommendation.approvalRequirement?.required ? (
-        <button type="button" onClick={() => navigateWithinShell(`/approvals?recommendation=${encodeURIComponent(recommendation.recommendationId)}`)} title="Open approvals workspace with recommendation context.">View approval context</button>
+        <button type="button" onClick={() => navigateWithinShell(`/approvals?recommendation=${encodeURIComponent(recommendation.recommendationId)}`)} title="Review approvals workspace with a recommendation context note.">View approval context note</button>
       ) : (
         <span className="action-note">No approval request is required for this advisory record.</span>
       )}
-      <button type="button" onClick={() => navigateWithinShell('/settings')} title="Open advisory-only AI policy.">Review AI policy</button>
+      <button type="button" onClick={() => navigateWithinShell('/settings')} title="Review advisory-only AI policy.">Review AI policy</button>
       <span className="action-note">Draft and evaluate APIs are backend-owned; this screen only links to read-only policy, audit, and approval context. Execution remains blocked.</span>
     </div>
   );
@@ -208,45 +214,50 @@ function actionsForPanel(panel: WorkspacePanel, routePath: string): WorkspaceCar
   const content = `${panel.title} ${panel.body} ${panel.status} ${evidence.join(' ')}`.toLowerCase();
   const actions: WorkspaceCardAction[] = [];
   if (content.includes('approval')) {
-    actions.push({ label: 'Open approvals', path: '/approvals', detail: 'Review governed approval records.' });
+    actions.push({ label: 'View approval context', path: '/approvals', detail: 'Review governed approval records.' });
   }
   if (content.includes('audit') || content.includes('hash') || content.includes('evidence')) {
-    actions.push({ label: 'Open audit', path: '/audit', detail: 'Review audit evidence.' });
+    actions.push({ label: 'View audit context', path: '/audit', detail: 'Review audit evidence.' });
   }
   if (content.includes('policy') || content.includes('protected') || content.includes('execution') || content.includes('documented-stub')) {
     actions.push({ label: 'Review AI policy', path: '/settings', detail: 'Review advisory-only AI policy context.' });
   }
   if (content.includes('incident') || content.includes('emergency')) {
-    actions.push({ label: 'Open incidents', path: '/incidents', detail: 'Review incident and emergency workspace.' });
+    actions.push({ label: 'View incident context', path: '/incidents', detail: 'Review incident and emergency workspace.' });
   }
   if (content.includes('provider') || content.includes('quality') || content.includes('lineage')) {
-    actions.push({ label: 'Open data hub', path: '/data-hub', detail: 'Review data hub lineage and quality metadata.' });
+    actions.push({ label: 'View data context', path: '/data-hub', detail: 'Review data hub lineage and quality metadata.' });
   }
   if (content.includes('race') || content.includes('readiness')) {
-    actions.push({ label: 'Open race day', path: '/race-day', detail: 'Review race-day readiness.' });
+    actions.push({ label: 'View race-day context', path: '/race-day', detail: 'Review race-day readiness.' });
   }
   if (content.includes('asset') || content.includes('maintenance') || content.includes('work order')) {
-    actions.push({ label: 'Open facilities', path: '/facilities', detail: 'Review facilities service workspace.' });
+    actions.push({ label: 'View facilities context', path: '/facilities', detail: 'Review facilities service workspace.' });
   }
   if (actions.length === 0) {
-    actions.push({ label: 'Open audit', path: `/audit?route=${encodeURIComponent(routePath)}`, detail: 'Review available route evidence.' });
+    actions.push({ label: 'View audit context', path: `/audit?route=${encodeURIComponent(routePath)}`, detail: 'Review available route evidence.' });
   }
   return dedupeActions(actions);
 }
 
-function actionsForMetric(label: string, value: string, detail: string, routePath: string): WorkspaceCardAction[] {
+function actionsForMetric(label: string, value: string, detail: string, routePath: string, routeId: AppRoute['id']): WorkspaceCardAction[] {
   const content = `${label} ${value} ${detail}`.toLowerCase();
+  if (routeId === 'security') return [{ label: 'View security context', path: '/security', detail: 'Review security workspace records.' }];
+  if (routeId === 'facilities') return [{ label: 'View facilities context', path: '/facilities', detail: 'Review facilities service data.' }];
+  if (routeId === 'compliance') return [{ label: 'View compliance context', path: '/compliance', detail: 'Review compliance control-library metadata.' }];
+  if (routeId === 'federation') return [{ label: 'View federation context', path: '/federation', detail: 'Review aggregate federation metadata.' }];
+  if (routeId === 'equine') return [{ label: 'View equine context', path: '/equine', detail: 'Review equine and barn facade metadata.' }];
   if (content.includes('privacy') || content.includes('veterinary')) return [{ label: 'View audit context', path: '/audit', detail: 'Review available evidence for veterinary or privacy-scoped records.' }];
   if (content.includes('mock adapter') || content.includes('documented stub')) return [{ label: 'Review AI policy', path: '/settings', detail: 'Review advisory-only AI policy context.' }];
-  if (content.includes('approval')) return [{ label: 'Open approvals', path: '/approvals', detail: 'Review approval queue.' }];
-  if (content.includes('audit') || content.includes('evidence')) return [{ label: 'Open audit', path: '/audit', detail: 'Review audit ledger.' }];
+  if (content.includes('approval')) return [{ label: 'View approval context', path: '/approvals', detail: 'Review approval queue.' }];
+  if (content.includes('audit') || content.includes('evidence')) return [{ label: 'View audit context', path: '/audit', detail: 'Review audit ledger.' }];
   if (content.includes('policy') || content.includes('execution') || content.includes('protected')) return [{ label: 'Review AI policy', path: '/settings', detail: 'Review advisory-only AI policy context.' }];
-  if (content.includes('health') || content.includes('platform') || content.includes('dependency') || content.includes('observability')) return [{ label: 'Open admin', path: '/admin', detail: 'Review platform health metadata.' }];
-  if (content.includes('incident') || content.includes('emergency') || content.includes('security')) return [{ label: 'Open incidents', path: '/incidents', detail: 'Review incident and emergency data.' }];
-  if (content.includes('provider') || content.includes('data') || content.includes('quality') || content.includes('lineage')) return [{ label: 'Open data hub', path: '/data-hub', detail: 'Review data hub metadata.' }];
-  if (content.includes('race') || content.includes('readiness')) return [{ label: 'Open race day', path: '/race-day', detail: 'Review race-day readiness.' }];
-  if (content.includes('asset') || content.includes('maintenance') || content.includes('work order')) return [{ label: 'Open facilities', path: '/facilities', detail: 'Review facilities service data.' }];
-  return [{ label: 'Open audit', path: `/audit?route=${encodeURIComponent(routePath)}`, detail: 'Review available route evidence.' }];
+  if (content.includes('health') || content.includes('platform') || content.includes('dependency') || content.includes('observability')) return [{ label: 'View platform context', path: '/admin', detail: 'Review platform health metadata.' }];
+  if (content.includes('incident') || content.includes('emergency') || content.includes('security')) return [{ label: 'View incident context', path: '/incidents', detail: 'Review incident and emergency data.' }];
+  if (content.includes('provider') || content.includes('data') || content.includes('quality') || content.includes('lineage')) return [{ label: 'View data context', path: '/data-hub', detail: 'Review data hub metadata.' }];
+  if (content.includes('race') || content.includes('readiness')) return [{ label: 'View race-day context', path: '/race-day', detail: 'Review race-day readiness.' }];
+  if (content.includes('asset') || content.includes('maintenance') || content.includes('work order')) return [{ label: 'View facilities context', path: '/facilities', detail: 'Review facilities service data.' }];
+  return [{ label: 'View audit context', path: `/audit?route=${encodeURIComponent(routePath)}`, detail: 'Review available route evidence.' }];
 }
 
 function dedupeActions(actions: WorkspaceCardAction[]): WorkspaceCardAction[] {
@@ -263,9 +274,15 @@ function navigateWithinShell(path: string): void {
   navigate(path);
 }
 
-function focusFromSearch(search: string): { label: string; value: string } | undefined {
+function focusFromSearch(search: string, routeId: AppRoute['id']): { label: string; value: string } | undefined {
   const params = new URLSearchParams(search);
-  const first = [...params.entries()][0];
-  if (!first) return undefined;
-  return { label: first[0], value: first[1] };
+  const allowed = queryLabelsByRoute[routeId] ?? {};
+  const first = [...params.entries()].find(([key]) => key in allowed);
+  if (!first || !first[1]) return undefined;
+  return { label: allowed[first[0]], value: first[1] };
 }
+
+const queryLabelsByRoute: Partial<Record<AppRoute['id'], Record<string, string>>> = {
+  approvals: { approval: 'Approval context', recommendation: 'Recommendation context' },
+  audit: { event: 'Audit event context', recommendation: 'Recommendation context', kpi: 'KPI context', route: 'Route context', surface: 'Surface context', trackConfiguration: 'Track configuration context', barn: 'Barn context', ticket: 'Ticket context', payout: 'Payout context' },
+};

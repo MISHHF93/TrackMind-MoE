@@ -69,7 +69,7 @@ export function createUnavailableWorkspace(route: RouteSupportMetadata, reason: 
     route,
     source: 'documented-stub',
     metrics: [
-      textMetric('Workspace availability', 'Offline view', reason, 'warning', [{ label: 'Open platform health', path: '/admin', detail: 'Review backend availability and dependency status.' }]),
+      textMetric('Workspace availability', 'Offline view', reason, 'warning', [{ label: 'View platform context', path: '/admin', detail: 'Review backend availability and dependency status.' }]),
       countMetric('Declared endpoints', route.backendPaths.length, 'Route contract endpoints remain visible while data loading is unavailable.', 'advisory'),
       textMetric('Required permission', String(route.requiredPermission), 'Access metadata is still rendered from shared route support definitions.', 'advisory'),
     ],
@@ -81,8 +81,8 @@ export function createUnavailableWorkspace(route: RouteSupportMetadata, reason: 
         status: 'documented-stub',
         evidence: apiEvidence,
         actions: [
-          { label: 'Open platform health', path: '/admin', detail: 'Check backend and dependency status.' },
-          { label: 'Open audit', path: '/audit', detail: 'Review available audit route wiring.' },
+          { label: 'View platform context', path: '/admin', detail: 'Check backend and dependency status.' },
+          { label: 'View audit context', path: '/audit', detail: 'Review available audit route wiring.' },
         ],
       },
       ...evidencePanels,

@@ -330,16 +330,16 @@ export class ComplianceControlLibrary {
 export function complianceEvidenceWorkflow(tenantId: string): WorkflowDefinition {
   return { id: 'compliance-evidence-review', name: 'Compliance evidence collection and review', domain: 'compliance', version: '1.0.0', bpmnProcessId: 'Process_ComplianceEvidenceReview', startStepId: 'collect', ownerRole: 'compliance-officer', tenantId, triggerEvents: ['compliance.evidence.collected'], steps: [
     { id: 'collect', name: 'Collect evidence', type: 'userTask', role: 'compliance-officer', next: ['review'], digitalTwin: { refs: ['compliance-control'], syncMode: 'read' }, sla: { minutes: 1440, escalationRole: 'compliance-director', severity: 'warning' } },
-    { id: 'review', name: 'Owner review', type: 'approvalTask', approvalRoles: ['compliance-officer'], requiredApprovals: 1, next: ['ready'], digitalTwin: { refs: ['audit-records'], syncMode: 'read-write', statePatch: { auditReady: true } }, sla: { minutes: 720, escalationRole: 'compliance-director', severity: 'breach' } },
-    { id: 'ready', name: 'Audit-ready evidence package', type: 'endEvent' },
+    { id: 'review', name: 'Owner review', type: 'approvalTask', approvalRoles: ['compliance-officer'], requiredApprovals: 1, next: ['ready'], digitalTwin: { refs: ['audit-records'], syncMode: 'read', statePatch: { internalReviewReady: true } }, sla: { minutes: 720, escalationRole: 'compliance-director', severity: 'breach' } },
+    { id: 'ready', name: 'Internal-review evidence package', type: 'endEvent' },
   ] };
 }
 
 export function complianceCorrectiveActionWorkflow(tenantId: string): WorkflowDefinition {
   return { id: 'compliance-corrective-action', name: 'Compliance corrective action and approval', domain: 'compliance', version: '1.0.0', bpmnProcessId: 'Process_ComplianceCorrectiveAction', startStepId: 'triage', ownerRole: 'compliance-officer', tenantId, triggerEvents: ['compliance.finding.opened'], steps: [
-    { id: 'triage', name: 'Triage finding and assign action owner', type: 'userTask', role: 'compliance-officer', sla: { minutes: 240, escalationRole: 'compliance-director', severity: 'breach' }, next: ['remediate'], digitalTwin: { refs: ['compliance-finding'], syncMode: 'read-write', statePatch: { findingTriaged: true } } },
+    { id: 'triage', name: 'Triage finding and assign action-owner metadata', type: 'userTask', role: 'compliance-officer', sla: { minutes: 240, escalationRole: 'compliance-director', severity: 'breach' }, next: ['remediate'], digitalTwin: { refs: ['compliance-finding'], syncMode: 'read', statePatch: { findingTriaged: true } } },
     { id: 'remediate', name: 'Complete corrective action evidence', type: 'userTask', role: 'control-owner', sla: { minutes: 4320, escalationRole: 'compliance-officer', severity: 'warning' }, next: ['approve'] },
-    { id: 'approve', name: 'Approve corrective action closure', type: 'approvalTask', approvalRoles: ['compliance-officer'], requiredApprovals: 1, next: ['closed'], digitalTwin: { refs: ['compliance-control','audit-records'], syncMode: 'read-write', statePatch: { remediationApproved: true } } },
+    { id: 'approve', name: 'Approve corrective action closure metadata', type: 'approvalTask', approvalRoles: ['compliance-officer'], requiredApprovals: 1, next: ['closed'], digitalTwin: { refs: ['compliance-control','audit-records'], syncMode: 'read', statePatch: { remediationApproved: true } } },
     { id: 'closed', name: 'Corrective action closed', type: 'endEvent' },
   ] };
 }
@@ -348,7 +348,7 @@ export function accreditationReadinessWorkflow(tenantId: string): WorkflowDefini
   return { id: 'accreditation-readiness-review', name: 'Internal accreditation readiness review', domain: 'compliance', version: '1.0.0', bpmnProcessId: 'Process_AccreditationReadinessReview', startStepId: 'scope', ownerRole: 'compliance-officer', tenantId, triggerEvents: ['compliance.accreditation.readiness.updated'], steps: [
     { id: 'scope', name: 'Scope internal filing-package requirements', type: 'userTask', role: 'compliance-officer', sla: { minutes: 1440, escalationRole: 'compliance-director', severity: 'warning' }, next: ['evidence-package'] },
     { id: 'evidence-package', name: 'Verify sealed evidence packages', type: 'userTask', role: 'read-only-auditor', sla: { minutes: 2880, escalationRole: 'compliance-officer', severity: 'warning' }, next: ['filing-approval'], digitalTwin: { refs: ['compliance-accreditation'], syncMode: 'read' } },
-    { id: 'filing-approval', name: 'Approve internal filing package review', type: 'approvalTask', approvalRoles: ['compliance-officer'], requiredApprovals: 1, sla: { minutes: 720, escalationRole: 'compliance-director', severity: 'critical' }, next: ['ready'], digitalTwin: { refs: ['approval','audit-records'], syncMode: 'read-write', statePatch: { accreditationReady: true } } },
+    { id: 'filing-approval', name: 'Approve internal filing package review', type: 'approvalTask', approvalRoles: ['compliance-officer'], requiredApprovals: 1, sla: { minutes: 720, escalationRole: 'compliance-director', severity: 'critical' }, next: ['ready'], digitalTwin: { refs: ['approval','audit-records'], syncMode: 'read', statePatch: { internalFilingReviewReady: true } } },
     { id: 'ready', name: 'Evidence package prepared for human review', type: 'endEvent' },
   ] };
 }

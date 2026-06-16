@@ -1,4 +1,5 @@
 import type { AuditActorReference, AuditActorType as CanonicalAuditActorType, AuditEntityReference, AuditEvent as CanonicalAuditEvent, AuditIntegrityReference, AuditTenantScope, NexusOperationalActorType } from '@trackmind/shared';
+import { createHash } from 'node:crypto';
 import { synchronizeTimestamps, type TimestampSource, type TimestampSynchronizationMetadata } from './timeSynchronization.js';
 
 export type AuditEventType =
@@ -140,16 +141,7 @@ function deepClone<T>(value: T): T { return value === undefined ? value : JSON.p
 
 function digest(value: unknown): string {
   const input = stable(value);
-  let h1 = 0xdeadbeef;
-  let h2 = 0x41c6ce57;
-  for (let i = 0; i < input.length; i += 1) {
-    const code = input.charCodeAt(i);
-    h1 = Math.imul(h1 ^ code, 2654435761);
-    h2 = Math.imul(h2 ^ code, 1597334677);
-  }
-  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-  return `sha256:${(h2 >>> 0).toString(16).padStart(8, '0')}${(h1 >>> 0).toString(16).padStart(8, '0')}`;
+  return `sha256:${createHash('sha256').update(input).digest('hex')}`;
 }
 
 function getPayloadField(payload: unknown, field: string): unknown {

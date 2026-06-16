@@ -176,8 +176,11 @@ test('runtime operations command center exposes stabilized widget sources', asyn
   }
   assert.ok(response.body.widgets.every((widget) => ['service','event-stream','digital-twin'].includes(widget.source)));
   assert.ok(response.body.widgets.every((widget) => widget.drillDownPath.startsWith('/')));
+  assert.ok(response.body.widgets.every((widget) => widget.configurable === false));
   assert.equal(response.body.widgets.find((widget) => widget.id === 'weather-status').source, 'service');
   assert.match(response.body.widgets.find((widget) => widget.id === 'weather-status').detail, /no separate live weather service is claimed/i);
+  assert.doesNotMatch(response.body.widgets.find((widget) => widget.id === 'pending-approvals').detail, /live approval token/i);
+  assert.match(response.body.widgets.find((widget) => widget.id === 'active-incidents').detail, /escalation count metadata/i);
   assert.equal(response.body.widgets.find((widget) => widget.id === 'emergency-resources').source, 'service');
   assert.equal(response.body.widgets.find((widget) => widget.id === 'race-readiness').drillDownPath, '/race-day');
   assert.equal(response.body.widgets.find((widget) => widget.id === 'surface-conditions').drillDownPath, '/race-day');
@@ -679,7 +682,7 @@ test('runtime API facade exposes protected recommendations as approval-required 
 });
 
 test('runtime API facade only creates AI recommendation drafts and exposes no execution path', async () => {
-  const draft = await handleApiRequest('POST', '/api/v1/ai-control-plane/recommendations/draft', { recommendationId: 'rec-race-start', action: 'race-start' });
+  const draft = await handleApiRequest('POST', '/api/v1/ai-control-plane/recommendations/draft', { recommendationId: 'rec-race-start', action: 'race-start', evidence: ['readiness-assessment'] });
   assert.equal(draft.status, 202);
   assert.equal(draft.body.accepted, true);
   assert.equal(draft.body.approvalRequired, true);
@@ -687,7 +690,7 @@ test('runtime API facade only creates AI recommendation drafts and exposes no ex
   assert.equal(draft.body.audited, true);
   assert.match(draft.body.message, /no autonomous execution/i);
 
-  const evaluate = await handleApiRequest('POST', '/api/v1/ai-control-plane/recommendations/evaluate', { recommendationId: 'rec-harrow-7', action: 'recommend-harrow' });
+  const evaluate = await handleApiRequest('POST', '/api/v1/ai-control-plane/recommendations/evaluate', { recommendationId: 'rec-harrow-7', action: 'recommend-harrow', evidence: ['surface-scorecard'] });
   assert.equal(evaluate.status, 202);
   assert.equal(evaluate.body.eventType, 'ai.recommendation.evaluated');
   assert.equal(evaluate.body.executionAllowed, false);

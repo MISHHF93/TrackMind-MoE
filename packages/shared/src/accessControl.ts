@@ -8,23 +8,23 @@ export const permissionRegistry = {
   'horse:scratch': { group: 'equine-care', description: 'Request horse scratches and race-office scratch workflows.' },
   'vet:review': { group: 'equine-care', description: 'Read veterinary and equine welfare review data.' },
   'vet:clear-flag': { group: 'equine-care', description: 'Clear veterinary flags after approval.' },
-  'track:readings': { group: 'track-operations', description: 'Read and draft track surface, gate, facility, and maintenance operations.' },
-  'incident:manage': { group: 'security', description: 'Manage incidents, emergency actions, and safety-critical controls.' },
-  'ticketing:manage': { group: 'commerce', description: 'Read and manage ticketing workspace state.' },
+  'track:readings': { group: 'track-operations', description: 'Read track surface, gate, facility, and maintenance metadata; draft routes are separately governed.' },
+  'incident:manage': { group: 'security', description: 'Read incident command metadata and request governed emergency actions when a contracted mutation route exists.' },
+  'ticketing:manage': { group: 'commerce', description: 'Read ticketing workspace state.' },
   'finance:payout': { group: 'commerce', description: 'Read finance records and request protected payout actions.' },
   'security:read': { group: 'security', description: 'Read security operations workspaces and masked security records.' },
   'security:manage': { group: 'security', description: 'Read security operations and manage security incidents.' },
   'security:sensitive-read': { group: 'security', description: 'Read sensitive security fields after role and approval gates.' },
-  'security:investigate': { group: 'security', description: 'Open investigations and export security investigation packages.' },
+  'security:investigate': { group: 'security', description: 'Read investigation metadata and use service-internal investigation workflows when explicitly contracted.' },
   'security:admin': { group: 'security', description: 'Administer security operations policy and sensitive access.' },
   'compliance:audit': { group: 'compliance', description: 'Manage compliance controls and regulated audit actions.' },
-  'audit:read': { group: 'compliance', description: 'Read audit ledgers, evidence paths, and immutable audit events.' },
-  'audit:export': { group: 'compliance', description: 'Export forensic, compliance, and legal-hold audit packages.' },
-  'compliance:report': { group: 'compliance', description: 'Read compliance reports and certification-readiness packages.' },
-  'data-hub:read': { group: 'integration', description: 'Read Racing Data API Hub provider, lineage, quality, and export metadata.' },
+  'audit:read': { group: 'compliance', description: 'Read audit ledger metadata, evidence paths, and hash references.' },
+  'audit:export': { group: 'compliance', description: 'Read forensic, compliance, and legal-hold package metadata when explicitly authorized.' },
+  'compliance:report': { group: 'compliance', description: 'Read compliance reports and internal readiness packages.' },
+  'data-hub:read': { group: 'integration', description: 'Read Racing Data API Hub provider readiness, lineage, quality, and sharing-control metadata.' },
   'artifact:read': { group: 'integration', description: 'Read Universal Artifact registry, schemas, training inputs, and storage maps.' },
   'kpi:read': { group: 'read', description: 'Read governed KPI artifacts and model-readable context.' },
-  'ai:approve': { group: 'ai-governance', description: 'Approve or review AI-governed recommendations and draft actions.' },
+  'ai:approve': { group: 'ai-governance', description: 'Approve or review AI-governed recommendations and protected draft actions.' },
   'ai:read': { group: 'ai-governance', description: 'Read AI governance, control-plane, model, feature, and recommendation metadata.' },
   'discipline:issue': { group: 'race-operations', description: 'Issue steward rulings and disciplinary decisions after approval.' },
   'identity:read': { group: 'identity-governance', description: 'Read identity, role, and access-review state.' },
@@ -63,15 +63,15 @@ export const roleRegistry: Record<Role, RoleDefinition> = {
 
 export const rolePermissions: Record<Role, Permission[]> = {
   admin: Object.keys(permissionRegistry) as Permission[],
-  steward: ['read:any','race:request-start','race:finalize-results','horse:scratch','track:readings','incident:manage','ai:approve','discipline:issue','audit:read','workflow:execute','kpi:read'],
-  veterinarian: ['read:any','vet:review','vet:clear-flag','horse:scratch','ai:approve','audit:read','kpi:read'],
-  'track-superintendent': ['read:any','track:readings','incident:manage','ai:approve','workflow:execute','kpi:read'],
-  security: ['read:any','security:read','security:manage','security:sensitive-read','security:investigate','incident:manage','ai:approve','audit:read','workflow:execute'],
+  steward: ['read:any','race:request-start','race:finalize-results','horse:scratch','track:readings','incident:manage','ai:read','ai:approve','discipline:issue','audit:read','workflow:execute','kpi:read'],
+  veterinarian: ['read:any','vet:review','vet:clear-flag','horse:scratch','ai:read','ai:approve','audit:read','kpi:read'],
+  'track-superintendent': ['read:any','track:readings','incident:manage','ai:read','ai:approve','workflow:execute','kpi:read'],
+  security: ['read:any','security:read','security:manage','security:sensitive-read','security:investigate','incident:manage','ai:read','ai:approve','audit:read','workflow:execute'],
   'ticketing-manager': ['read:any','ticketing:manage','kpi:read'],
-  finance: ['read:any','finance:payout','ticketing:manage','audit:read','kpi:read'],
-  'racing-secretary': ['read:any','race:request-start','horse:scratch','track:readings','ai:approve','workflow:execute','integration:invoke','data-hub:read','kpi:read'],
-  'compliance-officer': ['read:any','security:read','compliance:audit','compliance:report','audit:read','audit:export','ai:approve','artifact:read','integration:invoke','data-hub:read','kpi:read','policy:manage','access:review'],
-  'read-only-auditor': ['read:any','audit:read','audit:export','compliance:report','artifact:read','data-hub:read','kpi:read'],
+  finance: ['read:any','finance:payout','ticketing:manage','ai:approve','audit:read','kpi:read'],
+  'racing-secretary': ['read:any','race:request-start','horse:scratch','track:readings','ai:read','ai:approve','workflow:execute','integration:invoke','data-hub:read','kpi:read'],
+  'compliance-officer': ['read:any','security:read','compliance:audit','compliance:report','audit:read','audit:export','ai:read','ai:approve','artifact:read','integration:invoke','data-hub:read','kpi:read','policy:manage','access:review'],
+  'read-only-auditor': ['read:any','audit:read','compliance:report','artifact:read','data-hub:read','kpi:read'],
   'operations-admin': ['read:any','identity:read','identity:write','tenant:admin','access:request','access:approve','access:review','workflow:execute','service:operate','integration:invoke','track:readings','incident:manage','kpi:read'],
   'ai-safety-agent': ['read:any','ai:read','ai-agent:act','kpi:read'],
 };
@@ -172,7 +172,7 @@ export const frontendRoutePermissionRegistry = {
   federation: 'compliance:report',
   dataHub: 'data-hub:read',
   audit: 'audit:read',
-  admin: 'tenant:admin',
+  admin: 'service:operate',
   settings: 'ai:read',
 } as const satisfies Record<string, Permission>;
 export type FrontendRoutePermissionId = keyof typeof frontendRoutePermissionRegistry;
@@ -191,9 +191,9 @@ export const auditExportPermissionRegistry = {
   '/api/v1/audit/events': 'audit:read',
   '/api/v1/audit/verification': 'audit:read',
   '/api/v1/audit/evidence-path': 'audit:read',
-  '/api/v1/audit/forensic-reconstruction': 'audit:export',
-  '/api/v1/audit/compliance-export': 'audit:export',
-  '/api/v1/audit/legal-holds': 'audit:export',
+  '/api/v1/audit/forensic-reconstruction': 'audit:read',
+  '/api/v1/audit/compliance-export': 'audit:read',
+  '/api/v1/audit/legal-holds': 'audit:read',
 } as const satisfies Record<string, Permission>;
 
 export function permissionForApiEndpoint(input: { method: 'GET' | 'POST'; path: string; operationId: string }): Permission {
@@ -212,8 +212,9 @@ export function permissionForApiEndpoint(input: { method: 'GET' | 'POST'; path: 
   if (input.path.includes('/ticket')) return 'ticketing:manage';
   if (input.path.includes('/equine') || input.path.includes('/horses')) return 'vet:review';
   if (input.path.includes('/barn')) return 'vet:review';
-  if (input.path.includes('/track') || input.path.includes('/surface') || input.path.includes('/facilities') || input.path.includes('/starting-gate')) return 'track:readings';
-  if (input.path.includes('/race') || input.path.includes('/races')) return 'race:request-start';
+  if (input.path.includes('/track') || input.path.includes('/surface') || input.path.includes('/starting-gate')) return input.method === 'GET' ? 'read:any' : 'track:readings';
+  if (input.path.includes('/facilities')) return 'track:readings';
+  if (input.path.includes('/race') || input.path.includes('/races')) return input.method === 'GET' ? 'read:any' : 'race:request-start';
   if (input.path.includes('/stewarding')) return input.method === 'GET' ? 'read:any' : 'discipline:issue';
   if (input.path.includes('/workflows')) return 'workflow:execute';
   if (input.path.includes('/platform')) return 'service:operate';

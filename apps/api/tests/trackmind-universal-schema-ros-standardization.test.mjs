@@ -311,7 +311,7 @@ test('implemented API facade endpoints expose ROS/TUS standardization metadata w
   assert.ok(aiControlPlane.body.auditEventTwinReferences.eventIds.length > 0);
   assert.ok(aiControlPlane.body.auditEventTwinReferences.digitalTwinRefs.length > 0);
 
-  const draft = await handleApiRequest('POST', '/api/v1/ai-control-plane/recommendations/evaluate', { recommendationId: 'rec-test', action: 'race-start' });
+  const draft = await handleApiRequest('POST', '/api/v1/ai-control-plane/recommendations/evaluate', { recommendationId: 'rec-test', action: 'race-start', evidence: ['test-evidence'] });
   assert.equal(draft.status, 202);
   assert.equal(draft.body.accepted, true);
   assert.equal(draft.body.approvalRequired, true);

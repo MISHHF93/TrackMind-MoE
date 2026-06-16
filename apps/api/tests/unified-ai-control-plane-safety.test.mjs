@@ -262,7 +262,7 @@ test('AI control-plane API endpoints return safe DTOs and no execute endpoint ex
   assert.ok(models.body.models.length > 0);
   assert.ok(models.body.expertModules.length > 0);
 
-  const draft = await handleApiRequest('POST', '/api/v1/ai-control-plane/recommendations/draft', { recommendationId: 'rec-draft-safe' });
+  const draft = await handleApiRequest('POST', '/api/v1/ai-control-plane/recommendations/draft', { recommendationId: 'rec-draft-safe', action: 'review-safe-draft', evidence: ['policy-evidence'] });
   assert.equal(draft.status, 202);
   assert.equal(draft.body.executionAllowed, false);
   assert.match(draft.body.message, /no autonomous execution endpoint was invoked/i);

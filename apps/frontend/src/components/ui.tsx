@@ -1,6 +1,6 @@
-import { Component } from 'react';
+import { Component, isValidElement } from 'react';
 import type { ErrorInfo, ReactElement, ReactNode } from 'react';
-import type { ApprovalDto, AuditEventDto, KPI, ModelReadableKPIContext } from '@trackmind/shared';
+import { normalizeApprovalStatus, type ApprovalDto, type AuditEventDto, type KPI, type ModelReadableKPIContext } from '@trackmind/shared';
 import type { AdvisoryAIRecommendation, WorkspaceCardAction, WorkspaceMetric, WorkspacePanel } from '../domain/workspaceModel';
 import type { BackendSupportStatus } from '../domain/support';
 
@@ -95,10 +95,10 @@ export function DataTable({ rows, ariaLabel }: { rows?: Array<{ label: string; v
   const safeRows = Array.isArray(rows) ? rows.filter((row) => row && typeof row.label === 'string' && row.label.trim()) : [];
   return (
     <dl className="data-table" aria-label={ariaLabel}>
-      {safeRows.map((row) => (
-        <div key={row.label}>
+      {safeRows.map((row, index) => (
+        <div key={`${row.label}-${index}`}>
           <dt>{row.label}</dt>
-          <dd>{row.value}</dd>
+          <dd>{displayNode(row.value, 'Unavailable')}</dd>
         </div>
       ))}
     </dl>
@@ -106,11 +106,11 @@ export function DataTable({ rows, ariaLabel }: { rows?: Array<{ label: string; v
 }
 
 export function Timeline({ items, ariaLabel }: { items?: Array<{ id: string; title: string; meta?: string; detail?: ReactNode }>; ariaLabel: string }): ReactElement {
-  const safeItems = Array.isArray(items) ? items.filter((item) => item && typeof item.id === 'string' && typeof item.title === 'string') : [];
+  const safeItems = Array.isArray(items) ? items.filter((item) => item && typeof item.title === 'string' && item.title.trim()) : [];
   return (
     <ol className="timeline" aria-label={ariaLabel}>
-      {safeItems.map((item) => (
-        <li key={item.id}>
+      {safeItems.map((item, index) => (
+        <li key={`${displayText(item.id, 'timeline-item')}-${index}`}>
           <div>
             <strong>{item.title}</strong>
             {item.meta ? <span>{item.meta}</span> : null}
@@ -185,10 +185,11 @@ export function AlertPanel({ title, children, tone = 'advisory' }: { title: stri
 }
 
 export function ApprovalCard({ approval, actions }: { approval: ApprovalDto; actions?: ReactNode }): ReactElement {
-  const canonicalStatus = approval.canonicalStatus ?? approval.status ?? 'pending';
-  const approverRoles = approval.approverRoles?.length ? approval.approverRoles : approval.requiredRoles ?? [];
-  const escalation = approval.escalation ?? [];
-  const auditIds = approval.auditLinkage?.auditIds ?? approval.auditIds ?? [];
+  const canonicalStatus = normalizeApprovalStatus(String(approval.canonicalStatus ?? approval.status ?? 'pending'));
+  const approverRoles = safeStringArray(approval.approverRoles?.length ? approval.approverRoles : approval.requiredRoles);
+  const escalation = Array.isArray(approval.escalation) ? approval.escalation : [];
+  const auditIds = safeStringArray(approval.auditLinkage?.auditIds ?? approval.auditIds);
+  const requestedBy = displayText(approval.requestedByActor?.displayName ?? approval.requestedBy, 'Unknown requester');
   return (
     <RecordCardFrame
       className="approval-card"
@@ -200,18 +201,18 @@ export function ApprovalCard({ approval, actions }: { approval: ApprovalDto; act
       <DataTable
         ariaLabel={`Approval ${approval.approvalRequestId}`}
         rows={[
-          { label: 'Target', value: approval.target },
-          { label: 'Requested by', value: approval.requestedBy },
-          { label: 'Tenant', value: approval.tenantId ?? 'tenant-scoped facade' },
-          { label: 'Racetrack', value: approval.racetrackId ?? 'racetrack-scoped facade' },
-          { label: 'Created', value: approval.createdAt },
-          { label: 'Expires', value: approval.expiresAt },
+          { label: 'Target', value: displayText(approval.target, 'Approval target unavailable') },
+          { label: 'Requested by', value: requestedBy },
+          { label: 'Tenant', value: displayText(approval.tenantId, 'tenant-scoped facade') },
+          { label: 'Racetrack', value: displayText(approval.racetrackId, 'racetrack-scoped facade') },
+          { label: 'Created', value: displayText(approval.createdAt, 'Created time unavailable') },
+          { label: 'Expires', value: displayText(approval.expiresAt, 'Expiration unavailable') },
           { label: 'Escalation', value: escalation.length ? escalation.map((rule) => `${rule.afterMinutes ?? '?'}m: ${Array.isArray(rule.approverRoles) ? rule.approverRoles.join(', ') || 'role not listed' : 'roles unavailable'}`).join('; ') : 'No escalation' },
           { label: 'Audit linkage', value: auditIds.length ? auditIds.join(', ') : 'No audit records yet' },
         ]}
       />
       <TagList label="Approver roles" values={approverRoles} emptyLabel="No approver roles listed" />
-      <TagList label="Evidence" values={approval.evidence} emptyLabel="No evidence listed" />
+      <TagList label="Evidence" values={safeStringArray(approval.evidence)} emptyLabel="No evidence listed" />
     </RecordCardFrame>
   );
 }
@@ -224,14 +225,15 @@ export function AuditCard({ event, actions }: { event: AuditEventDto; actions?: 
   const tenantScopeLabel = event.tenantScope
     ? [event.tenantScope.tenantId, event.tenantScope.racetrackId].filter(Boolean).join(' / ') || 'Tenant scope not provided'
     : 'Tenant scope not provided';
-  const hash = event.integrityReference?.hash ?? event.hash ?? 'hash unavailable';
-  const previousHash = event.integrityReference?.previousHash ?? event.previousHash ?? 'previous hash unavailable';
+  const hash = displayText(event.integrityReference?.hash ?? event.hash, 'hash unavailable');
+  const previousHash = displayText(event.integrityReference?.previousHash ?? event.previousHash, 'previous hash unavailable');
+  const severity = displayText(event.severity, 'info') as AuditEventDto['severity'];
   return (
     <RecordCardFrame
       className="audit-card audit-event-card"
-      status={event.severity}
-      statusTone={event.severity === 'critical' ? 'critical' : event.severity === 'warning' ? 'warning' : 'nominal'}
-      title={event.action}
+      status={severity}
+      statusTone={severity === 'critical' ? 'critical' : severity === 'warning' ? 'warning' : 'nominal'}
+      title={displayText(event.action, 'Audit event')}
       actions={actions}
     >
       <DataTable
@@ -240,7 +242,7 @@ export function AuditCard({ event, actions }: { event: AuditEventDto; actions?: 
           { label: 'Actor', value: actorLabel },
           { label: 'Actor type', value: actorType },
           { label: 'Entity', value: entityLabel },
-          { label: 'Reason', value: event.reason },
+          { label: 'Reason', value: displayText(event.reason, 'Reason unavailable') },
           { label: 'Tenant scope', value: tenantScopeLabel },
           { label: 'Approval', value: event.approvalReference?.approvalId ?? 'not approval-linked' },
           { label: 'Timestamp', value: event.timestamp },
@@ -248,7 +250,7 @@ export function AuditCard({ event, actions }: { event: AuditEventDto; actions?: 
           { label: 'Previous hash', value: <code className="inline-code">{previousHash.slice(0, 16)}</code> },
         ]}
       />
-      {event.evidenceIds?.length ? <TagList label="Evidence" values={event.evidenceIds} /> : null}
+      {safeStringArray(event.evidenceIds).length ? <TagList label="Evidence" values={safeStringArray(event.evidenceIds)} /> : null}
     </RecordCardFrame>
   );
 }
@@ -273,15 +275,19 @@ export function WorkspaceRecordCard({ panel, actions }: { panel: WorkspacePanel;
 
 export function RecommendationCard({ recommendation, actions }: { recommendation: AdvisoryAIRecommendation; actions?: ReactNode }): ReactElement {
   const confidenceValue = recommendation.confidenceValue ?? recommendation.confidence?.calibrated;
-  const confidenceBand = recommendation.confidenceBand ?? recommendation.confidence?.band ?? 'unknown';
+  const confidenceBand = displayText(recommendation.confidenceBand ?? recommendation.confidence?.band, 'unknown');
   const approvalRequirement = recommendation.approvalRequirement;
   const auditIds = recommendation.auditReference?.auditIds?.length ? recommendation.auditReference.auditIds : recommendation.auditId ? [recommendation.auditId] : [];
-  const evidencePackageId = recommendation.evidencePackage?.evidencePackageId ?? 'No evidence package';
-  const riskTone = riskLevelToTone(recommendation.riskLevel);
+  const evidencePackageId = displayText(recommendation.evidencePackage?.evidencePackageId, 'No evidence package');
+  const riskLevel = ['critical', 'high', 'medium', 'low'].includes(String(recommendation.riskLevel)) ? String(recommendation.riskLevel) : 'medium';
+  const riskTone = riskLevelToTone(riskLevel);
+  const governorLabel = recommendation.executionAllowed === false || recommendation.blockedAutonomousExecution || recommendation.governorAllowed === false
+    ? 'Execution blocked'
+    : recommendation.governorAllowed === true ? 'Advisory review only' : 'Governor decision unavailable';
   return (
-    <article className={`ai-card ai-card--${recommendation.riskLevel ?? 'medium'}`}>
+    <article className={`ai-card ai-card--${riskLevel}`}>
       <div className="ai-card__header">
-        <StatusBadge label={recommendation.riskLevel ?? 'medium risk'} tone={riskTone} />
+        <StatusBadge label={`${riskLevel} risk`} tone={riskTone} />
         <strong>{percent(confidenceValue)}</strong>
       </div>
       <h3>{displayText(recommendation.recommendation, 'Recommendation unavailable')}</h3>
@@ -292,14 +298,14 @@ export function RecommendationCard({ recommendation, actions }: { recommendation
           { label: 'Advisory', value: recommendation.advisoryOnly && recommendation.executionAllowed === false ? 'Advisory only; execution blocked' : 'Review governance policy' },
           { label: 'Confidence band', value: confidenceBand },
           { label: 'Model', value: recommendation.modelVersion },
-          { label: 'Governor', value: recommendation.governorAllowed === false ? 'Execution blocked' : 'Advisory only' },
+          { label: 'Governor', value: governorLabel },
           { label: 'Generated', value: recommendation.generatedAt },
-          { label: 'Approval', value: approvalRequirement?.required ? approvalRequirement.policy : 'Not required' },
+          { label: 'Approval', value: approvalRequirement?.required ? displayText(approvalRequirement.policy, 'Approval policy unavailable') : 'Not required' },
           { label: 'Audit', value: <TagList label="Audit refs" values={auditIds} emptyLabel="No audit refs" /> },
           { label: 'Evidence package', value: evidencePackageId },
         ]}
       />
-      {recommendation.governorReason ? <p>Governor reason: {recommendation.governorReason}</p> : null}
+      {recommendation.governorReason ? <p>Governor reason: {displayText(recommendation.governorReason, 'Reason unavailable')}</p> : null}
       <TagList label="Evidence" values={recommendation.evidence} />
       {actions}
     </article>
@@ -308,7 +314,12 @@ export function RecommendationCard({ recommendation, actions }: { recommendation
 
 export function KPICard({ kpi, modelContext, actions }: { kpi: KPI; modelContext?: ModelReadableKPIContext; actions?: ReactNode }): ReactElement {
   const auditEventIds = kpi.auditReference?.auditEventIds ?? [];
-  const historicalSnapshots = kpi.historicalSnapshots ?? [];
+  const historicalSnapshots = Array.isArray(kpi.historicalSnapshots) ? kpi.historicalSnapshots.filter((snapshot) => snapshot && typeof snapshot === 'object') : [];
+  const kpiValue = typeof kpi.value === 'number' && Number.isFinite(kpi.value) ? String(kpi.value) : displayText(kpi.value, 'Unavailable');
+  const kpiUnit = displayText(kpi.unit, '');
+  const threshold = kpi.threshold
+    ? `${displayText(kpi.threshold.description, 'Threshold configured')} Target ${formatNumber(kpi.target)}; warning ${formatNumber(kpi.threshold.warning)}; critical ${formatNumber(kpi.threshold.critical)}; direction ${displayText(kpi.threshold.targetDirection, 'unknown')}.`
+    : 'No threshold configured';
   return (
     <article className={`kpi-card kpi-card--${kpi.status}`}>
       <div className="kpi-card__header">
@@ -316,8 +327,8 @@ export function KPICard({ kpi, modelContext, actions }: { kpi: KPI; modelContext
       </div>
       <h3>{kpi.name}</h3>
       <div className="kpi-card__value">
-        <strong>{kpi.value}</strong>
-        <span>{kpi.unit}</span>
+        <strong>{kpiValue}</strong>
+        <span>{kpiUnit}</span>
       </div>
       <DataTable
         ariaLabel={`KPI ${kpi.kpiId}`}
@@ -330,7 +341,7 @@ export function KPICard({ kpi, modelContext, actions }: { kpi: KPI; modelContext
           { label: 'Approval sensitivity', value: modelContext?.approvalSensitivity ?? kpi.approvalSensitivity },
           { label: 'Model readable', value: kpi.modelReadable ? 'Metadata only' : 'Not exposed to models' },
           { label: 'Last updated', value: kpi.lastCalculatedAt },
-          { label: 'Threshold', value: kpi.threshold?.description ?? 'No threshold configured' },
+          { label: 'Threshold', value: threshold },
         ]}
       />
       <p>{kpi.description}</p>
@@ -346,9 +357,9 @@ export function KPICard({ kpi, modelContext, actions }: { kpi: KPI; modelContext
         ariaLabel={`KPI ${kpi.kpiId} snapshots`}
         items={historicalSnapshots.slice(0, 3).map((snapshot) => ({
           id: snapshot.snapshotId,
-          title: `${snapshot.value} ${kpi.unit}`,
-          meta: snapshot.calculatedAt,
-          detail: `${snapshot.status} with ${percent(snapshot.confidence)} confidence`,
+          title: `${formatNumber(snapshot.value)} ${kpiUnit}`.trim(),
+          meta: displayText(snapshot.calculatedAt, 'Snapshot time unavailable'),
+          detail: `${displayText(snapshot.status, 'status unavailable')} with ${percent(snapshot.confidence)} confidence`,
         }))}
       />
       {actions}
@@ -369,7 +380,15 @@ export function TagList({ label, values, emptyLabel = 'None' }: { label: string;
 }
 
 export function ActionButtons({ actions, onNavigate }: { actions?: WorkspaceCardAction[]; onNavigate: (path: string) => void }): ReactElement {
-  const safeActions = Array.isArray(actions) ? actions.filter((action) => action && typeof action.label === 'string' && action.label.trim() && typeof action.path === 'string' && action.path.startsWith('/')) : [];
+  const seen = new Set<string>();
+  const safeActions = Array.isArray(actions) ? actions.filter((action) => {
+    if (!action || typeof action.label !== 'string' || !action.label.trim() || typeof action.path !== 'string') return false;
+    if (!isSafeAppPath(action.path)) return false;
+    const key = `${action.label}:${action.path}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }) : [];
   return (
     <div className="card-actions" aria-label="Card actions">
       {safeActions.map((action) => (
@@ -383,6 +402,35 @@ function displayText(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value : fallback;
 }
 
+function displayNode(value: ReactNode, fallback: string): ReactNode {
+  if (isValidElement(value)) return value;
+  if (typeof value === 'string') return value.trim() ? value : fallback;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : fallback;
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (value === null || value === undefined) return fallback;
+  return fallback;
+}
+
 function percent(value: unknown): string {
   return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value * 100)}%` : 'Unavailable';
+}
+
+function formatNumber(value: unknown): string {
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : 'Unavailable';
+}
+
+function safeStringArray(values: unknown): string[] {
+  return Array.isArray(values) ? values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0) : [];
+}
+
+function isSafeAppPath(path: string): boolean {
+  if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')) return false;
+  try {
+    const url = new URL(path, 'https://trackmind.local');
+    if (url.origin !== 'https://trackmind.local') return false;
+    const knownPrefixes = ['/dashboard', '/race-day', '/equine', '/approvals', '/incidents', '/compliance', '/security', '/facilities', '/ticketing', '/finance', '/federation', '/data-hub', '/audit', '/admin', '/settings'];
+    return knownPrefixes.some((prefix) => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`));
+  } catch {
+    return false;
+  }
 }

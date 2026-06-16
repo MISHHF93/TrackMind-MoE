@@ -161,7 +161,7 @@ test('components do not call raw fetch or render forbidden execution controls', 
   assert.match(ui, /RecommendationCard/);
   assert.match(ui, /KPICard/);
   assert.match(ui, /WorkspaceRecordCard/);
-  assert.match(page, /Open approvals/);
+  assert.match(page, /View approval context/);
   assert.match(page, /Route Data Cards/);
   assert.match(page, /They do not execute regulated operations/);
   assert.match(page, /recommendation\.approvalRequirement\?\.required/);
@@ -197,21 +197,22 @@ test('frontend card actions stay navigation-only and advisory-safe', async () =>
     assert.doesNotMatch(sourceText, />\s*(Start race|Stop race|Finalize results|Release payout|Approve payout|Execute recommendation)\s*</i);
   }
 
-  assert.match(page, /title="Open audit workspace with recommendation context\.">View audit context/);
-  assert.match(page, /title="Open approvals workspace with recommendation context\.">View approval context/);
-  assert.match(page, /title="Open advisory-only AI policy\.">Review AI policy/);
+  assert.match(page, /title="Review audit workspace with a recommendation context note\.">View audit context note/);
+  assert.match(page, /title="Review approvals workspace with a recommendation context note\.">View approval context note/);
+  assert.match(page, /title="Review advisory-only AI policy\.">Review AI policy/);
   assert.match(page, /Draft and evaluate APIs are backend-owned/);
   assert.match(page, /Execution remains blocked/);
   assert.match(services, /label: 'Review AI policy', path: '\/settings'/);
-  assert.match(services, /Policy-permitted export categories \(metadata only, no export endpoint\)/);
+  assert.match(services, /Aggregate sharing categories \(metadata only, no export endpoint\)/);
   assert.match(services, /Readiness authority reference/);
   assert.match(services, /no external certification or approval claimed/);
-  assert.match(workspaceModel, /Open platform health/);
+  assert.match(workspaceModel, /View platform context/);
 });
 
 test('codex issue follow-up keeps card data defensive and copy accurate', async () => {
   const page = await source('src/pages/WorkspacePage.tsx');
   const services = await source('src/api/services.ts');
+  const workspaceModel = await source('src/domain/workspaceModel.ts');
   const routes = await source('src/routes/routes.ts');
   const sharedAccess = await repoSource('packages/shared/src/accessControl.ts');
   const sharedContracts = await repoSource('packages/shared/src/apiContracts.ts');
@@ -234,6 +235,13 @@ test('codex issue follow-up keeps card data defensive and copy accurate', async 
   assert.doesNotMatch(services, /Ticket revenue/);
   assert.match(services, /View-only approval request records/);
   assert.match(services, /View barn context/);
+  assert.match(services, /active face value/);
+  assert.match(services, /Active-layout command widgets/);
+  assert.match(page, /Navigation context note/);
+  assert.match(page, /queryLabelsByRoute/);
+  assert.doesNotMatch(page, /label: 'Open/);
+  assert.doesNotMatch(services, /label: 'Open/);
+  assert.doesNotMatch(workspaceModel, /label: 'Open/);
 
   assert.match(routes, /supportStatus: 'live-api'[\s\S]*dataSource: 'Review visible approval request records/);
   assert.match(routes, /supportStatus: 'live-api'[\s\S]*dataSource: 'Review audit event metadata/);
@@ -258,8 +266,8 @@ test('codex issue follow-up keeps card data defensive and copy accurate', async 
   assert.doesNotMatch(server, /drillDownPath: '\/emergency'/);
 
   assert.match(facilitiesMaintenance, /read model for inspections/);
-  assert.match(facilitiesMaintenance, /work order request/);
-  assert.match(facilitiesMaintenance, /completion metadata/);
+  assert.match(facilitiesMaintenance, /work order requests/);
+  assert.doesNotMatch(facilitiesMaintenance, /path: '\/work-orders'/);
 });
 
 test('app shell renders grouped route navigation from metadata', async () => {
@@ -348,11 +356,11 @@ test('frontend route adapters do not depend on generic mock-domain data', async 
   assert.match(services, /dashboardDrillDownRouteMap/);
   assert.match(services, /frontendPathForBackendDrilldown/);
   assert.match(services, /actionForBackendDrilldown/);
-  assert.match(services, /label: 'Open workspace'/);
+  assert.match(services, /label: 'View workspace'/);
   assert.match(services, /`frontend:\$\{path\}`/);
   assert.doesNotMatch(services, /evidence: \[widget\.source, widget\.drillDownPath\]/);
-  assert.match(services, /Protected payout records exposed by the finance service/);
-  assert.match(services, /Provider facade status/);
+  assert.match(services, /Released payouts/);
+  assert.match(services, /Seeded provider facade status/);
   assert.doesNotMatch(services, /Allowed exports:/);
 });
 
