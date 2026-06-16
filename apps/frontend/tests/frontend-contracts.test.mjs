@@ -233,7 +233,11 @@ test('frontend route experiences organize workspaces into functional lanes', asy
   const services = await source('src/api/services.ts');
   assert.match(services, /buildAIOperatingContext/);
   assert.match(services, /contextDegraded/);
-  assert.match(services, /mergeUniqueRecommendations/);
+  assert.match(services, /aiCommandDeck/);
+  assert.match(services, /structuredPanel/);
+  const commandDeck = await source('src/components/AICommandDeck.tsx');
+  assert.match(commandDeck, /AICommandDeck/);
+  assert.match(commandDeck, /Governor-blocked actions/);
 });
 
 test('codex issue follow-up keeps card data defensive and copy accurate', async () => {
@@ -273,7 +277,7 @@ test('codex issue follow-up keeps card data defensive and copy accurate', async 
   assert.match(services, /AI recommendation text unavailable/);
   assert.match(services, /const services = Array\.isArray\(data\.services\)/);
   assert.match(services, /deploymentBoundary = data\.deploymentBoundary \?\?/);
-  assert.match(services, /const protectedActions = Array\.isArray\(data\.protectedActions\)/);
+  assert.match(services, /const protectedActions = Array\.isArray\(policyData\.protectedActions\)/);
   assert.match(services, /Active ticket value/);
   assert.doesNotMatch(services, /Ticket revenue/);
   assert.match(services, /View-only approval request records/);

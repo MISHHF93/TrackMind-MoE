@@ -67,6 +67,11 @@ export const apiPaths = {
   },
   settings: {
     policy: '/ai-control-plane/policy',
+    workspace: '/ai-control-plane/workspace',
+    models: '/ai-control-plane/models',
+    blockedActions: '/ai-control-plane/blocked-actions',
+    events: '/ai-control-plane/events',
+    features: '/ai-control-plane/features',
   },
 } as const;
 
@@ -105,7 +110,15 @@ export const routeApiPathGroups = {
   dataHub: [apiPaths.dataHub.workspace, ...commonContextApiPaths],
   audit: commonContextApiPaths,
   admin: [apiPaths.admin.platformHealth, ...commonContextApiPaths],
-  settings: [apiPaths.settings.policy, ...commonContextApiPaths],
+  settings: [
+    apiPaths.settings.policy,
+    apiPaths.settings.workspace,
+    apiPaths.settings.models,
+    apiPaths.settings.blockedActions,
+    apiPaths.settings.events,
+    apiPaths.settings.features,
+    ...commonContextApiPaths,
+  ],
 } as const satisfies Record<DomainRouteId, readonly string[]>;
 
 const pathSources: Record<string, ApiAdapterSource> = {
@@ -135,6 +148,7 @@ const pathSources: Record<string, ApiAdapterSource> = {
   [apiPaths.dataHub.workspace]: 'facade-api',
   [apiPaths.audit.events]: 'live-api',
   [apiPaths.settings.policy]: 'facade-api',
+  [apiPaths.settings.features]: 'facade-api',
 };
 
 export function adapterSourceForPath(path: string): ApiAdapterSource {

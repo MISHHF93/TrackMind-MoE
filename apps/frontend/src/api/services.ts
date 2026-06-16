@@ -4,6 +4,7 @@ import type {
   AIControlPlanePolicyDto,
   AIControlPlaneRecommendationDto,
   AIControlPlaneWorkspaceDto,
+  AIControlPlaneModelRegistryDto,
   AIConfidenceScoreDto,
   AIRecommendationDto,
   ApprovalDto,
@@ -29,7 +30,9 @@ import type {
 } from '@trackmind/shared';
 import { getJson, type AdapterResult } from './client';
 import { apiPaths } from './paths';
+import { structuredPanel } from './structuredPanels';
 import type { AIOperatingContext, ContextDegradation } from '../domain/aiOperatingModel';
+import type { AICommandDeckData } from '../domain/controlPlaneModel';
 import { emptyAIOperatingContext, expertKeywordsForRoute } from '../domain/aiOperatingModel';
 import { countMetric, textMetric, type AdvisoryAIRecommendation, type WorkspaceCardAction, type WorkspacePanel, type WorkspaceViewModel } from '../domain/workspaceModel';
 import { routeById } from '../routes/routes';
@@ -207,7 +210,11 @@ function aiCardsFromGovernance(workspace?: AIGovernanceWorkspaceDto): AdvisoryAI
   });
 }
 
-function aiCardsFromControlPlane(recommendations?: AIControlPlaneRecommendationDto[]): AdvisoryAIRecommendation[] {
+function percent(value: unknown): string {
+  return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value * 100)}%` : 'Unavailable';
+}
+
+export function aiCardsFromControlPlane(recommendations?: AIControlPlaneRecommendationDto[]): AdvisoryAIRecommendation[] {
   return (Array.isArray(recommendations) ? recommendations : []).filter(isUnknownRecord).map((item) => {
     const itemId = textValue(item.id, 'ai-control-plane-record');
     const recommendationId = textValue(item.recommendationId, itemId);
@@ -588,49 +595,80 @@ const raceDayService = {
     const surfaceData = requireReady(surface, 'Surface intelligence workspace');
     const trackData = requireReady(trackConfiguration, 'Track configuration map');
     const approvalControls = raceOfficeData.approvalControls;
-    const racePanels: WorkspacePanel[] = readinessData.races.map((race) => ({
+    const racePanels: WorkspacePanel[] = readinessData.races.map((race) => structuredPanel({
       id: race.raceId,
       title: `Race ${race.raceId}`,
-      body: `${race.status} readiness at ${race.score} with ${race.warnings} warning(s) and ${race.approvals} approval requirement(s).`,
+      summary: `Race readiness record from the race-day readiness dashboard.`,
       status: 'facade-only',
       evidence: ['RaceDayReadinessDashboardDto', '/api/v1/race-day-readiness/dashboard'],
+      fields: [
+        { label: 'Race ID', value: race.raceId },
+        { label: 'Status', value: race.status },
+        { label: 'Readiness score', value: `${race.score}%` },
+        { label: 'Warnings', value: String(race.warnings) },
+        { label: 'Approval requirements', value: String(race.approvals) },
+      ],
     }));
-    const warningPanels: WorkspacePanel[] = readinessData.warnings.slice(0, 3).map((warning) => ({
+    const warningPanels: WorkspacePanel[] = readinessData.warnings.slice(0, 6).map((warning) => structuredPanel({
       id: warning.id,
       title: `${warning.domain} readiness warning`,
-      body: `${warning.severity}: ${warning.message}. Recommended action: ${warning.recommendedAction}.`,
+      summary: warning.message,
       status: 'facade-only',
       evidence: warning.evidence,
+      fields: [
+        { label: 'Domain', value: warning.domain },
+        { label: 'Severity', value: warning.severity },
+        { label: 'Recommended action', value: warning.recommendedAction },
+      ],
     }));
-    const controlPanels: WorkspacePanel[] = approvalControls.slice(0, 2).map((control) => ({
+    const controlPanels: WorkspacePanel[] = approvalControls.slice(0, 4).map((control) => structuredPanel({
       id: control.id,
       title: `Locked control: ${control.action}`,
-      body: `${control.action} targets ${control.target}; service-owned approval workflow metadata only. No frontend request submission or protected execution control is exposed.`,
+      summary: 'Service-owned approval workflow metadata only. No frontend execution control is exposed.',
       status: 'facade-only',
       evidence: control.evidence,
+      fields: [
+        { label: 'Action', value: control.action },
+        { label: 'Target', value: control.target },
+        { label: 'Approval posture', value: 'Backend workflow only' },
+      ],
     }));
-    const surfacePanels: WorkspacePanel[] = surfaceData.conditionScorecards.slice(0, 2).map((scorecard) => ({
+    const surfacePanels: WorkspacePanel[] = surfaceData.conditionScorecards.map((scorecard) => structuredPanel({
       id: scorecard.id,
       title: scorecard.label,
-      body: `${scorecard.status} surface sector scored ${scorecard.score}; drivers ${scorecard.drivers.join(', ') || 'none'}.`,
+      summary: scorecard.detail || `Surface sector ${scorecard.id} condition scorecard.`,
       status: 'facade-only',
       evidence: ['SurfaceIntelligenceDto', scorecard.id],
+      fields: [
+        { label: 'Score', value: `${scorecard.score}%` },
+        { label: 'Risk level', value: scorecard.riskLevel },
+        { label: 'Status', value: scorecard.status },
+        { label: 'Drivers', value: scorecard.drivers.join(', ') || 'none' },
+      ],
       actions: [
         { label: 'View approval context', path: '/approvals', detail: 'Review general approval records; this link does not filter by surface.' },
         { label: 'View audit context note', path: `/audit?surface=${encodeURIComponent(scorecard.id)}`, detail: 'Review audit workspace with a surface context note; records are not filtered by this link.' },
       ],
     }));
-    const trackPanels: WorkspacePanel[] = [{
+    const trackPanels: WorkspacePanel[] = [structuredPanel({
       id: 'track-configuration-map',
       title: 'Track configuration map',
-      body: `Starting gate ${trackData.startingGate.sectorId} at ${trackData.startingGate.metersFromStart}m; ${trackData.trackConfiguration?.workOrders.length ?? 0} gate/configuration work package(s) in the read model; no live actuator control.`,
+      summary: 'Starting gate and track configuration read model. No live actuator control.',
       status: 'facade-only',
       evidence: ['TrackMapDto', '/api/v1/track-configuration/map'],
+      fields: [
+        { label: 'Starting gate sector', value: trackData.startingGate.sectorId },
+        { label: 'Gate meters from start', value: `${trackData.startingGate.metersFromStart}m` },
+        { label: 'Track sectors', value: String(trackData.sectors.length) },
+        { label: 'Gate work packages', value: String(trackData.trackConfiguration?.workOrders.length ?? 0) },
+        { label: 'Overall surface score', value: `${surfaceData.overallScore}%` },
+        { label: 'Surface approval state', value: surfaceData.approvalState },
+      ],
       actions: [
         { label: 'View approval context', path: '/approvals', detail: 'Review general approval records; this link does not filter by track configuration.' },
         { label: 'View audit context note', path: '/audit?trackConfiguration=map', detail: 'Review audit workspace with a track configuration context note; records are not filtered by this link.' },
       ],
-    }];
+    })];
     const mergedAi = mergeUniqueRecommendations(context.aiRecommendations, aiCardsFromSurfaceRecommendations(surfaceData.recommendations));
     return vm('raceDay', races.source, {
       generatedAt: readinessData.generatedAt || raceOfficeData.cards[0]?.updatedAt || raceOfficeData.raceDays[0]?.updatedAt || '',
@@ -660,11 +698,89 @@ const equineService = {
     const eligibilityRuleIds = data.eligibilityRules?.map((rule) => rule.id) ?? data.eligibilityStatus.failedRules;
     const transportationRecordCount = data.transportationRecords?.length ?? 0;
     const panels: WorkspacePanel[] = [
-      { id: data.horse.horseId, title: data.horse.name, body: `${data.welfareStatus.level} welfare status at score ${data.welfareStatus.latestScore}; barn ${data.barnAssignment.barnId}, stall ${data.barnAssignment.stallId}.`, status: 'facade-only', evidence: ['EquineIntelligenceDto', '/equine-intelligence/horses/{horseId}'] },
-      { id: 'equine-eligibility', title: 'Eligibility review', body: `${data.eligibilityStatus.complianceStatus}; flags ${data.eligibilityStatus.flags.join(', ') || 'none'}; failed rules ${data.eligibilityStatus.failedRules.join(', ') || 'none'}.`, status: 'facade-only', evidence: eligibilityRuleIds },
-      { id: 'equine-relationships', title: 'Ownership and trainer context', body: `${data.ownership[0]?.ownerName ?? 'Owner pending'} owns ${data.ownership[0]?.percentage ?? 0}%; trainer ${data.trainerAssignments[0]?.trainerName ?? 'pending'} license ${data.trainerAssignments[0]?.licenseStatus ?? 'unknown'}.`, status: 'facade-only', evidence: ['ownership', 'trainerAssignments'] },
-      { id: 'equine-activity', title: 'Race and workout activity', body: `${data.raceHistory.length} race record(s), ${data.workoutHistory.length} workout(s), ${transportationRecordCount} transport record(s) in the profile.`, status: 'facade-only', evidence: ['raceHistory', 'workoutHistory', 'transportationRecords'] },
-      ...barnData.readiness.slice(0, 2).map((readiness) => ({ id: readiness.barnId, title: `Barn ${readiness.barnId}`, body: `${readiness.status} barn readiness at ${readiness.score}; ${readiness.occupiedStalls}/${readiness.capacity} stalls occupied; blockers ${readiness.blockers.join(', ') || 'none'}.`, status: 'facade-only' as const, evidence: ['BarnOperationsDto', readiness.barnId], actions: [{ label: 'View barn context', path: '/equine', detail: 'Review the Equine workspace barn operations summary.' }, { label: 'View audit context note', path: `/audit?barn=${encodeURIComponent(readiness.barnId)}`, detail: 'Review audit workspace with a barn context note; records are not filtered by this link.' }] })),
+      structuredPanel({
+        id: data.horse.horseId,
+        title: data.horse.name,
+        summary: 'Horse profile from the equine intelligence facade.',
+        status: 'facade-only',
+        evidence: ['EquineIntelligenceDto', '/equine-intelligence/horses/{horseId}'],
+        fields: [
+          { label: 'Horse ID', value: data.horse.horseId },
+          { label: 'Lifecycle', value: data.horse.lifecycleStatus },
+          { label: 'Microchip', value: data.horse.microchipId ?? 'not reported' },
+          { label: 'Welfare level', value: data.welfareStatus.level },
+          { label: 'Welfare score', value: data.welfareStatus.latestScore !== undefined ? String(data.welfareStatus.latestScore) : 'not scored' },
+          { label: 'Barn', value: data.barnAssignment.barnId },
+          { label: 'Stall', value: data.barnAssignment.stallId ?? 'not assigned' },
+        ],
+      }),
+      structuredPanel({
+        id: 'equine-eligibility',
+        title: 'Eligibility review',
+        summary: 'Eligibility and compliance posture for the active horse record.',
+        status: 'facade-only',
+        evidence: eligibilityRuleIds,
+        fields: [
+          { label: 'Eligible', value: data.eligibilityStatus.eligible ? 'Yes' : 'No' },
+          { label: 'Compliance status', value: data.eligibilityStatus.complianceStatus },
+          { label: 'Flags', value: data.eligibilityStatus.flags.join(', ') || 'none' },
+          { label: 'Failed rules', value: data.eligibilityStatus.failedRules.join(', ') || 'none' },
+        ],
+      }),
+      structuredPanel({
+        id: 'equine-veterinary',
+        title: 'Veterinary status',
+        summary: data.veterinaryStatus.summary,
+        status: 'facade-only',
+        evidence: ['veterinaryStatus'],
+        fields: [
+          { label: 'Status', value: data.veterinaryStatus.status },
+          { label: 'Veterinarian review required', value: data.veterinaryStatus.requiresVeterinarian ? 'Yes' : 'No' },
+        ],
+      }),
+      structuredPanel({
+        id: 'equine-relationships',
+        title: 'Ownership and trainer context',
+        summary: 'Ownership and trainer assignment metadata.',
+        status: 'facade-only',
+        evidence: ['ownership', 'trainerAssignments'],
+        fields: [
+          { label: 'Owner', value: data.ownership[0]?.ownerName ?? 'Owner pending' },
+          { label: 'Ownership %', value: String(data.ownership[0]?.percentage ?? 0) },
+          { label: 'Trainer', value: data.trainerAssignments[0]?.trainerName ?? 'pending' },
+          { label: 'Trainer license', value: data.trainerAssignments[0]?.licenseStatus ?? 'unknown' },
+        ],
+      }),
+      structuredPanel({
+        id: 'equine-activity',
+        title: 'Race and workout activity',
+        summary: 'Activity history counts from the equine profile.',
+        status: 'facade-only',
+        evidence: ['raceHistory', 'workoutHistory', 'transportationRecords'],
+        fields: [
+          { label: 'Race records', value: String(data.raceHistory.length) },
+          { label: 'Workouts', value: String(data.workoutHistory.length) },
+          { label: 'Transport records', value: String(transportationRecordCount) },
+          { label: 'Digital twin refs', value: String(data.digitalTwinReferences.length) },
+        ],
+      }),
+      ...barnData.readiness.map((readiness) => structuredPanel({
+        id: readiness.barnId,
+        title: `Barn ${readiness.barnId}`,
+        summary: 'Barn readiness posture from barn operations.',
+        status: 'facade-only',
+        evidence: ['BarnOperationsDto', readiness.barnId],
+        fields: [
+          { label: 'Status', value: readiness.status },
+          { label: 'Readiness score', value: `${readiness.score}%` },
+          { label: 'Occupancy', value: `${readiness.occupiedStalls}/${readiness.capacity}` },
+          { label: 'Blockers', value: readiness.blockers.join(', ') || 'none' },
+        ],
+        actions: [
+          { label: 'View barn context', path: '/equine', detail: 'Review the Equine workspace barn operations summary.' },
+          { label: 'View audit context note', path: `/audit?barn=${encodeURIComponent(readiness.barnId)}`, detail: 'Review audit workspace with a barn context note; records are not filtered by this link.' },
+        ],
+      })),
     ];
     const mergedAi = mergeUniqueRecommendations(context.aiRecommendations, aiCardsFromEquineRisk(data.aiRiskRecommendations));
     return vm('equine', horse.source, {
@@ -691,8 +807,23 @@ const approvalsService = {
     return vm('approvals', 'live-api', {
       metrics: [countMetric('Approval records', context.approvals.length, 'View-only approval request records', context.approvals.length ? 'warning' : 'nominal')],
       panels: context.approvals.length
-        ? context.approvals.map((approval) => ({ id: approval.id, title: approval.action, body: `${approval.status} for ${approval.target}; roles ${approval.requiredRoles?.join(', ') ?? 'declared by policy'}`, status: 'implemented', evidence: approval.evidence }))
-        : [{ id: 'approval-empty-state', title: 'No pending approval records', body: 'The live approval route is reachable and currently returns an empty queue for this tenant and role.', status: 'implemented', evidence: ['ApprovalDto[]', '/api/v1/approvals/requests'] }],
+        ? context.approvals.map((approval) => structuredPanel({
+          id: approval.id,
+          title: approval.action,
+          summary: `Approval request for ${approval.target}.`,
+          status: 'implemented',
+          evidence: approval.evidence,
+          fields: [
+            { label: 'Status', value: String(approval.status ?? approval.canonicalStatus ?? 'unknown') },
+            { label: 'Target', value: approval.target },
+            { label: 'Requested by', value: approval.requestedBy ?? 'unknown' },
+            { label: 'Required roles', value: (approval.requiredRoles ?? approval.approverRoles ?? []).join(', ') || 'declared by policy' },
+            { label: 'Created', value: approval.createdAt ?? 'unavailable' },
+            { label: 'Expires', value: approval.expiresAt ?? 'unavailable' },
+            { label: 'Workflow ID', value: approval.workflowId ?? approval.auditLinkage?.workflowInstanceId ?? 'none' },
+          ],
+        }))
+        : [structuredPanel({ id: 'approval-empty-state', title: 'No pending approval records', summary: 'The live approval route is reachable and currently returns an empty queue for this tenant and role.', status: 'implemented', evidence: ['ApprovalDto[]', '/api/v1/approvals/requests'], fields: [{ label: 'Queue state', value: 'Empty' }] })],
       ...context,
     });
   },
@@ -770,19 +901,34 @@ const facilitiesService = {
   async load(): Promise<WorkspaceViewModel> {
     const [facilities, context] = await Promise.all([getJson<FacilitiesMaintenanceWorkspaceDto>(apiPaths.facilities.workspace), commonContext('facilities')]);
     const data = requireReady(facilities, 'Facilities maintenance workspace');
-    const assetPanels: WorkspacePanel[] = data.assets.slice(0, 4).map((asset) => ({
+    const assetPanels: WorkspacePanel[] = data.assets.map((asset) => structuredPanel({
       id: asset.assetId,
       title: asset.name,
-      body: `${asset.readinessStatus} asset health ${asset.healthScore}; maintenance ${asset.maintenanceStatus}; predicted failure risk ${asset.predictedFailureRisk}%.`,
+      summary: 'Live facilities asset record from the maintenance service.',
       status: 'implemented',
       evidence: [asset.sourceOfTruth, asset.twinId ?? 'digital-twin-pending', ...asset.openWorkOrderIds],
+      fields: [
+        { label: 'Asset ID', value: asset.assetId },
+        { label: 'Readiness', value: asset.readinessStatus },
+        { label: 'Health score', value: `${asset.healthScore}%` },
+        { label: 'Maintenance status', value: asset.maintenanceStatus },
+        { label: 'Predicted failure risk', value: `${asset.predictedFailureRisk}%` },
+        { label: 'Work orders open', value: asset.openWorkOrderIds.join(', ') || 'none' },
+        { label: 'Digital twin', value: asset.twinId ?? 'pending' },
+      ],
     }));
-    const workOrderPanels: WorkspacePanel[] = data.workOrders.slice(0, 2).map((order) => ({
+    const workOrderPanels: WorkspacePanel[] = data.workOrders.map((order) => structuredPanel({
       id: order.id,
       title: order.title,
-      body: `${order.priority} priority work order is ${order.status}; approval request ${order.approvalRequestId ?? 'none for read-only record'}.`,
+      summary: 'Maintenance work order with approval and workflow references.',
       status: 'implemented',
       evidence: [order.workflowInstanceId ?? 'workflow-pending', ...order.evidence],
+      fields: [
+        { label: 'Priority', value: order.priority },
+        { label: 'Status', value: order.status },
+        { label: 'Approval request', value: order.approvalRequestId ?? 'none for read-only record' },
+        { label: 'Workflow instance', value: order.workflowInstanceId ?? 'pending' },
+      ],
     }));
     return vm('facilities', facilities.source, {
       generatedAt: data.generatedAt,
@@ -999,18 +1145,27 @@ const auditService = {
         countMetric('Critical events', critical, 'Critical audit severity count', critical ? 'critical' : 'nominal'),
         countMetric('Actors', actors.size, 'Distinct actors represented in the audit ledger'),
       ],
-      panels: events.slice(0, 8).map((event) => {
+      panels: events.map((event) => {
         const legacyEvent = event as { actorId?: string; subjectId?: string };
         const hash = event.integrityReference?.hash ?? event.hash;
         const previousHash = event.integrityReference?.previousHash ?? event.previousHash;
         const evidence = [hash, previousHash, ...(event.evidenceIds ?? [])].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
-        return {
+        return structuredPanel({
           id: event.id,
           title: event.action ?? 'Audit event',
-          body: `${event.severity ?? 'info'} event by ${event.actor?.actorId ?? legacyEvent.actorId ?? 'unknown-actor'} on ${event.entity?.entityType ?? legacyEvent.subjectId ?? 'unknown-entity'}; reported hash reference ${(hash ?? 'hash unavailable').slice(0, 12)} and previous reference ${(previousHash ?? 'previous hash unavailable').slice(0, 12)}.`,
-          status: 'implemented' as const,
+          summary: 'Immutable audit event with integrity references.',
+          status: 'implemented',
           evidence,
-        };
+          fields: [
+            { label: 'Severity', value: event.severity ?? 'info' },
+            { label: 'Actor', value: event.actor?.actorId ?? legacyEvent.actorId ?? 'unknown-actor' },
+            { label: 'Entity', value: event.entity?.entityType ?? legacyEvent.subjectId ?? 'unknown-entity' },
+            { label: 'Entity ID', value: event.entity?.entityId ?? 'unavailable' },
+            { label: 'Timestamp', value: event.timestamp ?? 'unavailable' },
+            { label: 'Hash', value: hash ?? 'hash unavailable' },
+            { label: 'Previous hash', value: previousHash ?? 'previous hash unavailable' },
+          ],
+        });
       }),
       ...context,
       auditEvents: events,
@@ -1046,27 +1201,69 @@ const adminService = {
 const settingsService = {
   support: 'facade-api' as const,
   async load(): Promise<WorkspaceViewModel> {
-    const [policy, context] = await Promise.all([getJson<AIControlPlanePolicyDto>(apiPaths.settings.policy), commonContext('settings')]);
-    const data = requireReady(policy, 'AI control-plane policy');
-    const protectedActions = Array.isArray(data.protectedActions) ? data.protectedActions : [];
-    const governanceMapping = Array.isArray(data.governanceMapping) ? data.governanceMapping : [];
-    const allowedActivities = Array.isArray(data.allowedActivities) ? data.allowedActivities : [];
-    const requiredEvidence = Array.isArray(data.requiredEvidence) ? data.requiredEvidence : [];
+    const [policy, workspace, models, blockedActions, events, context] = await Promise.all([
+      getJson<AIControlPlanePolicyDto>(apiPaths.settings.policy),
+      getJson<AIControlPlaneWorkspaceDto>(apiPaths.settings.workspace),
+      getJson<AIControlPlaneModelRegistryDto>(apiPaths.settings.models),
+      getJson<AIControlPlaneRecommendationDto[]>(apiPaths.settings.blockedActions),
+      getJson<AIControlPlaneWorkspaceDto['events']>(apiPaths.settings.events),
+      commonContext('settings'),
+    ]);
+    const policyData = requireReady(policy, 'AI control-plane policy');
+    const workspaceData = workspace.status === 'ready' ? workspace.data : undefined;
+    const modelRegistry = models.status === 'ready' ? models.data : workspaceData?.modelRegistry;
+    const blockedData = blockedActions.status === 'ready' || blockedActions.status === 'empty'
+      ? (Array.isArray(blockedActions.data) ? blockedActions.data : [])
+      : (workspaceData?.blockedActions ?? []);
+    const eventData = events.status === 'ready' && Array.isArray(events.data)
+      ? events.data
+      : (workspaceData?.events ?? []);
+    const featureStore = modelRegistry?.featureStore;
+    const recommendationCatalog = workspaceData?.recommendations ?? [];
+    const deckDegradations = [
+      degradationFromResult(apiPaths.settings.workspace, 'AI control plane workspace', workspace),
+      degradationFromResult(apiPaths.settings.models, 'AI model registry', models),
+      degradationFromResult(apiPaths.settings.blockedActions, 'Blocked actions', blockedActions),
+      degradationFromResult(apiPaths.settings.events, 'Governance events', events),
+    ].filter((entry): entry is ContextDegradation => Boolean(entry));
+    const aiCommandDeck: AICommandDeckData = {
+      generatedAt: workspaceData?.generatedAt,
+      policy: policyData,
+      workspace: workspaceData,
+      modelRegistry,
+      recommendations: recommendationCatalog,
+      blockedActions: blockedData,
+      events: eventData,
+      featureStore,
+      degradations: deckDegradations,
+    };
+    const mergedAi = mergeUniqueRecommendations(context.aiRecommendations, aiCardsFromControlPlane(recommendationCatalog));
+    const protectedActions = Array.isArray(policyData.protectedActions) ? policyData.protectedActions : [];
+    const governanceMapping = Array.isArray(policyData.governanceMapping) ? policyData.governanceMapping : [];
     return vm('settings', policy.source, {
       metrics: [
-        textMetric('Protected execution posture', data.executionEndpointsAvailable ? 'Declared by API' : 'Unavailable', 'Protected execution is not exposed from this frontend; draft/evaluate review endpoints are backend-governed.', data.executionEndpointsAvailable ? 'warning' : 'nominal'),
+        textMetric('Protected execution posture', policyData.executionEndpointsAvailable ? 'Declared by API' : 'Unavailable', 'Protected execution is not exposed from this frontend; draft/evaluate review endpoints are backend-governed.', policyData.executionEndpointsAvailable ? 'warning' : 'nominal'),
         countMetric('Protected actions', protectedActions.length, 'Actions that require human approval'),
-        countMetric('Governance mappings', governanceMapping.length, 'ISO/NIST policy mapping records'),
+        countMetric('Expert modules', aiCommandDeck.workspace?.expertModules.length ?? modelRegistry?.expertModules.length ?? 0, 'Routed expert modules in the control plane'),
+        countMetric('Blocked actions', blockedData.length, 'Governor-blocked protected action attempts', blockedData.length ? 'critical' : 'nominal'),
+        countMetric('Governance events', eventData.length, 'Control-plane governance events'),
       ],
-      panels: [
-        { id: data.policyId, title: 'AI advisory-only policy', body: `Allowed activities: ${allowedActivities.slice(0, 5).join(', ') || 'No allowed activities declared'}. Draft/evaluate state changes remain draft-only: ${String(data.draftOnlyStateChanges)}. Protected execution remains unavailable from the frontend.`, status: 'facade-only', evidence: requiredEvidence },
-        ...governanceMapping.slice(0, 3).map((mapping, index) => {
-          const controls = Array.isArray(mapping.controls) ? mapping.controls : [];
-          const evidence = Array.isArray(mapping.evidence) ? mapping.evidence : [];
-          return { id: `governance-mapping-${index}`, title: mapping.framework, body: `${controls.length} control mapping(s); evidence ${evidence.join(', ') || 'policy evidence pending'}.`, status: 'facade-only' as const, evidence };
-        }),
-      ],
+      panels: governanceMapping.slice(0, 3).map((mapping, index) => structuredPanel({
+        id: `governance-mapping-${index}`,
+        title: mapping.framework,
+        summary: 'Framework control mapping from the AI control-plane policy.',
+        status: 'facade-only',
+        evidence: mapping.evidence,
+        fields: [
+          { label: 'Framework', value: mapping.framework },
+          { label: 'Controls mapped', value: String(mapping.controls.length) },
+          { label: 'Evidence refs', value: mapping.evidence.join(', ') || 'policy evidence pending' },
+        ],
+      })),
       ...context,
+      aiRecommendations: mergedAi,
+      aiOperating: { ...context.aiOperating, queuedRecommendationCount: mergedAi.length, blockedActionCount: blockedData.length },
+      aiCommandDeck,
     });
   },
 };

@@ -5,6 +5,7 @@ import type { WorkspaceViewModel } from '../../domain/workspaceModel';
 import type { AppRoute } from '../../routes/routes';
 import { ExperienceLayout, OperatingModuleConsole } from '../../components/experience';
 import { AIOperatingConsole, ContextDegradationBanner } from '../../components/aiOperating';
+import { AICommandDeck } from '../../components/AICommandDeck';
 import { AlertPanel, ApprovalCard, AuditCard, EmptyState, KPICard, PageHeader, RecommendationCard, SectionCard, StatusBadge, supportStatusToTone } from '../../components/ui';
 import { experienceFromViewModel } from './buildExperience';
 
@@ -81,7 +82,10 @@ export function RouteExperience({
         operating={data.aiOperating}
         recommendations={aiRecommendations}
         renderRecommendationActions={renderRecommendationActions}
+        compact={route.id === 'settings'}
       />
+
+      {data.aiCommandDeck ? <AICommandDeck deck={data.aiCommandDeck} /> : null}
 
       <ExperienceLayout
         experience={experience}

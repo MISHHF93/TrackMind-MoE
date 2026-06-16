@@ -45,6 +45,7 @@ export function panelToRecord(panel: WorkspacePanel, highlight = false, wiring?:
     summary: panel.body,
     statusLabel: panel.status === 'implemented' ? 'Live record' : panel.status === 'facade-only' ? 'Reference read model' : 'Planned',
     tone: panel.status === 'implemented' ? 'nominal' : 'advisory',
+    fields: panel.fields,
     evidence: panel.evidence,
     actions: panel.actions,
     highlight,

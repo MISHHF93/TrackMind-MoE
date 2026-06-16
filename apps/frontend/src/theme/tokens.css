@@ -829,6 +829,41 @@ input {
   font-size: 0.875rem;
 }
 
+.ai-command-deck {
+  display: grid;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.ai-command-deck__header h2 {
+  margin: 0.25rem 0;
+}
+
+.ai-command-deck__header p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.ai-command-deck__grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+}
+
+.ai-command-deck__mapping,
+.ai-command-deck__model {
+  display: grid;
+  gap: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-3);
+}
+
+.ai-command-deck__mapping h3,
+.ai-command-deck__model h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
 .experience-rail {
   display: grid;
   gap: var(--space-4);

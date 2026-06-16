@@ -2,6 +2,7 @@ import type { AIRecommendationDto, AuditEventDto, ApprovalDto, KPI, ModelReadabl
 import type { AdapterSource } from '../api/client';
 import type { AIOperatingContext, ContextDegradation } from './aiOperatingModel';
 import { emptyAIOperatingContext } from './aiOperatingModel';
+import type { AICommandDeckData } from './controlPlaneModel';
 import type { RouteSupportMetadata } from './support';
 
 export interface WorkspaceMetric {
@@ -24,6 +25,7 @@ export interface WorkspacePanel {
   body: string;
   status: 'implemented' | 'facade-only' | 'documented-stub';
   evidence: string[];
+  fields?: Array<{ label: string; value: string }>;
   actions?: WorkspaceCardAction[];
 }
 
@@ -49,6 +51,7 @@ export interface WorkspaceViewModel {
   modelReadableKpiContext: ModelReadableKPIContext[];
   contextDegraded: ContextDegradation[];
   aiOperating: AIOperatingContext;
+  aiCommandDeck?: AICommandDeckData;
 }
 
 export function countMetric(label: string, count: number, detail: string, tone: WorkspaceMetric['tone'] = 'nominal', actions?: WorkspaceCardAction[]): WorkspaceMetric {

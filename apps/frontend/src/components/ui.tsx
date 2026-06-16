@@ -307,6 +307,7 @@ export function WorkspaceRecordCard({ panel, actions }: { panel: WorkspacePanel;
       actions={actions}
     >
       <p>{panel.body}</p>
+      {panel.fields?.length ? <DataTable ariaLabel={`${panel.title} details`} rows={panel.fields.map((field) => ({ label: field.label, value: field.value }))} /> : null}
       <TagList label="Evidence" values={panel.evidence} emptyLabel="No evidence listed" />
     </RecordCardFrame>
   );
