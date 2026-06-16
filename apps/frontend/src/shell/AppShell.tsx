@@ -1,10 +1,11 @@
 import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
 import { backendSupportLabels, canViewRoute, defaultTenantContext, regulatedActionNames, type NavigationGroup } from '../domain/support';
-import { navigate } from '../routes/navigation';
+import { currentPathname, navigate } from '../routes/navigation';
 import { resolveRoute, routes } from '../routes/routes';
 import { Router } from '../routes/Router';
-import { AlertPanel, EmptyState, StatusBadge, TagList } from '../components/ui';
+import { AlertPanel, EmptyState, RenderErrorBoundary, StatusBadge, TagList } from '../components/ui';
+import { applyTheme, loadTheme, persistTheme, toggleThemeName, type ThemeName } from '../theme/theme';
 
 const navigationOrder: NavigationGroup[] = ['Command', 'Operations', 'Governance', 'Enterprise', 'Administration'];
 const routeIconLabels: Record<string, string> = {
@@ -26,8 +27,9 @@ const routeIconLabels: Record<string, string> = {
 } as const;
 
 export function AppShell(): ReactElement {
-  const [activeRouteId, setActiveRouteId] = useState(() => resolveRoute(window.location.pathname).id);
+  const [activeRouteId, setActiveRouteId] = useState(() => resolveRoute(currentPathname()).id);
   const [searchQuery, setSearchQuery] = useState('');
+  const [theme, setTheme] = useState<ThemeName>(() => loadTheme());
   const visibleRoutes = routes.filter((route) => canViewRoute(route, defaultTenantContext.role));
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const searchableRoutes = normalizedSearch
@@ -38,10 +40,15 @@ export function AppShell(): ReactElement {
     .filter((entry) => entry.routes.length > 0);
 
   useEffect(() => {
-    const onPopState = () => setActiveRouteId(resolveRoute(window.location.pathname).id);
+    const onPopState = () => setActiveRouteId(resolveRoute(currentPathname()).id);
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
+
+  useEffect(() => {
+    applyTheme(theme);
+    persistTheme(theme);
+  }, [theme]);
 
   return (
     <div className="app-shell">
@@ -50,7 +57,7 @@ export function AppShell(): ReactElement {
           <span className="brand-mark">TM</span>
           <div>
             <strong>TrackMind Nexus</strong>
-            <small>AI Stack Command Center</small>
+            <small>Racetrack Operations OS</small>
           </div>
         </div>
         <nav>
@@ -88,23 +95,26 @@ export function AppShell(): ReactElement {
           </div>
           <label className="global-search">
             Search
-            <input type="search" placeholder="Search routes, approvals, audit, evidence" value={searchQuery} onChange={(event) => setSearchQuery(event.currentTarget.value)} />
+            <input type="search" placeholder="Search pages and platform areas" value={searchQuery} onChange={(event) => setSearchQuery(event.currentTarget.value)} />
           </label>
           <div className="topbar-actions" aria-label="Global route shortcuts">
-            <button type="button" onClick={() => navigate('/dashboard')}>Dashboard</button>
-            <button type="button" onClick={() => navigate('/incidents')}>Incidents</button>
+            <button type="button" onClick={() => navigate('/dashboard')}>Command Center</button>
+            <button type="button" onClick={() => navigate('/race-day')}>Race Day</button>
             <button type="button" onClick={() => navigate('/approvals')}>Approvals</button>
-            <button type="button" onClick={toggleTheme}>Toggle theme</button>
+            <button type="button" onClick={() => navigate('/audit')}>Audit</button>
+            <button type="button" aria-pressed={theme === 'dark'} onClick={() => setTheme(toggleThemeName(theme))}>{theme === 'dark' ? 'Use light theme' : 'Use dark theme'}</button>
           </div>
         </header>
 
         <main className="main-workspace">
-          <Router />
+          <RenderErrorBoundary title="Workspace render error">
+            <Router />
+          </RenderErrorBoundary>
         </main>
 
         <aside className="intelligence-panel" aria-label="Contextual intelligence panel">
-          <h2>AI Stack</h2>
-          <p>Mixture-of-experts output is advisory by default and bound to evidence, approval, audit, and tenant context.</p>
+          <h2>Platform Assurance</h2>
+          <p>Every workspace shows the operating picture, supporting evidence, and the human approval boundary in one governed command surface.</p>
           <div className="intelligence-panel__badges" aria-label="AI governance controls">
             <StatusBadge label="Human approval required" tone="critical" />
             <StatusBadge label="Evidence-bound recommendations" tone="advisory" />
@@ -126,11 +136,6 @@ export function AppShell(): ReactElement {
       </div>
     </div>
   );
-}
-
-function toggleTheme(): void {
-  const root = document.documentElement;
-  root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
 }
 
 function routeSearchText(route: (typeof routes)[number]): string {

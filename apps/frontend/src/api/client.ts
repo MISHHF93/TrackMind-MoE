@@ -14,6 +14,8 @@ export interface AdapterResult<T> {
   emptyReason?: string;
 }
 
+const defaultRequestTimeoutMs = 8000;
+
 function scopedPath(path: string): string {
   const url = new URL(path, 'https://trackmind.local');
   if (!url.searchParams.has('tenantId')) url.searchParams.set('tenantId', defaultTenantContext.tenantId);
@@ -24,9 +26,16 @@ function scopedPath(path: string): string {
 
 export async function getJson<T>(path: string, init?: RequestInit): Promise<AdapterResult<T>> {
   const source = adapterSourceForPath(path);
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(new Error(`Request timed out after ${defaultRequestTimeoutMs}ms`)), defaultRequestTimeoutMs);
+  const abortFromCaller = () => timeoutController.abort(init?.signal?.reason);
+  if (init?.signal?.aborted) abortFromCaller();
+  init?.signal?.addEventListener('abort', abortFromCaller, { once: true });
+
   try {
     const response = await fetch(apiUrl(scopedPath(path)), {
       ...init,
+      signal: timeoutController.signal,
       headers: {
         Accept: 'application/json',
         'x-trackmind-request-id': `frontend-${Date.now()}`,
@@ -61,8 +70,13 @@ export async function getJson<T>(path: string, init?: RequestInit): Promise<Adap
     return {
       status: 'error',
       source,
-      message: error instanceof Error ? error.message : 'Unknown API adapter error',
+      message: timeoutController.signal.aborted && !init?.signal?.aborted
+        ? `Backend unavailable or timed out after ${defaultRequestTimeoutMs}ms`
+        : error instanceof Error ? error.message : 'Unknown API adapter error',
     };
+  } finally {
+    clearTimeout(timeoutId);
+    init?.signal?.removeEventListener('abort', abortFromCaller);
   }
 }
 

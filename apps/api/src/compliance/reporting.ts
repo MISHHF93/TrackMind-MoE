@@ -22,7 +22,7 @@ export interface DatasetGovernanceRecord {
 export interface TechnicalDocumentationRecord {
   artifactId: string;
   title: string;
-  type: 'architecture-diagram' | 'test-result' | 'certificate' | 'model-card';
+  type: 'architecture-diagram' | 'test-result' | 'readiness-statement' | 'model-card';
   uri: string;
   summary: string;
 }
@@ -52,7 +52,7 @@ export class AIActComplianceReportingService {
       { artifactId: 'arch-cqrs-event-hubs', title: 'Command -> Event -> Projection architecture', type: 'architecture-diagram', uri: 'docs/compliance/technical-documentation.md#architecture', summary: 'Documents Azure Event Hubs CQRS flow and projections.' },
       { artifactId: 'test-cqrs-event-architecture', title: 'CQRS integration tests', type: 'test-result', uri: 'apps/api/tests/cqrs-event-architecture.test.mjs', summary: 'Verifies approval-gated race start, hash chain, and projection rebuilds.' },
       { artifactId: 'test-apex-domain-services', title: 'HITL approval tests', type: 'test-result', uri: 'apps/api/tests/apex-domain-services.test.mjs', summary: 'Verifies dual-control approval and immutable audit/event emission.' },
-      { artifactId: 'cert-internal-readiness', title: 'Internal compliance readiness statement', type: 'certificate', uri: 'docs/compliance/technical-documentation.md#certificates', summary: 'Readiness statement only; no external certification claimed.' },
+      { artifactId: 'internal-readiness-statement', title: 'Internal compliance readiness statement', type: 'readiness-statement', uri: 'docs/compliance/technical-documentation.md#internal-readiness-statements', summary: 'Readiness statement only; no external certification claimed.' },
     ];
     return { title: 'Technical Documentation', artifacts };
   }

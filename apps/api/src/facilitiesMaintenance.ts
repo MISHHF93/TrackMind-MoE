@@ -425,12 +425,12 @@ export function facilitiesMaintenanceWorkflow(tenantId: string): WorkflowDefinit
 }
 
 export function facilitiesMaintenanceApiDefinition(): ApiServiceDefinition {
-  return { id: 'facilities-maintenance', name: 'Facilities Maintenance', domain: 'facilities', version: 'v1', basePath: '/api/v1/facilities-maintenance', description: 'RACR-backed facilities inspections, preventive maintenance, work orders, predictive hooks, asset health scoring, operational readiness, approvals, audit, workflows, events, and Digital Twin synchronization.', owner: { team: 'facilities-maintenance', productOwner: 'Director of Facilities', technicalOwner: 'Facilities Maintenance Service Owner', supportChannel: '#trackmind-facilities' }, lifecycle: 'active', auth: ['jwt', 'oauth2', 'mtls'], rateLimit: { requests: 600, perSeconds: 60, burst: 100 }, tags: ['facilities', 'maintenance', 'asset-registry', 'digital-twin', 'audit', 'approval'], slo: { availability: 99.9, latencyMs: 250 }, endpoints: [
+  return { id: 'facilities-maintenance', name: 'Facilities Maintenance', domain: 'facilities', version: 'v1', basePath: '/api/v1/facilities-maintenance', description: 'RACR-backed facilities read model for inspections, preventive maintenance plans, work order requests, predictive hooks, asset health scoring, readiness metadata, approvals, audit references, workflows, events, and Digital Twin references.', owner: { team: 'facilities-maintenance', productOwner: 'Director of Facilities', technicalOwner: 'Facilities Maintenance Service Owner', supportChannel: '#trackmind-facilities' }, lifecycle: 'active', auth: ['jwt', 'oauth2', 'mtls'], rateLimit: { requests: 600, perSeconds: 60, burst: 100 }, tags: ['facilities', 'maintenance', 'asset-registry', 'digital-twin', 'audit', 'approval'], slo: { availability: 99.9, latencyMs: 250 }, endpoints: [
     { method: 'GET', path: '/workspace', summary: 'Read facilities maintenance command workspace', scopes: ['assets:read'] },
-    { method: 'POST', path: '/inspections', summary: 'Record governed facility inspection', scopes: ['assets:write'] },
-    { method: 'POST', path: '/preventive-maintenance', summary: 'Create preventive maintenance plan', scopes: ['assets:write'] },
-    { method: 'POST', path: '/work-orders', summary: 'Create approval-gated facility work order', scopes: ['assets:write'] },
-    { method: 'POST', path: '/work-orders/{workOrderId}:complete', summary: 'Complete approved facility work order', scopes: ['assets:write'] },
+    { method: 'POST', path: '/inspections', summary: 'Record facility inspection metadata for governed review', scopes: ['assets:write'] },
+    { method: 'POST', path: '/preventive-maintenance', summary: 'Create preventive maintenance plan metadata', scopes: ['assets:write'] },
+    { method: 'POST', path: '/work-orders', summary: 'Create approval-gated facility work order request', scopes: ['assets:write'] },
+    { method: 'POST', path: '/work-orders/{workOrderId}:complete', summary: 'Record approved work order completion metadata', scopes: ['assets:write'] },
   ] };
 }
 

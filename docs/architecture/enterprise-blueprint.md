@@ -33,8 +33,8 @@ flowchart LR
 
 - `apps/` contains current user-facing and API applications: `apps/api`, `apps/frontend`, and `apps/agents`.
 - `services/` contains bounded-context backend services for race operations, safety, stewarding, tenancy, event ingestion, and future domains.
-- `digital-twin/` contains ontology, simulation, synchronization, and connector assets for Azure Digital Twins.
-- `ai/` contains MoE routing, expert agents, evaluation harnesses, model cards, and responsible AI controls.
+- `digital-twin/` currently contains ontology documentation. Simulation, synchronization, and connector assets are target architecture unless added explicitly.
+- `ai/` contains model cards, prompt cards, evaluations, and governance documentation. MoE/router runtime code lives under `apps/agents`.
 - `workflows/` contains durable workflow definitions and workers for human-in-the-loop processes.
 - `compliance/` contains control catalogs, evidence collection, policy-as-code mappings, and audit runbooks.
 - Integration categories such as HISA-aligned, wagering, weather, camera, IoT, and payment/fan-system adapters are target patterns; a category mention is not a claim that any external provider is integrated, licensed, or approved.

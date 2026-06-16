@@ -13,6 +13,7 @@ This directory documents TrackMind Nexus architecture and governance. Source cod
 - Frontend route manifest: `apps/frontend/src/routes/routes.ts`
 - Service scaffold metadata: `services/*/service.catalog.yaml`
 - Database evolution: `db/migrations/` and `scripts/validate-migrations.mjs`
+- Maintenance and local operations: `docs/operations/maintenance.md`
 
 ## Historical Documents
 

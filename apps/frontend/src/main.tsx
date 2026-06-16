@@ -1,9 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { applyTheme, loadTheme } from './theme/theme';
 import './theme/tokens.css';
 
-document.documentElement.dataset.theme = document.documentElement.dataset.theme ?? 'dark';
+applyTheme(loadTheme());
 
 const root = document.getElementById('root');
 if (!root) throw new Error('TrackMind frontend root element is missing');

@@ -108,6 +108,8 @@ test('runtime KPI facade exposes governed artifacts, snapshots, filtering, and m
   assert.ok(workspace.body.kpis.every((kpi) => validateKPIArtifact(kpi).valid));
   assert.ok(workspace.body.kpis.some((kpi) => kpi.domain === 'multi-track-federation' && kpi.visibility === 'federation-aggregate'));
   assert.equal(workspace.body.kpis.find((kpi) => kpi.domain === 'safety-incidents')?.threshold.targetDirection, 'below');
+  assert.deepEqual(workspace.body.kpis.find((kpi) => kpi.domain === 'equine-welfare')?.sourceEvents, ['equine.profile.viewed', 'equine.veterinary.recorded']);
+  assert.deepEqual(workspace.body.kpis.find((kpi) => kpi.domain === 'veterinary-privacy')?.sourceEvents, ['equine.profile.viewed', 'equine.hisa.verification']);
 
   const queryRoleOnly = await handleApiRequest('GET', '/api/v1/kpis?role=admin&tenantId=trackmind&racetrackId=main-track', undefined, state);
   assert.ok(queryRoleOnly.body.kpis.length < workspace.body.kpis.length);
@@ -169,7 +171,7 @@ test('runtime operations command center exposes stabilized widget sources', asyn
   const response = await handleApiRequest('GET', '/api/v1/operations/command-center');
   assert.equal(response.status, 200);
   const titles = response.body.widgets.map((widget) => widget.title);
-  for (const required of ['Race readiness','Surface conditions','Weather status','Active incidents','Pending approvals','Steward inquiries','Asset health','Workforce readiness','Emergency resources','Facility readiness','AI recommendations','Audit activity','Event timeline']) {
+  for (const required of ['Race readiness','Surface conditions','Weather status','Active incidents','Pending approvals','Steward inquiries','Asset health','Workforce readiness','Emergency resources','Facility readiness','AI recommendations','Audit activity','Event telemetry snapshot']) {
     assert.ok(titles.includes(required), `missing ${required}`);
   }
   assert.ok(response.body.widgets.every((widget) => ['service','event-stream','digital-twin'].includes(widget.source)));
@@ -177,6 +179,10 @@ test('runtime operations command center exposes stabilized widget sources', asyn
   assert.equal(response.body.widgets.find((widget) => widget.id === 'weather-status').source, 'service');
   assert.match(response.body.widgets.find((widget) => widget.id === 'weather-status').detail, /no separate live weather service is claimed/i);
   assert.equal(response.body.widgets.find((widget) => widget.id === 'emergency-resources').source, 'service');
+  assert.equal(response.body.widgets.find((widget) => widget.id === 'race-readiness').drillDownPath, '/race-day');
+  assert.equal(response.body.widgets.find((widget) => widget.id === 'surface-conditions').drillDownPath, '/race-day');
+  assert.equal(response.body.widgets.find((widget) => widget.id === 'emergency-resources').drillDownPath, '/incidents');
+  assert.equal(response.body.widgets.find((widget) => widget.id === 'event-timeline').drillDownPath, '/dashboard');
   assert.ok(response.body.dataLineage.some((lineage) => lineage.domain === 'events' && lineage.reference === '/api/v1/events/stream'));
 });
 

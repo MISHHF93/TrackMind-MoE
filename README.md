@@ -52,11 +52,11 @@ Run these commands from the repository root that contains this `package.json`. I
 
 ```bash
 npm install
+python -m pip install -r apps/agents/router/requirements.txt pytest httpx
 npm test
 npm run build
 npm run typecheck
 npm run start:frontend
-python -m pytest apps/agents
 node scripts/performance-smoke.mjs
 ```
 
@@ -81,7 +81,7 @@ uvicorn apps.agents.trackmind_agents.main:app --reload
 uvicorn apps.agents.router.main:app --reload
 ```
 
-Docker Compose provides a local PostgreSQL baseline:
+Docker Compose provides a local PostgreSQL baseline only. Start the API, frontend, and agents separately when you need the full local runtime:
 
 ```bash
 docker compose -f infra/docker/docker-compose.yml up

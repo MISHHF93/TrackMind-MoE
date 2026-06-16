@@ -178,7 +178,7 @@ test('compliance evidence packages map one evidence set across safety, AI, secur
   const evidencePackage = dashboard.evidencePackages.find((pkg) => pkg.id === 'pkg-accreditation-2026-q2');
   assert.ok(evidencePackage);
   assert.equal(evidencePackage.sealed, true);
-  assert.equal(evidencePackage.readiness, 'audit-ready');
+  assert.equal(evidencePackage.readiness, 'evidence-package-ready');
 
   for (const field of ['evidenceIds', 'auditRecordIds', 'workflowInstanceIds', 'approvalRequestIds', 'digitalTwinRefs']) {
     assert.ok(evidencePackage[field].length > 0, `evidence package missing ${field}`);

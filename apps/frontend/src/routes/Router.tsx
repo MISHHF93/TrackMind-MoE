@@ -2,15 +2,16 @@ import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
 import { domainServices } from '../api/services';
 import { canViewRoute, defaultTenantContext } from '../domain/support';
-import type { WorkspaceViewModel } from '../domain/workspaceModel';
+import { createUnavailableWorkspace, type WorkspaceViewModel } from '../domain/workspaceModel';
 import { resolveRoute, type AppRoute } from './routes';
+import { currentPathname } from './navigation';
 import { WorkspacePage } from '../pages/WorkspacePage';
 
 function useRoute(): AppRoute {
-  const [route, setRoute] = useState(() => resolveRoute(window.location.pathname));
+  const [route, setRoute] = useState(() => resolveRoute(currentPathname()));
 
   useEffect(() => {
-    const onPopState = () => setRoute(resolveRoute(window.location.pathname));
+    const onPopState = () => setRoute(resolveRoute(currentPathname()));
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
@@ -37,7 +38,10 @@ export function Router(): ReactElement {
         if (!cancelled) setState({ loading: false, data });
       })
       .catch((error: unknown) => {
-        if (!cancelled) setState({ loading: false, error: error instanceof Error ? error.message : 'Unknown route load error' });
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : 'Unknown route load error';
+          setState({ loading: false, data: createUnavailableWorkspace(route, message) });
+        }
       });
     return () => {
       cancelled = true;

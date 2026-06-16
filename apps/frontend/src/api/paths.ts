@@ -1,7 +1,12 @@
 import { nexusApiBasePath } from '@trackmind/shared';
 import type { DomainRouteId } from '../domain/support';
 
-export const API_BASE_URL = import.meta.env.VITE_TRACKMIND_API_BASE_URL ?? nexusApiBasePath;
+export function normalizeApiBaseUrl(value: string | undefined): string {
+  const baseUrl = (value ?? nexusApiBasePath).trim().replace(/\/+$/, '');
+  return baseUrl || nexusApiBasePath;
+}
+
+export const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_TRACKMIND_API_BASE_URL);
 export type ApiAdapterSource = 'live-api' | 'facade-api' | 'documented-stub';
 
 export const apiPaths = {
@@ -128,5 +133,6 @@ export function backendContractPathsForRoute(routeId: DomainRouteId): string[] {
 }
 
 export function apiUrl(path: string): string {
-  return `${API_BASE_URL}${path}`;
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${API_BASE_URL}${normalizedPath}`;
 }

@@ -36,10 +36,10 @@ test('seeded accreditation dashboard covers mappings, packages, programs, integr
   assert.equal(dashboard.frameworks.length, 12);
   assert.ok(dashboard.controls.some((control) => control.frameworkIds.includes('ISO-25010')));
   assert.ok(dashboard.frameworkMappings.some((mapping) => mapping.frameworkId === 'HISA' && mapping.mappedTo.some((item) => item.frameworkId === 'ARCI')));
-  assert.equal(dashboard.evidencePackages[0].readiness, 'audit-ready');
+  assert.equal(dashboard.evidencePackages[0].readiness, 'evidence-package-ready');
   assert.equal(dashboard.evidencePackages[0].sealed, true);
   assert.ok(dashboard.evidencePackages[0].approvalRequestIds.includes('approval-compliance-filing-1'));
-  assert.equal(dashboard.accreditationPrograms[0].status, 'ready-for-accreditor');
+  assert.equal(dashboard.accreditationPrograms[0].status, 'ready-for-internal-review');
   assert.equal(dashboard.integrations.audit, true);
   assert.equal(dashboard.integrations.workflow, true);
   assert.equal(dashboard.integrations.approvals, true);
@@ -66,6 +66,8 @@ test('universal evidence package reuses one package across frameworks without ce
   assert.ok(pkg.eventRefs.length >= 0);
   assert.ok(pkg.digitalTwinRefs.length > 0);
   assert.ok(pkg.aiRecommendationRefs.includes('rec-race-start-readiness'));
+  assert.equal(pkg.readiness, 'evidence-package-ready');
+  assert.equal(pkg.accreditationReadiness.externalCertificationClaimed, false);
   for (const frameworkId of ['ISO-42001','ISO-27001','ISO-27701','ISO-31000','SOC-2','PCI-DSS','HISA','ARCI','LOCAL-RACING-COMMISSION']) {
     assert.ok(pkg.frameworkIds.includes(frameworkId), `package missing ${frameworkId}`);
     assert.ok(pkg.frameworkMappings.some((mapping) => mapping.frameworkId === frameworkId && mapping.evidenceUse === 'reusable'));

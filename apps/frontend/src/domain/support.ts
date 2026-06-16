@@ -44,9 +44,9 @@ export interface RouteSupportMetadata {
 }
 
 export const backendSupportLabels: Record<BackendSupportStatus, string> = {
-  'live-api': 'Live API',
-  'facade-api': 'Facade API',
-  'documented-stub': 'Documented Stub',
+  'live-api': 'API route wired',
+  'facade-api': 'Facade-backed',
+  'documented-stub': 'Documented plan',
 };
 
 export const defaultTenantContext: TenantRacetrackContext = {

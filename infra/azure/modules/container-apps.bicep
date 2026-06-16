@@ -118,7 +118,16 @@ resource apiApp 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: 'trackmind-api'
           image: apiImage
-          env: commonEnvironmentVariables
+          env: concat(commonEnvironmentVariables, [
+            {
+              name: 'HOST'
+              value: '0.0.0.0'
+            }
+            {
+              name: 'PORT'
+              value: '4000'
+            }
+          ])
           resources: {
             cpu: json('0.5')
             memory: '1Gi'

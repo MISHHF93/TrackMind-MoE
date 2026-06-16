@@ -160,9 +160,9 @@ export function canRoleRequestApprovalAction(role: Role, action: string): boolea
 
 export const frontendRoutePermissionRegistry = {
   dashboard: 'read:any',
-  raceDay: 'race:request-start',
+  raceDay: 'read:any',
   equine: 'vet:review',
-  approvals: 'ai:approve',
+  approvals: 'read:any',
   incidents: 'incident:manage',
   compliance: 'compliance:report',
   security: 'security:read',
@@ -198,7 +198,7 @@ export const auditExportPermissionRegistry = {
 
 export function permissionForApiEndpoint(input: { method: 'GET' | 'POST'; path: string; operationId: string }): Permission {
   if (input.path in auditExportPermissionRegistry) return auditExportPermissionRegistry[input.path as keyof typeof auditExportPermissionRegistry];
-  if (input.path.includes('/approvals/') || input.operationId.toLowerCase().includes('approval')) return 'ai:approve';
+  if (input.path.includes('/approvals/') || input.operationId.toLowerCase().includes('approval')) return input.method === 'GET' ? 'read:any' : 'ai:approve';
   if (input.path.includes('/ai-control-plane') || input.path.includes('/ai-governance') || input.path.includes('/ai/')) return input.method === 'GET' ? 'ai:read' : 'ai:approve';
   if (input.path.includes('/racing-data')) return input.method === 'GET' ? 'data-hub:read' : 'integration:invoke';
   if (input.path.includes('/artifacts/')) return input.method === 'GET' ? 'artifact:read' : 'integration:invoke';

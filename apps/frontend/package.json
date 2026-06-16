@@ -4,8 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prebuild": "npm --prefix ../../packages/shared run build",
     "build": "tsc -p tsconfig.json && vite build",
+    "pretypecheck": "npm --prefix ../../packages/shared run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prestart": "npm --prefix ../../packages/shared run build",
     "start": "vite --host 127.0.0.1 --port 5173",
     "test": "node tests/frontend-contracts.test.mjs"
   },

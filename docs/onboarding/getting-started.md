@@ -3,8 +3,8 @@
 ## First day checklist
 
 1. Read `README.md`, `docs/architecture/enterprise-blueprint.md`, `docs/engineering/coding-standards.md`, and `docs/security/security-baseline.md`.
-2. Install Node.js LTS, npm, Python 3.11+, Docker, Azure CLI, Bicep, Terraform, and GitHub CLI.
-3. Run `npm install`, `npm test`, and `npm run build` from the repository root.
+2. Install Node.js 22.12+ or a current LTS satisfying `package.json`, npm, Python 3.11+, Docker, Azure CLI, Bicep, and GitHub CLI. Terraform is only required if Terraform assets are added later.
+3. Run `npm install`, `python -m pip install -r apps/agents/router/requirements.txt pytest httpx`, `npm test`, and `npm run build` from the repository root.
 4. Create a feature branch using the documented naming convention.
 5. Start from `templates/service-template` for new services. Use `apps/frontend` as the current frontend pattern; do not create a second app shell.
 
