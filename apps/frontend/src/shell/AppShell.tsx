@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
 import { backendSupportLabels, canViewRoute, defaultTenantContext, regulatedActionNames, type NavigationGroup } from '../domain/support';
+import { operatingModule, operatingPhaseLabels } from '../domain/operatingSystem';
 import { currentPathname, currentSearch, navigate } from '../routes/navigation';
 import { routeForPathname, routeById, routes, type AppRoute } from '../routes/routes';
 import { Router } from '../routes/Router';
@@ -30,6 +31,7 @@ const routeIconLabels: Record<string, string> = {
 export function AppShell(): ReactElement {
   const [activeRouteKey, setActiveRouteKey] = useState(() => `${currentPathname()}${currentSearch()}`);
   const activeRouteId = routeForPathname(currentPathname())?.id;
+  const activeOperating = activeRouteId ? operatingModule(activeRouteId) : undefined;
   const [searchQuery, setSearchQuery] = useState('');
   const [theme, setTheme] = useState<ThemeName>(() => loadTheme());
   const visibleRoutes = routes.filter((route) => canViewRoute(route, defaultTenantContext.role));
@@ -117,14 +119,18 @@ export function AppShell(): ReactElement {
         </main>
 
         <aside className="intelligence-panel" aria-label="Contextual intelligence panel">
-          <h2>Safety & Governance</h2>
-          <p>Every workspace shows the operating picture, supporting evidence, and the human approval boundary in one governed racetrack surface.</p>
+          <h2>{activeOperating ? operatingPhaseLabels[activeOperating.phase] : 'Safety & Governance'}</h2>
+          <p>{activeOperating ? activeOperating.mission : 'Every workspace shows the operating picture, supporting evidence, and the human approval boundary in one governed racetrack surface.'}</p>
+          {activeOperating ? (
+            <p className="intelligence-panel__functional">{activeOperating.functionalToday}</p>
+          ) : null}
           <div className="intelligence-panel__badges" aria-label="AI governance controls">
             <StatusBadge label="Human approval required" tone="critical" />
             <StatusBadge label="Evidence-bound recommendations" tone="advisory" />
             <StatusBadge label="No autonomous control path" tone="nominal" />
           </div>
           <AlertPanel title="Protected Action Boundary" tone="critical">
+            <p>{activeOperating?.protectedBoundary ?? 'Protected race, payout, emergency, medication, and enforcement actions are not exposed as frontend controls.'}</p>
             <TagList label="Protected actions" values={regulatedActionNames} />
           </AlertPanel>
         </aside>

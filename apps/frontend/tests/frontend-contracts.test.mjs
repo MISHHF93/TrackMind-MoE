@@ -168,8 +168,7 @@ test('components do not call raw fetch or render forbidden execution controls', 
   assert.match(ui, /KPICard/);
   assert.match(ui, /WorkspaceRecordCard/);
   assert.match(page, /View approval context/);
-  assert.match(page, /Workspace Evidence/);
-  assert.match(page, /Protected actions stay in human approval workflows/);
+  assert.match(page, /RouteExperience/);
   assert.match(page, /recommendation\.approvalRequirement\?\.required/);
   assert.match(page, /navigateWithinShell/);
   assert.match(page, /Workspace source/);
@@ -177,7 +176,7 @@ test('components do not call raw fetch or render forbidden execution controls', 
   assert.match(page, /Workspace path/);
   assert.match(page, /Navigation context/);
   assert.match(page, /focusFromSearch/);
-  assert.match(page, /Governed KPI Artifacts/);
+  assert.match(page, /renderRecommendationActions/);
   assert.match(ui, /Data quality/);
   assert.doesNotMatch(page, /function RecordCard/);
   assert.doesNotMatch(page, /function KPICard/);
@@ -215,6 +214,22 @@ test('frontend card actions stay navigation-only and advisory-safe', async () =>
   assert.match(workspaceModel, /View service status/);
 });
 
+test('frontend route experiences organize workspaces into functional lanes', async () => {
+  const experience = await source('src/components/experience.tsx');
+  const buildExperience = await source('src/pages/experiences/buildExperience.ts');
+  const routeExperience = await source('src/pages/experiences/RouteExperience.tsx');
+  assert.match(experience, /ExperienceStageNav/);
+  assert.match(experience, /ExperienceLanes/);
+  assert.match(buildExperience, /buildRouteExperience/);
+  assert.match(buildExperience, /buildRaceDayExperience/);
+  assert.match(buildExperience, /buildFacilitiesExperience/);
+  assert.match(routeExperience, /Governance rail/);
+  assert.match(routeExperience, /OperatingModuleConsole/);
+  assert.match(routeExperience, /Showing \$\{approvalPreview\.length\} of \$\{approvals\.length\}/);
+  assert.match(buildExperience, /recordWiringForPanel/);
+  assert.match(buildExperience, /wiredRecord/);
+});
+
 test('codex issue follow-up keeps card data defensive and copy accurate', async () => {
   const page = await source('src/pages/WorkspacePage.tsx');
   const services = await source('src/api/services.ts');
@@ -233,6 +248,8 @@ test('codex issue follow-up keeps card data defensive and copy accurate', async 
   assert.match(page, /const aiRecommendations = Array\.isArray\(data\.aiRecommendations\)/);
   assert.match(page, /function DashboardWorkspace/);
   assert.match(page, /function WorkstreamLauncher/);
+  assert.match(page, /RouteExperience/);
+  assert.doesNotMatch(page, /Route Data Cards/);
   assert.match(page, /Start By Workstream/);
   assert.match(page, /Race-Day Readiness/);
   assert.match(page, /Equine & Barn Review/);
@@ -338,7 +355,9 @@ test('frontend route filtering honors required roles and tenant scope headers', 
   assert.match(page, /canNavigateToPath/);
   assert.match(page, /routeForPathname\(url\.pathname\)/);
   assert.match(page, /canViewRoute\(route, defaultTenantContext\.role\)/);
-  assert.match(router, /Page not found/);
+  assert.match(router, /title="Forbidden"/);
+  assert.match(router, /routeKey: locationKey/);
+  assert.match(router, /state\.routeKey === locationKey/);
   assert.match(client, /x-trackmind-tenant-id/);
   assert.match(client, /x-trackmind-racetrack-id/);
   assert.match(client, /x-trackmind-organization-id/);
@@ -350,7 +369,8 @@ test('frontend route filtering honors required roles and tenant scope headers', 
   assert.match(navigation, /typeof window === 'undefined'/);
   assert.match(navigation, /typeof PopStateEvent === 'function'/);
   assert.match(navigation, /isSafeNavigationTarget/);
-  assert.match(navigation, /routeForPathname\(url\.pathname\)/);
+  assert.match(navigation, /destination\.hash/);
+  assert.doesNotMatch(navigation, /routeForPathname\(url\.pathname\)/);
   assert.match(support, /scopeSource: 'demo-reference-context'/);
   assert.match(shell, /Demo scope shown/);
 });

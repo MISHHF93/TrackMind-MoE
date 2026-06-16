@@ -5,6 +5,7 @@ import { backendSupportLabels, canViewRoute, defaultTenantContext } from '../dom
 import { routeById, routeForPathname, type AppRoute } from '../routes/routes';
 import { currentSearch, navigate } from '../routes/navigation';
 import { ActionButtons, AlertPanel, ApprovalCard, AuditCard, DataTable, EmptyState, ErrorState, KPICard, LoadingState, MetricCard, PageHeader, RecommendationCard, SectionCard, StatusBadge, TagList, Timeline, WorkspaceRecordCard, supportStatusToTone, workspacePanelStatusLabel } from '../components/ui';
+import { RouteExperience } from './experiences/RouteExperience';
 
 interface WorkspacePageProps {
   route: AppRoute;
@@ -64,99 +65,34 @@ export function WorkspacePage({ route, state }: WorkspacePageProps): ReactElemen
     );
   }
   return (
-    <section className="workspace">
-      <PageHeader
-        eyebrow={`${route.navigationGroup} / ${supportLabel}`}
-        title={route.label}
-        description={route.dataSource}
-        accessory={<RouteContractCard route={route} supportLabel={supportLabel} />}
-      />
-
-      {state.error ? (
-        <aside className="focus-banner" role="status" aria-label="Workspace degraded fallback">
-          <strong>Offline workspace fallback</strong>
-          <span>{state.error}</span>
-        </aside>
-      ) : null}
-
-      {focus ? (
+    <RouteExperience
+      route={route}
+      supportLabel={supportLabel}
+      focus={focus}
+      stateError={state.error}
+      data={data}
+      metrics={metrics}
+      panels={panels}
+      approvals={approvals}
+      auditEvents={auditEvents}
+      kpis={kpis}
+      modelReadableKpiContext={modelReadableKpiContext}
+      aiRecommendations={aiRecommendations}
+      renderContractCard={<RouteContractCard route={route} supportLabel={supportLabel} />}
+      renderFocusBanner={focus ? (
         <aside className="focus-banner" aria-label="Navigation context note">
           <strong>Navigation context note</strong>
           <span>{focus.label}: {focus.value}</span>
           <button type="button" onClick={() => navigateWithinShell(route.path)}>Clear context</button>
         </aside>
       ) : null}
-
-      <div className="metric-grid" aria-label={`${route.label} metrics`}>
-        {metrics.map((metric, index) => (
-          <MetricCard
-            metric={metric}
-            actions={<RouteActionButtons actions={metric.actions ?? actionsForMetric(metric.label, metric.value, metric.detail, route.path, route.id)} />}
-            key={`${metric.label}-${index}`}
-          />
-        ))}
-      </div>
-
-      <div className="workspace-grid">
-        <SectionCard title="Workspace Evidence" description="Read-only records and supporting evidence from TrackMind services. Protected actions stay in human approval workflows.">
-          {panels.length === 0 ? (
-            <EmptyState message="No workspace records are available for this role." actions={<RouteActionButtons actions={[{ label: 'View audit evidence', path: '/audit', detail: 'Review available evidence for this workspace.' }]} />} />
-          ) : (
-            panels.map((panel, index) => (
-              <WorkspaceRecordCard
-                panel={panel}
-                actions={<RouteActionButtons actions={panel.actions ?? actionsForPanel(panel, route.path)} />}
-                key={`${panel.id || 'panel'}-${index}`}
-              />
-            ))
-          )}
-        </SectionCard>
-
-        <SectionCard title="Governance Summary" description="Protected actions stay human-governed, approval-backed, and audit-linked.">
-          <ApprovalBoundary approvals={approvals} auditEvents={auditEvents} />
-          <AlertPanel title="Protected Action Boundary" tone="critical">
-            <p>Direct race starts, race stops, results, scratches, medication decisions, emergency actions, payouts, discipline, and enforcement are not rendered as buttons.</p>
-            <RouteActionButtons actions={[{ label: 'Review AI guardrails', path: '/settings', detail: 'Review read-only AI guardrail context.' }]} />
-          </AlertPanel>
-        </SectionCard>
-      </div>
-
-      <SectionCard title="Governed KPI Artifacts" description="KPI artifacts are rendered from typed contract fields with audit and model-use metadata.">
-        {kpis.length === 0 ? (
-          <EmptyState message="No KPI artifacts are visible for this route and role." actions={<RouteActionButtons actions={[{ label: 'View audit context', path: '/audit', detail: 'Review available KPI evidence.' }]} />} />
-        ) : (
-          <div className="kpi-grid">
-            {kpis.map((kpi, index) => (
-              <KPICard
-                kpi={kpi}
-                modelContext={modelReadableKpiContext.find((context) => context.kpiId === kpi.kpiId)}
-                actions={<RouteActionButtons actions={[
-                  { label: 'View audit context note', path: `/audit?kpi=${encodeURIComponent(kpi.kpiId)}`, detail: 'Review audit workspace with a KPI context note; records are not filtered by this link.' },
-                  { label: 'View approval context', path: '/approvals', detail: 'Review approval boundary.' },
-                ]} />}
-                key={`${kpi.kpiId || 'kpi'}-${index}`}
-              />
-            ))}
-          </div>
-        )}
-      </SectionCard>
-
-      <SectionCard title="AI Recommendations" description="Recommendations expose evidence, confidence, model version, approval state, and audit references with review-only links.">
-        {aiRecommendations.length === 0 ? (
-          <EmptyState message="No AI recommendations returned for this route." actions={<RouteActionButtons actions={[{ label: 'Review AI guardrails', path: '/settings', detail: 'Review read-only AI guardrails.' }]} />} />
-        ) : (
-          <div className="ai-grid">
-            {aiRecommendations.slice(0, 6).map((recommendation, index) => (
-              <RecommendationCard
-                recommendation={recommendation}
-                actions={<RecommendationActions recommendation={recommendation} />}
-                key={`${recommendation.recommendationId || 'recommendation'}-${index}`}
-              />
-            ))}
-          </div>
-        )}
-      </SectionCard>
-    </section>
+      renderRecordActions={(recordId, presetActions) => {
+        const panel = panels.find((entry) => entry.id === recordId);
+        return <RouteActionButtons actions={presetActions ?? (panel ? actionsForPanel(panel, route.path) : undefined)} />;
+      }}
+      renderMetricActions={(metric) => <RouteActionButtons actions={metric.actions ?? actionsForMetric(metric.label, metric.value, metric.detail, route.path, route.id)} />}
+      renderRecommendationActions={(recommendation) => <RecommendationActions recommendation={recommendation} />}
+    />
   );
 }
 
@@ -244,9 +180,9 @@ function DashboardWorkspace({
             ariaLabel="Dashboard coverage summary"
             rows={[
               { label: 'Pending approvals', value: pendingApprovals },
-              { label: 'Audit events', value: latestAudit.length },
-              { label: 'AI advisories', value: topRecommendations.length },
-              { label: 'KPI artifacts', value: topKpis.length },
+              { label: 'Audit events (total)', value: auditEvents.length },
+              { label: 'AI advisories (total)', value: aiRecommendations.length },
+              { label: 'KPI artifacts (total)', value: kpis.length },
             ]}
           />
         </div>
@@ -339,16 +275,24 @@ const commandWorkstreams: Array<{ routeId: AppRoute['id']; title: string; owner:
   { routeId: 'raceDay', title: 'Race-Day Readiness', owner: 'Racing office and stewards', reason: 'Confirm readiness, surface, gate, lifecycle, and locked approval posture before post time.', signals: ['Post-time readiness', 'Surface and gate verification', 'Race office lifecycle'] },
   { routeId: 'equine', title: 'Equine & Barn Review', owner: 'Veterinary and barn teams', reason: 'Review horse welfare, eligibility, barn readiness, and privacy-scoped veterinary status.', signals: ['Eligibility flags', 'Barn restrictions', 'No medical clearance action'] },
   { routeId: 'incidents', title: 'Incident Command', owner: 'Security and operations command', reason: 'Review incident posture, emergency resources, communications, and response evidence.', signals: ['Emergency status', 'Incident queue', 'AI cannot block humans'] },
+  { routeId: 'security', title: 'Security Review', owner: 'Security operations', reason: 'Review masked incidents, camera health, and investigation references.', signals: ['Masked incidents', 'Camera health', 'Investigation queue'] },
   { routeId: 'facilities', title: 'Facilities Readiness', owner: 'Track superintendent', reason: 'Scan asset health, work orders, inspections, and return-to-service approval boundaries.', signals: ['Work orders', 'Asset health', 'Digital Twin sync'] },
   { routeId: 'approvals', title: 'Approval Review', owner: 'Authorized human approvers', reason: 'Review protected action requests, escalation posture, required roles, and evidence.', signals: ['Pending approvals', 'Escalation timers', 'Human-only decisions'] },
-  { routeId: 'dataHub', title: 'Racing Data Governance', owner: 'Compliance and data operations', reason: 'Review provider readiness, lineage, license posture, and export controls without live provider pulls.', signals: ['Provider posture', 'Lineage', 'Export controls'] },
+  { routeId: 'compliance', title: 'Compliance Controls', owner: 'Compliance officers', reason: 'Review framework mappings, control library posture, and internal readiness evidence.', signals: ['Frameworks', 'Control mappings', 'No external certification claim'] },
+  { routeId: 'ticketing', title: 'Ticketing Desk', owner: 'Ticketing and finance teams', reason: 'Review ticket state, active face value, and race-day coverage without payment capture.', signals: ['Active tickets', 'Face value', 'No payment execution'] },
+  { routeId: 'finance', title: 'Finance & Payout Review', owner: 'Finance controllers', reason: 'Inspect payout records, dual-control posture, and protected payout boundaries.', signals: ['Payout queue', 'Dual control', 'Protected payouts'] },
+  { routeId: 'federation', title: 'Federation Readiness', owner: 'Compliance and federation ops', reason: 'Compare aggregate racetrack readiness without raw cross-track exposure.', signals: ['Aggregate profiles', 'Sharing policy', 'No raw export'] },
+  { routeId: 'dataHub', title: 'Racing Data Governance', owner: 'Compliance and data operations', reason: 'Review provider readiness, lineage, license posture, and export controls.', signals: ['Provider posture', 'Lineage', 'Export controls'] },
+  { routeId: 'audit', title: 'Audit Evidence', owner: 'Auditors and compliance', reason: 'Review immutable audit events, hash references, and actor linkage.', signals: ['Audit ledger', 'Hash references', 'Actor linkage'] },
+  { routeId: 'admin', title: 'Service Status', owner: 'Platform operators', reason: 'Review reference platform health, dependencies, and deployment boundary metadata.', signals: ['Service health', 'Dependencies', 'Deployment boundary'] },
+  { routeId: 'settings', title: 'AI Guardrails', owner: 'AI safety and policy teams', reason: 'Review read-only AI guardrails, protected actions, and human approval mappings.', signals: ['Protected actions', 'Policy mappings', 'Draft-only posture'] },
 ];
 
 function WorkstreamLauncher(): ReactElement {
   return (
     <SectionCard title="Start By Workstream" description="Choose the racetrack operating lane you need today. Each lane opens a review workspace; protected actions stay behind backend approval workflows.">
       <div className="workstream-grid">
-        {commandWorkstreams.map((item) => {
+        {commandWorkstreams.filter((item) => canViewRoute(routeById[item.routeId], defaultTenantContext.role)).map((item) => {
           const route = routeById[item.routeId];
           return (
             <article className="workstream-card" key={item.routeId}>

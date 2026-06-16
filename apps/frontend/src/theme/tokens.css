@@ -315,6 +315,12 @@ input {
   gap: var(--space-2);
 }
 
+.intelligence-panel__functional {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
 .status-footer {
   grid-column: 1 / -1;
   display: flex;
@@ -574,6 +580,200 @@ input {
   align-items: start;
 }
 
+.experience-workspace {
+  gap: var(--space-5);
+}
+
+.experience-layout {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.experience-hero {
+  display: grid;
+  gap: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--accent-operational), var(--border-subtle) 45%);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-operational), transparent 90%), transparent 55%),
+    var(--surface-panel);
+  box-shadow: var(--shadow-soft);
+  padding: var(--space-5);
+}
+
+.experience-hero h2 {
+  margin: 0;
+  font-size: clamp(1.6rem, 3vw, 2.6rem);
+}
+
+.experience-hero p {
+  margin: 0;
+  max-width: 62rem;
+  color: var(--text-muted);
+}
+
+.experience-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-4);
+}
+
+.experience-stage-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.experience-stage-nav__button {
+  min-height: 2.75rem;
+  padding: 0.55rem 0.9rem;
+}
+
+.experience-stage-nav__button--active {
+  border-color: color-mix(in srgb, var(--accent-operational), var(--border-subtle) 20%);
+  background: color-mix(in srgb, var(--accent-operational), var(--surface-raised) 84%);
+}
+
+.experience-lanes {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.experience-lane--readiness {
+  border-left: 4px solid var(--status-nominal);
+}
+
+.experience-lane--operations {
+  border-left: 4px solid var(--accent-operational);
+}
+
+.experience-lane--governance {
+  border-left: 4px solid var(--approval-pending);
+}
+
+.experience-lane--evidence {
+  border-left: 4px solid var(--audit-integrity);
+}
+
+.experience-lane--boundary {
+  border-left: 4px solid var(--status-critical);
+}
+
+.experience-record-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--space-4);
+}
+
+.experience-record {
+  display: grid;
+  gap: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+  padding: var(--space-4);
+}
+
+.experience-record--highlight {
+  border-color: color-mix(in srgb, var(--accent-operational), var(--border-subtle) 20%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-operational), transparent 70%);
+}
+
+.experience-record__header {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.experience-record h3 {
+  margin: 0;
+}
+
+.experience-record p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.operating-module-console {
+  display: grid;
+  gap: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-panel), var(--accent-operational) 4%);
+  padding: var(--space-4);
+}
+
+.operating-module-console h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.operating-module-console__functional {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.capability-surface {
+  display: grid;
+  gap: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+  padding: var(--space-4);
+}
+
+.capability-surface--highlight {
+  border-color: color-mix(in srgb, var(--accent-operational), var(--border-subtle) 20%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-operational), transparent 70%);
+}
+
+.capability-surface__header {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.capability-surface h3 {
+  margin: 0;
+}
+
+.capability-surface__summary {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.capability-surface__operator-note {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  border-left: 3px solid var(--status-advisory);
+  padding-left: var(--space-3);
+}
+
+.capability-wiring {
+  border-top: 1px dashed var(--border-subtle);
+  padding-top: var(--space-2);
+}
+
+.capability-wiring summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.experience-rail {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.experience-rail__grid,
+.experience-rail__secondary {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.experience-rail__secondary {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
 .metric-grid,
 .ai-grid,
 .kpi-grid {
@@ -787,7 +987,8 @@ button:disabled {
   .dashboard-hero,
   .dashboard-grid--primary,
   .dashboard-grid--secondary,
-  .dashboard-ai-layout {
+  .dashboard-ai-layout,
+  .experience-rail__secondary {
     grid-template-columns: 1fr;
   }
 
