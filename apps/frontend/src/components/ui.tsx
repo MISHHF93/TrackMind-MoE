@@ -3,6 +3,7 @@ import type { ErrorInfo, ReactElement, ReactNode } from 'react';
 import { normalizeApprovalStatus, type ApprovalDto, type AuditEventDto, type KPI, type ModelReadableKPIContext } from '@trackmind/shared';
 import type { AdvisoryAIRecommendation, WorkspaceCardAction, WorkspaceMetric, WorkspacePanel } from '../domain/workspaceModel';
 import type { BackendSupportStatus } from '../domain/support';
+import { routeForPathname } from '../routes/routes';
 
 export type StatusTone = 'neutral' | 'nominal' | 'advisory' | 'warning' | 'critical';
 
@@ -14,7 +15,7 @@ export function riskLevelToTone(riskLevel?: string): StatusTone {
   return 'warning';
 }
 
-export function kpiStatusToTone(status: KPI['status']): StatusTone {
+export function kpiStatusToTone(status: unknown): StatusTone {
   if (status === 'nominal') return 'nominal';
   if (status === 'critical' || status === 'blocked') return 'critical';
   if (status === 'warning') return 'warning';
@@ -22,15 +23,44 @@ export function kpiStatusToTone(status: KPI['status']): StatusTone {
   return 'neutral';
 }
 
-export function workspacePanelStatusToTone(status: WorkspacePanel['status']): StatusTone {
+export function workspacePanelStatusToTone(status: unknown): StatusTone {
   if (status === 'implemented') return 'nominal';
-  return 'advisory';
+  if (status === 'facade-only' || status === 'documented-stub') return 'advisory';
+  return 'warning';
 }
 
-export function workspacePanelStatusLabel(status: WorkspacePanel['status']): string {
+export function workspacePanelStatusLabel(status: unknown): string {
   if (status === 'implemented') return 'Endpoint-backed';
   if (status === 'facade-only') return 'Facade data';
-  return 'Documentation only';
+  if (status === 'documented-stub') return 'Documentation only';
+  return 'Unknown status';
+}
+
+function safeStatusTone(tone: unknown): StatusTone {
+  return ['neutral', 'nominal', 'advisory', 'warning', 'critical'].includes(String(tone)) ? tone as StatusTone : 'warning';
+}
+
+function safeMetricTone(tone: unknown): WorkspaceMetric['tone'] {
+  return ['nominal', 'advisory', 'warning', 'critical'].includes(String(tone)) ? tone as WorkspaceMetric['tone'] : 'warning';
+}
+
+function safeKpiStatus(status: unknown): string {
+  return ['nominal', 'watch', 'warning', 'critical', 'blocked', 'readiness-only'].includes(String(status)) ? String(status) : 'unknown';
+}
+
+function safeRiskLevel(riskLevel: unknown): string {
+  return ['critical', 'high', 'medium', 'low'].includes(String(riskLevel)) ? String(riskLevel) : 'unknown';
+}
+
+function safeAuditSeverity(severity: unknown): string {
+  return ['info', 'warning', 'critical'].includes(String(severity)) ? String(severity) : 'unknown';
+}
+
+function auditSeverityToTone(severity: unknown): StatusTone {
+  if (severity === 'critical') return 'critical';
+  if (severity === 'warning') return 'warning';
+  if (severity === 'info') return 'nominal';
+  return 'warning';
 }
 
 export function supportStatusToTone(status: BackendSupportStatus): StatusTone {
@@ -64,15 +94,16 @@ export function SectionCard({ title, description, children, className = '' }: { 
 }
 
 export function StatusBadge({ label, tone = 'neutral' }: { label: string; tone?: StatusTone }): ReactElement {
-  return <span className={`status-badge status-badge--${tone}`}>{label}</span>;
+  return <span className={`status-badge status-badge--${safeStatusTone(tone)}`}>{displayText(label, 'Unavailable')}</span>;
 }
 
 export function MetricCard({ metric, actions }: { metric: WorkspaceMetric; actions?: ReactNode }): ReactElement {
+  const tone = safeMetricTone(metric.tone);
   return (
-    <article className={`metric metric--${metric.tone}`}>
-      <span>{metric.label}</span>
-      <strong>{metric.value}</strong>
-      <small>{metric.detail}</small>
+    <article className={`metric metric--${tone}`}>
+      <span>{displayText(metric.label, 'Metric unavailable')}</span>
+      <strong>{displayText(metric.value, 'Unavailable')}</strong>
+      <small>{displayText(metric.detail, 'Metric detail unavailable')}</small>
       {actions}
     </article>
   );
@@ -124,7 +155,7 @@ export function Timeline({ items, ariaLabel }: { items?: Array<{ id: string; tit
 
 export function EmptyState({ message, actions }: { message: string; actions?: ReactNode }): ReactElement {
   return (
-    <div className="empty-state">
+    <div className="empty-state" aria-live="polite">
       <p>{message}</p>
       {actions}
     </div>
@@ -142,7 +173,7 @@ export function LoadingState({ label, source }: { label: string; source?: string
 
 export function ErrorState({ title, message, detail }: { title: string; message: string; detail?: string }): ReactElement {
   return (
-    <section className="workspace-state workspace-state--error">
+    <section className="workspace-state workspace-state--error" role="alert">
       <h1>{title}</h1>
       <p>{message}</p>
       {detail ? <p>{detail}</p> : null}
@@ -150,7 +181,7 @@ export function ErrorState({ title, message, detail }: { title: string; message:
   );
 }
 
-export class RenderErrorBoundary extends Component<{ children: ReactNode; title: string }, { error?: Error }> {
+export class RenderErrorBoundary extends Component<{ children: ReactNode; title: string; resetKey?: string }, { error?: Error }> {
   state: { error?: Error } = {};
 
   static getDerivedStateFromError(error: Error): { error: Error } {
@@ -159,6 +190,12 @@ export class RenderErrorBoundary extends Component<{ children: ReactNode; title:
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     console.error('Workspace render failed', error, errorInfo.componentStack);
+  }
+
+  componentDidUpdate(previousProps: { resetKey?: string }): void {
+    if (this.state.error && previousProps.resetKey !== this.props.resetKey) {
+      this.setState({ error: undefined });
+    }
   }
 
   render(): ReactNode {
@@ -187,9 +224,10 @@ export function AlertPanel({ title, children, tone = 'advisory' }: { title: stri
 export function ApprovalCard({ approval, actions }: { approval: ApprovalDto; actions?: ReactNode }): ReactElement {
   const canonicalStatus = normalizeApprovalStatus(String(approval.canonicalStatus ?? approval.status ?? 'pending'));
   const approverRoles = safeStringArray(approval.approverRoles?.length ? approval.approverRoles : approval.requiredRoles);
-  const escalation = Array.isArray(approval.escalation) ? approval.escalation : [];
+  const escalation = Array.isArray(approval.escalation) ? approval.escalation.filter(isRecord) : [];
   const auditIds = safeStringArray(approval.auditLinkage?.auditIds ?? approval.auditIds);
   const requestedBy = displayText(approval.requestedByActor?.displayName ?? approval.requestedBy, 'Unknown requester');
+  const approvalId = displayText(approval.approvalRequestId ?? approval.id, 'unavailable');
   return (
     <RecordCardFrame
       className="approval-card"
@@ -199,7 +237,7 @@ export function ApprovalCard({ approval, actions }: { approval: ApprovalDto; act
       actions={actions}
     >
       <DataTable
-        ariaLabel={`Approval ${approval.approvalRequestId}`}
+        ariaLabel={`Approval ${approvalId}`}
         rows={[
           { label: 'Target', value: displayText(approval.target, 'Approval target unavailable') },
           { label: 'Requested by', value: requestedBy },
@@ -207,7 +245,7 @@ export function ApprovalCard({ approval, actions }: { approval: ApprovalDto; act
           { label: 'Racetrack', value: displayText(approval.racetrackId, 'racetrack-scoped facade') },
           { label: 'Created', value: displayText(approval.createdAt, 'Created time unavailable') },
           { label: 'Expires', value: displayText(approval.expiresAt, 'Expiration unavailable') },
-          { label: 'Escalation', value: escalation.length ? escalation.map((rule) => `${rule.afterMinutes ?? '?'}m: ${Array.isArray(rule.approverRoles) ? rule.approverRoles.join(', ') || 'role not listed' : 'roles unavailable'}`).join('; ') : 'No escalation' },
+          { label: 'Escalation', value: escalation.length ? escalation.map((rule) => `${formatNumber(rule.afterMinutes)}m: ${safeStringArray(rule.approverRoles).join(', ') || 'role not listed'}`).join('; ') : 'No escalation' },
           { label: 'Audit linkage', value: auditIds.length ? auditIds.join(', ') : 'No audit records yet' },
         ]}
       />
@@ -227,17 +265,18 @@ export function AuditCard({ event, actions }: { event: AuditEventDto; actions?: 
     : 'Tenant scope not provided';
   const hash = displayText(event.integrityReference?.hash ?? event.hash, 'hash unavailable');
   const previousHash = displayText(event.integrityReference?.previousHash ?? event.previousHash, 'previous hash unavailable');
-  const severity = displayText(event.severity, 'info') as AuditEventDto['severity'];
+  const severity = safeAuditSeverity(event.severity);
+  const eventId = displayText(event.auditEventId ?? event.id, 'unavailable');
   return (
     <RecordCardFrame
       className="audit-card audit-event-card"
       status={severity}
-      statusTone={severity === 'critical' ? 'critical' : severity === 'warning' ? 'warning' : 'nominal'}
+      statusTone={auditSeverityToTone(severity)}
       title={displayText(event.action, 'Audit event')}
       actions={actions}
     >
       <DataTable
-        ariaLabel={`Audit event ${event.auditEventId}`}
+        ariaLabel={`Audit event ${eventId}`}
         rows={[
           { label: 'Actor', value: actorLabel },
           { label: 'Actor type', value: actorType },
@@ -279,11 +318,12 @@ export function RecommendationCard({ recommendation, actions }: { recommendation
   const approvalRequirement = recommendation.approvalRequirement;
   const auditIds = recommendation.auditReference?.auditIds?.length ? recommendation.auditReference.auditIds : recommendation.auditId ? [recommendation.auditId] : [];
   const evidencePackageId = displayText(recommendation.evidencePackage?.evidencePackageId, 'No evidence package');
-  const riskLevel = ['critical', 'high', 'medium', 'low'].includes(String(recommendation.riskLevel)) ? String(recommendation.riskLevel) : 'medium';
+  const riskLevel = safeRiskLevel(recommendation.riskLevel);
   const riskTone = riskLevelToTone(riskLevel);
   const governorLabel = recommendation.executionAllowed === false || recommendation.blockedAutonomousExecution || recommendation.governorAllowed === false
     ? 'Execution blocked'
     : recommendation.governorAllowed === true ? 'Advisory review only' : 'Governor decision unavailable';
+  const recommendationId = displayText(recommendation.recommendationId ?? recommendation.id, 'unavailable');
   return (
     <article className={`ai-card ai-card--${riskLevel}`}>
       <div className="ai-card__header">
@@ -292,9 +332,9 @@ export function RecommendationCard({ recommendation, actions }: { recommendation
       </div>
       <h3>{displayText(recommendation.recommendation, 'Recommendation unavailable')}</h3>
       <DataTable
-        ariaLabel={`AI recommendation ${recommendation.recommendationId}`}
+        ariaLabel={`AI recommendation ${recommendationId}`}
         rows={[
-          { label: 'Recommendation ID', value: recommendation.recommendationId },
+          { label: 'Recommendation ID', value: recommendationId },
           { label: 'Advisory', value: recommendation.advisoryOnly && recommendation.executionAllowed === false ? 'Advisory only; execution blocked' : 'Review governance policy' },
           { label: 'Confidence band', value: confidenceBand },
           { label: 'Model', value: recommendation.modelVersion },
@@ -314,18 +354,24 @@ export function RecommendationCard({ recommendation, actions }: { recommendation
 
 export function KPICard({ kpi, modelContext, actions }: { kpi: KPI; modelContext?: ModelReadableKPIContext; actions?: ReactNode }): ReactElement {
   const auditEventIds = kpi.auditReference?.auditEventIds ?? [];
-  const historicalSnapshots = Array.isArray(kpi.historicalSnapshots) ? kpi.historicalSnapshots.filter((snapshot) => snapshot && typeof snapshot === 'object') : [];
+  const historicalSnapshots = Array.isArray(kpi.historicalSnapshots) ? kpi.historicalSnapshots.filter(isRecord) : [];
   const kpiValue = typeof kpi.value === 'number' && Number.isFinite(kpi.value) ? String(kpi.value) : displayText(kpi.value, 'Unavailable');
   const kpiUnit = displayText(kpi.unit, '');
+  const status = safeKpiStatus(kpi.status);
+  const domain = displayText(kpi.domain, 'KPI domain unavailable');
+  const name = displayText(kpi.name, 'KPI unavailable');
+  const description = displayText(kpi.description, 'KPI description unavailable');
+  const trend = displayText(kpi.trend, 'Trend unavailable');
+  const visibility = displayText(kpi.visibility, 'Visibility unavailable');
   const threshold = kpi.threshold
     ? `${displayText(kpi.threshold.description, 'Threshold configured')} Target ${formatNumber(kpi.target)}; warning ${formatNumber(kpi.threshold.warning)}; critical ${formatNumber(kpi.threshold.critical)}; direction ${displayText(kpi.threshold.targetDirection, 'unknown')}.`
     : 'No threshold configured';
   return (
-    <article className={`kpi-card kpi-card--${kpi.status}`}>
+    <article className={`kpi-card kpi-card--${status}`}>
       <div className="kpi-card__header">
-        <StatusBadge label={kpi.domain} tone="advisory" />
+        <StatusBadge label={domain} tone="advisory" />
       </div>
-      <h3>{kpi.name}</h3>
+      <h3>{name}</h3>
       <div className="kpi-card__value">
         <strong>{kpiValue}</strong>
         <span>{kpiUnit}</span>
@@ -333,21 +379,21 @@ export function KPICard({ kpi, modelContext, actions }: { kpi: KPI; modelContext
       <DataTable
         ariaLabel={`KPI ${kpi.kpiId}`}
         rows={[
-          { label: 'Status', value: <StatusBadge label={kpi.status} tone={kpiStatusToTone(kpi.status)} /> },
-          { label: 'Trend', value: kpi.trend },
+          { label: 'Status', value: <StatusBadge label={status} tone={kpiStatusToTone(status)} /> },
+          { label: 'Trend', value: trend },
           { label: 'Confidence', value: percent(kpi.confidence) },
           { label: 'Data quality', value: percent(kpi.dataQualityScore) },
-          { label: 'Visibility', value: kpi.visibility },
+          { label: 'Visibility', value: visibility },
           { label: 'Approval sensitivity', value: modelContext?.approvalSensitivity ?? kpi.approvalSensitivity },
           { label: 'Model readable', value: kpi.modelReadable ? 'Metadata only' : 'Not exposed to models' },
           { label: 'Last updated', value: kpi.lastCalculatedAt },
           { label: 'Threshold', value: threshold },
         ]}
       />
-      <p>{kpi.description}</p>
+      <p>{description}</p>
       {modelContext ? (
         <>
-          <p>{modelContext.sourceSummary}</p>
+          <p>{displayText(modelContext.sourceSummary, 'Model-readable source summary unavailable')}</p>
           <TagList label="Allowed model use" values={modelContext.allowedUse} emptyLabel="No allowed model uses" />
           <TagList label="Prohibited model use" values={modelContext.prohibitedUse} emptyLabel="No prohibited model uses" />
         </>
@@ -356,7 +402,7 @@ export function KPICard({ kpi, modelContext, actions }: { kpi: KPI; modelContext
       <Timeline
         ariaLabel={`KPI ${kpi.kpiId} snapshots`}
         items={historicalSnapshots.slice(0, 3).map((snapshot) => ({
-          id: snapshot.snapshotId,
+          id: displayText(snapshot.snapshotId, 'snapshot'),
           title: `${formatNumber(snapshot.value)} ${kpiUnit}`.trim(),
           meta: displayText(snapshot.calculatedAt, 'Snapshot time unavailable'),
           detail: `${displayText(snapshot.status, 'status unavailable')} with ${percent(snapshot.confidence)} confidence`,
@@ -389,6 +435,7 @@ export function ActionButtons({ actions, onNavigate }: { actions?: WorkspaceCard
     seen.add(key);
     return true;
   }) : [];
+  if (safeActions.length === 0) return <></>;
   return (
     <div className="card-actions" aria-label="Card actions">
       {safeActions.map((action) => (
@@ -412,7 +459,7 @@ function displayNode(value: ReactNode, fallback: string): ReactNode {
 }
 
 function percent(value: unknown): string {
-  return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value * 100)}%` : 'Unavailable';
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1 ? `${Math.round(value * 100)}%` : 'Not reported';
 }
 
 function formatNumber(value: unknown): string {
@@ -423,13 +470,16 @@ function safeStringArray(values: unknown): string[] {
   return Array.isArray(values) ? values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0) : [];
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object');
+}
+
 function isSafeAppPath(path: string): boolean {
   if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')) return false;
   try {
     const url = new URL(path, 'https://trackmind.local');
     if (url.origin !== 'https://trackmind.local') return false;
-    const knownPrefixes = ['/dashboard', '/race-day', '/equine', '/approvals', '/incidents', '/compliance', '/security', '/facilities', '/ticketing', '/finance', '/federation', '/data-hub', '/audit', '/admin', '/settings'];
-    return knownPrefixes.some((prefix) => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`));
+    return Boolean(routeForPathname(url.pathname));
   } catch {
     return false;
   }

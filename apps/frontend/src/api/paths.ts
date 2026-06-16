@@ -66,15 +66,19 @@ export const apiPaths = {
   },
 } as const;
 
+export const commonContextApiPaths = [
+  apiPaths.approvals.list,
+  apiPaths.audit.events,
+  apiPaths.dashboard.aiControlPlaneRecommendations,
+  apiPaths.dashboard.aiGovernanceWorkspace,
+  apiPaths.kpis.workspace,
+] as const;
+
 export const routeApiPathGroups = {
   dashboard: [
     apiPaths.dashboard.operations,
     apiPaths.dashboard.platformHealth,
-    apiPaths.dashboard.aiControlPlaneRecommendations,
-    apiPaths.dashboard.aiGovernanceWorkspace,
-    apiPaths.approvals.list,
-    apiPaths.audit.events,
-    apiPaths.kpis.workspace,
+    ...commonContextApiPaths,
   ],
   raceDay: [
     apiPaths.raceDay.races,
@@ -82,24 +86,25 @@ export const routeApiPathGroups = {
     apiPaths.raceDay.readiness,
     apiPaths.raceDay.surface,
     apiPaths.raceDay.trackConfiguration,
+    ...commonContextApiPaths,
   ],
-  equine: [apiPaths.equine.horse, apiPaths.equine.barnOperations],
-  approvals: [apiPaths.approvals.list],
-  incidents: [apiPaths.incidents.security, apiPaths.incidents.emergency],
-  compliance: [apiPaths.compliance.library],
-  security: [apiPaths.security.workspace],
-  facilities: [apiPaths.facilities.workspace],
-  ticketing: [apiPaths.finance.ticketing],
-  finance: [apiPaths.finance.ticketing],
-  federation: [apiPaths.federation.workspace],
-  dataHub: [apiPaths.dataHub.workspace],
-  audit: [apiPaths.audit.events],
-  admin: [apiPaths.admin.platformHealth],
-  settings: [apiPaths.settings.policy],
+  equine: [apiPaths.equine.horse, apiPaths.equine.barnOperations, ...commonContextApiPaths],
+  approvals: commonContextApiPaths,
+  incidents: [apiPaths.incidents.security, apiPaths.incidents.emergency, ...commonContextApiPaths],
+  compliance: [apiPaths.compliance.library, ...commonContextApiPaths],
+  security: [apiPaths.security.workspace, ...commonContextApiPaths],
+  facilities: [apiPaths.facilities.workspace, ...commonContextApiPaths],
+  ticketing: [apiPaths.finance.ticketing, ...commonContextApiPaths],
+  finance: [apiPaths.finance.ticketing, ...commonContextApiPaths],
+  federation: [apiPaths.federation.workspace, ...commonContextApiPaths],
+  dataHub: [apiPaths.dataHub.workspace, ...commonContextApiPaths],
+  audit: commonContextApiPaths,
+  admin: [apiPaths.admin.platformHealth, ...commonContextApiPaths],
+  settings: [apiPaths.settings.policy, ...commonContextApiPaths],
 } as const satisfies Record<DomainRouteId, readonly string[]>;
 
 const pathSources: Record<string, ApiAdapterSource> = {
-  [apiPaths.dashboard.operations]: 'live-api',
+  [apiPaths.dashboard.operations]: 'facade-api',
   [apiPaths.dashboard.platformHealth]: 'facade-api',
   [apiPaths.dashboard.aiControlPlaneRecommendations]: 'live-api',
   [apiPaths.dashboard.aiGovernanceWorkspace]: 'facade-api',

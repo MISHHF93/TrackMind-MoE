@@ -29,7 +29,7 @@ export const routes = [
     requiredPermission: routePermissions.dashboard,
     requiredRoles: 'authenticated',
     supportStatus: 'facade-api',
-    dataSource: 'Monitor race-day readiness, operational risk, approvals, audit evidence, and advisory AI from one governed command view.',
+    dataSource: 'Start each operating session with race-day posture, workstream risk, human approval queues, audit evidence, and AI recommendations.',
     backendPaths: backendContractPathsForRoute('dashboard'),
     sharedTypes: ['OperationsCommandCenterDto', 'PlatformHealthWorkspaceDto', 'AIControlPlaneRecommendationDto', 'AIGovernanceWorkspaceDto', 'ApprovalDto', 'AuditEventDto', 'KPIWorkspaceDto'],
     databaseSupport: 'partial',
@@ -37,13 +37,13 @@ export const routes = [
       { source: 'backend-route', reference: 'apps/api/src/server.ts', summary: 'Operations and platform health read routes are wired.' },
       { source: 'shared-contract', reference: 'packages/shared/src/apiContracts.ts', summary: 'Dashboard DTOs are shared.' },
     ],
-    limitations: ['Platform observability is facade-level, not production telemetry.'],
+    limitations: ['Service status and operational telemetry are reference read models; protected actions require backend approval workflows and human operators.'],
   },
   {
     id: 'raceDay',
     path: '/race-day',
-    label: 'Race Day',
-    navigationGroup: 'Operations',
+    label: 'Race Day Readiness',
+    navigationGroup: 'Race Operations',
     iconKey: 'race-day',
     requiredPermission: routePermissions.raceDay,
     requiredRoles: 'authenticated',
@@ -58,8 +58,8 @@ export const routes = [
   {
     id: 'equine',
     path: '/equine',
-    label: 'Equine Intelligence',
-    navigationGroup: 'Operations',
+    label: 'Equine & Barn Review',
+    navigationGroup: 'Race Operations',
     iconKey: 'horse',
     requiredPermission: routePermissions.equine,
     requiredRoles: 'authenticated',
@@ -77,7 +77,7 @@ export const routes = [
   {
     id: 'approvals',
     path: '/approvals',
-    label: 'Approvals',
+    label: 'Approval Review',
     navigationGroup: 'Governance',
     iconKey: 'approval',
     requiredPermission: routePermissions.approvals,
@@ -93,11 +93,11 @@ export const routes = [
   {
     id: 'incidents',
     path: '/incidents',
-    label: 'Incident Review',
-    navigationGroup: 'Operations',
+    label: 'Incident Command',
+    navigationGroup: 'Safety & Facilities',
     iconKey: 'incident',
     requiredPermission: routePermissions.incidents,
-    requiredRoles: ['admin', 'security'],
+    requiredRoles: 'authenticated',
     supportStatus: 'facade-api',
     dataSource: 'Review emergency posture, incident metadata, security incident summaries, and response references without exposing direct command controls.',
     backendPaths: backendContractPathsForRoute('incidents'),
@@ -128,8 +128,8 @@ export const routes = [
   {
     id: 'security',
     path: '/security',
-    label: 'Security Operations',
-    navigationGroup: 'Operations',
+    label: 'Security Review',
+    navigationGroup: 'Safety & Facilities',
     iconKey: 'security',
     requiredPermission: routePermissions.security,
     requiredRoles: ['admin', 'security', 'compliance-officer'],
@@ -144,8 +144,8 @@ export const routes = [
   {
     id: 'facilities',
     path: '/facilities',
-    label: 'Facilities Maintenance',
-    navigationGroup: 'Operations',
+    label: 'Facilities Readiness',
+    navigationGroup: 'Safety & Facilities',
     iconKey: 'facility',
     requiredPermission: routePermissions.facilities,
     requiredRoles: 'authenticated',
@@ -164,7 +164,7 @@ export const routes = [
     id: 'ticketing',
     path: '/ticketing',
     label: 'Ticketing',
-    navigationGroup: 'Enterprise',
+    navigationGroup: 'Business Controls',
     iconKey: 'ticket',
     requiredPermission: routePermissions.ticketing,
     requiredRoles: ['admin', 'ticketing-manager', 'finance'],
@@ -179,8 +179,8 @@ export const routes = [
   {
     id: 'finance',
     path: '/finance',
-    label: 'Finance & Payouts',
-    navigationGroup: 'Enterprise',
+    label: 'Finance & Payout Review',
+    navigationGroup: 'Business Controls',
     iconKey: 'finance',
     requiredPermission: routePermissions.finance,
     requiredRoles: ['admin', 'finance'],
@@ -195,8 +195,8 @@ export const routes = [
   {
     id: 'federation',
     path: '/federation',
-    label: 'Federation',
-    navigationGroup: 'Enterprise',
+    label: 'Federation Readiness',
+    navigationGroup: 'Data Governance',
     iconKey: 'federation',
     requiredPermission: routePermissions.federation,
     requiredRoles: ['admin', 'compliance-officer', 'read-only-auditor'],
@@ -214,8 +214,8 @@ export const routes = [
   {
     id: 'dataHub',
     path: '/data-hub',
-    label: 'Data Hub',
-    navigationGroup: 'Enterprise',
+    label: 'Racing Data Hub',
+    navigationGroup: 'Data Governance',
     iconKey: 'data-hub',
     requiredPermission: routePermissions.dataHub,
     requiredRoles: ['admin', 'compliance-officer', 'racing-secretary', 'read-only-auditor'],
@@ -230,11 +230,11 @@ export const routes = [
   {
     id: 'audit',
     path: '/audit',
-    label: 'Audit',
+    label: 'Audit Evidence',
     navigationGroup: 'Governance',
     iconKey: 'audit',
     requiredPermission: routePermissions.audit,
-    requiredRoles: ['admin', 'compliance-officer', 'read-only-auditor'],
+    requiredRoles: 'authenticated',
     supportStatus: 'live-api',
     dataSource: 'Review audit event metadata, approval references, evidence IDs, and integrity references.',
     backendPaths: backendContractPathsForRoute('audit'),
@@ -246,8 +246,8 @@ export const routes = [
   {
     id: 'admin',
     path: '/admin',
-    label: 'Platform Health',
-    navigationGroup: 'Administration',
+    label: 'Service Status',
+    navigationGroup: 'System Status',
     iconKey: 'admin',
     requiredPermission: routePermissions.admin,
     requiredRoles: ['admin', 'operations-admin'],
@@ -262,13 +262,13 @@ export const routes = [
   {
     id: 'settings',
     path: '/settings',
-    label: 'AI Policy',
+    label: 'AI Guardrails',
     navigationGroup: 'Governance',
     iconKey: 'settings',
     requiredPermission: routePermissions.settings,
     requiredRoles: 'authenticated',
     supportStatus: 'facade-api',
-    dataSource: 'Review advisory AI policies, protected actions, evidence requirements, and human approval mappings.',
+    dataSource: 'Review read-only AI guardrails, protected actions, evidence requirements, and human approval mappings.',
     backendPaths: backendContractPathsForRoute('settings'),
     sharedTypes: ['AIControlPlanePolicyDto'],
     databaseSupport: 'none',
@@ -282,8 +282,12 @@ export type AppRoute = typeof routes[number];
 export const routeById = Object.fromEntries(routes.map((route) => [route.id, route])) as Record<AppRoute['id'], AppRoute>;
 export const defaultRoute = routeById.dashboard;
 
-export function resolveRoute(pathname: string): AppRoute {
+export function routeForPathname(pathname: string): AppRoute | undefined {
   const normalized = pathname === '/' ? '/dashboard' : pathname.replace(/\/+$/, '') || '/dashboard';
-  return routes.find((route) => route.path === normalized || normalized.startsWith(`${route.path}/`)) ?? defaultRoute;
+  return routes.find((route) => route.path === normalized);
+}
+
+export function resolveRoute(pathname: string): AppRoute {
+  return routeForPathname(pathname) ?? defaultRoute;
 }
 

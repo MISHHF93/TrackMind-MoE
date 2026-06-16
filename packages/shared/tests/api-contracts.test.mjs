@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { apiContractSchemas, apiEndpointContracts, auditExportPermissionRegistry, frontendRoutePermissionRegistry, hasPermission, modelReadableKpiAllowedUses, normalizeApprovalStatus, permissionRegistry, rolesWithPermission, validateAuditEventContract, validateContract, validateModelReadableKPIContext, workflowPermissionRegistry } from '../dist/index.js';
+import { apiContractSchemas, apiEndpointContracts, auditExportPermissionRegistry, frontendRoutePermissionRegistry, hasPermission, modelReadableKpiAllowedUses, normalizeApprovalStatus, permissionForApiEndpoint, permissionRegistry, rolesWithPermission, validateAuditEventContract, validateContract, validateModelReadableKPIContext, workflowPermissionRegistry } from '../dist/index.js';
 
 const externalOrDeferredResponseSchemas = new Set([
   'ProviderConfig',
@@ -61,6 +61,11 @@ test('RBAC registry centralizes route, workflow, approval, and audit export perm
   assert.equal(hasPermission('read-only-auditor', 'audit:read'), true);
   assert.equal(hasPermission('read-only-auditor', 'compliance:audit'), false);
   assert.equal(hasPermission('compliance-officer', frontendRoutePermissionRegistry.security), true);
+  assert.equal(permissionForApiEndpoint({ method: 'POST', path: '/api/v1/telemetry/rtk/ingest', operationId: 'ingestRtkTelemetry' }), 'integration:invoke');
+  assert.equal(permissionForApiEndpoint({ method: 'POST', path: '/api/v1/safety-intelligence/runway-incursions', operationId: 'createSafetyIntelligenceReview' }), 'security:manage');
+  assert.equal(permissionForApiEndpoint({ method: 'POST', path: '/api/v1/services/security/credentials/validate', operationId: 'validateSecurityCredential' }), 'security:manage');
+  assert.equal(permissionForApiEndpoint({ method: 'POST', path: '/api/v1/collaboration/comments', operationId: 'createCollaborationComment' }), 'workflow:execute');
+  assert.equal(permissionForApiEndpoint({ method: 'GET', path: '/api/v1/track-surface/measurements', operationId: 'listTrackSurfaceMeasurements' }), 'track:readings');
 });
 
 test('shared API standard defines request metadata, pagination, and error envelope schemas', () => {

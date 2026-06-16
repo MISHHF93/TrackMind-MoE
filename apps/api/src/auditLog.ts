@@ -399,7 +399,8 @@ export class ImmutableAuditLog {
     const includePayloads = options.includePayloads ?? true;
     const generatedAt = options.generatedAt ?? new Date().toISOString();
     const exportRecords = records.map((entry) => includePayloads ? this.clone(entry) : { ...this.clone(entry), payload: { redacted: true } });
-    const legalHolds = this.reconstruct({ ...options, regulation: regulations[0] }).legalHolds.filter((hold) => records.some((entry) => entry.id === hold.recordId));
+    const exportedRecordIds = new Set(records.map((entry) => entry.id));
+    const legalHolds = this.reconstruct({ ...options, regulation: undefined }).legalHolds.filter((hold) => exportedRecordIds.has(hold.recordId));
     const retention = this.retentionDisposition(generatedAt, options.retentionPolicies ?? []).filter((item) => records.some((entry) => entry.id === item.id));
     const evidenceManifest = this.evidencePath({ ...options, regulation: undefined }).filter((path) => records.some((entry) => entry.id === path.recordId)).flatMap((path) => path.evidence);
     const unsigned = { exportId: `audit-export-${digest({ generatedAt, records: exportRecords.map((entry) => entry.id), regulations }).slice(7, 19)}`, generatedAt, generatedBy: options.generatedBy ?? 'audit-ledger', regulations, verified: this.verify().valid, chainHead: records.at(-1)?.hash, recordCount: records.length, records: exportRecords, evidenceManifest, legalHolds, retention };

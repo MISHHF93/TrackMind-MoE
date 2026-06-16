@@ -1,13 +1,14 @@
 import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
 import { backendSupportLabels, canViewRoute, defaultTenantContext, regulatedActionNames, type NavigationGroup } from '../domain/support';
-import { currentPathname, navigate } from '../routes/navigation';
-import { resolveRoute, routes } from '../routes/routes';
+import { currentPathname, currentSearch, navigate } from '../routes/navigation';
+import { routeForPathname, routeById, routes, type AppRoute } from '../routes/routes';
 import { Router } from '../routes/Router';
 import { AlertPanel, EmptyState, RenderErrorBoundary, StatusBadge, TagList } from '../components/ui';
 import { applyTheme, loadTheme, persistTheme, toggleThemeName, type ThemeName } from '../theme/theme';
 
-const navigationOrder: NavigationGroup[] = ['Command', 'Operations', 'Governance', 'Enterprise', 'Administration'];
+const navigationOrder: NavigationGroup[] = ['Command', 'Race Operations', 'Safety & Facilities', 'Governance', 'Business Controls', 'Data Governance', 'System Status'];
+const topbarShortcutRouteIds: AppRoute['id'][] = ['dashboard', 'raceDay', 'incidents', 'approvals'];
 const routeIconLabels: Record<string, string> = {
   'command-center': 'CC',
   'race-day': 'RD',
@@ -27,7 +28,8 @@ const routeIconLabels: Record<string, string> = {
 } as const;
 
 export function AppShell(): ReactElement {
-  const [activeRouteId, setActiveRouteId] = useState(() => resolveRoute(currentPathname()).id);
+  const [activeRouteKey, setActiveRouteKey] = useState(() => `${currentPathname()}${currentSearch()}`);
+  const activeRouteId = routeForPathname(currentPathname())?.id;
   const [searchQuery, setSearchQuery] = useState('');
   const [theme, setTheme] = useState<ThemeName>(() => loadTheme());
   const visibleRoutes = routes.filter((route) => canViewRoute(route, defaultTenantContext.role));
@@ -35,12 +37,15 @@ export function AppShell(): ReactElement {
   const searchableRoutes = normalizedSearch
     ? visibleRoutes.filter((route) => routeSearchText(route).includes(normalizedSearch))
     : visibleRoutes;
+  const topbarShortcuts = topbarShortcutRouteIds
+    .map((routeId) => routeById[routeId])
+    .filter((route) => canViewRoute(route, defaultTenantContext.role));
   const groupedRoutes = navigationOrder
     .map((group) => ({ group, routes: searchableRoutes.filter((route) => route.navigationGroup === group) }))
     .filter((entry) => entry.routes.length > 0);
 
   useEffect(() => {
-    const onPopState = () => setActiveRouteId(resolveRoute(currentPathname()).id);
+    const onPopState = () => setActiveRouteKey(`${currentPathname()}${currentSearch()}`);
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
@@ -60,7 +65,7 @@ export function AppShell(): ReactElement {
             <small>Racetrack Operations OS</small>
           </div>
         </div>
-        <nav>
+        <nav aria-label="TrackMind workspace routes">
           {groupedRoutes.length === 0 ? <EmptyState message={`No routes match "${searchQuery}".`} /> : null}
           {groupedRoutes.map(({ group, routes: groupRoutes }) => (
             <section className="nav-group" key={group} aria-label={`${group} routes`}>
@@ -91,46 +96,45 @@ export function AppShell(): ReactElement {
               <span>Racetrack</span>
               <strong>{defaultTenantContext.racetrackId}</strong>
             </div>
-            <span className="scope-disclaimer">Demo context only; backend auth must enforce scope.</span>
+            <span className="scope-disclaimer">Demo scope shown; backend authorization remains authoritative.</span>
           </div>
           <label className="global-search">
             Search
             <input type="search" placeholder="Search pages and platform areas" value={searchQuery} onChange={(event) => setSearchQuery(event.currentTarget.value)} />
           </label>
           <div className="topbar-actions" aria-label="Global route shortcuts">
-            <button type="button" onClick={() => navigate('/dashboard')}>Command Center</button>
-            <button type="button" onClick={() => navigate('/race-day')}>Race Day</button>
-            <button type="button" onClick={() => navigate('/approvals')}>Approvals</button>
-            <button type="button" onClick={() => navigate('/audit')}>Audit</button>
+            {topbarShortcuts.map((route) => (
+              <button type="button" onClick={() => navigate(route.path)} key={route.id}>{route.label}</button>
+            ))}
             <button type="button" aria-pressed={theme === 'dark'} onClick={() => setTheme(toggleThemeName(theme))}>{theme === 'dark' ? 'Use light theme' : 'Use dark theme'}</button>
           </div>
         </header>
 
         <main className="main-workspace">
-          <RenderErrorBoundary title="Workspace render error">
+          <RenderErrorBoundary title="Workspace render error" resetKey={activeRouteKey}>
             <Router />
           </RenderErrorBoundary>
         </main>
 
         <aside className="intelligence-panel" aria-label="Contextual intelligence panel">
-          <h2>Platform Assurance</h2>
-          <p>Every workspace shows the operating picture, supporting evidence, and the human approval boundary in one governed command surface.</p>
+          <h2>Safety & Governance</h2>
+          <p>Every workspace shows the operating picture, supporting evidence, and the human approval boundary in one governed racetrack surface.</p>
           <div className="intelligence-panel__badges" aria-label="AI governance controls">
             <StatusBadge label="Human approval required" tone="critical" />
             <StatusBadge label="Evidence-bound recommendations" tone="advisory" />
             <StatusBadge label="No autonomous control path" tone="nominal" />
           </div>
-          <AlertPanel title="Blocked Direct Actions" tone="critical">
+          <AlertPanel title="Protected Action Boundary" tone="critical">
             <TagList label="Protected actions" values={regulatedActionNames} />
           </AlertPanel>
         </aside>
 
         <footer className="status-footer">
-          <span>System health: backend facade monitored</span>
+          <span>Service status: reference health metadata</span>
           <span>Sync: event stream read-only</span>
           <span>Role: {defaultTenantContext.role}</span>
           <span>Scope: {defaultTenantContext.scopeSource}</span>
-          <span>Route filtering: UX only</span>
+          <span>Workspace access preview: backend enforced</span>
           <span>Audit mode: {defaultTenantContext.auditMode}</span>
         </footer>
       </div>

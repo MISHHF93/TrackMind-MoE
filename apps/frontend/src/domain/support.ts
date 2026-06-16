@@ -2,7 +2,7 @@ import { hasPermission, type Permission, type Role, type TenantRacetrackContext 
 
 export type BackendSupportStatus = 'live-api' | 'facade-api' | 'documented-stub';
 export type DataSourceKind = 'backend-route' | 'shared-contract' | 'database-migration' | 'documented-stub';
-export type NavigationGroup = 'Command' | 'Operations' | 'Governance' | 'Enterprise' | 'Administration';
+export type NavigationGroup = 'Command' | 'Race Operations' | 'Safety & Facilities' | 'Governance' | 'Business Controls' | 'Data Governance' | 'System Status';
 export type DomainRouteId =
   | 'dashboard'
   | 'raceDay'
@@ -44,9 +44,9 @@ export interface RouteSupportMetadata {
 }
 
 export const backendSupportLabels: Record<BackendSupportStatus, string> = {
-  'live-api': 'API route wired',
-  'facade-api': 'Facade-backed',
-  'documented-stub': 'Documented plan',
+  'live-api': 'Live service route',
+  'facade-api': 'Reference read model',
+  'documented-stub': 'Planned workspace',
 };
 
 export const defaultTenantContext: TenantRacetrackContext = {

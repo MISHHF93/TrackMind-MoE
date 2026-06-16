@@ -168,13 +168,19 @@ test('runtime equine and barn facades keep horse occupancy, relationship map, an
 });
 
 test('runtime operations command center exposes stabilized widget sources', async () => {
-  const response = await handleApiRequest('GET', '/api/v1/operations/command-center');
+  const unauthenticated = await handleApiRequest('GET', '/api/v1/operations/command-center');
+  assert.equal(unauthenticated.status, 200);
+  const unauthenticatedTitles = unauthenticated.body.widgets.map((widget) => widget.title);
+  assert.equal(unauthenticatedTitles.includes('Steward inquiries'), false);
+  assert.equal(unauthenticatedTitles.includes('AI recommendations'), false);
+
+  const response = await handleApiRequest('GET', '/api/v1/operations/command-center', undefined, undefined, { 'x-trackmind-role': 'admin' });
   assert.equal(response.status, 200);
   const titles = response.body.widgets.map((widget) => widget.title);
-  for (const required of ['Race readiness','Surface conditions','Weather status','Active incidents','Pending approvals','Steward inquiries','Asset health','Workforce readiness','Emergency resources','Facility readiness','AI recommendations','Audit activity','Event telemetry snapshot']) {
+  for (const required of ['Race readiness','Surface conditions','Weather status','Active incidents','Pending approvals','Steward inquiries','Asset health','Workforce readiness','Emergency resources','Facility readiness','AI recommendations','Audit activity','Event metadata snapshot']) {
     assert.ok(titles.includes(required), `missing ${required}`);
   }
-  assert.ok(response.body.widgets.every((widget) => ['service','event-stream','digital-twin'].includes(widget.source)));
+  assert.ok(response.body.widgets.every((widget) => ['service','static-snapshot','digital-twin'].includes(widget.source)));
   assert.ok(response.body.widgets.every((widget) => widget.drillDownPath.startsWith('/')));
   assert.ok(response.body.widgets.every((widget) => widget.configurable === false));
   assert.equal(response.body.widgets.find((widget) => widget.id === 'weather-status').source, 'service');
@@ -186,7 +192,7 @@ test('runtime operations command center exposes stabilized widget sources', asyn
   assert.equal(response.body.widgets.find((widget) => widget.id === 'surface-conditions').drillDownPath, '/race-day');
   assert.equal(response.body.widgets.find((widget) => widget.id === 'emergency-resources').drillDownPath, '/incidents');
   assert.equal(response.body.widgets.find((widget) => widget.id === 'event-timeline').drillDownPath, '/dashboard');
-  assert.ok(response.body.dataLineage.some((lineage) => lineage.domain === 'events' && lineage.reference === '/api/v1/events/stream'));
+  assert.ok(response.body.dataLineage.some((lineage) => lineage.domain === 'events' && lineage.source === 'static-snapshot' && lineage.reference === '/api/v1/events/catalog'));
 });
 
 test('runtime API workspaces reject placeholder facades on service-backed routes', async () => {
@@ -308,9 +314,19 @@ test('runtime API facade enforces shared endpoint permissions when role headers 
   assert.equal(disallowedRole.status, 403);
   assert.match(disallowedRole.body.error.message, /not allowed|lacks permission/i);
 
-  const allowedRole = await handleApiRequest('GET', '/api/v1/audit/compliance-export', undefined, state, { 'x-trackmind-role': 'read-only-auditor' });
+  const auditorRole = await handleApiRequest('GET', '/api/v1/audit/compliance-export', undefined, state, { 'x-trackmind-role': 'read-only-auditor' });
+  assert.equal(auditorRole.status, 403);
+
+  const allowedRole = await handleApiRequest('GET', '/api/v1/audit/compliance-export', undefined, state, { 'x-trackmind-role': 'compliance-officer' });
   assert.equal(allowedRole.status, 200);
   assert.ok(allowedRole.body.records);
+
+  const uncontractedProtectedRoute = await handleApiRequest('POST', '/api/v1/services/security/credentials/validate', { credentialId: 'credential-unknown' }, state, { 'x-trackmind-role': 'admin' });
+  assert.equal(uncontractedProtectedRoute.status, 401);
+  assert.match(uncontractedProtectedRoute.body.error.message, /Shared API contract required/);
+
+  const publicHealth = await handleApiRequest('GET', '/api/v1/health', undefined, state, {});
+  assert.equal(publicHealth.status, 200);
 });
 
 test('runtime protected action POST boundaries require context, human actors, and RBAC', async () => {

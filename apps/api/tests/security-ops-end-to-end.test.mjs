@@ -20,7 +20,8 @@ test('privacy-sensitive security fields are masked without sensitive-read permis
   service.checkCredential(fullActor, { credentialId: 'cred-secret', holderDisplayName: 'Contractor B', holderLegalName: 'Contractor Beta', zoneId: 'zone-grandstand', status: 'valid' });
   service.recordAccessEvent(fullActor, { zoneId: 'zone-grandstand', credentialId: 'cred-secret', personDisplayName: 'Contractor B', personLegalName: 'Contractor Beta', decision: 'granted', reason: 'valid credential', occurredAt: '2026-06-14T00:00:00.000Z' });
   const masked = service.getWorkspace({ id: 'auditor', permissions: ['security:read'] });
-  assert.equal(masked.restrictedZones.find((zone) => zone.id === 'zone-backstretch-medication').requiredCredential, '••••');
+  assert.equal(masked.restrictedZones.every((zone) => zone.id.startsWith('zone-redacted-') && zone.requiredCredential === '••••' && zone.cameraIds.length === 0), true);
+  assert.equal(masked.cameras.every((camera) => camera.id.startsWith('camera-redacted-') && camera.label === 'Camera health metadata' && camera.coverage?.length === 0), true);
   assert.equal(masked.credentialChecks[0].credentialId, '••••');
   assert.equal(masked.credentialChecks[0].requiredCredential, '••••');
   assert.equal(masked.credentialChecks[0].holderLegalName, '••••');

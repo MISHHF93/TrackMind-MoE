@@ -1,9 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { apiEndpointContracts, createTrackMindIntelligenceCoreMetadata, createTrackMindNexusUpgradePackage, createUnifiedDataModelWorkspace, hasAnyPermission, hasPermission, isProtectedAction, isRole, nexusApiBasePath, permissionsForApprovalAction, roles, type AIControlPlaneDraftResultDto, type AIControlPlaneWorkspaceDto, type ApiResponse, type ApiResponseMetadata, type Permission, type Role, type RosFacadeStateDto, type TrackCertificationCandidateDto, type TrackMindIntelligenceCoreDto, type TrackMindNexusUpgradePackage, type TUSTwinStandardDto } from '@trackmind/shared';
+import { apiEndpointContracts, createTrackMindIntelligenceCoreMetadata, createTrackMindNexusUpgradePackage, createUnifiedDataModelWorkspace, hasAnyPermission, hasPermission, isProtectedAction, isRole, nexusApiBasePath, permissionsForApprovalAction, roles, type AIControlPlaneDraftResultDto, type AIControlPlaneWorkspaceDto, type ApiResponse, type ApiResponseMetadata, type ApprovalDto, type Permission, type Role, type RosFacadeStateDto, type TrackCertificationCandidateDto, type TrackMindIntelligenceCoreDto, type TrackMindNexusUpgradePackage, type TUSTwinStandardDto } from '@trackmind/shared';
 import { listAIAgentRegistryRecords, listExpertModelRegistry } from './aiControlPlane.js';
 import { createApiHubEventCatalog } from './apiHubAdapters.js';
-import { CentralizedApprovalService, type ApprovalActor, type ApprovalToken, type ControlledAction } from './approvals.js';
+import { CentralizedApprovalService, type ApprovalActor, type ApprovalToken, type ControlledAction, type ControlledActionRequest } from './approvals.js';
 import { createUniversalArtifactDraftRegistrationResult, createUniversalArtifactFrameworkState, type UniversalArtifactFrameworkState } from './artifacts.js';
 import { ImmutableAuditLog, type RetentionPolicy } from './auditLog.js';
 import { createSeededBarnOperationsService } from './barnOperations.js';
@@ -118,13 +118,25 @@ function endpointPathMatches(templatePath: string, actualPath: string): boolean 
 
 function contractForRequest(method: HttpMethod, path: string) {
   const fullPath = `${nexusApiBasePath}${path}`;
-  return apiEndpointContracts.find((endpoint) => endpoint.method === method && endpointPathMatches(endpoint.path, fullPath));
+  return apiEndpointContracts.find((endpoint) => endpoint.method === method && endpoint.path === fullPath)
+    ?? apiEndpointContracts.find((endpoint) => endpoint.method === method && endpointPathMatches(endpoint.path, fullPath));
+}
+
+function isPublicApiRoute(method: HttpMethod, path: string): boolean {
+  return method === 'GET' && path === '/health';
 }
 
 function authorizeApiRequest(method: HttpMethod, path: string, headers: IncomingMessage['headers'] | undefined, requestId: string): { status: number; headers?: Record<string, string>; body: JsonBody } | undefined {
   const contract = contractForRequest(method, path);
-  if (!contract || !headers) return undefined;
-  const rawRole = headerValue(headers, 'x-trackmind-role');
+  if (!contract) {
+    if (headers && !isPublicApiRoute(method, path)) {
+      return apiUnauthorized(`Shared API contract required for ${method} ${path}`, path, requestId, ['uncontracted API routes fail closed']);
+    }
+    return undefined;
+  }
+  const directCallRequiresAuth = contract.requiredPermission === 'audit:export' || contract.operationId.startsWith('requestRace');
+  if (!headers && !directCallRequiresAuth) return undefined;
+  const rawRole = headerValue(headers ?? {}, 'x-trackmind-role');
   if (!rawRole) return apiUnauthorized(`Role header required for ${method} ${path}`, path, requestId, [`known roles: ${roles.join(', ')}`]);
   if (!isRole(rawRole)) return apiForbidden(`Unknown TrackMind role: ${rawRole}`, path, requestId, [`known roles: ${roles.join(', ')}`]);
   if (contract.roles !== 'authenticated' && !contract.roles.includes(rawRole)) {
@@ -360,7 +372,7 @@ function createSeededAIGovernanceWorkspace(timestamp: string, mock: boolean): Js
   platform.recordInputIngestion({ id:'input-surface-live-1', source:'surface-telemetry', actor:'surface-ingestion-service', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade', inputRef:'event:surface.reading.updated', inputHash:'sha256:surface-live-1', dataClassification:'restricted', evidence:['surface:moisture=19'], ingestedAt:timestamp, digitalTwinRefs:['twin:sector:far-turn'] });
   platform.recordFeatureBuild({ id:'features-surface-live-1', inputId:'input-surface-live-1', featureSetId:'surface-risk-v1', actor:'feature-builder', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade', causationId:'input-surface-live-1', features:['moistureDeviation','sensorWarning','readinessTrend'], evidence:['feature-store:surface-risk-v1'], builtAt:timestamp, digitalTwinRefs:['twin:sector:far-turn'] });
   platform.recordModelSelection({ id:'selection-surface-live-1', featureBuildId:'features-surface-live-1', modelVersionId:model.id, actor:'model-router', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade', causationId:'features-surface-live-1', candidateModelIds:[model.id], selectionReason:'Highest approved surface advisory model for track conditions.', evidence:['ai/model-cards/surface-advisor-v2.md','ai/evaluations/surface-advisor-v2-readiness.md'], selectedAt:timestamp, digitalTwinRefs:['twin:sector:far-turn'] });
-  const rec = platform.recordRecommendation({ id:'rec-harrow-7', agentId:'agent-surface-ops', modelVersionId:model.id, promptTemplateId:'prompt-surface-v4', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade', causationId:'selection-surface-live-1', activity:'recommend', action:'recommend-harrow', target:'sector:far-turn', recommendation:'Dispatch a human-approved harrow pass before Race 7.', confidence:.86, affectedAssets:['sector:far-turn','asset:sensor-44'], evidence:['surface:moisture=19','sensor-44:warning'], lineage:['agent:agent-surface-ops','model:model-surface-advisor-v2','prompt:prompt-surface-v4','event:surface.reading.updated'], approvalPolicy:'single-human', riskLevel:'high', createdAt:timestamp, digitalTwinRefs:['twin:sector:far-turn','twin:asset:sensor-44'] });
+  const rec = platform.recordRecommendation({ id:'rec-harrow-7', agentId:'agent-surface-ops', modelVersionId:model.id, promptTemplateId:'prompt-surface-v4', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade', causationId:'selection-surface-live-1', activity:'recommend', action:'recommend-harrow', target:'sector:far-turn', recommendation:'Draft a superintendent-reviewed harrow recommendation before Race 7.', confidence:.86, affectedAssets:['sector:far-turn','asset:sensor-44'], evidence:['surface:moisture=19','sensor-44:warning'], lineage:['agent:agent-surface-ops','model:model-surface-advisor-v2','prompt:prompt-surface-v4','event:surface.reading.updated'], approvalPolicy:'single-human', riskLevel:'high', createdAt:timestamp, digitalTwinRefs:['twin:sector:far-turn','twin:asset:sensor-44'] });
   platform.recordRecommendation({ id:'rec-maintenance-priority', agentId:'agent-surface-ops', modelVersionId:model.id, promptTemplateId:'prompt-surface-v4', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade-maintenance', causationId:'selection-surface-live-1', activity:'prioritize', action:'prioritize-maintenance', target:'sector:far-turn', recommendation:'Prioritize far-turn maintenance review in the next human superintendent workflow.', confidence:.82, affectedAssets:['sector:far-turn','work-order:surface-review'], evidence:['surface:compaction=276','inspection:standing-water'], lineage:['agent:agent-surface-ops','model:model-surface-advisor-v2','prompt:prompt-surface-v4','event:surface.inspection.recorded'], approvalPolicy:'single-human', riskLevel:'high', createdAt:timestamp, digitalTwinRefs:['twin:sector:far-turn'] });
   platform.recordRecommendation({ id:'rec-race-start', agentId:'agent-surface-ops', modelVersionId:model.id, promptTemplateId:'prompt-surface-v4', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade-blocked', causationId:'selection-surface-live-1', activity:'create-draft-action', action:'race-start', target:'race-7', recommendation:'Draft race-start readiness package for human steward, race office, and veterinarian review only.', confidence:.91, affectedAssets:['race:race-7','gate:1','approval:race-start'], evidence:['readiness:watch','gate:gps-verified'], lineage:['agent:agent-surface-ops','model:model-surface-advisor-v2','prompt:prompt-surface-v4','policy:protected-action'], approvalPolicy:'none', riskLevel:'critical', createdAt:timestamp, digitalTwinRefs:['twin:race-7','twin:gate-1'] });
   platform.recordDashboardUpdate({ id:'dashboard-ai-facade-1', dashboardId:'ai-governance', actor:'trackmind-api', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade-dashboard', causationId:'rec-harrow-7', summary:'AI governance facade refreshed advisory queues and blocked actions.', metrics:{ recommendations:3, blockedActions:1, approvalsRequired:2 }, evidence:['api-facade'], updatedAt:timestamp, digitalTwinRefs:['twin:sector:far-turn'] });
@@ -873,8 +885,8 @@ export function createApiFacadeState(): ApiFacadeState {
         approvalRequirements: ['racing-secretary', 'track-superintendent', 'steward', 'timer', 'course-superintendent', 'regulatory-compliance'],
         workOrders: [
           { id: 'chg-race-7-track-config-gate', crew: 'gate-crew', status: 'approval-blocked', tasks: ['verify 1609m race distance', 'place gate gate-1', 'capture post-placement GPS proof'], evidenceRequired: ['gps-fix', 'photo', 'crew-attestation', 'distance-calculation-sheet'], dueAt: timestamp },
-          { id: 'chg-race-7-track-config-rail', crew: 'rail-crew', status: 'approval-blocked', tasks: ['set rail portable-rail-b to 6m', 'inspect protected turns'], evidenceRequired: ['rail-measurement', 'inspection-report'], dueAt: timestamp },
-          { id: 'chg-race-7-track-config-turf', crew: 'turf-crew', status: 'approval-blocked', tasks: ['prepare turf lane B', 'confirm going good'], evidenceRequired: ['going-stick-reading', 'irrigation-log', 'mowing-log'], dueAt: timestamp },
+          { id: 'chg-race-7-track-config-rail', crew: 'rail-crew', status: 'approval-blocked', tasks: ['draft rail portable-rail-b 6m work package', 'inspect protected turns'], evidenceRequired: ['rail-measurement', 'inspection-report'], dueAt: timestamp },
+          { id: 'chg-race-7-track-config-turf', crew: 'turf-crew', status: 'approval-blocked', tasks: ['draft turf lane B preparation package', 'confirm going good'], evidenceRequired: ['going-stick-reading', 'irrigation-log', 'mowing-log'], dueAt: timestamp },
         ],
         verificationWorkflow: { id: 'chg-race-7-track-config-verification', status: 'approval-blocked', digitalTwinSync: 'blocked-until-approved', requiredRoles: ['racing-secretary', 'track-superintendent', 'steward'], actuatorControlAvailable: false },
         events: ['track.configuration.change.requested', 'track.configuration.approval.required', 'track.configuration.work-order.issued', 'track.configuration.verified', 'digital-twin.state.patch'],
@@ -946,13 +958,13 @@ export function createApiFacadeState(): ApiFacadeState {
         { id: 'emergency-resources', title: 'Emergency resources', domain: 'emergency', status: emergency.events.length ? 'warning' : 'nominal', value: `${emergency.resources.length} resources`, detail: `EmergencyOperationsPlatform exposes ${emergency.workflowIntegrations.length} workflow integration metadata and an active human command checklist; AI cannot block emergency actions.`, source: 'service', drillDownPath: '/incidents', roleView: 'all', configurable: false },
         { id: 'ai-recommendations', title: 'AI recommendations', domain: 'ai-governance', status: 'advisory', value: `${contract.aiRecommendations.length} governed recommendation`, detail: 'AI output remains recommendation-only and approval-aware.', source: 'service', drillDownPath: '/settings', roleView: ['admin'], configurable: false },
         { id: 'audit-activity', title: 'Audit activity', domain: 'audit', status: 'nominal', value: `${contract.auditEvents.length || 1} visible audit rows`, detail: 'Audit activity loads from /api/v1/audit/events with hash references; platform totals remain separate observability metadata.', source: 'service', drillDownPath: '/audit', roleView: ['admin', 'read-only-auditor'], configurable: false },
-        { id: 'event-timeline', title: 'Event telemetry snapshot', domain: 'platform', status: 'advisory', value: 'Event metadata snapshot', detail: 'Timeline uses static OperationsCommandCenterDto.liveEvents with readiness, emergency, and AI events; SSE endpoint is heartbeat-only.', source: 'event-stream', drillDownPath: '/dashboard', roleView: 'all', configurable: false },
+        { id: 'event-timeline', title: 'Event metadata snapshot', domain: 'platform', status: 'advisory', value: 'Static event snapshot', detail: 'Timeline uses static OperationsCommandCenterDto.liveEvents with readiness, emergency, and AI metadata; SSE remains heartbeat-only.', source: 'service', drillDownPath: '/dashboard', roleView: 'all', configurable: false },
       ],
       savedLayouts: [{ id: 'race-day-commander', name: 'Race Day Commander', role: 'admin', widgetIds: ['race-readiness','surface-conditions','weather-status','active-incidents','pending-approvals','steward-inquiries','asset-health','workforce-readiness','emergency-resources','facility-readiness','ai-recommendations','audit-activity','event-timeline'] }, { id: 'steward-view', name: 'Steward Inquiry View', role: 'steward', widgetIds: ['race-readiness','steward-inquiries','pending-approvals','event-timeline'] }, { id: 'facilities-view', name: 'Facilities and Maintenance', role: 'track-superintendent', widgetIds: ['facility-readiness','asset-health','workforce-readiness','emergency-resources'] }],
-      liveEvents: [{ id: 'evt-api-facade', timestamp, type: 'nexus.api.facade.started', domain: 'platform', summary: 'Runtime API facade is serving command-center contracts.', severity: 'info', source: 'event-stream' }, { id: 'evt-surface-snapshot', timestamp, type: 'surface.reading.updated', domain: 'surface', summary: `Surface score ${surfaceWorkspace.overallScore}; weather forecast ${surfaceWorkspace.weatherObservation.forecastRainMm}mm rain.`, severity: surfaceWorkspace.weatherObservation.forecastRainMm > 10 ? 'warning' : 'info', source: 'service' }, { id: 'evt-security-snapshot', timestamp, type: 'security.incident.summary', domain: 'security', summary: `${security.incidents.length} security incidents loaded for command center.`, severity: security.incidents.length ? 'warning' : 'info', source: 'service' }, { id: 'evt-workforce-snapshot', timestamp, type: 'workforce.readiness.evaluated', domain: 'operations', summary: `Workforce readiness ${workforce.readiness.status} at ${workforce.readiness.score}.`, severity: workforce.readiness.status === 'blocked' ? 'critical' : workforce.readiness.status === 'watch' ? 'warning' : 'info', source: 'service' }, { id: 'evt-facility-readiness', timestamp, type: 'facilities.readiness.evaluated', domain: 'facilities', summary: `Facilities readiness ${facilitiesMaintenance.readiness.score}% with approval-gated work orders.`, severity: 'warning', source: 'service' }],
+      liveEvents: [{ id: 'evt-api-facade', timestamp, type: 'nexus.api.facade.started', domain: 'platform', summary: 'Runtime API facade is serving command-center contracts.', severity: 'info', source: 'static-snapshot' }, { id: 'evt-surface-snapshot', timestamp, type: 'surface.reading.updated', domain: 'surface', summary: `Surface score ${surfaceWorkspace.overallScore}; weather forecast ${surfaceWorkspace.weatherObservation.forecastRainMm}mm rain.`, severity: surfaceWorkspace.weatherObservation.forecastRainMm > 10 ? 'warning' : 'info', source: 'service' }, { id: 'evt-security-snapshot', timestamp, type: 'security.incident.summary', domain: 'security', summary: `${security.incidents.length} security incidents loaded for command center.`, severity: security.incidents.length ? 'warning' : 'info', source: 'service' }, { id: 'evt-workforce-snapshot', timestamp, type: 'workforce.readiness.evaluated', domain: 'operations', summary: `Workforce readiness ${workforce.readiness.status} at ${workforce.readiness.score}.`, severity: workforce.readiness.status === 'blocked' ? 'critical' : workforce.readiness.status === 'watch' ? 'warning' : 'info', source: 'service' }, { id: 'evt-facility-readiness', timestamp, type: 'facilities.readiness.evaluated', domain: 'facilities', summary: `Facilities readiness ${facilitiesMaintenance.readiness.score}% with approval-gated work orders.`, severity: 'warning', source: 'service' }],
       alerts: [{ id: 'alert-approval', title: 'Protected actions remain approval-gated', severity: 'advisory', acknowledged: false, actionPath: '/approvals', evidence: ['centralized-approval-service'] }, { id: 'alert-security', title: 'Security incident watch', severity: security.incidents.length ? 'warning' : 'advisory', acknowledged: false, actionPath: '/security', evidence: security.incidents.flatMap((incident: any) => incident.eventIds) }, { id: 'alert-facilities', title: 'Facilities maintenance watch', severity: 'warning', acknowledged: false, actionPath: '/facilities', evidence: ['facilities-maintenance', 'racr:GRANDSTAND_HVAC_01'] }],
       aiRecommendations: contract.aiRecommendations.map((rec) => ({ id: rec.id, recommendationId: rec.recommendationId, recommendation: rec.recommendation, confidence: rec.confidence, evidence: rec.evidence, modelVersion: rec.modelVersion, generatedAt: rec.generatedAt, approvalRequirement: rec.approvalRequirement, auditReference: rec.auditReference, requiresApproval: rec.requiresApproval, actionPath: rec.actionPath })),
-      dataLineage: [{ domain: 'readiness', source: 'service', reference: '/api/v1/race-day-readiness/dashboard' }, { domain: 'surface-weather', source: 'service', reference: '/api/v1/surface-intelligence/workspace' }, { domain: 'security-incidents', source: 'service', reference: '/api/v1/security-operations/workspace' }, { domain: 'approvals', source: 'service', reference: '/api/v1/approvals/requests' }, { domain: 'stewards', source: 'service', reference: '/api/v1/stewarding/inquiries' }, { domain: 'assets', source: 'digital-twin', reference: '/api/v1/digital-twin/state' }, { domain: 'workforce', source: 'service', reference: '/api/v1/workforce-operations/workspace' }, { domain: 'emergency', source: 'service', reference: '/api/v1/emergency-operations/workspace' }, { domain: 'facilities', source: 'service', reference: '/api/v1/facilities-maintenance/workspace' }, { domain: 'ai', source: 'service', reference: '/api/v1/ai-governance/workspace' }, { domain: 'audit', source: 'service', reference: '/api/v1/audit/events' }, { domain: 'events', source: 'event-stream', reference: '/api/v1/events/stream' }],
+      dataLineage: [{ domain: 'readiness', source: 'service', reference: '/api/v1/race-day-readiness/dashboard' }, { domain: 'surface-weather', source: 'service', reference: '/api/v1/surface-intelligence/workspace' }, { domain: 'security-incidents', source: 'service', reference: '/api/v1/security-operations/workspace' }, { domain: 'approvals', source: 'service', reference: '/api/v1/approvals/requests' }, { domain: 'stewards', source: 'service', reference: '/api/v1/stewarding/inquiries' }, { domain: 'assets', source: 'digital-twin', reference: '/api/v1/digital-twin/state' }, { domain: 'workforce', source: 'service', reference: '/api/v1/workforce-operations/workspace' }, { domain: 'emergency', source: 'service', reference: '/api/v1/emergency-operations/workspace' }, { domain: 'facilities', source: 'service', reference: '/api/v1/facilities-maintenance/workspace' }, { domain: 'ai', source: 'service', reference: '/api/v1/ai-governance/workspace' }, { domain: 'audit', source: 'service', reference: '/api/v1/audit/events' }, { domain: 'events', source: 'static-snapshot', reference: '/api/v1/events/catalog' }],
       mock: false,
     },
     readiness: readinessDashboard,
@@ -1010,12 +1022,27 @@ function headerValue(headers: IncomingMessage['headers'] | undefined, name: stri
 
 function filterOperationsForRole(operations: JsonBody, role?: Role): JsonBody {
   if (!isRecord(operations)) return operations;
-  const roleCanView = (roleView: unknown) => roleView === 'all' || !Array.isArray(roleView) || !role || roleView.includes(role);
+  const roleCanView = (roleView: unknown) => {
+    if (roleView === 'all') return true;
+    if (!role) return false;
+    if (Array.isArray(roleView)) return roleView.includes(role);
+    return roleView === role;
+  };
   const widgets = Array.isArray(operations.widgets) ? operations.widgets.filter((widget) => isRecord(widget) && roleCanView(widget.roleView)) : operations.widgets;
   const savedLayouts = Array.isArray(operations.savedLayouts) ? operations.savedLayouts.filter((layout) => isRecord(layout) && roleCanView(layout.role)) : operations.savedLayouts;
-  const activeLayoutVisible = Array.isArray(savedLayouts) && savedLayouts.some((layout) => isRecord(layout) && layout.id === operations.activeLayoutId);
-  const activeLayoutId = activeLayoutVisible || !Array.isArray(savedLayouts) ? operations.activeLayoutId : savedLayouts[0]?.id ?? operations.activeLayoutId;
-  return { ...operations, widgets, savedLayouts, activeLayoutId };
+  const visibleDomains = new Set(Array.isArray(widgets) ? widgets.filter(isRecord).map((widget) => stringValue(widget.domain)).filter((domain): domain is string => Boolean(domain)) : []);
+  const visibleDrilldowns = new Set(Array.isArray(widgets) ? widgets.filter(isRecord).map((widget) => stringValue(widget.drillDownPath)).filter((path): path is string => Boolean(path)) : []);
+  const fallbackLayout = Array.isArray(widgets)
+    ? { id: role ? `${role}-visible-layout` : 'visible-layout', name: role ? `${role} visible layout` : 'Visible layout', role: role ?? 'all', widgetIds: widgets.filter(isRecord).map((widget) => stringValue(widget.id)).filter((id): id is string => Boolean(id)) }
+    : undefined;
+  const visibleLayouts = Array.isArray(savedLayouts) && savedLayouts.length > 0 ? savedLayouts : fallbackLayout ? [fallbackLayout] : savedLayouts;
+  const activeLayoutVisible = Array.isArray(visibleLayouts) && visibleLayouts.some((layout) => isRecord(layout) && layout.id === operations.activeLayoutId);
+  const activeLayoutId = activeLayoutVisible || !Array.isArray(visibleLayouts) ? operations.activeLayoutId : visibleLayouts[0]?.id ?? operations.activeLayoutId;
+  const alerts = Array.isArray(operations.alerts) ? operations.alerts.filter((alert) => isRecord(alert) && visibleDrilldowns.has(stringValue(alert.actionPath) ?? '')) : operations.alerts;
+  const liveEvents = Array.isArray(operations.liveEvents) ? operations.liveEvents.filter((event) => isRecord(event) && (visibleDomains.has(stringValue(event.domain) ?? '') || stringValue(event.domain) === 'platform')) : operations.liveEvents;
+  const aiRecommendations = visibleDomains.has('ai-governance') ? operations.aiRecommendations : [];
+  const dataLineage = Array.isArray(operations.dataLineage) ? operations.dataLineage.filter((lineage) => isRecord(lineage) && (visibleDomains.has(stringValue(lineage.domain) ?? '') || stringValue(lineage.domain) === 'events')) : operations.dataLineage;
+  return { ...operations, widgets, savedLayouts: visibleLayouts, activeLayoutId, alerts, liveEvents, aiRecommendations, dataLineage };
 }
 
 function numberValue(value: unknown): number | undefined {
@@ -1115,7 +1142,7 @@ function actorTypeFrom(input: Record<string, unknown>): 'human' | 'ai-agent' | '
   return undefined;
 }
 
-function validateProtectedApprovalBoundary(body: unknown, approvalService: CentralizedApprovalService, options: { requireHumanActor: boolean; fallbackEventType: string; message: string }): { status: number; body: JsonBody } {
+function validateProtectedApprovalBoundary(body: unknown, approvalService: CentralizedApprovalService, options: { requireHumanActor: boolean; fallbackEventType: string; message: string; headers?: IncomingMessage['headers'] }): { status: number; body: JsonBody } {
   const context = approvalBoundaryContext(body);
   if (context.error) return context.error;
   const input = context.input!;
@@ -1129,6 +1156,8 @@ function validateProtectedApprovalBoundary(body: unknown, approvalService: Centr
   if (!isProtectedAction(normalizedAction)) return badRequest(`Unsupported controlled action: ${action}`);
   const roles = actorRoles(input);
   if (roles.length === 0) return forbidden('Controlled action requests require actor roles for RBAC enforcement.');
+  const headerRole = headerValue(options.headers, 'x-trackmind-role');
+  if (headerRole && isRole(headerRole) && !roles.includes(headerRole)) return forbidden(`Actor roles must include authenticated role ${headerRole}.`);
   const requiredPermissions = permissionsForApprovalAction(normalizedAction);
   if (!roles.some((role) => requiredPermissions.some((permission) => hasPermission(role, permission)))) {
     return forbidden(`Actor lacks required role permission for ${normalizedAction}`);
@@ -1562,6 +1591,33 @@ function findRacingDataRawPayloadReview(racingData: RacingDataApiFacadeState, pa
   return racingDataRawPayloadReviews(racingData).find((review) => isRecord(review) && isRecord(review.payload) && review.payload.payloadId === payloadId);
 }
 
+function approvalDtoFromControlledRequest(request: ControlledActionRequest): ApprovalDto {
+  const decisionRoles = [...new Set(request.decisions.flatMap((decision) => decision.roles))];
+  return {
+    id: request.id,
+    approvalRequestId: request.id,
+    tenantId: request.tenantId,
+    racetrackId: request.racetrackId,
+    action: request.action,
+    target: request.target,
+    requestedBy: request.requestedBy,
+    evidence: request.evidence,
+    createdAt: request.createdAt,
+    expiresAt: request.expiresAt,
+    status: request.status,
+    canonicalStatus: request.status,
+    approverRoles: decisionRoles,
+    requiredRoles: decisionRoles,
+    approvalSteps: [],
+    escalation: request.escalatedToRoles.map((role) => ({ afterMinutes: 0, approverRoles: [role], reason: 'Centralized approval escalation metadata', escalatedAt: request.createdAt })),
+    auditLinkage: { auditIds: [], eventIds: [], workflowInstanceId: request.workflowInstanceId, correlationId: request.id },
+    workflowId: request.workflowInstanceId,
+    auditIds: [],
+    eventIds: [],
+    mock: false,
+  };
+}
+
 export async function handleApiRequest(method: HttpMethod, pathname: string, body?: unknown, state = createApiFacadeState(), headers?: IncomingMessage['headers']): Promise<{ status: number; headers?: Record<string, string>; body: JsonBody }> {
   if (method === 'OPTIONS') return { status: 204, body: null };
   const requestUrl = new URL(pathname, 'http://localhost');
@@ -1570,7 +1626,12 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   const authorization = authorizeApiRequest(method, path, headers, requestId);
   if (authorization) return authorization;
   if (method === 'GET' && path === '/health') return { status: 200, headers: { 'x-trackmind-request-id': requestId }, body: { ok: true, service: 'trackmind-api', status: 'healthy', time: now(), requestId, observability: { structuredLogs: true, requestIdHeader: 'x-trackmind-request-id', serviceHealthEndpoint: `${nexusApiBasePath}/platform/health`, eventStreamEndpoint: `${nexusApiBasePath}/events/stream` } } };
-  if (method === 'GET' && path === '/approvals/requests') return { status: 200, body: state.approvals };
+  if (method === 'GET' && path === '/approvals/requests') {
+    const seeded = Array.isArray(state.approvals) ? state.approvals : [];
+    const seededIds = new Set(seeded.filter(isRecord).map((approval) => stringValue(approval.id ?? approval.approvalRequestId)).filter((id): id is string => Boolean(id)));
+    const centralized = state.approvalService.allRequests().filter((request) => !seededIds.has(request.id)).map(approvalDtoFromControlledRequest);
+    return { status: 200, body: [...seeded, ...centralized] };
+  }
   const apexResponse = await state.apex.handle(method, path, body);
   if (apexResponse) return apexResponse;
   const raceStartMatch = path.match(/^\/races\/([^/]+)\/start$/);
@@ -1806,7 +1867,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'POST' && path === '/track-configuration/draft-requests') {
     const eventType = 'track.configuration.change.requested';
     const message = 'Track configuration draft accepted. Work orders, verification, and Digital Twin sync remain locked until authorized human approvals are complete; no live actuator command was issued.';
-    return validateProtectedApprovalBoundary(body, state.approvalService, { requireHumanActor: false, fallbackEventType: eventType, message });
+    return validateProtectedApprovalBoundary(body, state.approvalService, { requireHumanActor: false, fallbackEventType: eventType, message, headers });
   }
   if (method === 'POST' && (path === '/ai-control-plane/recommendations/draft' || path === '/ai-control-plane/recommendations/evaluate')) {
     const validationError = validateAIControlPlaneDraftBody(body);
@@ -1844,16 +1905,16 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     } catch (error) { return collaborationError(error); }
   }
   if (method === 'POST' && path === '/artifacts/registry/draft-registrations') return { status: 202, body: createUniversalArtifactDraftRegistrationResult(body) };
-  if (method === 'POST' && path === '/assets/safety-critical-changes') return validateProtectedApprovalBoundary(body, state.approvalService, { requireHumanActor: true, fallbackEventType: 'racetrack.asset.approval-requested', message: 'Safety-critical asset change accepted for approval review. Execution remains locked until authorized.' });
+  if (method === 'POST' && path === '/assets/safety-critical-changes') return validateProtectedApprovalBoundary(body, state.approvalService, { requireHumanActor: true, fallbackEventType: 'racetrack.asset.approval-requested', message: 'Safety-critical asset change accepted for approval review. Execution remains locked until authorized.', headers });
   if (method === 'POST' && path === '/approvals/draft-requests') {
     const eventType = 'approval.requested';
     const message = 'Approval draft request accepted. Execution remains locked until authorized.';
-    return validateProtectedApprovalBoundary(body, state.approvalService, { requireHumanActor: false, fallbackEventType: eventType, message });
+    return validateProtectedApprovalBoundary(body, state.approvalService, { requireHumanActor: false, fallbackEventType: eventType, message, headers });
   }
   if (method === 'POST' && path === '/approvals/controlled-actions') {
     const eventType = 'approval.requested';
     const message = 'Approval request accepted. Execution remains locked until authorized.';
-    return validateProtectedApprovalBoundary(body, state.approvalService, { requireHumanActor: true, fallbackEventType: eventType, message });
+    return validateProtectedApprovalBoundary(body, state.approvalService, { requireHumanActor: true, fallbackEventType: eventType, message, headers });
   }
   return { status: 404, headers: { 'x-trackmind-request-id': requestId }, body: apiErrorBody({ code: 'not_found', message: `No TrackMind API route for ${method} ${pathname}`, path, requestId }) };
 }

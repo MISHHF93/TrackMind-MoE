@@ -3,6 +3,7 @@ import type {
   AIGovernanceWorkspaceDto,
   AIControlPlanePolicyDto,
   AIControlPlaneRecommendationDto,
+  AIConfidenceScoreDto,
   AIRecommendationDto,
   ApprovalDto,
   AuditEventDto,
@@ -31,6 +32,14 @@ import { routeById } from '../routes/routes';
 import type { DomainRouteId } from '../domain/support';
 
 type UnknownRecord = Record<string, unknown>;
+type AIApprovalRequirement = AIRecommendationDto['approvalRequirement'];
+type AIAuditReference = AIRecommendationDto['auditReference'];
+type AIRiskLevel = AIRecommendationDto['riskLevel'];
+
+function isUnknownRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
 const dashboardDrillDownRouteMap: Record<string, string> = {
   '/race-office': '/race-day',
   '/surface': '/race-day',
@@ -39,6 +48,21 @@ const dashboardDrillDownRouteMap: Record<string, string> = {
   '/platform-health': '/admin',
   '/starting-gate': '/race-day',
   '/workforce': '/facilities',
+};
+const commandCenterLineageDomains: Record<string, string[]> = {
+  'race-office': ['readiness'],
+  surface: ['surface-weather'],
+  weather: ['surface-weather'],
+  security: ['security-incidents'],
+  approvals: ['approvals'],
+  stewards: ['stewards'],
+  assets: ['assets'],
+  workforce: ['workforce'],
+  emergency: ['emergency'],
+  facilities: ['facilities'],
+  'ai-governance': ['ai'],
+  audit: ['audit'],
+  platform: ['events'],
 };
 const routeKpiDomains: Record<DomainRouteId, string[]> = {
   dashboard: ['race-day-operations', 'system-health', 'approval-workflows', 'ai-governance'],
@@ -111,52 +135,63 @@ function requireReady<T>(result: AdapterResult<T>, label: string): T {
   return result.data;
 }
 
-function frontendPathForBackendDrilldown(path: string | undefined): string {
-  if (!path) return routeById.dashboard.path;
-  const currentRoute = Object.values(routeById).find((route) => route.path === path);
-  return currentRoute?.path ?? dashboardDrillDownRouteMap[path] ?? routeById.dashboard.path;
+function frontendPathForBackendDrilldown(path: string | undefined): string | undefined {
+  if (!path) return undefined;
+  try {
+    const url = new URL(path, 'https://trackmind.local');
+    const pathname = url.pathname;
+    const currentRoute = Object.values(routeById).find((route) => route.path === pathname);
+    return currentRoute?.path ?? dashboardDrillDownRouteMap[pathname];
+  } catch {
+    return undefined;
+  }
 }
 
-function actionForBackendDrilldown(input: { title: string; drillDownPath?: string }): WorkspaceCardAction {
+function actionForBackendDrilldown(input: { title: string; drillDownPath?: string }): WorkspaceCardAction | undefined {
   const path = frontendPathForBackendDrilldown(input.drillDownPath);
+  if (!path) return undefined;
+  const route = Object.values(routeById).find((item) => item.path === path);
+  const routeLabel = route?.label ?? 'workspace';
   return {
-    label: 'View workspace',
+    label: `View ${routeLabel}`,
     path,
     detail: input.drillDownPath && input.drillDownPath !== path
-      ? `Backend drilldown ${input.drillDownPath} is surfaced through ${path}.`
-      : `Open ${input.title} workspace.`,
+      ? `${input.title} is surfaced through ${routeLabel}.`
+      : `Open ${routeLabel} for ${input.title}.`,
   };
 }
 
 function aiCardsFromGovernance(workspace?: AIGovernanceWorkspaceDto): AdvisoryAIRecommendation[] {
   if (!workspace) return [];
   return [
-    ...(workspace.recommendationQueue ?? []),
-    ...(workspace.safetyBlockedActions ?? []),
-  ].map((item) => {
-    const confidence = item.confidence ?? { calibrated: Number.NaN, band: 'unknown' };
-    const approvalRequirement = item.approvalRequirement ?? { required: false, policy: 'Not required' };
-    const auditReference = item.auditReference ?? { eventIds: [], auditIds: [], digitalTwinRefs: [] };
+    ...(Array.isArray(workspace.recommendationQueue) ? workspace.recommendationQueue : []),
+    ...(Array.isArray(workspace.safetyBlockedActions) ? workspace.safetyBlockedActions : []),
+  ].filter(isUnknownRecord).map((item) => {
+    const itemId = textValue(item.id, 'ai-governance-record');
+    const recommendationId = textValue(item.recommendationId, itemId);
+    const confidence = normalizeConfidence(item.confidence);
+    const approvalRequirement = normalizeApprovalRequirement(item.approvalRequirement);
+    const auditReference = normalizeAuditReference(item.auditReference);
     const eventIds = Array.isArray(auditReference.eventIds) ? auditReference.eventIds : [];
     const auditIds = Array.isArray(auditReference.auditIds) ? auditReference.auditIds : [];
     const digitalTwinRefs = Array.isArray(auditReference.digitalTwinRefs) ? auditReference.digitalTwinRefs : [];
     return {
-      id: item.id,
-      recommendationId: item.recommendationId,
-      recommendation: 'recommendation' in item && item.recommendation ? item.recommendation : 'AI recommendation text unavailable.',
+      id: itemId,
+      recommendationId,
+      recommendation: textValue(item.recommendation, 'AI recommendation text unavailable.'),
       confidence,
-      confidenceValue: confidence.calibrated,
-      evidence: Array.isArray(item.evidence) ? item.evidence : [],
+      confidenceValue: numberValue(confidence.calibrated, Number.NaN),
+      evidence: stringArray(item.evidence),
       evidencePackage: item.evidencePackage,
-      modelVersion: item.modelVersion,
-      generatedAt: item.generatedAt,
+      modelVersion: textValue(item.modelVersion, 'model unavailable'),
+      generatedAt: textValue(item.generatedAt, 'generated time unavailable'),
       approvalRequirement,
       auditReference,
-      requiresApproval: approvalRequirement.required ?? false,
-      eventId: eventIds[0],
-      auditId: auditIds[0],
-      digitalTwinRefs,
-      riskLevel: item.riskLevel ?? 'medium',
+      requiresApproval: approvalRequirement.required !== false,
+      eventId: textValue(eventIds[0], 'event unavailable'),
+      auditId: textValue(auditIds[0], 'audit unavailable'),
+      digitalTwinRefs: stringArray(digitalTwinRefs),
+      riskLevel: normalizeRiskLevel(item.riskLevel),
       advisoryOnly: true,
       executionAllowed: false,
       blockedAutonomousExecution: true,
@@ -169,50 +204,103 @@ function aiCardsFromGovernance(workspace?: AIGovernanceWorkspaceDto): AdvisoryAI
 }
 
 function aiCardsFromControlPlane(recommendations?: AIControlPlaneRecommendationDto[]): AdvisoryAIRecommendation[] {
-  return (recommendations ?? []).map((item) => {
-    const confidence = item.confidence ?? { calibrated: Number.NaN, band: 'unknown' };
-    const approvalRequirement = item.approvalRequirement ?? { required: false, policy: 'Not required' };
-    const auditReference = item.auditReference ?? { eventIds: [], auditIds: [], digitalTwinRefs: [] };
-    const governorDecision = item.governorDecision ?? { allowed: false, reason: 'Governor decision unavailable.' };
+  return (Array.isArray(recommendations) ? recommendations : []).filter(isUnknownRecord).map((item) => {
+    const itemId = textValue(item.id, 'ai-control-plane-record');
+    const recommendationId = textValue(item.recommendationId, itemId);
+    const confidence = normalizeConfidence(item.confidence);
+    const approvalRequirement = normalizeApprovalRequirement(item.approvalRequirement);
+    const auditReference = normalizeAuditReference(item.auditReference);
+    const governorDecision = isUnknownRecord(item.governorDecision) ? item.governorDecision : { allowed: false, reason: 'Governor decision unavailable.' };
     const eventIds = Array.isArray(auditReference.eventIds) ? auditReference.eventIds : [];
     const auditIds = Array.isArray(auditReference.auditIds) ? auditReference.auditIds : [];
     const digitalTwinRefs = Array.isArray(auditReference.digitalTwinRefs) ? auditReference.digitalTwinRefs : [];
     return {
-      id: item.id,
-      recommendationId: item.recommendationId,
-      recommendation: item.recommendation ?? 'AI recommendation text unavailable.',
+      id: itemId,
+      recommendationId,
+      recommendation: textValue(item.recommendation, 'AI recommendation text unavailable.'),
       confidence,
-      confidenceValue: confidence.calibrated,
-      evidence: Array.isArray(item.evidence) ? item.evidence : [],
+      confidenceValue: numberValue(confidence.calibrated, Number.NaN),
+      evidence: stringArray(item.evidence),
       evidencePackage: item.evidencePackage,
-      modelVersion: item.modelVersion,
-      generatedAt: item.generatedAt,
+      modelVersion: textValue(item.modelVersion, 'model unavailable'),
+      generatedAt: textValue(item.generatedAt, 'generated time unavailable'),
       approvalRequirement,
       auditReference,
-      requiresApproval: approvalRequirement.required ?? false,
-      eventId: eventIds[0],
-      auditId: auditIds[0],
-      digitalTwinRefs,
-      riskLevel: item.risk?.level ?? 'medium',
+      requiresApproval: approvalRequirement.required !== false,
+      eventId: textValue(eventIds[0], 'event unavailable'),
+      auditId: textValue(auditIds[0], 'audit unavailable'),
+      digitalTwinRefs: stringArray(digitalTwinRefs),
+      riskLevel: normalizeRiskLevel(isUnknownRecord(item.risk) ? item.risk.level : item.riskLevel),
       advisoryOnly: true,
       executionAllowed: false,
       blockedAutonomousExecution: true,
-      governorAllowed: governorDecision.allowed ?? false,
-      governorReason: governorDecision.reason,
-      actionLabel: item.action,
-      target: item.target,
-      status: item.status,
-      confidenceBand: confidence.band ?? 'unknown',
-      mock: item.mock,
+      governorAllowed: governorDecision.allowed === true,
+      governorReason: textValue(governorDecision.reason, 'Governor decision unavailable.'),
+      actionLabel: textValue(item.action, 'action unavailable'),
+      target: textValue(item.target, 'target unavailable'),
+      status: textValue(item.status, 'advisory'),
+      confidenceBand: textValue(confidence.band, 'unknown'),
+      mock: item.mock === true,
     };
   });
 }
 
+function textValue(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value : fallback;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function numberValue(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
+}
+
+function normalizeConfidence(value: unknown): AIConfidenceScoreDto {
+  const record = isUnknownRecord(value) ? value : {};
+  const raw = numberValue(record.raw, Number.NaN);
+  const calibrated = numberValue(record.calibrated, Number.NaN);
+  const band = record.band === 'low' || record.band === 'medium' || record.band === 'high' ? record.band : 'low';
+  return { raw, calibrated, band, drivers: stringArray(record.drivers) };
+}
+
+function normalizeApprovalRequirement(value: unknown): AIApprovalRequirement {
+  const record = isUnknownRecord(value) ? value : {};
+  return {
+    required: record.required !== false,
+    policy: textValue(record.policy, 'Approval state unavailable'),
+    requiredApproverRoles: stringArray(record.requiredApproverRoles),
+    requirementId: stringValue(record.requirementId),
+    workflowId: stringValue(record.workflowId),
+  };
+}
+
+function normalizeAuditReference(value: unknown): AIAuditReference {
+  const record = isUnknownRecord(value) ? value : {};
+  return {
+    auditIds: stringArray(record.auditIds),
+    eventIds: stringArray(record.eventIds),
+    digitalTwinRefs: stringArray(record.digitalTwinRefs),
+    approvalReference: stringValue(record.approvalReference),
+    correlationId: stringValue(record.correlationId),
+    integrityRef: stringValue(record.integrityRef),
+  };
+}
+
+function normalizeRiskLevel(value: unknown): AIRiskLevel {
+  return value === 'low' || value === 'medium' || value === 'high' || value === 'critical' ? value : 'medium';
+}
+
 function vm(routeId: DomainRouteId, source: WorkspaceViewModel['source'], partial: Omit<WorkspaceViewModel, 'route' | 'source'>): WorkspaceViewModel {
   const domains = new Set(routeKpiDomains[routeId]);
-  const allKpis = Array.isArray(partial.kpis) ? partial.kpis : [];
-  const allModelContext = Array.isArray(partial.modelReadableKpiContext) ? partial.modelReadableKpiContext : [];
-  const kpis = allKpis.filter((kpi) => domains.has(kpi.domain));
+  const allKpis = Array.isArray(partial.kpis) ? partial.kpis.filter(isUnknownRecord) : [];
+  const allModelContext = Array.isArray(partial.modelReadableKpiContext) ? partial.modelReadableKpiContext.filter(isUnknownRecord) : [];
+  const kpis = allKpis.filter((kpi) => typeof kpi.domain === 'string' && domains.has(kpi.domain));
   const visibleKpiIds = new Set(kpis.map((kpi) => kpi.kpiId));
   return {
     route: routeById[routeId],
@@ -241,13 +329,13 @@ async function commonContext() {
     approvals: approvalsData,
     auditEvents: auditData,
     aiRecommendations: governedCards.length > 0 ? governedCards : aiCardsFromGovernance(aiData),
-    kpis: Array.isArray(kpiData?.kpis) ? kpiData.kpis : [],
-    modelReadableKpiContext: Array.isArray(kpiData?.modelReadableContext) ? kpiData.modelReadableContext : [],
+    kpis: Array.isArray(kpiData?.kpis) ? kpiData.kpis.filter(isUnknownRecord) : [],
+    modelReadableKpiContext: Array.isArray(kpiData?.modelReadableContext) ? kpiData.modelReadableContext.filter(isUnknownRecord) : [],
   };
 }
 
 const dashboardService = {
-  support: 'live-api' as const,
+  support: 'facade-api' as const,
   async load(): Promise<WorkspaceViewModel> {
     const [operations, health, context] = await Promise.all([
       getJson<OperationsCommandCenterDto>(apiPaths.dashboard.operations),
@@ -255,7 +343,10 @@ const dashboardService = {
       commonContext(),
     ]);
     const operationsData = requireReady(operations, 'Operations command center');
-    const healthData = requireReady(health, 'Platform health');
+    const healthData = health.status === 'ready' && health.data ? health.data : {
+      generatedAt: operationsData.generatedAt,
+      overallStatus: 'degraded',
+    } as PlatformHealthWorkspaceDto;
     const widgets = Array.isArray(operationsData.widgets) ? operationsData.widgets : [];
     const activeLayout = Array.isArray(operationsData.savedLayouts) ? operationsData.savedLayouts.find((layout) => layout.id === operationsData.activeLayoutId) : undefined;
     const activeWidgetIds = new Set(activeLayout?.widgetIds ?? widgets.map((widget) => widget.id));
@@ -266,25 +357,31 @@ const dashboardService = {
     return vm('dashboard', operations.source, {
       generatedAt: operationsData.generatedAt ?? healthData.generatedAt,
       metrics: [
-        countMetric('Command widgets', visibleWidgets.length, 'Active-layout command widgets from /operations/command-center'),
-        textMetric('Platform health', healthData.overallStatus, 'Facade platform-health status from /platform/health; not production telemetry', healthData.overallStatus === 'critical' ? 'critical' : 'nominal'),
+        countMetric('Rendered command cards', visibleWidgets.length, 'Rendered command card snapshots from the active layout'),
+        textMetric('Service status', healthData.overallStatus, 'Reference health metadata from /platform/health; not deployed infrastructure evidence', healthData.overallStatus === 'critical' ? 'critical' : healthData.overallStatus === 'degraded' ? 'warning' : 'nominal'),
         countMetric('Approval records', context.approvals.length, 'Seeded approval contract records from /approvals/requests', context.approvals.length ? 'warning' : 'nominal'),
       ],
       panels: [
-        ...visibleWidgets.slice(0, 6).map((widget) => {
+        ...visibleWidgets.map((widget) => {
         const path = frontendPathForBackendDrilldown(widget.drillDownPath);
-        const widgetLineage = lineage.filter((entry) => entry.domain === widget.domain).map((entry) => entry.reference);
+        const action = actionForBackendDrilldown(widget);
+        const lineageDomains = commandCenterLineageDomains[widget.domain] ?? [widget.domain];
+        const widgetLineage = lineage.filter((entry) => lineageDomains.includes(entry.domain)).map((entry) => entry.reference);
         return {
           id: widget.id,
           title: widget.title,
           body: widget.detail,
           status: 'facade-only' as const,
-          evidence: [widget.source, apiPaths.dashboard.operations, ...widgetLineage, `frontend:${path}`],
-          actions: [actionForBackendDrilldown(widget)],
+          evidence: [widget.source, apiPaths.dashboard.operations, ...widgetLineage, path ? `frontend:${path}` : 'frontend:unmapped-drilldown'],
+          actions: action ? [action] : [],
         };
         }),
-        ...alerts.slice(0, 2).map((alert) => ({ id: alert.id, title: alert.title, body: `${alert.severity} alert metadata; acknowledged ${String(alert.acknowledged)}.`, status: 'facade-only' as const, evidence: alert.evidence })),
-        ...liveEvents.slice(0, 2).map((event) => ({ id: event.id, title: event.summary, body: `${event.severity} static command-center event metadata from ${event.source}.`, status: 'facade-only' as const, evidence: [event.type, event.domain] })),
+        ...alerts.slice(0, 2).map((alert) => {
+          const path = frontendPathForBackendDrilldown(alert.actionPath);
+          const route = path ? Object.values(routeById).find((item) => item.path === path) : undefined;
+          return { id: `supplemental-${alert.id}`, title: `Supplemental alert snapshot: ${alert.title}`, body: `${alert.severity} alert metadata; acknowledgement state is reported only (${String(alert.acknowledged)}).`, status: 'facade-only' as const, evidence: alert.evidence, actions: path ? [{ label: `View ${route?.label ?? 'alert workspace'}`, path, detail: 'Review the workspace referenced by this supplemental alert snapshot.' }] : [] };
+        }),
+        ...liveEvents.slice(0, 2).map((event) => ({ id: `supplemental-${event.id}`, title: `Supplemental event snapshot: ${event.summary}`, body: `${event.severity} static command-center event metadata from ${event.source}; no streaming subscription is active in this card.`, status: 'facade-only' as const, evidence: [event.type, event.domain] })),
       ],
       ...context,
     });
@@ -325,7 +422,7 @@ const raceDayService = {
     const controlPanels: WorkspacePanel[] = approvalControls.slice(0, 2).map((control) => ({
       id: control.id,
       title: `Locked control: ${control.action}`,
-      body: `${control.action} targets ${control.target}; backend-owned approval workflow metadata only. No frontend request submission or protected execution control is exposed.`,
+      body: `${control.action} targets ${control.target}; service-owned approval workflow metadata only. No frontend request submission or protected execution control is exposed.`,
       status: 'facade-only',
       evidence: control.evidence,
     }));
@@ -336,19 +433,19 @@ const raceDayService = {
       status: 'facade-only',
       evidence: ['SurfaceIntelligenceDto', scorecard.id],
       actions: [
-        { label: 'View approval context', path: '/approvals', detail: 'Review approvals workspace with surface context.' },
-        { label: 'View audit context', path: `/audit?surface=${encodeURIComponent(scorecard.id)}`, detail: 'Review audit workspace with surface context.' },
+        { label: 'View approval context', path: '/approvals', detail: 'Review general approval records; this link does not filter by surface.' },
+        { label: 'View audit context note', path: `/audit?surface=${encodeURIComponent(scorecard.id)}`, detail: 'Review audit workspace with a surface context note; records are not filtered by this link.' },
       ],
     }));
     const trackPanels: WorkspacePanel[] = [{
       id: 'track-configuration-map',
       title: 'Track configuration map',
-      body: `Starting gate ${trackData.startingGate.sectorId} at ${trackData.startingGate.metersFromStart}m; ${trackData.trackConfiguration?.workOrders.length ?? 0} approval-blocked gate/configuration work order(s); no live actuator control.`,
+      body: `Starting gate ${trackData.startingGate.sectorId} at ${trackData.startingGate.metersFromStart}m; ${trackData.trackConfiguration?.workOrders.length ?? 0} gate/configuration work package(s) in the read model; no live actuator control.`,
       status: 'facade-only',
       evidence: ['TrackMapDto', '/api/v1/track-configuration/map'],
       actions: [
-        { label: 'View approval context', path: '/approvals', detail: 'Review approvals workspace with track configuration context.' },
-        { label: 'View audit context', path: '/audit?trackConfiguration=map', detail: 'Review audit workspace with track configuration context.' },
+        { label: 'View approval context', path: '/approvals', detail: 'Review general approval records; this link does not filter by track configuration.' },
+        { label: 'View audit context note', path: '/audit?trackConfiguration=map', detail: 'Review audit workspace with a track configuration context note; records are not filtered by this link.' },
       ],
     }];
     return vm('raceDay', races.source, {
@@ -380,7 +477,7 @@ const equineService = {
       { id: 'equine-eligibility', title: 'Eligibility review', body: `${data.eligibilityStatus.complianceStatus}; flags ${data.eligibilityStatus.flags.join(', ') || 'none'}; failed rules ${data.eligibilityStatus.failedRules.join(', ') || 'none'}.`, status: 'facade-only', evidence: eligibilityRuleIds },
       { id: 'equine-relationships', title: 'Ownership and trainer context', body: `${data.ownership[0]?.ownerName ?? 'Owner pending'} owns ${data.ownership[0]?.percentage ?? 0}%; trainer ${data.trainerAssignments[0]?.trainerName ?? 'pending'} license ${data.trainerAssignments[0]?.licenseStatus ?? 'unknown'}.`, status: 'facade-only', evidence: ['ownership', 'trainerAssignments'] },
       { id: 'equine-activity', title: 'Race and workout activity', body: `${data.raceHistory.length} race record(s), ${data.workoutHistory.length} workout(s), ${transportationRecordCount} transport record(s) in the profile.`, status: 'facade-only', evidence: ['raceHistory', 'workoutHistory', 'transportationRecords'] },
-      ...barnData.readiness.slice(0, 2).map((readiness) => ({ id: readiness.barnId, title: `Barn ${readiness.barnId}`, body: `${readiness.status} barn readiness at ${readiness.score}; ${readiness.occupiedStalls}/${readiness.capacity} stalls occupied; blockers ${readiness.blockers.join(', ') || 'none'}.`, status: 'facade-only' as const, evidence: ['BarnOperationsDto', readiness.barnId], actions: [{ label: 'View barn context', path: '/equine', detail: 'Review the Equine workspace barn operations summary.' }, { label: 'View audit context', path: `/audit?barn=${encodeURIComponent(readiness.barnId)}`, detail: 'Review barn operations evidence.' }] })),
+      ...barnData.readiness.slice(0, 2).map((readiness) => ({ id: readiness.barnId, title: `Barn ${readiness.barnId}`, body: `${readiness.status} barn readiness at ${readiness.score}; ${readiness.occupiedStalls}/${readiness.capacity} stalls occupied; blockers ${readiness.blockers.join(', ') || 'none'}.`, status: 'facade-only' as const, evidence: ['BarnOperationsDto', readiness.barnId], actions: [{ label: 'View barn context', path: '/equine', detail: 'Review the Equine workspace barn operations summary.' }, { label: 'View audit context note', path: `/audit?barn=${encodeURIComponent(readiness.barnId)}`, detail: 'Review audit workspace with a barn context note; records are not filtered by this link.' }] })),
     ];
     return vm('equine', horse.source, {
       metrics: [
@@ -517,7 +614,7 @@ const facilitiesService = {
           expiresAt: approval.expiresAt ?? data.generatedAt,
           evidence: approval.evidence,
           workflowId: approval.workflowId,
-          requiredRoles: ['track-superintendent', 'operations-admin'],
+      requiredRoles: ['track-superintendent', 'admin'],
           affectedAssets: [approval.target],
         })),
       ],
@@ -530,24 +627,26 @@ const ticketingService = {
   async load(): Promise<WorkspaceViewModel> {
     const [ticketing, context] = await Promise.all([getJson<FinanceTicketingWorkspaceDto>(apiPaths.finance.ticketing), commonContext()]);
     const data = requireReady(ticketing, 'Finance ticketing workspace');
+    const summary = data.summary ?? { activeTickets: 0, refundedTickets: 0, voidTickets: 0, grossTicketRevenueCents: Number.NaN, protectedPayouts: 0, raceDayIds: [] };
+    const evidence = arrayEvidence(data.evidence, ['FinanceTicketingWorkspaceDto']);
     const tickets = Array.isArray(data.tickets) ? data.tickets.filter((ticket) => ticket && typeof ticket.ticketId === 'string' && ticket.ticketId.trim()) : [];
     const ticketPanels: WorkspacePanel[] = tickets.map((ticket) => ({
       id: ticket.ticketId,
       title: `Ticket ${ticket.ticketId}`,
       body: `${ticket.status ?? 'unknown'} ticket for ${ticket.raceDayId ?? 'race day unavailable'}; active face value ${formatCurrency(ticket.priceCents)}.`,
       status: 'implemented',
-      evidence: ['FinanceTicketingWorkspaceDto', ...data.evidence],
+      evidence: ['FinanceTicketingWorkspaceDto', ...evidence],
       actions: [
-        { label: 'View audit context', path: `/audit?ticket=${encodeURIComponent(ticket.ticketId)}`, detail: 'Review ticketing audit evidence.' },
-        { label: 'Review AI policy', path: '/settings', detail: 'Review advisory AI and protected-action boundary context.' },
+        { label: 'View audit context note', path: `/audit?ticket=${encodeURIComponent(ticket.ticketId)}`, detail: 'Review audit workspace with a ticket context note; records are not filtered by this link.' },
+        { label: 'Review AI guardrails', path: '/settings', detail: 'Review read-only AI guardrails and protected-action boundary context.' },
       ],
     }));
     return vm('ticketing', ticketing.source, {
       generatedAt: data.generatedAt,
       metrics: [
-        countMetric('Active tickets', data.summary.activeTickets, 'Active tickets from the finance/ticketing service'),
-        textMetric('Active ticket value', formatCurrency(data.summary.grossTicketRevenueCents), 'Sum of active ticket face values in the read model; not captured payment revenue', 'nominal'),
-        countMetric('Race days', data.summary.raceDayIds.length, 'Race days represented by ticket records'),
+        countMetric('Active tickets', summary.activeTickets, 'Active tickets from the finance/ticketing service'),
+        textMetric('Active ticket value', formatCurrency(summary.grossTicketRevenueCents), 'Sum of active ticket face values in the read model; not captured payment revenue', 'nominal'),
+        countMetric('Race days', Array.isArray(summary.raceDayIds) ? summary.raceDayIds.length : 0, 'Race days represented by ticket records'),
       ],
       panels: ticketPanels,
       ...context,
@@ -560,35 +659,41 @@ const financeService = {
   async load(): Promise<WorkspaceViewModel> {
     const [finance, context] = await Promise.all([getJson<FinanceTicketingWorkspaceDto>(apiPaths.finance.ticketing), commonContext()]);
     const data = requireReady(finance, 'Finance workspace');
-    const payoutPanels: WorkspacePanel[] = data.payouts.length
-      ? data.payouts.map((payout) => ({
+    const summary = data.summary ?? { activeTickets: 0, refundedTickets: 0, voidTickets: 0, grossTicketRevenueCents: Number.NaN, protectedPayouts: 0, raceDayIds: [] };
+    const evidence = arrayEvidence(data.evidence, ['FinanceTicketingWorkspaceDto']);
+    const payouts = Array.isArray(data.payouts) ? data.payouts.filter((payout) => payout && typeof payout.payoutId === 'string' && payout.payoutId.trim()) : [];
+    const payoutPanels: WorkspacePanel[] = payouts.length
+      ? payouts.map((payout) => {
+        const dualControl = Array.isArray(payout.dualControl) ? payout.dualControl.filter((role): role is string => typeof role === 'string' && role.trim().length > 0) : [];
+        return {
         id: payout.payoutId,
         title: `Payout ${payout.payoutId}`,
-        body: `${payout.status} payout for ${payout.recipientId}; amount ${formatCurrency(payout.amountCents)}; dual control ${payout.dualControl.join(' + ')}.`,
+        body: `${payout.status ?? 'unknown'} payout for ${payout.recipientId ?? 'recipient unavailable'}; amount ${formatCurrency(payout.amountCents)}; dual control ${dualControl.join(' + ') || 'not reported'}.`,
         status: 'implemented' as const,
-        evidence: ['FinanceTicketingWorkspaceDto', ...data.evidence],
+        evidence: ['FinanceTicketingWorkspaceDto', ...evidence],
         actions: [
           { label: 'View approval context', path: '/approvals', detail: 'Review general approval records.' },
-          { label: 'View audit context', path: `/audit?payout=${encodeURIComponent(payout.payoutId)}`, detail: 'Review payout audit evidence.' },
+          { label: 'View audit context note', path: `/audit?payout=${encodeURIComponent(payout.payoutId)}`, detail: 'Review audit workspace with a payout context note; records are not filtered by this link.' },
         ],
-      }))
+      };
+      })
       : [{
         id: 'finance-payout-boundary',
         title: 'Payout approval boundary',
-        body: `${data.payoutApproval}; no payout is released without steward and finance approval.`,
+        body: `${data.payoutApproval ?? 'Payout approval policy unavailable'}; no payout is released without steward and finance approval.`,
         status: 'implemented' as const,
-        evidence: data.evidence,
+        evidence,
         actions: [
           { label: 'View approval context', path: '/approvals', detail: 'Review general approval records.' },
-          { label: 'Review AI policy', path: '/settings', detail: 'Review advisory AI and protected-action boundary context.' },
+          { label: 'Review AI guardrails', path: '/settings', detail: 'Review read-only AI guardrails and protected-action boundary context.' },
         ],
       }];
     return vm('finance', finance.source, {
       generatedAt: data.generatedAt,
       metrics: [
-        textMetric('Active ticket value under view', formatCurrency(data.summary.grossTicketRevenueCents), 'Sum of active ticket face values in the read model; not captured payment revenue'),
-        countMetric('Released payouts', data.summary.protectedPayouts, 'Payout records in this read model represent released payout state; pending APEX approval workload is not included here', data.summary.protectedPayouts ? 'warning' : 'nominal'),
-        textMetric('Payout control', data.payoutApproval, 'Finance payout actions are protected by dual-control approval', 'critical'),
+        textMetric('Active ticket value under view', formatCurrency(summary.grossTicketRevenueCents), 'Sum of active ticket face values in the read model; not captured payment revenue'),
+        countMetric('Released payouts', summary.protectedPayouts, 'Payout records in this read model represent released payout state; pending APEX approval workload is not included here', summary.protectedPayouts ? 'warning' : 'nominal'),
+        textMetric('Payout control', data.payoutApproval ?? 'Approval policy unavailable', 'Finance payout actions are protected by dual-control approval', 'critical'),
       ],
       panels: payoutPanels,
       ...context,
@@ -603,13 +708,13 @@ const federationService = {
     const data = requireReady(federation, 'Federation workspace');
     return vm('federation', federation.source, {
       metrics: [
-        textMetric('Raw data exposure', data.rawDataExposure.exposed ? 'Blocked' : 'None', 'Federation is aggregate-only and permission governed', 'nominal', [{ label: 'View federation context', path: '/federation', detail: 'Review aggregate federation metadata.' }]),
-        countMetric('Aggregate scope profiles', data.tracks.length, 'Aggregate track-scope profiles in the federation workspace', 'nominal', [{ label: 'View federation context', path: '/federation', detail: 'Review aggregate federation metadata.' }]),
+        textMetric('Raw data exposure', data.rawDataExposure.exposed ? 'Detected' : 'None', data.rawDataExposure.exposed ? 'Raw exposure requires governance review' : 'Federation is aggregate-only and permission governed', data.rawDataExposure.exposed ? 'critical' : 'nominal', [{ label: 'View federation context', path: '/federation', detail: 'Review aggregate federation metadata.' }]),
+        countMetric('Federation profiles', data.tracks.length, 'Track-scope federation profiles; tenant-only profiles are not aggregate sharing claims', 'nominal', [{ label: 'View federation context', path: '/federation', detail: 'Review aggregate federation metadata.' }]),
         countMetric('Benchmark metrics', data.crossTrackBenchmarking.metrics.length, 'Anonymized benchmark metadata only'),
       ],
       panels: [
         { id: 'federation-boundary', title: data.dataSharingPolicy.policyId, body: `Aggregate sharing categories (metadata only, no export endpoint): ${data.dataSharingPolicy.allowedExports.join(', ')}; prohibited fields: ${data.dataSharingPolicy.prohibitedFields.join(', ')}.`, status: 'facade-only', evidence: ['FederationWorkspaceDto'] },
-        ...data.tracks.slice(0, 3).map((track, index) => ({ id: `aggregate-scope-${index + 1}`, title: `${track.displayName} aggregate scope profile`, body: `${track.sharingScope} scope; ${track.dataResidency} residency; readiness status ${track.certificationStatus}.`, status: 'facade-only' as const, evidence: [track.schemaVersion, track.racetrackId] })),
+        ...data.tracks.slice(0, 3).map((track, index) => ({ id: `federation-profile-${index + 1}`, title: `${track.displayName} ${track.sharingScope} federation profile`, body: `${track.sharingScope} scope; ${track.dataResidency} residency; readiness status ${track.certificationStatus}.`, status: 'facade-only' as const, evidence: [track.schemaVersion, track.racetrackId] })),
         { id: 'federation-raw-boundary', title: 'Raw data exposure boundary', body: `${data.rawDataExposure.exposed ? 'Raw exposure detected' : 'No raw cross-track data exposure'}; endpoints ${data.rawDataExposure.endpoints.length}.`, status: 'facade-only', evidence: data.tenantIsolation.enforcement },
       ],
       ...context,
@@ -636,21 +741,31 @@ const dataHubService = {
   async load(): Promise<WorkspaceViewModel> {
     const [workspace, context] = await Promise.all([getJson<RacingDataWorkspaceDto>(apiPaths.dataHub.workspace), commonContext()]);
     const data = requireReady(workspace, 'Racing Data API Hub workspace');
-    const providerPanels: WorkspacePanel[] = data.providers.slice(0, 3).map((provider, index) => {
+    const providerStatuses = Array.isArray(data.statuses) ? data.statuses.map(asRecord) : [];
+    const statusByProviderId = new Map<string, UnknownRecord>();
+    providerStatuses.forEach((status) => {
+      const providerId = String(status.providerId ?? status.id ?? '');
+      if (providerId) statusByProviderId.set(providerId, status);
+    });
+    const providers = Array.isArray(data.providers) ? data.providers : [];
+    const providerPanels: WorkspacePanel[] = providers.slice(0, 3).map((provider, index) => {
       const record = asRecord(provider);
       const license = asRecord(record.license);
       const id = String(record.id ?? record.providerId ?? `provider-${index + 1}`);
-      const status = typeof record.enabled === 'boolean' ? (record.enabled ? 'enabled' : 'disabled') : String(record.status ?? record.health ?? 'declared');
-      const licenseStatus = String(record.licenseStatus ?? license.licenseStatus ?? 'review required');
+      const providerStatus = statusByProviderId.get(id);
+      const status = String(providerStatus?.status ?? providerStatus?.health ?? record.status ?? record.health ?? 'declared');
+      const configured = typeof record.enabled === 'boolean' ? (record.enabled ? 'enabled' : 'disabled') : 'configuration not reported';
+      const licenseStatus = String(providerStatus?.licenseStatus ?? record.licenseStatus ?? license.licenseStatus ?? 'review required');
       return {
         id,
         title: `${String(record.displayName ?? record.name ?? record.label ?? record.providerName ?? id)} facade`,
-        body: `Seeded provider facade status is ${status}; declared license-readiness posture ${licenseStatus}; configured sync mode ${String(record.syncMode ?? 'declared')}. No live provider pull is claimed.`,
+        body: `Seeded provider operational status is ${status}; provider configuration is ${configured}; declared license-readiness posture ${licenseStatus}; configured sync mode ${String(record.syncMode ?? 'declared')}. No live provider pull is claimed.`,
         status: 'facade-only',
         evidence: arrayEvidence(record.evidenceRefs, ['RacingDataWorkspaceDto', 'licensed-provider-metadata']),
       };
     });
-    const qualityPanels: WorkspacePanel[] = data.qualityReports.slice(0, 3).map((report, index) => {
+    const qualityReports = Array.isArray(data.qualityReports) ? data.qualityReports : [];
+    const qualityPanels: WorkspacePanel[] = qualityReports.slice(0, 3).map((report, index) => {
       const record = asRecord(report);
       const rawScore = typeof record.qualityScore === 'number' ? Math.round(record.qualityScore * 100) : record.score;
       const score = typeof rawScore === 'number' ? `${rawScore}%` : String(rawScore ?? 'not scored');
@@ -665,9 +780,9 @@ const dataHubService = {
     return vm('dataHub', workspace.source, {
       generatedAt: data.generatedAt,
       metrics: [
-        countMetric('Providers', data.providers.length, 'Licensed provider metadata in the Racing Data API Hub'),
-        countMetric('Ingestion jobs', data.ingestionJobs.length, 'Local ingestion job metadata; no external scrape is executed', data.ingestionJobs.length ? 'advisory' : 'nominal'),
-        countMetric('Quality reports', data.qualityReports.length, 'Quality and lineage reports for governed provider data'),
+        countMetric('Providers', providers.length, 'Licensed provider metadata in the Racing Data API Hub'),
+        countMetric('Ingestion jobs', Array.isArray(data.ingestionJobs) ? data.ingestionJobs.length : 0, 'Local ingestion job metadata; no external scrape is executed', Array.isArray(data.ingestionJobs) && data.ingestionJobs.length ? 'advisory' : 'nominal'),
+        countMetric('Quality reports', qualityReports.length, 'Quality and lineage reports for governed provider data'),
       ],
       panels: [
         ...providerPanels,
@@ -753,7 +868,7 @@ const settingsService = {
         countMetric('Governance mappings', governanceMapping.length, 'ISO/NIST policy mapping records'),
       ],
       panels: [
-        { id: data.policyId, title: 'AI advisory-only policy', body: `Allowed activities: ${allowedActivities.slice(0, 5).join(', ') || 'No allowed activities declared'}. Draft/evaluate review endpoints are available: ${String(data.draftOnlyStateChanges)}. Protected execution remains unavailable from the frontend.`, status: 'facade-only', evidence: requiredEvidence },
+        { id: data.policyId, title: 'AI advisory-only policy', body: `Allowed activities: ${allowedActivities.slice(0, 5).join(', ') || 'No allowed activities declared'}. Draft/evaluate state changes remain draft-only: ${String(data.draftOnlyStateChanges)}. Protected execution remains unavailable from the frontend.`, status: 'facade-only', evidence: requiredEvidence },
         ...governanceMapping.slice(0, 3).map((mapping, index) => {
           const controls = Array.isArray(mapping.controls) ? mapping.controls : [];
           const evidence = Array.isArray(mapping.evidence) ? mapping.evidence : [];

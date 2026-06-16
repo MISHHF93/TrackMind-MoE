@@ -12,6 +12,7 @@ function approveToken(state, action, target, approvers, now = new Date().toISOSt
 
 test('race start command requires approval metadata before emitting canonical race.lifecycle.started.v1 event', async () => {
   const state = createApiFacadeState();
+  const raceHeaders = { 'x-trackmind-role': 'racing-secretary' };
   const blocked = await handleApiRequest('POST', '/api/v1/races/race-7/start', {
     starterId: 'starter-1',
     tenantId: 'tenant-1',
@@ -19,7 +20,7 @@ test('race start command requires approval metadata before emitting canonical ra
     model_id: 'model-race-readiness-v1',
     confidence: 0.91,
     evidence_links: ['readiness://race-7'],
-  }, state);
+  }, state, raceHeaders);
 
   assert.equal(blocked.status, 403);
   assert.match(blocked.body.blockedReason, /approvalToken/);
@@ -35,7 +36,7 @@ test('race start command requires approval metadata before emitting canonical ra
     confidence: 0.91,
     evidence_links: ['readiness://race-7'],
     annex_iv_uri: 'https://trackmind.example/ai-act/annex-iv/race-readiness',
-  }, state);
+  }, state, raceHeaders);
 
   assert.equal(accepted.status, 202);
   assert.equal(accepted.body.event.eventType, 'race.lifecycle.started.v1');

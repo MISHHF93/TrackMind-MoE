@@ -41,16 +41,18 @@ test('machine-readable governance blocks direct safety-critical commands without
 
 test('race stop scratch and medication API commands require approval gates before event emission', async () => {
   const state = createApiFacadeState();
-  const blockedStop = await handleApiRequest('POST', '/api/v1/races/race-7/stop', { reason: 'incident on track' }, state);
+  const securityHeaders = { 'x-trackmind-role': 'security' };
+  const vetHeaders = { 'x-trackmind-role': 'veterinarian' };
+  const blockedStop = await handleApiRequest('POST', '/api/v1/races/race-7/stop', { reason: 'incident on track' }, state, securityHeaders);
   assert.equal(blockedStop.status, 400);
   assert.match(blockedStop.body.error.message, /tenantId, racetrackId, actorId/);
 
-  const forgedStop = await handleApiRequest('POST', '/api/v1/races/race-7/stop', { tenantId: 'trackmind', racetrackId: 'main-track', actorId: 'race-control', reason: 'incident on track', ...approval }, state);
+  const forgedStop = await handleApiRequest('POST', '/api/v1/races/race-7/stop', { tenantId: 'trackmind', racetrackId: 'main-track', actorId: 'race-control', reason: 'incident on track', ...approval }, state, securityHeaders);
   assert.equal(forgedStop.status, 403);
   assert.match(forgedStop.body.blockedReason, /approvalToken/);
 
   const stopToken = approveToken(state, 'race-stop', 'race-7', [['steward-1', ['steward']], ['security-1', ['security']]]);
-  const stopped = await handleApiRequest('POST', '/api/v1/races/race-7/stop', { tenantId: 'trackmind', racetrackId: 'main-track', actorId: 'race-control', reason: 'incident on track', approvalToken: stopToken, model_id: approval.model_id, confidence: approval.confidence, evidence_links: approval.evidence_links }, state);
+  const stopped = await handleApiRequest('POST', '/api/v1/races/race-7/stop', { tenantId: 'trackmind', racetrackId: 'main-track', actorId: 'race-control', reason: 'incident on track', approvalToken: stopToken, model_id: approval.model_id, confidence: approval.confidence, evidence_links: approval.evidence_links }, state, securityHeaders);
   assert.equal(stopped.status, 202);
   assert.equal(stopped.body.event.eventType, 'race.lifecycle.stopped.v1');
   assert.equal(typeof stopped.body.event.timestampSynchronization.withinTolerance, 'boolean');
@@ -58,7 +60,7 @@ test('race stop scratch and medication API commands require approval gates befor
   assert.ok(stopped.body.event.timestampSynchronization.sources.some((source) => source.source === 'approval.timestamp'));
 
   const scratchToken = approveToken(state, 'scratch-horse', 'horse-1', [['vet-1', ['veterinarian']], ['steward-1', ['steward']]]);
-  const scratched = await handleApiRequest('POST', '/api/v1/races/race-7/scratches', { tenantId: 'trackmind', racetrackId: 'main-track', actorId: 'vet-1', horseId: 'horse-1', reason: 'vet scratch', approvalToken: scratchToken, model_id: approval.model_id, confidence: approval.confidence, evidence_links: approval.evidence_links }, state);
+  const scratched = await handleApiRequest('POST', '/api/v1/races/race-7/scratches', { tenantId: 'trackmind', racetrackId: 'main-track', actorId: 'vet-1', horseId: 'horse-1', reason: 'vet scratch', approvalToken: scratchToken, model_id: approval.model_id, confidence: approval.confidence, evidence_links: approval.evidence_links }, state, vetHeaders);
   assert.equal(scratched.status, 202);
   assert.equal(scratched.body.event.eventType, 'horse.status.scratched.v1');
 

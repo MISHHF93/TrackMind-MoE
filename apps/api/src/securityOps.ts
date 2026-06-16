@@ -341,20 +341,20 @@ export class SecurityOperationsService {
     const sensitive = this.canReadSensitive(actor);
     this.audit(sensitive ? 'sensitive-fields.accessed' : 'sensitive-fields.masked', actor.id, 'security-operations-workspace', sensitive ? this.sensitiveFieldNames() : []);
     return {
-      restrictedZones: this.values(this.zones).map((zone) => sensitive ? zone : { ...zone, requiredCredential: mask }),
-      cameras: this.values(this.cameras),
+      restrictedZones: this.values(this.zones).map((zone, index) => sensitive ? zone : { ...zone, id: `zone-redacted-${index + 1}`, name: `Restricted zone metadata ${index + 1}`, requiredCredential: mask, cameraIds: [] }),
+      cameras: this.values(this.cameras).map((camera, index) => sensitive ? camera : { ...camera, id: `camera-redacted-${index + 1}`, zoneId: 'zone-redacted', label: 'Camera health metadata', twinId: undefined, assetId: undefined, coverage: [] }),
       accessEvents: this.accessEvents.map((event) => sensitive ? clone(event) : { ...clone(event), personLegalName: event.personLegalName ? mask : undefined, credentialId: mask }),
-      incidents: this.values(this.incidents),
-      investigations: this.values(this.investigations),
+      incidents: this.values(this.incidents).map((incident, index) => sensitive ? incident : { ...incident, title: `Security incident metadata ${index + 1}`, zoneId: 'zone-redacted', eventIds: [], assignedTo: undefined, auditId: mask, approvalRequestId: incident.approvalRequestId ? mask : undefined }),
+      investigations: this.values(this.investigations).map((investigation) => sensitive ? investigation : { ...investigation, lead: mask, evidence: investigation.evidence.map((_, index) => `masked-evidence-${index + 1}`) }),
       watchlistPlaceholders: this.watchlist.map((item) => sensitive ? clone(item) : { ...clone(item), sensitiveNotes: item.sensitiveNotes ? mask : undefined }),
       visitorLogs: this.visitors.map((visitor) => sensitive ? clone(visitor) : { ...clone(visitor), visitorLegalName: visitor.visitorLegalName ? mask : undefined, credentialCheckId: mask }),
       credentialChecks: this.credentialChecks.map((check) => sensitive ? clone(check) : { ...clone(check), holderLegalName: check.holderLegalName ? mask : undefined, credentialId: mask, requiredCredential: check.requiredCredential ? mask : undefined }),
       escalations: this.escalations.map(clone),
-      auditRecords: this.audits.map(clone),
-      sharedAuditRecords: this.auditLog.all().filter((entry) => entry.type === 'security-event' || entry.subjectId?.startsWith('security:') || entry.payload && typeof entry.payload === 'object' && (entry.payload as Record<string, unknown>).domain === 'security-operations'),
-      events: this.events.map(clone),
-      twinUpdates: this.twinUpdates.map(clone),
-      assetRegistryLinks: this.assetRegistryLinks.map(clone),
+      auditRecords: this.audits.map((record, index) => sensitive ? clone(record) : { ...clone(record), id: `audit-redacted-${index + 1}`, actorId: mask, subjectId: 'security-metadata-redacted', sensitiveFields: record.sensitiveFields.length ? ['redacted'] : [], sharedAuditId: mask }),
+      sharedAuditRecords: this.auditLog.all().filter((entry) => entry.type === 'security-event' || entry.subjectId?.startsWith('security:') || entry.payload && typeof entry.payload === 'object' && (entry.payload as Record<string, unknown>).domain === 'security-operations').map((entry, index) => sensitive ? clone(entry) : { ...clone(entry), id: `shared-audit-redacted-${index + 1}`, actorId: mask, subjectId: 'security-metadata-redacted', evidenceIds: [], payload: { redacted: true }, reason: 'Security audit metadata redacted for read-only workspace.' }),
+      events: this.events.map((event, index) => sensitive ? clone(event) : { ...clone(event), id: `security-event-redacted-${index + 1}`, eventId: `security-event-redacted-${index + 1}`, subjectId: 'security-metadata-redacted', actorId: mask, auditId: mask, payload: { redacted: true } }),
+      twinUpdates: this.twinUpdates.map((update, index) => sensitive ? clone(update) : { ...clone(update), twinId: `twin:redacted:${index + 1}`, sourceId: 'security-metadata-redacted', patch: { redacted: true }, eventId: update.eventId ? mask : undefined, auditId: mask }),
+      assetRegistryLinks: this.assetRegistryLinks.map((link, index) => sensitive ? clone(link) : { ...clone(link), assetId: `asset-redacted-${index + 1}`, sourceId: 'security-metadata-redacted', twinId: link.twinId ? `twin:redacted:${index + 1}` : undefined, auditId: mask, eventId: link.eventId ? mask : undefined }),
       approvalGates: this.approvalGates.map(clone),
       observabilitySignals: this.observabilitySignals.map(clone),
       dashboard: this.dashboard(),
@@ -672,7 +672,7 @@ export class SecurityOperationsService {
     this.zones.set('zone-backstretch-medication', { id: 'zone-backstretch-medication', name: 'Backstretch medication storage', classification: 'critical', requiredCredential: 'veterinary-security', cameraIds: ['cam-med-1'], twinId: 'twin:zone-backstretch-medication', assetId: 'SEC-ZONE-MEDICATION', retentionPolicy: 'security-evidence-7y' });
     this.zones.set('zone-grandstand', { id: 'zone-grandstand', name: 'Grandstand public concourse', classification: 'public', requiredCredential: 'ticket', cameraIds: ['cam-grand-1'], twinId: 'twin:zone-grandstand', assetId: 'SEC-ZONE-GRANDSTAND' });
     this.zones.set('zone-paddock', { id: 'zone-paddock', name: 'Paddock restricted gate', classification: 'restricted', requiredCredential: 'paddock-credential', cameraIds: ['cam-pad-1'], twinId: 'twin:zone-paddock', assetId: 'SEC-ZONE-PADDOCK' });
-    this.cameras.set('cam-med-1', { id: 'cam-med-1', zoneId: 'zone-backstretch-medication', label: 'Medication Corridor PTZ', health: 'degraded', privacyMasking: true, lastHeartbeatAt: this.clock(), twinId: 'twin:cam-med-1', assetId: 'SEC-CAMERA-CAM-MED-1', coverage: ['medication-storage', 'restricted-door'] });
+    this.cameras.set('cam-med-1', { id: 'cam-med-1', zoneId: 'zone-backstretch-medication', label: 'Medication Corridor Camera Metadata', health: 'degraded', privacyMasking: true, lastHeartbeatAt: this.clock(), twinId: 'twin:cam-med-1', assetId: 'SEC-CAMERA-CAM-MED-1', coverage: ['medication-storage', 'restricted-door'] });
     this.cameras.set('cam-grand-1', { id: 'cam-grand-1', zoneId: 'zone-grandstand', label: 'Grandstand Overview', health: 'online', privacyMasking: true, lastHeartbeatAt: this.clock(), twinId: 'twin:cam-grand-1', assetId: 'SEC-CAMERA-CAM-GRAND-1', coverage: ['public-concourse'] });
     this.cameras.set('cam-pad-1', { id: 'cam-pad-1', zoneId: 'zone-paddock', label: 'Paddock Gate Fixed', health: 'online', privacyMasking: true, lastHeartbeatAt: this.clock(), twinId: 'twin:cam-pad-1', assetId: 'SEC-CAMERA-CAM-PAD-1', coverage: ['paddock-gate'] });
     this.watchlist.push({ id: 'watch-placeholder-1', category: 'banned-person', displayLabel: 'Human-reviewed watchlist placeholder', sensitiveNotes: 'Do not display without security sensitive permission or approval', requiresHumanReview: true });

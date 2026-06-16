@@ -71,12 +71,16 @@ test('route constants cover required backend-driven sections', async () => {
   assert.match(routes, /FinanceTicketingWorkspaceDto/);
   assert.match(routes, /BarnOperationsDto/);
   assert.match(routes, /label: 'Command Center'/);
-  assert.match(routes, /label: 'AI Policy'/);
-  assert.match(routes, /Monitor race-day readiness/);
-  assert.match(routes, /Review advisory AI policies/);
+  assert.match(routes, /label: 'AI Guardrails'/);
+  assert.match(routes, /label: 'Race Day Readiness'/);
+  assert.match(routes, /navigationGroup: 'Race Operations'/);
+  assert.match(routes, /Start each operating session/);
+  assert.match(routes, /Review read-only AI guardrails/);
   assert.doesNotMatch(routes, /aliases:/);
   assert.doesNotMatch(routes, /normalized\.startsWith\(`\$\{alias\}\/`\)/);
-  assert.match(routes, /normalized\.startsWith\(`\$\{route\.path\}\/`\)/);
+  assert.match(routes, /routeForPathname/);
+  assert.match(routes, /route\.path === normalized/);
+  assert.doesNotMatch(routes, /normalized\.startsWith\(`\$\{route\.path\}\/`\)/);
 });
 
 test('frontend shell layout uses stable responsive alignment tokens', async () => {
@@ -146,6 +150,7 @@ test('components do not call raw fetch or render forbidden execution controls', 
   assert.match(ui, /EmptyState/);
   assert.match(ui, /LoadingState/);
   assert.match(ui, /RenderErrorBoundary/);
+  assert.match(ui, /resetKey/);
   assert.match(ui, /RecordCardFrame/);
   assert.match(ui, /AlertPanel/);
   assert.match(ui, /ApprovalCard/);
@@ -156,19 +161,20 @@ test('components do not call raw fetch or render forbidden execution controls', 
   assert.match(ui, /safeRows/);
   assert.match(ui, /safeValues/);
   assert.match(ui, /role not listed/);
-  assert.match(ui, /roles unavailable/);
+  assert.match(ui, /Not reported/);
+  assert.match(ui, /routeForPathname\(url\.pathname\)/);
   assert.match(ui, /AuditEventCard/);
   assert.match(ui, /RecommendationCard/);
   assert.match(ui, /KPICard/);
   assert.match(ui, /WorkspaceRecordCard/);
   assert.match(page, /View approval context/);
-  assert.match(page, /Route Data Cards/);
-  assert.match(page, /They do not execute regulated operations/);
+  assert.match(page, /Workspace Evidence/);
+  assert.match(page, /Protected actions stay in human approval workflows/);
   assert.match(page, /recommendation\.approvalRequirement\?\.required/);
   assert.match(page, /navigateWithinShell/);
-  assert.match(page, /Contract surface/);
-  assert.match(page, /Route contract summary/);
-  assert.match(page, /Canonical route/);
+  assert.match(page, /Workspace source/);
+  assert.match(page, /Workspace source summary/);
+  assert.match(page, /Workspace path/);
   assert.match(page, /Navigation context/);
   assert.match(page, /focusFromSearch/);
   assert.match(page, /Governed KPI Artifacts/);
@@ -197,16 +203,16 @@ test('frontend card actions stay navigation-only and advisory-safe', async () =>
     assert.doesNotMatch(sourceText, />\s*(Start race|Stop race|Finalize results|Release payout|Approve payout|Execute recommendation)\s*</i);
   }
 
-  assert.match(page, /title="Review audit workspace with a recommendation context note\.">View audit context note/);
-  assert.match(page, /title="Review approvals workspace with a recommendation context note\.">View approval context note/);
-  assert.match(page, /title="Review advisory-only AI policy\.">Review AI policy/);
-  assert.match(page, /Draft and evaluate APIs are backend-owned/);
-  assert.match(page, /Execution remains blocked/);
-  assert.match(services, /label: 'Review AI policy', path: '\/settings'/);
+  assert.match(page, /label: 'View audit context note', path: `\/audit\?recommendation=/);
+  assert.match(page, /label: 'View approval context note', path: `\/approvals\?recommendation=/);
+  assert.match(page, /label: 'Review AI guardrails', path: '\/settings'/);
+  assert.match(page, /Draft and evaluate workflows are service-owned/);
+  assert.match(page, /No protected action can be started here/);
+  assert.match(services, /label: 'Review AI guardrails', path: '\/settings'/);
   assert.match(services, /Aggregate sharing categories \(metadata only, no export endpoint\)/);
   assert.match(services, /Readiness authority reference/);
   assert.match(services, /no external certification or approval claimed/);
-  assert.match(workspaceModel, /View platform context/);
+  assert.match(workspaceModel, /View service status/);
 });
 
 test('codex issue follow-up keeps card data defensive and copy accurate', async () => {
@@ -221,12 +227,26 @@ test('codex issue follow-up keeps card data defensive and copy accurate', async 
   const kpiArtifacts = await repoSource('apps/api/src/kpiArtifacts.ts');
 
   assert.match(page, /const metrics = Array\.isArray\(data\.metrics\)/);
+  assert.match(page, /filter\(isRenderableMetric\)/);
+  assert.match(page, /AI review links/);
   assert.match(page, /const panels = Array\.isArray\(data\.panels\)/);
   assert.match(page, /const aiRecommendations = Array\.isArray\(data\.aiRecommendations\)/);
+  assert.match(page, /function DashboardWorkspace/);
+  assert.match(page, /function WorkstreamLauncher/);
+  assert.match(page, /Start By Workstream/);
+  assert.match(page, /Race-Day Readiness/);
+  assert.match(page, /Equine & Barn Review/);
+  assert.match(page, /Incident Command/);
+  assert.match(page, /dashboard-hero/);
+  assert.match(page, /Operations Command Cards/);
+  assert.match(page, /Command Timeline/);
+  assert.match(page, /AI Recommendations & Guardrails/);
   assert.match(page, /View audit context', path: '\/audit', detail: 'Review available evidence for veterinary or privacy-scoped records\.'/);
 
   assert.match(services, /const allKpis = Array\.isArray\(partial\.kpis\)/);
-  assert.match(services, /const confidence = item\.confidence \?\? \{ calibrated: Number\.NaN, band: 'unknown' \}/);
+  assert.match(services, /const confidence = normalizeConfidence\(item\.confidence\)/);
+  assert.match(services, /function normalizeApprovalRequirement/);
+  assert.match(services, /requiredApproverRoles: stringArray\(record\.requiredApproverRoles\)/);
   assert.match(services, /AI recommendation text unavailable/);
   assert.match(services, /const services = Array\.isArray\(data\.services\)/);
   assert.match(services, /deploymentBoundary = data\.deploymentBoundary \?\?/);
@@ -236,7 +256,9 @@ test('codex issue follow-up keeps card data defensive and copy accurate', async 
   assert.match(services, /View-only approval request records/);
   assert.match(services, /View barn context/);
   assert.match(services, /active face value/);
-  assert.match(services, /Active-layout command widgets/);
+  assert.match(services, /Rendered command card snapshots/);
+  assert.match(services, /Supplemental alert snapshot/);
+  assert.match(services, /Supplemental event snapshot/);
   assert.match(page, /Navigation context note/);
   assert.match(page, /queryLabelsByRoute/);
   assert.doesNotMatch(page, /label: 'Open/);
@@ -261,7 +283,8 @@ test('codex issue follow-up keeps card data defensive and copy accurate', async 
 
   assert.match(server, /drillDownPath: '\/race-day'/);
   assert.match(server, /drillDownPath: '\/incidents'/);
-  assert.match(server, /Event telemetry snapshot/);
+  assert.match(server, /Event metadata snapshot/);
+  assert.match(server, /static-snapshot/);
   assert.doesNotMatch(server, /drillDownPath: '\/race-office'/);
   assert.doesNotMatch(server, /drillDownPath: '\/emergency'/);
 
@@ -278,7 +301,10 @@ test('app shell renders grouped route navigation from metadata', async () => {
   assert.match(shell, /route-button--active/);
   assert.match(shell, /route\.navigationGroup === group/);
   assert.match(shell, /Global route shortcuts/);
-  assert.match(shell, /navigate\('\/dashboard'\)/);
+  assert.match(shell, /topbarShortcutRouteIds/);
+  assert.match(shell, /routeById\[routeId\]/);
+  assert.match(shell, /navigate\(route\.path\)/);
+  assert.doesNotMatch(shell, /navigate\('\/dashboard'\)/);
   assert.match(shell, /searchQuery/);
   assert.match(shell, /routeSearchText/);
   assert.match(shell, /scope-chip/);
@@ -286,6 +312,8 @@ test('app shell renders grouped route navigation from metadata', async () => {
   assert.match(shell, /TagList/);
   assert.match(shell, /StatusBadge/);
   assert.match(shell, /RenderErrorBoundary/);
+  assert.match(shell, /activeRouteKey/);
+  assert.match(shell, /resetKey=\{activeRouteKey\}/);
   assert.doesNotMatch(shell, /Search is not wired yet/);
   assert.doesNotMatch(shell, /disabled title/);
 });
@@ -299,14 +327,18 @@ test('frontend route filtering honors required roles and tenant scope headers', 
   const client = await source('src/api/client.ts');
   const routes = await source('src/routes/routes.ts');
   assert.match(support, /canViewRoute/);
-  assert.match(support, /API route wired/);
-  assert.match(support, /Facade-backed/);
-  assert.match(support, /Documented plan/);
+  assert.match(support, /Live service route/);
+  assert.match(support, /Reference read model/);
+  assert.match(support, /Planned workspace/);
   assert.match(routes, /const routePermissions/);
   assert.doesNotMatch(routes, /frontendRoutePermissionRegistry/);
   assert.doesNotMatch(routes, /requiredPermission: 'compliance:audit'/);
   assert.match(shell, /canViewRoute\(route, defaultTenantContext\.role\)/);
   assert.match(router, /canViewRoute\(route, defaultTenantContext\.role\)/);
+  assert.match(page, /canNavigateToPath/);
+  assert.match(page, /routeForPathname\(url\.pathname\)/);
+  assert.match(page, /canViewRoute\(route, defaultTenantContext\.role\)/);
+  assert.match(router, /Page not found/);
   assert.match(client, /x-trackmind-tenant-id/);
   assert.match(client, /x-trackmind-racetrack-id/);
   assert.match(client, /x-trackmind-organization-id/);
@@ -317,8 +349,10 @@ test('frontend route filtering honors required roles and tenant scope headers', 
   assert.match(page, /currentSearch\(\)/);
   assert.match(navigation, /typeof window === 'undefined'/);
   assert.match(navigation, /typeof PopStateEvent === 'function'/);
+  assert.match(navigation, /isSafeNavigationTarget/);
+  assert.match(navigation, /routeForPathname\(url\.pathname\)/);
   assert.match(support, /scopeSource: 'demo-reference-context'/);
-  assert.match(shell, /Demo context only/);
+  assert.match(shell, /Demo scope shown/);
 });
 
 test('frontend API client times out unavailable backend requests', async () => {
@@ -355,12 +389,14 @@ test('frontend route adapters do not depend on generic mock-domain data', async 
   assert.doesNotMatch(routes, /explicit-mock|mock-adapter/);
   assert.match(services, /dashboardDrillDownRouteMap/);
   assert.match(services, /frontendPathForBackendDrilldown/);
+  assert.match(services, /new URL\(path, 'https:\/\/trackmind\.local'\)/);
   assert.match(services, /actionForBackendDrilldown/);
-  assert.match(services, /label: 'View workspace'/);
-  assert.match(services, /`frontend:\$\{path\}`/);
+  assert.match(services, /label: `View \$\{routeLabel\}`/);
+  assert.match(services, /frontend:unmapped-drilldown/);
+  assert.match(services, /actions: action \? \[action\] : \[\]/);
   assert.doesNotMatch(services, /evidence: \[widget\.source, widget\.drillDownPath\]/);
   assert.match(services, /Released payouts/);
-  assert.match(services, /Seeded provider facade status/);
+  assert.match(services, /Seeded provider operational status/);
   assert.doesNotMatch(services, /Allowed exports:/);
 });
 
@@ -373,10 +409,14 @@ test('vite proxy does not capture api-hub frontend deep links', async () => {
 test('root deployment build stays Vite-only', async () => {
   const rootPackage = await repoSource('package.json');
   const frontendPackage = await source('package.json');
+  const apiPackage = await repoSource('apps/api/package.json');
   const vercelConfig = await repoSource('vercel.json');
   const packageJson = JSON.parse(rootPackage);
   const frontendPackageJson = JSON.parse(frontendPackage);
+  const apiPackageJson = JSON.parse(apiPackage);
   const vercelJson = JSON.parse(vercelConfig);
+  assert.equal(packageJson.scripts.start, 'node scripts/start-dev.mjs');
+  assert.match(apiPackageJson.scripts.prestart, /npm run build/);
 
   assert.equal(packageJson.scripts.build, 'npm run build:vite');
   assert.doesNotMatch(packageJson.scripts['build:vite'], /apps\/api|apps\\api/);

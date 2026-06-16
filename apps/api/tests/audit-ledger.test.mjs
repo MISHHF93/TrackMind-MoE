@@ -78,12 +78,13 @@ test('runtime facade exposes audit investigation and compliance views', async ()
     assert.match(error instanceof Error ? error.message : String(error), /barnOperations|Illegal return statement|already been declared/);
     return;
   }
+  const exportHeaders = { 'x-trackmind-role': 'compliance-officer' };
   for (const route of ['/api/v1/audit/verification', '/api/v1/audit/evidence-path', '/api/v1/audit/forensic-reconstruction', '/api/v1/audit/compliance-export', '/api/v1/audit/legal-holds']) {
-    const response = await handleApiRequest('GET', route);
+    const response = await handleApiRequest('GET', route, undefined, undefined, route.includes('compliance-export') || route.includes('forensic-reconstruction') || route.includes('legal-holds') ? exportHeaders : undefined);
     assert.equal(response.status, 200, route);
   }
   const verification = await handleApiRequest('GET', '/api/v1/audit/verification');
   assert.equal(verification.body.valid, true);
-  const exported = await handleApiRequest('GET', '/api/v1/audit/compliance-export');
+  const exported = await handleApiRequest('GET', '/api/v1/audit/compliance-export', undefined, undefined, exportHeaders);
   assert.ok(exported.body.packageHash.startsWith('sha256:'));
 });

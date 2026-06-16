@@ -191,13 +191,21 @@ export const auditExportPermissionRegistry = {
   '/api/v1/audit/events': 'audit:read',
   '/api/v1/audit/verification': 'audit:read',
   '/api/v1/audit/evidence-path': 'audit:read',
-  '/api/v1/audit/forensic-reconstruction': 'audit:read',
-  '/api/v1/audit/compliance-export': 'audit:read',
-  '/api/v1/audit/legal-holds': 'audit:read',
+  '/api/v1/audit/forensic-reconstruction': 'audit:export',
+  '/api/v1/audit/compliance-export': 'audit:export',
+  '/api/v1/audit/legal-holds': 'audit:export',
 } as const satisfies Record<string, Permission>;
 
 export function permissionForApiEndpoint(input: { method: 'GET' | 'POST'; path: string; operationId: string }): Permission {
   if (input.path in auditExportPermissionRegistry) return auditExportPermissionRegistry[input.path as keyof typeof auditExportPermissionRegistry];
+  if (input.operationId === 'requestRaceStopCommand') return 'incident:manage';
+  if (input.operationId === 'requestRaceScratchCommand') return 'horse:scratch';
+  if (input.operationId === 'requestRaceStartCommand') return 'race:request-start';
+  if (input.path.includes('/services/safety/')) return 'incident:manage';
+  if (input.path.includes('/services/security/')) return input.method === 'GET' ? 'security:read' : 'security:manage';
+  if (input.path.includes('/safety-intelligence/')) return input.method === 'GET' ? 'incident:manage' : 'security:manage';
+  if (input.path.includes('/telemetry/')) return input.method === 'GET' ? 'track:readings' : 'integration:invoke';
+  if (input.path.includes('/collaboration/')) return input.method === 'GET' ? 'read:any' : 'workflow:execute';
   if (input.path.includes('/approvals/') || input.operationId.toLowerCase().includes('approval')) return input.method === 'GET' ? 'read:any' : 'ai:approve';
   if (input.path.includes('/ai-control-plane') || input.path.includes('/ai-governance') || input.path.includes('/ai/')) return input.method === 'GET' ? 'ai:read' : 'ai:approve';
   if (input.path.includes('/racing-data')) return input.method === 'GET' ? 'data-hub:read' : 'integration:invoke';
@@ -212,7 +220,7 @@ export function permissionForApiEndpoint(input: { method: 'GET' | 'POST'; path: 
   if (input.path.includes('/ticket')) return 'ticketing:manage';
   if (input.path.includes('/equine') || input.path.includes('/horses')) return 'vet:review';
   if (input.path.includes('/barn')) return 'vet:review';
-  if (input.path.includes('/track') || input.path.includes('/surface') || input.path.includes('/starting-gate')) return input.method === 'GET' ? 'read:any' : 'track:readings';
+  if (input.path.includes('/track') || input.path.includes('/surface') || input.path.includes('/starting-gate')) return 'track:readings';
   if (input.path.includes('/facilities')) return 'track:readings';
   if (input.path.includes('/race') || input.path.includes('/races')) return input.method === 'GET' ? 'read:any' : 'race:request-start';
   if (input.path.includes('/stewarding')) return input.method === 'GET' ? 'read:any' : 'discipline:issue';
