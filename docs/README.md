@@ -5,6 +5,7 @@ This directory documents TrackMind Nexus architecture and governance. Source cod
 ## Source Of Truth
 
 - Product and safety intent: `docs/TRACKMIND_BUILD_INTENT.md`
+- **Feature implementation master plan (20 waves):** `docs/architecture/FEATURE_IMPLEMENTATION_MASTER_PLAN.md`
 - Implementation checklist: `docs/TRACKMIND_IMPLEMENTATION_PLAN.md`
 - Technical architecture overview: `docs/architecture.md`
 - Event standard: `docs/architecture/event-backbone.md`

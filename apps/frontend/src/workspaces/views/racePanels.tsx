@@ -10,6 +10,8 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
   const raceOffice = feedData<Record<string, unknown>>(results, '/race-operations/race-office');
   const readiness = feedData<Record<string, unknown>>(results, '/race-day-readiness/dashboard');
   const surface = feedData<Record<string, unknown>>(results, '/surface-intelligence/workspace');
+  const paddock = feedData<Record<string, unknown>>(results, '/race-operations/paddock');
+  const schedule = feedData<Record<string, unknown>>(results, '/race-operations/schedule');
 
   const cards = extractArray<Record<string, unknown>>(raceOffice, 'cards');
   const lifecycle = extractArray<Record<string, unknown>>(raceOffice, 'lifecycle');
@@ -89,6 +91,36 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
           }))}
         />
       </SectionPanel>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionPanel title="Paddock operations" description="Saddling, parade slots, and gate readiness.">
+          <RecordTable
+            columns={[
+              { key: 'horse', label: 'Horse' },
+              { key: 'slot', label: 'Slot' },
+              { key: 'status', label: 'Status' },
+            ]}
+            rows={mapRecords(extractArray(paddock, 'assignments'), (a) => ({
+              horse: String(a.horseName ?? a.horseId ?? '—'),
+              slot: String(a.paddockSlot ?? '—'),
+              status: String(a.status ?? '—'),
+            }))}
+          />
+        </SectionPanel>
+        <SectionPanel title="Race schedule" description="Post times and race-day timeline.">
+          <RecordTable
+            columns={[
+              { key: 'race', label: 'Race' },
+              { key: 'post', label: 'Post time' },
+              { key: 'status', label: 'Status' },
+            ]}
+            rows={mapRecords(extractArray(schedule, 'races'), (r) => ({
+              race: String(r.raceNumber ?? r.raceId ?? '—'),
+              post: String(r.postTime ?? '—'),
+              status: String(r.status ?? '—'),
+            }))}
+          />
+        </SectionPanel>
+      </div>
     </div>
   );
 }

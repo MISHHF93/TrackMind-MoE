@@ -5,6 +5,7 @@ import { SectionPanel } from '@/design/components/section-panel';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { feedData } from '../feedUtils';
+import { AdminFoundationPanels } from './platformPanels';
 
 export function CommandCenterPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
   const command = feedData<Record<string, unknown>>(results, '/operations/command-center');
@@ -79,5 +80,25 @@ export function CommandCenterPanels({ results }: { results: WorkspaceDataResult[
 }
 
 export function AdminPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
-  return <CommandCenterPanels results={results} />;
+  const health = feedData<Record<string, unknown>>(results, '/platform/health');
+  const services = extractArray<Record<string, unknown>>(health, 'services');
+  return (
+    <div className="space-y-4">
+      <AdminFoundationPanels results={results} />
+      <SectionPanel title="Platform services" description="Dependency health from platform observability.">
+        <RecordTable
+          columns={[
+            { key: 'name', label: 'Service' },
+            { key: 'status', label: 'Status' },
+            { key: 'latency', label: 'Latency' },
+          ]}
+          rows={mapRecords(services, (s) => ({
+            name: String(s.name ?? s.serviceId ?? '—'),
+            status: String(s.status ?? s.health ?? '—'),
+            latency: s.latencyMs != null ? `${s.latencyMs}ms` : '—',
+          }))}
+        />
+      </SectionPanel>
+    </div>
+  );
 }

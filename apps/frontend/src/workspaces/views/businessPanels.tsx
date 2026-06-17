@@ -15,18 +15,23 @@ export function TicketingPanels({ results }: { results: WorkspaceDataResult[] })
 }
 
 export function FinancePanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+  const platformFinance = feedData<Record<string, unknown>>(results, '/finance/workspace');
   const data = financeFeed(results);
   const tickets = extractArray<Record<string, unknown>>(data, 'tickets');
   const payouts = extractArray<Record<string, unknown>>(data, 'payouts');
+  const platformPayouts = extractArray<Record<string, unknown>>(platformFinance, 'payouts');
   const summary = data && typeof data.summary === 'object' ? data.summary as Record<string, unknown> : undefined;
+  const revenue = platformFinance?.revenue as Record<string, unknown> | undefined;
+  const budget = platformFinance?.budget as Record<string, unknown> | undefined;
 
   return (
     <div className="space-y-4">
       <KpiStrip
         items={[
-          { id: 'revenue', label: 'Gross revenue', value: formatCents(summary?.grossTicketRevenueCents) },
+          { id: 'revenue', label: 'Revenue (MTD)', value: revenue?.mtd != null ? `$${revenue.mtd}` : formatCents(summary?.grossTicketRevenueCents) },
+          { id: 'budget', label: 'Budget remaining', value: budget?.remaining != null ? `$${budget.remaining}` : '—' },
           { id: 'active', label: 'Active tickets', value: String(summary?.activeTickets ?? tickets.length) },
-          { id: 'payouts', label: 'Protected payouts', value: String(summary?.protectedPayouts ?? payouts.length) },
+          { id: 'payouts', label: 'Protected payouts', value: String(platformPayouts.length || summary?.protectedPayouts || payouts.length) },
         ]}
       />
       <div className="grid gap-4 xl:grid-cols-2">

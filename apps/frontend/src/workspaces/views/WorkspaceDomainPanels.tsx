@@ -12,6 +12,7 @@ import { SecurityPanels, IncidentPanels, EmergencyPanels } from './securityPanel
 import { FacilitiesPanels, WorkforcePanels, DigitalTwinPanels } from './operationsPanels';
 import { FinancePanels, TicketingPanels, FederationPanels, DataHubPanels } from './businessPanels';
 import { SettingsPanels } from './settingsPanels';
+import { AnalyticsPanels, FanExperiencePanels, NotificationsPanels } from './platformPanels';
 
 export function WorkspaceDomainPanels({
   routeId,
@@ -61,6 +62,12 @@ export function WorkspaceDomainPanels({
       return <DataHubPanels results={results} />;
     case 'settings':
       return <SettingsPanels results={results} />;
+    case 'analytics':
+      return <AnalyticsPanels results={results} />;
+    case 'fanExperience':
+      return <FanExperiencePanels results={results} />;
+    case 'notifications':
+      return <NotificationsPanels results={results} />;
     default:
       return null;
   }

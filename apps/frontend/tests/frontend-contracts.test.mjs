@@ -33,9 +33,15 @@ test('route constants cover required backend-driven sections', async () => {
     '/dashboard', '/race-day', '/equine', '/approvals', '/incidents', '/compliance', '/security',
     '/facilities', '/ticketing', '/finance', '/federation', '/data-hub', '/audit', '/admin', '/settings',
     '/stewarding', '/workforce', '/digital-twin', '/surface', '/emergency',
+    '/analytics', '/fan-experience', '/notifications',
   ]) {
     assert.match(routes, new RegExp(`path: '${path}'`), `${path} route missing`);
   }
+  assert.match(paths, /race-operations\/paddock/);
+  assert.match(paths, /analytics\/workspace/);
+  assert.match(paths, /fan-experience\/workspace/);
+  assert.match(paths, /notifications\/inbox/);
+  assert.match(paths, /search\/global/);
   assert.match(paths, /routeApiPathGroups/);
   assert.match(routes, /backendContractPathsForRoute/);
 });

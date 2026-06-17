@@ -20,4 +20,7 @@ export const FederationPage = (): ReactElement => <WorkspacePage routeId="federa
 export const DataHubPage = (): ReactElement => <WorkspacePage routeId="dataHub" />;
 export const AuditPage = (): ReactElement => <WorkspacePage routeId="audit" />;
 export const AdminPage = (): ReactElement => <WorkspacePage routeId="admin" />;
+export const AnalyticsPage = (): ReactElement => <WorkspacePage routeId="analytics" />;
+export const FanExperiencePage = (): ReactElement => <WorkspacePage routeId="fanExperience" />;
+export const NotificationsPage = (): ReactElement => <WorkspacePage routeId="notifications" />;
 export const SettingsPage = (): ReactElement => <WorkspacePage routeId="settings" />;

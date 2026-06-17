@@ -2,6 +2,8 @@
 
 Use `docs/architecture.md` as the architecture entry point.
 
+**Primary execution roadmap:** [FEATURE_IMPLEMENTATION_MASTER_PLAN.md](./FEATURE_IMPLEMENTATION_MASTER_PLAN.md) — 20 implementation waves with 14-step protocol for building the full Racing Operating System.
+
 Canonical architecture references:
 
 - Event backbone: `event-backbone.md`

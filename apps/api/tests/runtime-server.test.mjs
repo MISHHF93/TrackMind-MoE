@@ -533,7 +533,7 @@ test('runtime Racing Data API Hub enforces license restrictions before drafts', 
 
 test('runtime Racing Data API Hub uses shared API constants and performs no external calls', async () => {
   const racingDataContracts = apiEndpointContracts.filter((endpoint) => endpoint.path.startsWith('/api/v1/racing-data/'));
-  assert.equal(racingDataContracts.length, 18);
+  assert.equal(racingDataContracts.length, 19);
   assert.ok(racingDataContracts.some((endpoint) => endpoint.operationId === 'createRacingDataIngestDraft' && endpoint.description.includes('no external pull')));
   assert.ok(racingDataContracts.filter((endpoint) => endpoint.method === 'POST').every((endpoint) => /draft/i.test(endpoint.description)));
 

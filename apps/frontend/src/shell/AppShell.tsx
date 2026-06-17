@@ -12,8 +12,9 @@ import { ActionDock } from './ActionDock';
 import { LiveStatusBar } from './LiveStatusBar';
 import { CommandPalette } from './CommandPalette';
 import { MoEChatPanel } from '@/features/assistant/MoEChatPanel';
+import { NotificationCenter } from './NotificationCenter';
 
-const navigationOrder = ['Command', 'Race Operations', 'Safety & Facilities', 'Governance', 'Business Controls', 'Data Governance', 'System Status'] as const;
+const navigationOrder = ['Command', 'Race Operations', 'Safety & Facilities', 'Governance', 'Business Controls', 'Data Governance', 'Platform', 'System Status'] as const;
 
 export function AppShell(): ReactElement {
   const { session } = useTenantSession();
@@ -69,13 +70,16 @@ export function AppShell(): ReactElement {
           onSearchChange={setSearchQuery}
           onOpenPalette={() => setPaletteOpen(true)}
         />
+        <div className="px-4 pb-2 flex justify-end">
+          <NotificationCenter />
+        </div>
         <main className="shell-main">
           <Outlet />
         </main>
         <ActionDock actions={primaryActions} />
         <LiveStatusBar status={status} lastHeartbeat={lastHeartbeat} />
       </div>
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} routes={visibleRoutes} onNavigate={navigate} />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} routes={visibleRoutes} onNavigate={navigate} initialQuery={searchQuery} />
       <MoEChatPanel />
     </div>
   );

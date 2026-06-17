@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { apiEndpointContracts, createTrackMindIntelligenceCoreMetadata, createTrackMindNexusUpgradePackage, createUnifiedDataModelWorkspace, hasAnyPermission, hasPermission, isProtectedAction, isRole, nexusApiBasePath, permissionsForApprovalAction, roles, type AIControlPlaneDraftResultDto, type AIControlPlaneWorkspaceDto, type ApiResponse, type ApiResponseMetadata, type ApprovalDto, type Permission, type Role, type RosFacadeStateDto, type TrackCertificationCandidateDto, type TrackMindIntelligenceCoreDto, type TrackMindNexusUpgradePackage, type TUSTwinStandardDto } from '@trackmind/shared';
+import { apiEndpointContracts, createTrackMindIntelligenceCoreMetadata, createTrackMindNexusUpgradePackage, createUnifiedDataModelWorkspace, hasAnyPermission, hasPermission, isProtectedAction, isRole, nexusApiBasePath, permissionsForApprovalAction, roles, type AIControlPlaneDraftResultDto, type AIControlPlaneWorkspaceDto, type ApiResponse, type ApiResponseMetadata, type ApprovalDto, type AuditEventDto, type KPIArtifact, type Permission, type Role, type RosFacadeStateDto, type TrackCertificationCandidateDto, type TrackMindIntelligenceCoreDto, type TrackMindNexusUpgradePackage, type TUSTwinStandardDto } from '@trackmind/shared';
 import { listAIAgentRegistryRecords, listExpertModelRegistry } from './aiControlPlane.js';
 import { createApiHubEventCatalog } from './apiHubAdapters.js';
 import { CentralizedApprovalService, type ApprovalActor, type ApprovalToken, type ControlledAction, type ControlledActionRequest } from './approvals.js';
@@ -34,6 +34,8 @@ import { listStewardInquiries } from './stewarding.js';
 import { createTUSStandardizationWorkspace, legacyAssetToTUSAsset } from './tusStandardization.js';
 import { workflowTemplateRegistry } from './workflowEngine.js';
 import { seedWorkforceOperations } from './workforceOperations.js';
+import { createPlatformServices, handlePlatformRequest, type PlatformServices } from './platform/platformController.js';
+import { notificationFramework } from './platform/notificationFramework.js';
 
 type HttpMethod = 'GET' | 'POST' | 'OPTIONS';
 type JsonBody = unknown;
@@ -797,6 +799,7 @@ export interface ApiFacadeState {
   equinePrivacy: EquineIntelligenceController;
   rtkTelemetry: RtkTelemetryController;
   safetyIntelligence: SafetyIntelligenceController;
+  platformServices: PlatformServices;
 }
 
 export function createApiFacadeState(): ApiFacadeState {
@@ -873,9 +876,21 @@ export function createApiFacadeState(): ApiFacadeState {
     privacy: { tenantId: 'tenant-1', veterinaryRecordsVisible: 0, veterinaryRecordsRedacted: 1 },
     mock: false,
   };
+  const auditEventsForState = contract.auditEvents.length ? contract.auditEvents : [{ auditEventId: 'audit-live-1', id: 'audit-live-1', type: 'api.facade.started', actor: { actorId: 'trackmind-api', actorType: 'service' }, actorId: 'trackmind-api', entity: { entityId: 'api-facade', entityType: 'api-route', tenantId: 'trackmind', racetrackId: 'main-track' }, action: 'api.facade.started', reason: 'API facade started with canonical audit fallback.', timestamp, tenantScope: { tenantId: 'trackmind', racetrackId: 'main-track' }, integrityReference: { previousHash: 'genesis', hash: 'sha256:api-facade', algorithm: 'sha256', chainScope: 'tenant' }, severity: 'info', previousHash: 'genesis', hash: 'sha256:api-facade', mock: false }];
+  const platformServices = createPlatformServices({
+    auditEvents: auditEventsForState as AuditEventDto[],
+    auditLedger: auditLedger as unknown as ImmutableAuditLog,
+    approvalService,
+    kpis,
+    racingData,
+    federation: federation as unknown as Record<string, unknown>,
+    equine: equineWorkspace,
+  });
+  notificationFramework.publish({ category: 'platform', severity: 'info', title: 'Platform services online', message: 'Foundation platform wave services are active.', targetRoles: ['*'] });
+  notificationFramework.publish({ category: 'approval', severity: 'warning', title: 'Pending approvals', message: 'Review approval queue before race-day mutations.', targetRoles: ['admin', 'steward'] });
   return {
     approvals: contract.approvals,
-    auditEvents: contract.auditEvents.length ? contract.auditEvents : [{ auditEventId: 'audit-live-1', id: 'audit-live-1', type: 'api.facade.started', actor: { actorId: 'trackmind-api', actorType: 'service' }, actorId: 'trackmind-api', entity: { entityId: 'api-facade', entityType: 'api-route', tenantId: 'trackmind', racetrackId: 'main-track' }, action: 'api.facade.started', reason: 'API facade started with canonical audit fallback.', timestamp, tenantScope: { tenantId: 'trackmind', racetrackId: 'main-track' }, integrityReference: { previousHash: 'genesis', hash: 'sha256:api-facade', algorithm: 'sha256', chainScope: 'tenant' }, severity: 'info', previousHash: 'genesis', hash: 'sha256:api-facade', mock: false }],
+    auditEvents: auditEventsForState,
     auditLedger,
     trackMap: {
       trackId: 'main-track',
@@ -1015,6 +1030,7 @@ export function createApiFacadeState(): ApiFacadeState {
     equinePrivacy,
     rtkTelemetry,
     safetyIntelligence,
+    platformServices,
   };
 }
 
@@ -1676,6 +1692,16 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   const authHeaders = authHeadersFromQuery(method, path, requestUrl.searchParams, headers);
   const authorization = authorizeApiRequest(method, path, authHeaders, requestId);
   if (authorization) return authorization;
+  const platformResponse = handlePlatformRequest(method, path, body, {
+    auditEvents: state.auditEvents as AuditEventDto[],
+    auditLedger: state.auditLedger as unknown as ImmutableAuditLog,
+    approvalService: state.approvalService,
+    kpis: state.kpis as { kpis?: KPIArtifact[] },
+    racingData: state.racingData,
+    federation: state.federation as Record<string, unknown>,
+    equine: state.equine as { horse?: { horseId: string; name?: string } },
+  }, state.platformServices, requestUrl.searchParams);
+  if (platformResponse) return platformResponse;
   if (method === 'GET' && path === '/health') return { status: 200, headers: { 'x-trackmind-request-id': requestId }, body: { ok: true, service: 'trackmind-api', status: 'healthy', time: now(), requestId, observability: { structuredLogs: true, requestIdHeader: 'x-trackmind-request-id', serviceHealthEndpoint: `${nexusApiBasePath}/platform/health`, eventStreamEndpoint: `${nexusApiBasePath}/events/stream` } } };
   if (method === 'GET' && path === '/approvals/requests') {
     const seeded = Array.isArray(state.approvals) ? state.approvals : [];

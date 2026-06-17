@@ -107,6 +107,14 @@ export class EquineIntelligencePrivacyService {
     return clone(verification);
   }
 
+  eligibility(horseId: string, actor: EquineRequestActor): { horseId: string; eligible: boolean; failedRules: string[]; warnings: string[]; status: EligibilityStatus } {
+    const horse = this.requireHorse(horseId);
+    assertHorseAccess(horse, actor);
+    const evaluation = this.eligibilityEngine.evaluate(horse);
+    this.audit.append({ horseId, type: 'equine.eligibility.viewed', actorId: actor.actorId, role: actor.role, occurredAt: now(), payload: { eligible: evaluation.eligible, failedRules: evaluation.failedRules } });
+    return { horseId, eligible: evaluation.eligible, failedRules: evaluation.failedRules, warnings: evaluation.warnings, status: clone(evaluation.status) };
+  }
+
   private requireHorse(horseId: string): HorseModel {
     const horse = this.horses.get(horseId);
     if (!horse) throw new Error(`Unknown horse ${horseId}`);

@@ -27,3 +27,20 @@ Contract-only scaffolds now exist under:
 - `services/tenant`
 
 These folders are not production runtimes yet. Their `service.catalog.yaml` files point to current reference implementations and declare the protected actions that must remain approval-gated during extraction.
+
+## Feature Implementation Master Plan (20 Waves)
+
+Platform wave handlers live in `apps/api/src/platform/` and are routed through `handlePlatformRequest` in `apps/api/src/server.ts`. Shared DTOs are in `packages/shared/src/platformFoundation.ts`.
+
+| Wave | Current Code | Runtime Routes | Tests | Remaining Gap |
+| --- | --- | --- | --- | --- |
+| 01 Foundation | `tenantService.ts`, `repository/index.ts` | `/platform/foundation`, `/organizations`, `/tenants`, `/racetracks`, `/platform/feature-flags/*` | `wave-implementation.test.mjs` | Production Postgres repository wiring |
+| 03 Routes | `routes.ts`, `paths.ts` | `/analytics`, `/fan-experience`, `/notifications` | `frontend-contracts.test.mjs` | Route coverage report for all GET contracts |
+| 05 Audit | `auditAdapter.ts` | `/audit/search` | `wave-implementation.test.mjs` | External WORM vault |
+| 09 Race Day | `paddockOperations.ts` | `/race-operations/paddock`, `/race-operations/schedule` | `wave-implementation.test.mjs` | Approval-gated race command UI flows |
+| 11 Incidents | `incidentService.ts` | `/incidents`, `/incidents/{id}` | `wave-implementation.test.mjs` | Real-time incident SSE timeline |
+| 16 Fan Experience | `fanExperience.ts` | `/fan-experience/workspace` | `wave-implementation.test.mjs` | External ticketing integrations |
+| 17 Finance | `financePlatform.ts` | `/finance/workspace` | `wave-implementation.test.mjs` | GL/settlement connectors |
+| 18 AI Governance | `aiRegistryService.ts` | `/ai-governance/model-registry` | `wave-implementation.test.mjs` | Prompt lineage API mutations |
+| 19 Data Hub | `dataHubAdapter.ts` | `/racing-data/providers/{id}/execute`, `/federation/kpi-aggregation` | `wave-implementation.test.mjs` | Live licensed provider pulls |
+| 20 Convergence | `globalSearchService.ts`, `notificationFramework.ts` | `/search/global`, `/notifications/inbox` | `wave-implementation.test.mjs` | Azure telemetry dashboards |

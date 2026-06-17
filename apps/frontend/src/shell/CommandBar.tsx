@@ -37,7 +37,7 @@ export function CommandBar({
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-[var(--text-muted)]" />
             <input
               className="w-full rounded-md border border-[var(--border)] bg-[var(--surface-panel)] py-2 pl-9 pr-3 text-sm text-[var(--text-strong)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
-              placeholder="Search consoles (Cmd+K)"
+              placeholder="Search horses, incidents, consoles (Cmd+K)"
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
               onFocus={onOpenPalette}

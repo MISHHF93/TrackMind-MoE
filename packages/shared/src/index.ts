@@ -319,3 +319,5 @@ export {
 export * from './intelligenceCore.js';
 
 export * from './saasModel.js';
+
+export * from './platformFoundation.js';

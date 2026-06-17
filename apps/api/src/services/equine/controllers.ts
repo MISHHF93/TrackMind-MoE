@@ -45,7 +45,8 @@ export class EquineIntelligenceController {
     const calibrationMatch = path.match(/^\/horses\/([^/]+)\/sensors\/calibrate$/);
     const input = isRecord(body) ? body : {};
     try {
-      if (method === 'GET' && profileMatch) return { status: 200, body: this.service.profile(decodeURIComponent(profileMatch[1]), actorFrom(input, searchParams)) };
+      if (method === 'GET' && profileMatch) return { status: 200, body: { ...this.service.profile(decodeURIComponent(profileMatch[1]), actorFrom(input, searchParams)), mock: false } };
+      if (method === 'GET' && eligibilityMatch) return { status: 200, body: { ...this.service.eligibility(decodeURIComponent(eligibilityMatch[1]), actorFrom(input, searchParams)), mock: false } };
       if (method === 'POST' && veterinaryMatch) return { status: 201, body: this.service.addVeterinaryRecord(decodeURIComponent(veterinaryMatch[1]), { recordType: input.recordType ?? 'examination', summary: stringValue(input.summary, 'Veterinary record'), diagnosis: input.diagnosis, medication: input.medication, medicationClass: input.medicationClass, withdrawalUntil: input.withdrawalUntil, approvalId: input.approvalId, approverId: input.approverId, approvalTimestamp: input.approvalTimestamp }, actorFrom(input, searchParams)) };
       if (method === 'POST' && eligibilityMatch) return { status: 200, body: this.service.updateEligibility(decodeURIComponent(eligibilityMatch[1]), { hisaCompliance: input.hisaCompliance, scratchStatus: input.scratchStatus, eligibilityFlags: input.eligibilityFlags, raceRestrictions: input.raceRestrictions }, actorFrom(input, searchParams)) };
       if (method === 'GET' && hisaMatch) return { status: 200, body: this.service.hisaCompliance(decodeURIComponent(hisaMatch[1]), actorFrom(input, searchParams)) };

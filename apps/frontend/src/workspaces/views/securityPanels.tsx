@@ -13,9 +13,11 @@ function securityData(results: WorkspaceDataResult[]) {
 
 export function SecurityPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
   const data = securityData(results);
+  const zonesLive = feedData<Record<string, unknown>>(results, '/security-operations/zones/live');
   const incidents = extractArray<Record<string, unknown>>(data, 'incidents');
   const cameras = extractArray<Record<string, unknown>>(data, 'cameras');
   const access = extractArray<Record<string, unknown>>(data, 'accessEvents');
+  const liveZones = extractArray<Record<string, unknown>>(zonesLive, 'zones');
 
   return (
     <div className="space-y-4">
@@ -69,6 +71,20 @@ export function SecurityPanels({ results }: { results: WorkspaceDataResult[] }):
             person: String(a.personId ?? a.credentialId ?? '—'),
             zone: String(a.zoneId ?? '—'),
             result: String(a.result ?? a.decision ?? '—'),
+          }))}
+        />
+      </SectionPanel>
+      <SectionPanel title="Live zone monitoring" description="Restricted zone occupancy from CQRS projections.">
+        <RecordTable
+          columns={[
+            { key: 'zone', label: 'Zone' },
+            { key: 'occupancy', label: 'Occupancy' },
+            { key: 'status', label: 'Status' },
+          ]}
+          rows={mapRecords(liveZones, (z) => ({
+            zone: String(z.name ?? z.zoneId ?? '—'),
+            occupancy: String(z.occupancy ?? '—'),
+            status: String(z.status ?? '—'),
           }))}
         />
       </SectionPanel>

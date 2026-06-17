@@ -226,6 +226,11 @@ export function permissionForApiEndpoint(input: { method: 'GET' | 'POST'; path: 
   if (input.path.includes('/stewarding')) return input.method === 'GET' ? 'read:any' : 'discipline:issue';
   if (input.path.includes('/workflows')) return 'workflow:execute';
   if (input.path.includes('/platform')) return 'service:operate';
+  if (input.path.includes('/identity') || input.path.includes('/organizations') || input.path.includes('/tenants') || input.path.includes('/racetracks')) return input.method === 'GET' ? 'identity:read' : 'identity:write';
+  if (input.path.includes('/search/')) return 'read:any';
+  if (input.path.includes('/notifications/')) return 'read:any';
+  if (input.path.includes('/analytics/')) return 'kpi:read';
+  if (input.path.includes('/fan-experience')) return 'ticketing:manage';
   if (input.path.includes('/federation')) return 'compliance:report';
   return 'read:any';
 }
