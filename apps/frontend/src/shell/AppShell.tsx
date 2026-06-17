@@ -1,50 +1,49 @@
 import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
-import { backendSupportLabels, canViewRoute, defaultTenantContext, regulatedActionNames, type NavigationGroup } from '../domain/support';
-import { operatingModule } from '../domain/operatingSystem';
+import { backendSupportLabels, canViewRoute, regulatedActionNames, roleDisplayName, type NavigationGroup } from '../domain/support';
+import { useTenantSession } from '../domain/useTenantSession';
+import { useActiveConsole } from '../lib/activeConsole';
 import { currentPathname, currentSearch, navigate } from '../routes/navigation';
-import { routeForPathname, routeById, routes, type AppRoute } from '../routes/routes';
+import { defaultRoute, routeForPathname, routeById, routes, type AppRoute } from '../routes/routes';
 import { Router } from '../routes/Router';
-import { AlertPanel, EmptyState, RenderErrorBoundary, StatusBadge, TagList } from '../components/ui';
+import { RenderErrorBoundary } from '../components/ui';
+import { ActionDock, CommandBar, SidebarNavGroups } from '../design/components';
 import { applyTheme, loadTheme, persistTheme, toggleThemeName, type ThemeName } from '../theme/theme';
 
 const navigationOrder: NavigationGroup[] = ['Command', 'Race Operations', 'Safety & Facilities', 'Governance', 'Business Controls', 'Data Governance', 'System Status'];
 const topbarShortcutRouteIds: AppRoute['id'][] = ['dashboard', 'raceDay', 'incidents', 'approvals'];
-const routeIconLabels: Record<string, string> = {
-  'command-center': 'CC',
-  'race-day': 'RD',
-  horse: 'EQ',
-  approval: 'AP',
-  incident: 'IN',
-  compliance: 'CO',
-  security: 'SE',
-  facility: 'FA',
-  ticket: 'TI',
-  finance: 'FI',
-  federation: 'FE',
-  'data-hub': 'DH',
-  audit: 'AU',
-  admin: 'AD',
-  settings: 'ST',
-} as const;
 
 export function AppShell(): ReactElement {
+  const tenantSession = useTenantSession();
+  const activeConsole = useActiveConsole();
   const [activeRouteKey, setActiveRouteKey] = useState(() => `${currentPathname()}${currentSearch()}`);
   const activeRouteId = routeForPathname(currentPathname())?.id;
-  const activeOperating = activeRouteId ? operatingModule(activeRouteId) : undefined;
   const [searchQuery, setSearchQuery] = useState('');
   const [theme, setTheme] = useState<ThemeName>(() => loadTheme());
-  const visibleRoutes = routes.filter((route) => canViewRoute(route, defaultTenantContext.role));
+  const visibleRoutes = routes.filter((route) => canViewRoute(route, tenantSession.role));
   const normalizedSearch = searchQuery.trim().toLowerCase();
-  const searchableRoutes = normalizedSearch
-    ? visibleRoutes.filter((route) => routeSearchText(route).includes(normalizedSearch))
-    : visibleRoutes;
-  const topbarShortcuts = topbarShortcutRouteIds
-    .map((routeId) => routeById[routeId])
-    .filter((route) => canViewRoute(route, defaultTenantContext.role));
+  const searchableRoutes = normalizedSearch ? visibleRoutes.filter((route) => routeSearchText(route).includes(normalizedSearch)) : visibleRoutes;
+  const topbarShortcuts = topbarShortcutRouteIds.map((id) => routeById[id]).filter((route) => canViewRoute(route, tenantSession.role));
   const groupedRoutes = navigationOrder
-    .map((group) => ({ group, routes: searchableRoutes.filter((route) => route.navigationGroup === group) }))
+    .map((group) => ({
+      group,
+      routes: searchableRoutes
+        .filter((route) => route.navigationGroup === group)
+        .map((route) => ({
+          id: route.id,
+          path: route.path,
+          label: route.label,
+          iconKey: route.iconKey,
+          supportLabel: backendSupportLabels[route.supportStatus],
+        })),
+    }))
     .filter((entry) => entry.routes.length > 0);
+
+  useEffect(() => {
+    if (currentPathname() === '/') {
+      navigate(defaultRoute.path);
+    }
+  }, []);
 
   useEffect(() => {
     const onPopState = () => setActiveRouteKey(`${currentPathname()}${currentSearch()}`);
@@ -57,91 +56,59 @@ export function AppShell(): ReactElement {
     persistTheme(theme);
   }, [theme]);
 
+  const shellPosture = activeConsole?.posture ?? 'ready';
+  const shellPostureLabel = activeConsole?.postureLabel ?? 'Select an operating console';
+  const dockActions = activeConsole?.primaryActions ?? [
+    { label: 'Command center', path: '/dashboard', detail: 'Open the operations command center.' },
+    { label: 'Race day', path: '/race-day', detail: 'Review race office lifecycle and readiness.' },
+    { label: 'Approvals', path: '/approvals', detail: 'Review human approval workflow queue.' },
+  ];
+
   return (
     <div className="app-shell">
-      <aside className="sidebar" aria-label="TrackMind navigation">
-        <div className="brand">
-          <span className="brand-mark">TM</span>
-          <div>
-            <strong>TrackMind Nexus</strong>
-            <small>Racetrack Operations OS</small>
-          </div>
-        </div>
-        <nav aria-label="TrackMind workspace routes">
-          {groupedRoutes.length === 0 ? <EmptyState message={`No routes match "${searchQuery}".`} /> : null}
-          {groupedRoutes.map(({ group, routes: groupRoutes }) => (
-            <section className="nav-group" key={group} aria-label={`${group} routes`}>
-              <h2>{group}</h2>
-              {groupRoutes.map((route) => {
-                const isActive = route.id === activeRouteId;
-                return (
-                  <button className={`route-button${isActive ? ' route-button--active' : ''}`} aria-current={isActive ? 'page' : undefined} key={route.path} type="button" onClick={() => navigate(route.path)}>
-                    <span className="route-icon" aria-hidden="true">{routeIconLabels[route.iconKey] ?? route.label.slice(0, 2).toUpperCase()}</span>
-                    <span>{route.label}</span>
-                    <small>{backendSupportLabels[route.supportStatus]}</small>
-                  </button>
-                );
-              })}
-            </section>
-          ))}
-        </nav>
-      </aside>
+      <SidebarNavGroups
+        groups={groupedRoutes}
+        activeRouteId={activeRouteId}
+        onNavigate={navigate}
+        emptyMessage={normalizedSearch ? `No routes match "${searchQuery}".` : undefined}
+      />
 
       <div className="shell-body">
-        <header className="topbar">
-          <div className="switcher">
-            <div className="scope-chip" aria-label="Tenant scope">
-              <span>Tenant</span>
-              <strong>{defaultTenantContext.tenantId}</strong>
-            </div>
-            <div className="scope-chip" aria-label="Racetrack scope">
-              <span>Racetrack</span>
-              <strong>{defaultTenantContext.racetrackId}</strong>
-            </div>
-            <span className="scope-disclaimer">Demo scope shown; backend authorization remains authoritative.</span>
-          </div>
-          <label className="global-search">
-            Search
-            <input type="search" placeholder="Search pages and platform areas" value={searchQuery} onChange={(event) => setSearchQuery(event.currentTarget.value)} />
-          </label>
-          <div className="topbar-actions" aria-label="Global route shortcuts">
-            {topbarShortcuts.map((route) => (
-              <button type="button" onClick={() => navigate(route.path)} key={route.id}>{route.label}</button>
-            ))}
-            <button type="button" aria-pressed={theme === 'dark'} onClick={() => setTheme(toggleThemeName(theme))}>{theme === 'dark' ? 'Use light theme' : 'Use dark theme'}</button>
-          </div>
-        </header>
+        <CommandBar
+          posture={shellPosture}
+          postureLabel={shellPostureLabel}
+          session={tenantSession}
+          roleLabel={roleDisplayName(tenantSession.role)}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          shortcuts={topbarShortcuts.map((route) => ({ id: route.id, label: route.label, path: route.path }))}
+          onNavigate={navigate}
+          themeToggle={(
+            <button type="button" aria-pressed={theme === 'dark'} onClick={() => setTheme(toggleThemeName(theme))}>
+              {theme === 'dark' ? 'Light' : 'Dark'}
+            </button>
+          )}
+        />
 
         <main className="main-workspace">
-          <RenderErrorBoundary title="Workspace render error" resetKey={activeRouteKey}>
+          <RenderErrorBoundary title="Console render error" resetKey={activeRouteKey}>
             <Router />
           </RenderErrorBoundary>
         </main>
 
-        <aside className="intelligence-panel" aria-label="AI operating intelligence panel">
-          <h2>AI Operating Layer</h2>
-          <p>{activeOperating ? activeOperating.mission : 'The AI operating layer routes expert advisories across every racetrack console while humans retain command authority.'}</p>
-          {activeOperating ? (
-            <p className="intelligence-panel__functional">{activeOperating.functionalToday}</p>
-          ) : null}
-          <div className="intelligence-panel__badges" aria-label="AI governance controls">
-            <StatusBadge label="Human approval required" tone="critical" />
-            <StatusBadge label="Evidence-bound recommendations" tone="advisory" />
-            <StatusBadge label="No autonomous control path" tone="nominal" />
-          </div>
-          <AlertPanel title="Protected Action Boundary" tone="critical">
-            <p>{activeOperating?.protectedBoundary ?? 'Protected race, payout, emergency, medication, and enforcement actions are not exposed as frontend controls.'}</p>
-            <TagList label="Protected actions" values={regulatedActionNames} />
-          </AlertPanel>
-        </aside>
+        <ActionDock
+          title={activeConsole?.title ?? 'Operator action dock'}
+          description={activeConsole?.mission ?? 'Navigate to an operating console to load lifecycle lanes and escalation queues from the backend.'}
+          actions={dockActions}
+          protectedActions={regulatedActionNames}
+          onNavigate={navigate}
+        />
 
         <footer className="status-footer">
-          <span>Service status: reference health metadata</span>
-          <span>Sync: event stream read-only</span>
-          <span>Role: {defaultTenantContext.role}</span>
-          <span>Scope: {defaultTenantContext.scopeSource}</span>
-          <span>Workspace access preview: backend enforced</span>
-          <span>Audit mode: {defaultTenantContext.auditMode}</span>
+          <span>TrackMind Control Surface</span>
+          <span>Role: {roleDisplayName(tenantSession.role)}</span>
+          <span>Audit: {tenantSession.auditMode ?? 'read-only'}</span>
+          <span>{activeConsole?.source ?? 'Backend-enforced'}</span>
         </footer>
       </div>
     </div>
@@ -149,13 +116,5 @@ export function AppShell(): ReactElement {
 }
 
 function routeSearchText(route: (typeof routes)[number]): string {
-  return [
-    route.label,
-    route.path,
-    route.navigationGroup,
-    route.supportStatus,
-    route.dataSource,
-    ...route.backendPaths,
-    ...route.sharedTypes,
-  ].join(' ').toLowerCase();
+  return [route.label, route.path, route.navigationGroup, route.dataSource, ...route.backendPaths].join(' ').toLowerCase();
 }

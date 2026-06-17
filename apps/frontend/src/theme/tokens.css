@@ -321,6 +321,18 @@ input {
   color: var(--text-muted);
 }
 
+.operator-scope-panel {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-raised), transparent 6%);
+}
+
+.operator-scope-panel__note {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
 .status-footer {
   grid-column: 1 / -1;
   display: flex;

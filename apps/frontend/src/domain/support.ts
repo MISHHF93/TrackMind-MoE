@@ -1,4 +1,4 @@
-import { hasPermission, type Permission, type Role, type TenantRacetrackContext } from '@trackmind/shared';
+import { hasPermission, roleRegistry, type Permission, type Role, type TenantRacetrackContext } from '@trackmind/shared';
 
 export type BackendSupportStatus = 'live-api' | 'facade-api' | 'documented-stub';
 export type DataSourceKind = 'backend-route' | 'shared-contract' | 'database-migration' | 'documented-stub';
@@ -55,8 +55,12 @@ export const defaultTenantContext: TenantRacetrackContext = {
   organizationId: 'org-trackmind-network',
   role: 'admin' as Role,
   auditMode: 'read-only',
-  scopeSource: 'demo-reference-context',
+  scopeSource: 'operator-session',
 };
+
+export function roleDisplayName(role: Role): string {
+  return roleRegistry[role]?.displayName ?? role;
+}
 
 export function canViewRoute(route: RouteSupportMetadata, role: Role): boolean {
   const roleAllowed = route.requiredRoles === 'authenticated' || route.requiredRoles.includes(role);

@@ -1,5 +1,5 @@
 import { adapterSourceForPath, apiUrl, type ApiAdapterSource } from './paths';
-import { defaultTenantContext } from '../domain/support';
+import { getTenantContext } from '../lib/session';
 import type { ApiResponse } from '@trackmind/shared';
 
 export type AdapterStatus = 'loading' | 'ready' | 'empty' | 'error';
@@ -17,14 +17,16 @@ export interface AdapterResult<T> {
 const defaultRequestTimeoutMs = 8000;
 
 function scopedPath(path: string): string {
+  const tenantContext = getTenantContext();
   const url = new URL(path, 'https://trackmind.local');
-  if (!url.searchParams.has('tenantId')) url.searchParams.set('tenantId', defaultTenantContext.tenantId);
-  if (!url.searchParams.has('racetrackId')) url.searchParams.set('racetrackId', defaultTenantContext.racetrackId);
-  if (!url.searchParams.has('organizationId')) url.searchParams.set('organizationId', defaultTenantContext.organizationId);
+  if (!url.searchParams.has('tenantId')) url.searchParams.set('tenantId', tenantContext.tenantId);
+  if (!url.searchParams.has('racetrackId')) url.searchParams.set('racetrackId', tenantContext.racetrackId);
+  if (!url.searchParams.has('organizationId')) url.searchParams.set('organizationId', tenantContext.organizationId);
   return `${url.pathname}${url.search}`;
 }
 
 export async function getJson<T>(path: string, init?: RequestInit): Promise<AdapterResult<T>> {
+  const tenantContext = getTenantContext();
   const source = adapterSourceForPath(path);
   const timeoutController = new AbortController();
   const timeoutId = setTimeout(() => timeoutController.abort(new Error(`Request timed out after ${defaultRequestTimeoutMs}ms`)), defaultRequestTimeoutMs);
@@ -39,10 +41,10 @@ export async function getJson<T>(path: string, init?: RequestInit): Promise<Adap
       headers: {
         Accept: 'application/json',
         'x-trackmind-request-id': `frontend-${Date.now()}`,
-        'x-trackmind-tenant-id': defaultTenantContext.tenantId,
-        'x-trackmind-racetrack-id': defaultTenantContext.racetrackId,
-        'x-trackmind-organization-id': defaultTenantContext.organizationId,
-        'x-trackmind-role': defaultTenantContext.role,
+        'x-trackmind-tenant-id': tenantContext.tenantId,
+        'x-trackmind-racetrack-id': tenantContext.racetrackId,
+        'x-trackmind-organization-id': tenantContext.organizationId,
+        'x-trackmind-role': tenantContext.role,
         ...(init?.headers ?? {}),
       },
     });

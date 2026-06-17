@@ -1,5 +1,7 @@
 import type { RouteSupportMetadata } from '../domain/support';
-import { backendContractPathsForRoute } from '../api/paths';
+import { backendContractPathsForRoute as resolveBackendContractPathsForRoute } from '../api/paths';
+
+export { backendContractPathsForRoute } from '../api/paths';
 
 const routePermissions = {
   dashboard: 'read:any',
@@ -30,7 +32,7 @@ export const routes = [
     requiredRoles: 'authenticated',
     supportStatus: 'facade-api',
     dataSource: 'Start each operating session with race-day posture, workstream risk, human approval queues, audit evidence, and AI recommendations.',
-    backendPaths: backendContractPathsForRoute('dashboard'),
+    backendPaths: resolveBackendContractPathsForRoute('dashboard'),
     sharedTypes: ['OperationsCommandCenterDto', 'PlatformHealthWorkspaceDto', 'AIControlPlaneRecommendationDto', 'AIGovernanceWorkspaceDto', 'ApprovalDto', 'AuditEventDto', 'KPIWorkspaceDto'],
     databaseSupport: 'partial',
     evidence: [
@@ -49,7 +51,7 @@ export const routes = [
     requiredRoles: 'authenticated',
     supportStatus: 'facade-api',
     dataSource: 'Review race office readiness, surface conditions, track configuration, approvals, and safety guardrails before post time.',
-    backendPaths: backendContractPathsForRoute('raceDay'),
+    backendPaths: resolveBackendContractPathsForRoute('raceDay'),
     sharedTypes: ['RaceDto', 'RaceOfficeWorkspaceDto', 'RaceDayReadinessDashboardDto', 'SurfaceIntelligenceDto', 'TrackMapDto'],
     databaseSupport: 'partial',
     evidence: [{ source: 'backend-route', reference: 'apps/api/src/server.ts', summary: 'Race-day routes compose race office and readiness service outputs.' }],
@@ -65,7 +67,7 @@ export const routes = [
     requiredRoles: 'authenticated',
     supportStatus: 'facade-api',
     dataSource: 'Review horse lifecycle, eligibility, welfare, barn readiness, and veterinary status in one equine workspace.',
-    backendPaths: backendContractPathsForRoute('equine'),
+    backendPaths: resolveBackendContractPathsForRoute('equine'),
     sharedTypes: ['EquineIntelligenceDto', 'BarnOperationsDto'],
     databaseSupport: 'partial',
     evidence: [
@@ -84,7 +86,7 @@ export const routes = [
     requiredRoles: 'authenticated',
     supportStatus: 'live-api',
     dataSource: 'Review visible approval request records, escalation metadata, and supporting evidence.',
-    backendPaths: backendContractPathsForRoute('approvals'),
+    backendPaths: resolveBackendContractPathsForRoute('approvals'),
     sharedTypes: ['ApprovalDto'],
     databaseSupport: 'partial',
     evidence: [{ source: 'backend-route', reference: 'apps/api/src/server.ts', summary: 'GET /approvals/requests exposes view-only approval records.' }],
@@ -100,7 +102,7 @@ export const routes = [
     requiredRoles: 'authenticated',
     supportStatus: 'facade-api',
     dataSource: 'Review emergency posture, incident metadata, security incident summaries, and response references without exposing direct command controls.',
-    backendPaths: backendContractPathsForRoute('incidents'),
+    backendPaths: resolveBackendContractPathsForRoute('incidents'),
     sharedTypes: ['SecurityOperationsDto', 'EmergencyOperationsDto'],
     databaseSupport: 'partial',
     evidence: [
@@ -119,7 +121,7 @@ export const routes = [
     requiredRoles: ['admin', 'compliance-officer', 'read-only-auditor'],
     supportStatus: 'facade-api',
     dataSource: 'Review compliance frameworks, control mappings, and internal readiness metadata from the control-library facade.',
-    backendPaths: backendContractPathsForRoute('compliance'),
+    backendPaths: resolveBackendContractPathsForRoute('compliance'),
     sharedTypes: ['ComplianceControlLibraryDto'],
     databaseSupport: 'partial',
     evidence: [{ source: 'backend-route', reference: 'apps/api/src/server.ts', summary: 'Compliance control-library route returns internal readiness mappings and candidate evidence metadata.' }],
@@ -135,7 +137,7 @@ export const routes = [
     requiredRoles: ['admin', 'security', 'compliance-officer'],
     supportStatus: 'facade-api',
     dataSource: 'Review security incident and camera-health summary metadata from a facade-backed DTO.',
-    backendPaths: backendContractPathsForRoute('security'),
+    backendPaths: resolveBackendContractPathsForRoute('security'),
     sharedTypes: ['SecurityOperationsDto'],
     databaseSupport: 'partial',
     evidence: [{ source: 'backend-route', reference: 'apps/api/src/securityOps.ts', summary: 'Security workspace route is active.' }],
@@ -151,7 +153,7 @@ export const routes = [
     requiredRoles: 'authenticated',
     supportStatus: 'live-api',
     dataSource: 'Review track assets, inspections, work orders, maintenance risk, approvals, audit evidence, and in-memory Digital Twin health.',
-    backendPaths: backendContractPathsForRoute('facilities'),
+    backendPaths: resolveBackendContractPathsForRoute('facilities'),
     sharedTypes: ['FacilitiesMaintenanceWorkspaceDto'],
     databaseSupport: 'partial',
     evidence: [
@@ -170,7 +172,7 @@ export const routes = [
     requiredRoles: ['admin', 'ticketing-manager', 'finance'],
     supportStatus: 'facade-api',
     dataSource: 'Understand ticket state, active-ticket value, race-day coverage, and payment-control boundaries.',
-    backendPaths: backendContractPathsForRoute('ticketing'),
+    backendPaths: resolveBackendContractPathsForRoute('ticketing'),
     sharedTypes: ['FinanceTicketingWorkspaceDto'],
     databaseSupport: 'partial',
     evidence: [{ source: 'backend-route', reference: 'apps/api/src/services/financeService.ts', summary: 'Ticketing workspace is generated from FinanceService ticket state.' }],
@@ -186,7 +188,7 @@ export const routes = [
     requiredRoles: ['admin', 'finance'],
     supportStatus: 'facade-api',
     dataSource: 'Review active ticket value, released payout records, finance controls, and approval/audit boundaries.',
-    backendPaths: backendContractPathsForRoute('finance'),
+    backendPaths: resolveBackendContractPathsForRoute('finance'),
     sharedTypes: ['FinanceTicketingWorkspaceDto'],
     databaseSupport: 'partial',
     evidence: [{ source: 'backend-route', reference: 'apps/api/src/services/financeService.ts', summary: 'Finance payout requests are protected by the APEX approval gateway; this page reads ticketing/payout state only.' }],
@@ -202,7 +204,7 @@ export const routes = [
     requiredRoles: ['admin', 'compliance-officer', 'read-only-auditor'],
     supportStatus: 'facade-api',
     dataSource: 'Compare aggregate, anonymized racetrack readiness and federation metadata without exposing raw cross-track records.',
-    backendPaths: backendContractPathsForRoute('federation'),
+    backendPaths: resolveBackendContractPathsForRoute('federation'),
     sharedTypes: ['FederationWorkspaceDto'],
     databaseSupport: 'none',
     evidence: [
@@ -221,7 +223,7 @@ export const routes = [
     requiredRoles: ['admin', 'compliance-officer', 'racing-secretary', 'read-only-auditor'],
     supportStatus: 'facade-api',
     dataSource: 'Inspect provider license-readiness metadata, lineage, quality, entity resolution, and sharing-control posture.',
-    backendPaths: backendContractPathsForRoute('dataHub'),
+    backendPaths: resolveBackendContractPathsForRoute('dataHub'),
     sharedTypes: ['RacingDataWorkspaceDto'],
     databaseSupport: 'none',
     evidence: [{ source: 'backend-route', reference: 'apps/api/src/server.ts', summary: 'Racing Data API Hub route returns provider readiness, lineage, quality, and sharing-control metadata.' }],
@@ -237,7 +239,7 @@ export const routes = [
     requiredRoles: 'authenticated',
     supportStatus: 'live-api',
     dataSource: 'Review audit event metadata, approval references, evidence IDs, and integrity references.',
-    backendPaths: backendContractPathsForRoute('audit'),
+    backendPaths: resolveBackendContractPathsForRoute('audit'),
     sharedTypes: ['AuditEventDto'],
     databaseSupport: 'partial',
     evidence: [{ source: 'backend-route', reference: 'apps/api/src/server.ts', summary: 'GET /audit/events exposes audit event records with hash references.' }],
@@ -253,7 +255,7 @@ export const routes = [
     requiredRoles: ['admin', 'operations-admin'],
     supportStatus: 'facade-api',
     dataSource: 'Review facade-level platform health metadata: seeded service records, dependency declarations, approval queue counts, deployment-boundary assumptions, and frontend error signal declarations.',
-    backendPaths: backendContractPathsForRoute('admin'),
+    backendPaths: resolveBackendContractPathsForRoute('admin'),
     sharedTypes: ['PlatformHealthWorkspaceDto'],
     databaseSupport: 'partial',
     evidence: [{ source: 'backend-route', reference: 'apps/api/src/platformObservability.ts', summary: 'Admin page reads platform health and dependency records.' }],
@@ -269,7 +271,7 @@ export const routes = [
     requiredRoles: 'authenticated',
     supportStatus: 'facade-api',
     dataSource: 'Review read-only AI guardrails, protected actions, evidence requirements, and human approval mappings.',
-    backendPaths: backendContractPathsForRoute('settings'),
+    backendPaths: resolveBackendContractPathsForRoute('settings'),
     sharedTypes: ['AIControlPlanePolicyDto'],
     databaseSupport: 'none',
     evidence: [{ source: 'backend-route', reference: 'apps/api/src/server.ts', summary: 'Settings reads AI control-plane policy metadata from the active API facade.' }],
@@ -278,6 +280,7 @@ export const routes = [
 ] as const satisfies readonly RouteSupportMetadata[];
 
 export type AppRoute = typeof routes[number];
+export type DomainRouteId = AppRoute['id'];
 
 export const routeById = Object.fromEntries(routes.map((route) => [route.id, route])) as Record<AppRoute['id'], AppRoute>;
 export const defaultRoute = routeById.dashboard;
