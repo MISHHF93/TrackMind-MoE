@@ -1,17 +1,25 @@
-import { adapterSourceForPath, apiUrl, type ApiAdapterSource } from './paths';
-import { getTenantContext } from '../lib/session';
-import type { ApiResponse } from '@trackmind/shared';
+import type { TenantRacetrackContext } from '@trackmind/shared';
+import { apiUrl } from './paths';
+import { getTenantContext } from '@/auth/session';
+import { isRecord } from '@/lib/utils';
+import type { ApiAdapterSource } from './paths';
+import { adapterSourceForPath } from './paths';
 
 export type AdapterStatus = 'loading' | 'ready' | 'empty' | 'error';
-export type AdapterSource = ApiAdapterSource;
 
 export interface AdapterResult<T> {
   status: AdapterStatus;
-  source: AdapterSource;
+  source: ApiAdapterSource;
   data?: T;
   message?: string;
   requestId?: string;
   emptyReason?: string;
+}
+
+export interface ApiErrorBody {
+  message: string;
+  requestId?: string;
+  status?: number;
 }
 
 const defaultRequestTimeoutMs = 8000;
@@ -25,7 +33,33 @@ function scopedPath(path: string): string {
   return `${url.pathname}${url.search}`;
 }
 
-export async function getJson<T>(path: string, init?: RequestInit): Promise<AdapterResult<T>> {
+function scopeHeaders(tenantContext: TenantRacetrackContext, init?: RequestInit): HeadersInit {
+  return {
+    Accept: 'application/json',
+    'x-trackmind-request-id': `frontend-${Date.now()}`,
+    'x-trackmind-tenant-id': tenantContext.tenantId,
+    'x-trackmind-racetrack-id': tenantContext.racetrackId,
+    'x-trackmind-organization-id': tenantContext.organizationId,
+    'x-trackmind-role': tenantContext.role,
+    ...(init?.headers ?? {}),
+  };
+}
+
+function isApiEnvelope<T>(body: unknown): body is { data: T } {
+  return isRecord(body) && 'data' in body;
+}
+
+function parseError(body: unknown, response: Response): ApiErrorBody {
+  const error = isRecord(body) && isRecord(body.error) ? body.error : undefined;
+  const meta = isRecord(body) && isRecord(body.meta) ? body.meta : undefined;
+  return {
+    message: typeof error?.message === 'string' ? error.message : `${response.status} ${response.statusText}`,
+    requestId: typeof error?.requestId === 'string' ? error.requestId : typeof meta?.requestId === 'string' ? meta.requestId : undefined,
+    status: response.status,
+  };
+}
+
+async function requestJson<T>(path: string, init?: RequestInit): Promise<AdapterResult<T>> {
   const tenantContext = getTenantContext();
   const source = adapterSourceForPath(path);
   const timeoutController = new AbortController();
@@ -38,35 +72,20 @@ export async function getJson<T>(path: string, init?: RequestInit): Promise<Adap
     const response = await fetch(apiUrl(scopedPath(path)), {
       ...init,
       signal: timeoutController.signal,
-      headers: {
-        Accept: 'application/json',
-        'x-trackmind-request-id': `frontend-${Date.now()}`,
-        'x-trackmind-tenant-id': tenantContext.tenantId,
-        'x-trackmind-racetrack-id': tenantContext.racetrackId,
-        'x-trackmind-organization-id': tenantContext.organizationId,
-        'x-trackmind-role': tenantContext.role,
-        ...(init?.headers ?? {}),
-      },
+      headers: scopeHeaders(tenantContext, init),
     });
 
     if (!response.ok) {
       const body = await response.json().catch(() => undefined);
-      const error = isRecord(body) && isRecord(body.error) ? body.error : undefined;
-      const meta = isRecord(body) && isRecord(body.meta) ? body.meta : undefined;
-      return {
-        status: 'error',
-        source,
-        message: typeof error?.message === 'string' ? error.message : `${response.status} ${response.statusText}`,
-        requestId: typeof error?.requestId === 'string' ? error.requestId : typeof meta?.requestId === 'string' ? meta.requestId : undefined,
-      };
+      const error = parseError(body, response);
+      return { status: 'error', source, message: error.message, requestId: error.requestId };
     }
 
     const body = await response.json();
-    const data = isApiEnvelope<T>(body) ? body.data : body as T;
+    const data = isApiEnvelope<T>(body) ? body.data : (body as T);
     if (Array.isArray(data) && data.length === 0) {
       return { status: 'empty', source, data, emptyReason: 'Backend returned an empty array.' };
     }
-
     return { status: 'ready', source, data };
   } catch (error) {
     return {
@@ -78,14 +97,28 @@ export async function getJson<T>(path: string, init?: RequestInit): Promise<Adap
     };
   } finally {
     clearTimeout(timeoutId);
-    init?.signal?.removeEventListener('abort', abortFromCaller);
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+export async function getJson<T>(path: string, init?: RequestInit): Promise<AdapterResult<T>> {
+  return requestJson<T>(path, { ...init, method: 'GET' });
 }
 
-function isApiEnvelope<T>(value: unknown): value is Extract<ApiResponse<T>, { ok: true }> {
-  return typeof value === 'object' && value !== null && 'ok' in value && (value as { ok?: unknown }).ok === true && 'data' in value;
+export async function postJson<T>(path: string, body: unknown, init?: RequestInit): Promise<AdapterResult<T>> {
+  return requestJson<T>(path, {
+    ...init,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    body: JSON.stringify(body),
+  });
 }
+
+export async function patchJson<T>(path: string, body: unknown, init?: RequestInit): Promise<AdapterResult<T>> {
+  return requestJson<T>(path, {
+    ...init,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    body: JSON.stringify(body),
+  });
+}
+

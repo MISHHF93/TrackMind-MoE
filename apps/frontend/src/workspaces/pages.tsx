@@ -1,0 +1,23 @@
+import type { ReactElement } from 'react';
+import { WorkspacePage } from './WorkspacePage';
+
+export const DashboardPage = (): ReactElement => <WorkspacePage routeId="dashboard" />;
+export const RaceDayPage = (): ReactElement => <WorkspacePage routeId="raceDay" />;
+export const EquinePage = (): ReactElement => <WorkspacePage routeId="equine" />;
+export const StewardingPage = (): ReactElement => <WorkspacePage routeId="stewarding" />;
+export const SurfacePage = (): ReactElement => <WorkspacePage routeId="surface" />;
+export const ApprovalsPage = (): ReactElement => <WorkspacePage routeId="approvals" />;
+export const IncidentsPage = (): ReactElement => <WorkspacePage routeId="incidents" />;
+export const EmergencyPage = (): ReactElement => <WorkspacePage routeId="emergency" />;
+export const CompliancePage = (): ReactElement => <WorkspacePage routeId="compliance" />;
+export const SecurityPage = (): ReactElement => <WorkspacePage routeId="security" />;
+export const FacilitiesPage = (): ReactElement => <WorkspacePage routeId="facilities" />;
+export const WorkforcePage = (): ReactElement => <WorkspacePage routeId="workforce" />;
+export const DigitalTwinPage = (): ReactElement => <WorkspacePage routeId="digitalTwin" />;
+export const TicketingPage = (): ReactElement => <WorkspacePage routeId="ticketing" />;
+export const FinancePage = (): ReactElement => <WorkspacePage routeId="finance" />;
+export const FederationPage = (): ReactElement => <WorkspacePage routeId="federation" />;
+export const DataHubPage = (): ReactElement => <WorkspacePage routeId="dataHub" />;
+export const AuditPage = (): ReactElement => <WorkspacePage routeId="audit" />;
+export const AdminPage = (): ReactElement => <WorkspacePage routeId="admin" />;
+export const SettingsPage = (): ReactElement => <WorkspacePage routeId="settings" />;

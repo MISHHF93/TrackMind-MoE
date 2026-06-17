@@ -1,8 +1,8 @@
 import { hasPermission, roleRegistry, type Permission, type Role, type TenantRacetrackContext } from '@trackmind/shared';
 
 export type BackendSupportStatus = 'live-api' | 'facade-api' | 'documented-stub';
-export type DataSourceKind = 'backend-route' | 'shared-contract' | 'database-migration' | 'documented-stub';
 export type NavigationGroup = 'Command' | 'Race Operations' | 'Safety & Facilities' | 'Governance' | 'Business Controls' | 'Data Governance' | 'System Status';
+
 export type DomainRouteId =
   | 'dashboard'
   | 'raceDay'
@@ -18,13 +18,12 @@ export type DomainRouteId =
   | 'dataHub'
   | 'audit'
   | 'admin'
-  | 'settings';
-
-export interface BackendEvidence {
-  source: DataSourceKind;
-  reference: string;
-  summary: string;
-}
+  | 'settings'
+  | 'stewarding'
+  | 'workforce'
+  | 'digitalTwin'
+  | 'surface'
+  | 'emergency';
 
 export interface RouteSupportMetadata {
   id: DomainRouteId;
@@ -37,10 +36,6 @@ export interface RouteSupportMetadata {
   supportStatus: BackendSupportStatus;
   dataSource: string;
   backendPaths: readonly string[];
-  sharedTypes: string[];
-  databaseSupport: 'durable' | 'partial' | 'none';
-  evidence: BackendEvidence[];
-  limitations: string[];
 }
 
 export const backendSupportLabels: Record<BackendSupportStatus, string> = {

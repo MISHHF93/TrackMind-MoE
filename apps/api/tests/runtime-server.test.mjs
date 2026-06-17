@@ -370,6 +370,46 @@ test('runtime protected action POST boundaries require context, human actors, an
   assert.match(serviceAssetChange.body.error.message, /human actor/i);
 });
 
+test('runtime centralized controlled-action requests can be approved through shared approval service', async () => {
+  const state = createApiFacadeState();
+  const securityHeaders = { 'x-trackmind-role': 'security', 'x-trackmind-tenant-id': 'trackmind', 'x-trackmind-racetrack-id': 'main-track' };
+  const requestContext = {
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+    action: 'emergency-action',
+    target: 'incident-1',
+    reason: 'Request emergency action approval from runtime test.',
+    actor: 'security-operator-1',
+    actorType: 'human',
+    roles: ['security'],
+    evidence: ['human-approval-record'],
+  };
+
+  const created = await handleApiRequest('POST', '/api/v1/approvals/controlled-actions', requestContext, state, securityHeaders);
+  assert.equal(created.status, 202);
+  assert.equal(typeof created.body.approvalId, 'string');
+
+  const approved = await handleApiRequest(
+    'POST',
+    `/api/v1/approvals/${created.body.approvalId}/approve`,
+    {
+      actor: 'security-operator-1',
+      actorType: 'human',
+      roles: ['security'],
+      reason: 'Approved from runtime integration test',
+      evidence: ['human-approval-record'],
+    },
+    state,
+    securityHeaders,
+  );
+  assert.equal(approved.status, 200);
+  assert.equal(approved.body.status, 'approved');
+
+  const queue = await handleApiRequest('GET', '/api/v1/approvals/requests', undefined, state, securityHeaders);
+  assert.equal(queue.status, 200);
+  assert.ok(queue.body.some((item) => item.id === created.body.approvalId && item.status === 'approved'));
+});
+
 test('runtime API facade serves Racing Data API Hub core GET routes', async () => {
   const state = createApiFacadeState();
   const routes = [

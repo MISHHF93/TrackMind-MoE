@@ -1,6 +1,6 @@
 {
   "name": "@trackmind/frontend",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,14 +13,26 @@
     "test": "node tests/frontend-contracts.test.mjs"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "1.1.15",
+    "@radix-ui/react-dropdown-menu": "2.1.16",
+    "@radix-ui/react-slot": "1.2.4",
+    "@radix-ui/react-tabs": "1.1.13",
+    "@tanstack/react-query": "5.90.12",
     "@trackmind/shared": "file:../../packages/shared",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lucide-react": "0.561.0",
     "react": "19.2.7",
-    "react-dom": "19.2.7"
+    "react-dom": "19.2.7",
+    "react-router-dom": "7.10.1",
+    "tailwind-merge": "3.4.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "4.1.18",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
+    "tailwindcss": "4.1.18",
     "vite": "8.0.16"
   }
 }

@@ -2,7 +2,7 @@
 
 ## Bounded Context
 
-This is the single canonical frontend shell for TrackMind Nexus. It is backend-contract driven and exposes only live API routes, facade-backed routes, or documented stubs through the central adapter layer.
+This is the single canonical frontend shell for TrackMind Nexus. It is backend-contract driven and exposes live API routes, facade-backed routes, and governed approval workflows through a unified adapter layer.
 
 ## Commands
 
@@ -14,18 +14,27 @@ This is the single canonical frontend shell for TrackMind Nexus. It is backend-c
 ## Architecture Boundary
 
 - One entrypoint: `src/main.tsx`
-- One app component: `src/App.tsx`
-- One router: `src/routes/Router.tsx`
+- One app component: `src/app/App.tsx`
+- One router: `src/app/router.tsx` (React Router)
 - One route inventory: `src/routes/routes.ts`
 - One shell: `src/shell/AppShell.tsx`
-- One design-system component surface: `src/components/ui.tsx`
-- One theme system: `src/theme/tokens.css`
-- One API path source: `src/api/paths.ts`
-- One API adapter layer: `src/api/client.ts` and `src/api/services.ts`
-- No generic mock-domain adapter; route data must flow through `src/api/paths.ts`, `src/api/client.ts`, and `src/api/services.ts`.
-- One shared domain mapping layer: `src/domain`
-- Reusable page, table, metric, status, timeline, alert, approval, recommendation, audit, empty, and loading UI must be imported from `src/components/ui.tsx`; pages should not define local card shells for those patterns.
+- Design system: `src/design/components/*` + `src/design/tokens.css`
+- API layer: `src/api/client.ts`, `src/api/paths.ts`, `src/api/mutations.ts`, `src/api/sse.ts`, `src/api/agents.ts`
+- Session/auth: `src/auth/session.ts`, `src/auth/TenantSessionProvider.tsx`, `src/auth/role-switcher.tsx`
+- Workspace pages: `src/workspaces/*` backed by TanStack Query hooks in `src/hooks/useWorkspaceData.ts`
 
 ## Safety Posture
 
-AI recommendations are advisory only. The UI may view details, open approval records, open audit trails, or open evidence. It does not render direct execution controls for protected race-day, veterinary, emergency, payout, disciplinary, or enforcement actions.
+AI recommendations are advisory only. The UI may view details, open approval records, open audit trails, or open evidence. Protected actions route through approval drafts (`Request … approval`) — never direct execution controls for regulated race-day, veterinary, emergency, payout, disciplinary, or enforcement actions.
+
+## Dev Stack
+
+- React 19 + Vite + TypeScript
+- React Router v7
+- TanStack Query
+- Tailwind CSS v4 + Radix primitives
+
+## Environment
+
+- `VITE_TRACKMIND_API_BASE_URL` — override API base (default `/api/v1` via Vite proxy to port 4000)
+- `VITE_TRACKMIND_AGENTS_URL` — MoE router base (default `/agents` proxy to port 8001)

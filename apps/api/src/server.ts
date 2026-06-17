@@ -123,7 +123,14 @@ function contractForRequest(method: HttpMethod, path: string) {
 }
 
 function isPublicApiRoute(method: HttpMethod, path: string): boolean {
-  return method === 'GET' && path === '/health';
+  return method === 'GET' && (path === '/health' || path === '/events/stream');
+}
+
+function authHeadersFromQuery(method: HttpMethod, path: string, searchParams: URLSearchParams, headers: IncomingMessage['headers'] | undefined): IncomingMessage['headers'] | undefined {
+  if (method !== 'GET' || path !== '/events/stream') return headers;
+  const role = searchParams.get('role');
+  if (!role || headerValue(headers, 'x-trackmind-role')) return headers;
+  return { ...headers, 'x-trackmind-role': role };
 }
 
 function authorizeApiRequest(method: HttpMethod, path: string, headers: IncomingMessage['headers'] | undefined, requestId: string): { status: number; headers?: Record<string, string>; body: JsonBody } | undefined {
@@ -1618,12 +1625,56 @@ function approvalDtoFromControlledRequest(request: ControlledActionRequest): App
   };
 }
 
+function approvalDecisionContext(body: unknown): { input?: Record<string, unknown>; error?: { status: number; body: JsonBody } } {
+  if (!isRecord(body)) return { error: badRequest('JSON object body is required') };
+  const actor = stringValue(body.actorId) ?? stringValue(body.actor);
+  if (!actor) return { error: badRequest('Approval decision context missing: actor') };
+  const roles = actorRoles(body);
+  if (roles.length === 0) return { error: badRequest('Approval decision context missing: roles') };
+  return { input: body };
+}
+
+function handleCentralizedApprovalDecision(
+  approvalRequestId: string,
+  decision: 'approve' | 'reject',
+  body: unknown,
+  approvalService: CentralizedApprovalService,
+  headers?: IncomingMessage['headers'],
+): { status: number; body: JsonBody } | undefined {
+  if (!approvalService.hasRequest(approvalRequestId)) return undefined;
+  const context = approvalDecisionContext(body);
+  if (context.error) return context.error;
+  const input = context.input!;
+  const actor = stringValue(input.actorId) ?? stringValue(input.actor)!;
+  const actorType = actorTypeFrom(input);
+  if (!actorType || actorType !== 'human') return forbidden('Approval decisions require an authenticated human actor');
+  const roles = actorRoles(input);
+  const headerRole = headerValue(headers, 'x-trackmind-role');
+  if (headerRole && isRole(headerRole) && !roles.includes(headerRole)) return forbidden(`Actor roles must include authenticated role ${headerRole}.`);
+  const reason = stringValue(input.reason) ?? (decision === 'approve' ? 'Approved from TrackMind console' : 'Rejected from TrackMind console');
+  const evidence = stringArray(input.evidence);
+  const evidenceWithDefault = evidence.length > 0 ? evidence : ['human-approval-record'];
+  try {
+    const decided = approvalService.decide(
+      approvalRequestId,
+      { id: actor, roles, human: true },
+      decision === 'approve' ? 'approved' : 'rejected',
+      reason,
+      evidenceWithDefault,
+    );
+    return { status: 200, body: { accepted: true, ...approvalDtoFromControlledRequest(decided), mock: false } };
+  } catch (error) {
+    return badRequest(error instanceof Error ? error.message : 'Approval decision could not be recorded');
+  }
+}
+
 export async function handleApiRequest(method: HttpMethod, pathname: string, body?: unknown, state = createApiFacadeState(), headers?: IncomingMessage['headers']): Promise<{ status: number; headers?: Record<string, string>; body: JsonBody }> {
   if (method === 'OPTIONS') return { status: 204, body: null };
   const requestUrl = new URL(pathname, 'http://localhost');
   const path = requestUrl.pathname.startsWith(nexusApiBasePath) ? requestUrl.pathname.slice(nexusApiBasePath.length) || '/' : requestUrl.pathname;
   const requestId = requestUrl.searchParams.get('requestId') ?? createRequestId();
-  const authorization = authorizeApiRequest(method, path, headers, requestId);
+  const authHeaders = authHeadersFromQuery(method, path, requestUrl.searchParams, headers);
+  const authorization = authorizeApiRequest(method, path, authHeaders, requestId);
   if (authorization) return authorization;
   if (method === 'GET' && path === '/health') return { status: 200, headers: { 'x-trackmind-request-id': requestId }, body: { ok: true, service: 'trackmind-api', status: 'healthy', time: now(), requestId, observability: { structuredLogs: true, requestIdHeader: 'x-trackmind-request-id', serviceHealthEndpoint: `${nexusApiBasePath}/platform/health`, eventStreamEndpoint: `${nexusApiBasePath}/events/stream` } } };
   if (method === 'GET' && path === '/approvals/requests') {
@@ -1631,6 +1682,18 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     const seededIds = new Set(seeded.filter(isRecord).map((approval) => stringValue(approval.id ?? approval.approvalRequestId)).filter((id): id is string => Boolean(id)));
     const centralized = state.approvalService.allRequests().filter((request) => !seededIds.has(request.id)).map(approvalDtoFromControlledRequest);
     return { status: 200, body: [...seeded, ...centralized] };
+  }
+  const approvalDecisionMatch = path.match(/^\/approvals\/([^/]+)\/(approve|reject)$/);
+  if (method === 'POST' && approvalDecisionMatch) {
+    const [, approvalRequestId, decision] = approvalDecisionMatch;
+    const centralized = handleCentralizedApprovalDecision(
+      approvalRequestId,
+      decision === 'approve' ? 'approve' : 'reject',
+      body,
+      state.approvalService,
+      authHeaders,
+    );
+    if (centralized) return centralized;
   }
   const apexResponse = await state.apex.handle(method, path, body);
   if (apexResponse) return apexResponse;

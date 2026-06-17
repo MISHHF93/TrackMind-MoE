@@ -6,7 +6,11 @@
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": false,
     "noEmit": true,
-    "types": ["vite/client", "react", "react-dom"]
+    "types": ["vite/client", "react", "react-dom"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"]
 }
