@@ -89,16 +89,18 @@ docker compose -f infra/docker/docker-compose.yml up
 
 ## Vercel frontend deployment
 
-The platform UI is deployed as a Vite-only static frontend. The Vercel build uses `npm run build:vite`, which builds shared contracts, builds `apps/frontend`, and copies the deployable assets into root `dist`. The checked-in `vercel.json` expects:
+The platform UI is deployed as a Vite-only static frontend. The Vercel build uses the root `vercel.json`, which runs:
 
 ```bash
-npm run build:vite
+npm run build -w packages/shared && npm run build -w apps/frontend
 ```
 
-and serves:
+and serves static assets from:
 
 ```text
-dist
+apps/frontend/dist
 ```
+
+If the Vercel project **Root Directory** is set to `apps/frontend`, the nested `apps/frontend/vercel.json` applies instead. `npm run build:vite` still copies output to root `dist` for local smoke checks.
 
 The command-center route (`/dashboard`) is a client-side React route. Backend data is loaded from `VITE_TRACKMIND_API_BASE_URL`, which defaults to `/api/v1` for local Vite proxy development only. On Vercel or any static host, configure `VITE_TRACKMIND_API_BASE_URL` to the public deployed API URL, including `/api/v1`. The frontend project does not deploy the Node API as part of the Vite static build.

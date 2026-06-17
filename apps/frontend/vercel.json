@@ -1,9 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": "npm ci",
-  "buildCommand": "npm run build -w packages/shared && npm run build -w apps/frontend",
-  "outputDirectory": "apps/frontend/dist",
+  "installCommand": "npm ci --prefix ../..",
+  "buildCommand": "npm --prefix ../../packages/shared run build && npm run build",
+  "outputDirectory": "dist",
   "rewrites": [
     {
       "source": "/((?!api/).*)",
