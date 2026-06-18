@@ -320,4 +320,10 @@ export * from './intelligenceCore.js';
 
 export * from './saasModel.js';
 
+export * from './commercialization.js';
+
+export * from './customerManagement.js';
+
+export * from './nexusPlatformExpansion.js';
+
 export * from './platformFoundation.js';

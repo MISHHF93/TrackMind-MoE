@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "trackmind.support-tiers.v1",
+  "tiers": [
+    {
+      "id": "support-standard",
+      "name": "Standard Support",
+      "order": 1,
+      "responseTimeHours": 24,
+      "channels": ["email", "portal"],
+      "successManagerAssigned": false,
+      "quarterlyBusinessReview": false,
+      "slaUptimePercent": 99.5
+    },
+    {
+      "id": "support-professional",
+      "name": "Professional Support",
+      "order": 2,
+      "responseTimeHours": 8,
+      "channels": ["email", "portal", "phone"],
+      "successManagerAssigned": true,
+      "quarterlyBusinessReview": false,
+      "slaUptimePercent": 99.7
+    },
+    {
+      "id": "support-enterprise",
+      "name": "Enterprise Support",
+      "order": 3,
+      "responseTimeHours": 4,
+      "channels": ["email", "portal", "phone", "dedicated-slack"],
+      "successManagerAssigned": true,
+      "quarterlyBusinessReview": true,
+      "slaUptimePercent": 99.9
+    },
+    {
+      "id": "support-national",
+      "name": "National Federation Support",
+      "order": 4,
+      "responseTimeHours": 2,
+      "channels": ["email", "portal", "phone", "dedicated-slack", "executive-hotline"],
+      "successManagerAssigned": true,
+      "quarterlyBusinessReview": true,
+      "slaUptimePercent": 99.95
+    }
+  ]
+}

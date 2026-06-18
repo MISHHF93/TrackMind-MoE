@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "trackmind.mobile-ops.v1",
+  "workflows": [
+    { "id": "mobile-race-day-checklist", "name": "Race Day Checklist", "domain": "race-operations", "offlineCapable": true, "approvalGated": false },
+    { "id": "mobile-incident-report", "name": "Incident Report", "domain": "safety", "offlineCapable": true, "approvalGated": false },
+    { "id": "mobile-approval-review", "name": "Approval Review", "domain": "governance", "offlineCapable": false, "approvalGated": true },
+    { "id": "mobile-welfare-flag", "name": "Welfare Flag Review", "domain": "equine", "offlineCapable": false, "approvalGated": true },
+    { "id": "mobile-compliance-attestation", "name": "Compliance Attestation", "domain": "compliance", "offlineCapable": true, "approvalGated": true }
+  ]
+}

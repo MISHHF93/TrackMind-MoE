@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "trackmind.saas-modules.v1",
+  "modules": [
+    {
+      "key": "dashboard",
+      "name": "Command Dashboard",
+      "description": "Executive and operational dashboard shell.",
+      "requiredEntitlements": [],
+      "featureFlagKey": "platform-health",
+      "enforceable": true
+    },
+    {
+      "key": "raceDay",
+      "name": "Race Day Operations",
+      "description": "Race office, scheduling, paddock, and race-day readiness.",
+      "requiredEntitlements": ["race-office"],
+      "featureFlagKey": "race-day-ops",
+      "enforceable": true
+    },
+    {
+      "key": "surface",
+      "name": "Surface Intelligence",
+      "description": "Track surface measurements, inspections, and maintenance intelligence.",
+      "requiredEntitlements": ["surface-intelligence"],
+      "featureFlagKey": "race-day-ops",
+      "enforceable": true
+    },
+    {
+      "key": "equine",
+      "name": "Equine Intelligence",
+      "description": "Horse profiles, eligibility, and veterinary governance context.",
+      "requiredEntitlements": ["entries"],
+      "featureFlagKey": "equine-intelligence",
+      "enforceable": true
+    },
+    {
+      "key": "analytics",
+      "name": "Executive Analytics",
+      "description": "KPI trends, forecasting readiness, and federation benchmarks.",
+      "requiredEntitlements": ["executive-intelligence"],
+      "featureFlagKey": "analytics",
+      "enforceable": true
+    },
+    {
+      "key": "finance",
+      "name": "Finance Platform",
+      "description": "Revenue, budget, and payout governance workspace.",
+      "requiredEntitlements": ["compliance"],
+      "featureFlagKey": "analytics",
+      "enforceable": true
+    },
+    {
+      "key": "incidents",
+      "name": "Incident Management",
+      "description": "Safety, security, and operational incident workflows.",
+      "requiredEntitlements": ["approvals"],
+      "featureFlagKey": "race-day-ops",
+      "enforceable": true
+    },
+    {
+      "key": "fanExperience",
+      "name": "Fan Experience",
+      "description": "Attendance, guest services, and hospitality operations.",
+      "requiredEntitlements": ["race-office"],
+      "featureFlagKey": "fan-experience",
+      "enforceable": true
+    },
+    {
+      "key": "admin",
+      "name": "Platform Administration",
+      "description": "Tenant administration, feature flags, and platform health.",
+      "requiredEntitlements": ["command-center"],
+      "featureFlagKey": "platform-health",
+      "enforceable": true
+    }
+  ]
+}

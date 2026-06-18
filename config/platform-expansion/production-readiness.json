@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "trackmind.production-readiness.v1",
+  "checks": [
+    { "id": "contracts-complete", "category": "architecture", "title": "API contracts registered", "weight": 10 },
+    { "id": "tenant-isolation", "category": "security", "title": "Tenant isolation enforced", "weight": 15 },
+    { "id": "audit-ledger", "category": "compliance", "title": "Immutable audit ledger", "weight": 10 },
+    { "id": "approval-governance", "category": "governance", "title": "Human approval governance", "weight": 10 },
+    { "id": "observability", "category": "operations", "title": "Platform observability", "weight": 8 },
+    { "id": "test-coverage", "category": "quality", "title": "Automated test suite", "weight": 12 },
+    { "id": "config-driven-licensing", "category": "saas", "title": "Configuration-driven licensing", "weight": 8 },
+    { "id": "migration-schema", "category": "data", "title": "Database migration schema", "weight": 7 },
+    { "id": "ai-safety-boundaries", "category": "ai-governance", "title": "AI advisory-only boundaries", "weight": 10 },
+    { "id": "deployment-artifacts", "category": "devops", "title": "Deployment artifacts", "weight": 10 }
+  ]
+}

@@ -225,6 +225,24 @@ export function permissionForApiEndpoint(input: { method: 'GET' | 'POST'; path: 
   if (input.path.includes('/race') || input.path.includes('/races')) return input.method === 'GET' ? 'read:any' : 'race:request-start';
   if (input.path.includes('/stewarding')) return input.method === 'GET' ? 'read:any' : 'discipline:issue';
   if (input.path.includes('/workflows')) return 'workflow:execute';
+  if (input.path.includes('/subscriptions') || input.path.includes('/onboarding/') || input.path.includes('/billing/')) {
+    return input.method === 'GET' ? 'identity:read' : 'tenant:admin';
+  }
+  if (input.path.includes('/customer-management') || input.path.includes('/customers') || input.path.includes('/customer-')) {
+    return input.method === 'GET' ? 'identity:read' : 'tenant:admin';
+  }
+  if (input.path.includes('/marketplace') || input.path.includes('/white-label') || input.path.includes('/nexus-expansion')) {
+    return input.method === 'GET' ? 'identity:read' : 'tenant:admin';
+  }
+  if (input.path.includes('/reporting/jobs') && input.method === 'POST') return 'compliance:report';
+  if (input.path.includes('/operational-intelligence') || input.path.includes('/equine-welfare') || input.path.includes('/predictive-analytics')
+    || input.path.includes('/reporting') || input.path.includes('/workflow-automation') || input.path.includes('/integration-hub')
+    || input.path.includes('/mobile-operations') || input.path.includes('/compliance-command-center') || input.path.includes('/security-soc')
+    || input.path.includes('/facilities-command') || input.path.includes('/federation-intelligence') || input.path.includes('/ai-governance-registry')
+    || input.path.includes('/knowledge-graph') || input.path.includes('/executive-intelligence') || input.path.includes('/enterprise-readiness')
+    || input.path.includes('/digital-twin/platform')) {
+    return input.method === 'GET' ? 'read:any' : 'workflow:execute';
+  }
   if (input.path.includes('/platform')) return 'service:operate';
   if (input.path.includes('/identity') || input.path.includes('/organizations') || input.path.includes('/tenants') || input.path.includes('/racetracks')) return input.method === 'GET' ? 'identity:read' : 'identity:write';
   if (input.path.includes('/search/')) return 'read:any';

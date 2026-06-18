@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "trackmind.integration-hub.v1",
+  "connectors": [
+    { "id": "timing-system", "name": "Timing System", "category": "race-operations", "protocols": ["rest", "mqtt"], "status": "available", "approvalRequired": true },
+    { "id": "sensor-iot", "name": "Sensor / IoT Gateway", "category": "telemetry", "protocols": ["mqtt", "opc-ua"], "status": "available", "approvalRequired": false },
+    { "id": "camera-vms", "name": "Camera / VMS", "category": "security", "protocols": ["rtsp", "rest"], "status": "available", "approvalRequired": true },
+    { "id": "ticketing-pos", "name": "Ticketing / POS", "category": "commerce", "protocols": ["rest", "webhook"], "status": "available", "approvalRequired": true },
+    { "id": "erp-finance", "name": "ERP / Finance", "category": "finance", "protocols": ["rest", "sftp"], "status": "available", "approvalRequired": true },
+    { "id": "racing-data-provider", "name": "Racing Data Provider", "category": "data", "protocols": ["rest", "graphql"], "status": "available", "approvalRequired": true }
+  ]
+}

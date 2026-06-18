@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "trackmind.reporting.v1",
+  "templates": [
+    { "id": "report-race-day-summary", "name": "Race Day Summary", "category": "operations", "formats": ["pdf", "csv"], "schedulable": true },
+    { "id": "report-compliance-evidence", "name": "Compliance Evidence Package", "category": "compliance", "formats": ["pdf", "json"], "schedulable": true },
+    { "id": "report-welfare-dashboard", "name": "Equine Welfare Dashboard", "category": "equine", "formats": ["pdf", "csv"], "schedulable": true },
+    { "id": "report-executive-kpi", "name": "Executive KPI Scorecard", "category": "executive", "formats": ["pdf", "xlsx"], "schedulable": true },
+    { "id": "report-security-incidents", "name": "Security Incident Summary", "category": "security", "formats": ["pdf", "csv"], "schedulable": true },
+    { "id": "report-federation-benchmark", "name": "Federation Benchmark Report", "category": "federation", "formats": ["pdf"], "schedulable": false }
+  ]
+}

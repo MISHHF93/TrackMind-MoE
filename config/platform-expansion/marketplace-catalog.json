@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "trackmind.marketplace.v1",
+  "categories": [
+    { "id": "operations", "name": "Race Operations", "order": 1 },
+    { "id": "intelligence", "name": "Intelligence & Analytics", "order": 2 },
+    { "id": "governance", "name": "Governance & Compliance", "order": 3 },
+    { "id": "integrations", "name": "Integrations", "order": 4 }
+  ],
+  "listings": [
+    { "moduleKey": "raceDay", "categoryId": "operations", "name": "Race Day Operations", "description": "Race office, scheduling, paddock, and readiness.", "tierMinimum": "starter", "installable": true },
+    { "moduleKey": "surface", "categoryId": "operations", "name": "Surface Intelligence", "description": "Track surface measurements and maintenance intelligence.", "tierMinimum": "professional", "installable": true },
+    { "moduleKey": "equine", "categoryId": "operations", "name": "Equine Intelligence", "description": "Horse profiles, eligibility, and welfare context.", "tierMinimum": "professional", "installable": true },
+    { "moduleKey": "analytics", "categoryId": "intelligence", "name": "Executive Analytics", "description": "KPI trends, forecasting, and federation benchmarks.", "tierMinimum": "professional", "installable": true },
+    { "moduleKey": "predictive", "categoryId": "intelligence", "name": "Predictive Analytics", "description": "Forecasts for operations, attendance, incidents, and welfare.", "tierMinimum": "enterprise", "installable": true },
+    { "moduleKey": "digitalTwin", "categoryId": "intelligence", "name": "Advanced Digital Twin", "description": "Twins for horses, facilities, races, incidents, and operations.", "tierMinimum": "professional", "installable": true },
+    { "moduleKey": "compliance", "categoryId": "governance", "name": "Compliance Command Center", "description": "Controls, evidence, policy mapping, and audit readiness.", "tierMinimum": "professional", "installable": true },
+    { "moduleKey": "aiGovernance", "categoryId": "governance", "name": "AI Governance Registry", "description": "Model inventory, lineage, prompts, and AI observability.", "tierMinimum": "enterprise", "installable": true },
+    { "moduleKey": "integrationHub", "categoryId": "integrations", "name": "Integration Hub", "description": "Timing, sensors, cameras, ticketing, ERP, and racing data.", "tierMinimum": "professional", "installable": true },
+    { "moduleKey": "mobileOps", "categoryId": "operations", "name": "Mobile Operations", "description": "Mobile-ready race-day, incident, approval, and welfare workflows.", "tierMinimum": "enterprise", "installable": true },
+    { "moduleKey": "reporting", "categoryId": "intelligence", "name": "Enterprise Reporting", "description": "Configurable reports, exports, and scheduled reporting.", "tierMinimum": "enterprise", "installable": true },
+    { "moduleKey": "federation", "categoryId": "intelligence", "name": "Federation Intelligence", "description": "Anonymous benchmarking and industry insights.", "tierMinimum": "national", "installable": true }
+  ]
+}

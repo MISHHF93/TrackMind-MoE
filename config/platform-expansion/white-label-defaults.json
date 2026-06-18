@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "trackmind.white-label.v1",
+  "defaults": {
+    "productName": "TrackMind Nexus",
+    "primaryColor": "#1B4D3E",
+    "accentColor": "#C9A227",
+    "logoUrl": "/assets/trackmind-logo.svg",
+    "faviconUrl": "/assets/trackmind-favicon.ico",
+    "customDomain": null,
+    "supportEmail": "support@trackmind.io",
+    "loginBannerText": "Governed racetrack operations platform",
+    "experienceTheme": "professional"
+  },
+  "allowedDomains": ["trackmind.io", "trackmind.app"],
+  "configurableFields": ["productName", "primaryColor", "accentColor", "logoUrl", "faviconUrl", "customDomain", "supportEmail", "loginBannerText", "experienceTheme"]
+}

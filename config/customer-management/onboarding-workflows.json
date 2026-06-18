@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "trackmind.onboarding-workflows.v1",
+  "workflows": [
+    {
+      "id": "workflow-org-launch",
+      "name": "Organization Launch",
+      "scope": "organization",
+      "steps": [
+        { "id": "contract-signed", "title": "Contract signed", "required": true },
+        { "id": "identity-provisioned", "title": "Identity provisioned", "required": true },
+        { "id": "subscription-active", "title": "Subscription activated", "required": true },
+        { "id": "admin-training", "title": "Admin training completed", "required": false }
+      ]
+    },
+    {
+      "id": "workflow-tenant-go-live",
+      "name": "Tenant Go-Live",
+      "scope": "tenant",
+      "steps": [
+        { "id": "tenant-provisioned", "title": "Tenant provisioned", "required": true },
+        { "id": "data-boundary-confirmed", "title": "Data boundary confirmed", "required": true },
+        { "id": "feature-flags-set", "title": "Feature flags configured", "required": true },
+        { "id": "go-live-checklist", "title": "Go-live checklist signed", "required": true }
+      ]
+    },
+    {
+      "id": "workflow-racetrack-onboarding",
+      "name": "Racetrack Onboarding",
+      "scope": "racetrack",
+      "steps": [
+        { "id": "track-metadata", "title": "Track metadata captured", "required": true },
+        { "id": "jurisdiction-mapped", "title": "Jurisdiction mapped", "required": true },
+        { "id": "digital-twin-seed", "title": "Digital Twin seed reviewed", "required": false },
+        { "id": "operational-handoff", "title": "Operational handoff complete", "required": true }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,156 @@
+{
+  "schemaVersion": "trackmind.saas-plans.v1",
+  "plans": [
+    {
+      "id": "plan-starter-monthly",
+      "tierId": "starter",
+      "name": "Starter Monthly",
+      "summary": "Single-racetrack race-office operating core.",
+      "billingInterval": "monthly",
+      "priceUsd": 499,
+      "currency": "USD",
+      "visible": true,
+      "entitlements": {
+        "modules": ["dashboard", "raceDay"],
+        "features": ["race-office", "entries", "scheduling", "approvals"],
+        "workspaces": ["race-office", "approvals", "operations", "audit"],
+        "apiContracts": [
+          "/api/v1/race-operations/race-office",
+          "/api/v1/approvals/requests"
+        ]
+      },
+      "limits": {
+        "racetracks": 1,
+        "tenants": 1,
+        "users": 25,
+        "apiCallsPerMonth": 100000
+      }
+    },
+    {
+      "id": "plan-starter-annual",
+      "tierId": "starter",
+      "name": "Starter Annual",
+      "summary": "Starter tier billed annually with volume discount.",
+      "billingInterval": "annual",
+      "priceUsd": 4990,
+      "currency": "USD",
+      "visible": true,
+      "entitlements": {
+        "modules": ["dashboard", "raceDay"],
+        "features": ["race-office", "entries", "scheduling", "approvals"],
+        "workspaces": ["race-office", "approvals", "operations", "audit"],
+        "apiContracts": [
+          "/api/v1/race-operations/race-office",
+          "/api/v1/approvals/requests"
+        ]
+      },
+      "limits": {
+        "racetracks": 1,
+        "tenants": 1,
+        "users": 25,
+        "apiCallsPerMonth": 100000
+      }
+    },
+    {
+      "id": "plan-professional-monthly",
+      "tierId": "professional",
+      "name": "Professional Monthly",
+      "summary": "Operational intelligence for assets, surfaces, twins, and compliance.",
+      "billingInterval": "monthly",
+      "priceUsd": 1499,
+      "currency": "USD",
+      "visible": true,
+      "entitlements": {
+        "modules": ["dashboard", "raceDay", "surface", "equine", "analytics"],
+        "features": [
+          "race-office", "entries", "scheduling", "approvals",
+          "digital-twins", "surface-intelligence", "asset-registry", "compliance"
+        ],
+        "workspaces": [
+          "race-office", "approvals", "operations", "audit",
+          "digital-twin", "surface", "assets", "compliance"
+        ],
+        "apiContracts": [
+          "/api/v1/race-operations/race-office",
+          "/api/v1/digital-twin/state",
+          "/api/v1/surface-intelligence/workspace",
+          "/api/v1/compliance/control-library"
+        ]
+      },
+      "limits": {
+        "racetracks": 3,
+        "tenants": 2,
+        "users": 100,
+        "apiCallsPerMonth": 500000
+      }
+    },
+    {
+      "id": "plan-enterprise-monthly",
+      "tierId": "enterprise",
+      "name": "Enterprise Monthly",
+      "summary": "Executive command tier with AI governance and multi-racetrack operations.",
+      "billingInterval": "monthly",
+      "priceUsd": 4999,
+      "currency": "USD",
+      "visible": true,
+      "entitlements": {
+        "modules": ["dashboard", "raceDay", "surface", "equine", "analytics", "finance", "incidents", "admin"],
+        "features": [
+          "race-office", "entries", "scheduling", "approvals",
+          "digital-twins", "surface-intelligence", "asset-registry", "compliance",
+          "ai-governance", "executive-intelligence", "command-center"
+        ],
+        "workspaces": [
+          "race-office", "approvals", "operations", "audit",
+          "digital-twin", "surface", "assets", "compliance",
+          "ai-governance", "executive", "platform-health", "emergency", "security"
+        ],
+        "apiContracts": [
+          "/api/v1/operations/command-center",
+          "/api/v1/ai-control-plane/workspace",
+          "/api/v1/platform/health"
+        ]
+      },
+      "limits": {
+        "racetracks": 10,
+        "tenants": 5,
+        "users": 500,
+        "apiCallsPerMonth": 2000000
+      }
+    },
+    {
+      "id": "plan-national-monthly",
+      "tierId": "national",
+      "name": "National Federation Monthly",
+      "summary": "Multi-track federation with governed industry analytics.",
+      "billingInterval": "monthly",
+      "priceUsd": 9999,
+      "currency": "USD",
+      "visible": true,
+      "entitlements": {
+        "modules": ["dashboard", "raceDay", "surface", "equine", "analytics", "finance", "incidents", "admin", "fanExperience"],
+        "features": [
+          "race-office", "entries", "scheduling", "approvals",
+          "digital-twins", "surface-intelligence", "asset-registry", "compliance",
+          "ai-governance", "executive-intelligence", "command-center",
+          "multi-track-federation", "benchmarking", "industry-analytics"
+        ],
+        "workspaces": [
+          "race-office", "approvals", "operations", "audit",
+          "digital-twin", "surface", "assets", "compliance",
+          "ai-governance", "executive", "platform-health", "emergency", "security", "api-hub"
+        ],
+        "apiContracts": [
+          "/api/v1/federation/workspace",
+          "/api/v1/platform/nexus-upgrade"
+        ]
+      },
+      "limits": {
+        "racetracks": 50,
+        "tenants": 25,
+        "users": 2000,
+        "apiCallsPerMonth": 10000000
+      }
+    }
+  ]
+}

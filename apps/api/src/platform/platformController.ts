@@ -16,6 +16,9 @@ import { IncidentService } from './incidentService.js';
 import { kpiCalculationService } from './kpiCalculationService.js';
 import { notificationFramework } from './notificationFramework.js';
 import { createPaddockOperationsWorkspace } from './paddockOperations.js';
+import { createCommercializationServices, handleCommercializationRequest, type CommercializationServices } from './commercializationController.js';
+import { createCustomerManagementServices, handleCustomerManagementRequest, type CustomerManagementServices } from './customerManagementController.js';
+import { createNexusPlatformExpansionServices, handleNexusPlatformExpansionRequest, type NexusPlatformExpansionServices } from './nexusPlatformExpansionController.js';
 import { FeatureFlagService, TenantService } from './tenantService.js';
 
 function createRaceScheduleWorkspace(tenantId: string, racetrackId: string) {
@@ -58,6 +61,9 @@ export interface PlatformServices {
   incidents: IncidentService;
   approvalStore: DurableApprovalStore;
   auditAdapter: ReturnType<typeof createAuditPersistenceAdapter>;
+  commercialization: CommercializationServices;
+  customerManagement: CustomerManagementServices;
+  nexusExpansion: NexusPlatformExpansionServices;
 }
 
 export function createPlatformServices(state: PlatformState): PlatformServices {
@@ -68,7 +74,11 @@ export function createPlatformServices(state: PlatformState): PlatformServices {
   const approvalStore = new DurableApprovalStore(state.approvalService);
   const auditAdapter = createAuditPersistenceAdapter(state.auditLedger as any);
   auditAdapter.syncFromLedger(state.auditEvents as AuditEventDto[]);
-  return { tenant, featureFlags, identity, incidents, approvalStore, auditAdapter };
+  const base = { tenant, featureFlags, identity, incidents, approvalStore, auditAdapter };
+  const commercialization = createCommercializationServices(tenant);
+  const customerManagement = createCustomerManagementServices(tenant, commercialization);
+  const nexusExpansion = createNexusPlatformExpansionServices(tenant, featureFlags, incidents, commercialization, customerManagement, state);
+  return { ...base, commercialization, customerManagement, nexusExpansion };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -85,8 +95,18 @@ export function handlePlatformRequest(
 ): HandlerResult {
   const tenantId = searchParams.get('tenantId') ?? 'trackmind';
   const racetrackId = searchParams.get('racetrackId') ?? 'main-track';
+  const organizationId = searchParams.get('organizationId') ?? 'org-trackmind-network';
   const tenant = platform.tenant.tenants.get(tenantId);
   const tenantFlags = tenant?.featureFlags ?? [];
+
+  const commercializationResponse = handleCommercializationRequest(method, path, body, platform.commercialization, searchParams);
+  if (commercializationResponse) return commercializationResponse;
+
+  const customerManagementResponse = handleCustomerManagementRequest(method, path, body, platform.customerManagement, searchParams);
+  if (customerManagementResponse) return customerManagementResponse;
+
+  const nexusExpansionResponse = handleNexusPlatformExpansionRequest(method, path, body, platform.nexusExpansion, searchParams);
+  if (nexusExpansionResponse) return nexusExpansionResponse;
 
   if (method === 'GET' && path === '/platform/foundation') {
     return { status: 200, body: platform.tenant.workspace() };
@@ -278,9 +298,14 @@ export function handlePlatformRequest(
   }
   if (method === 'GET' && path === '/platform/modules') {
     const modules = ['dashboard', 'raceDay', 'equine', 'analytics', 'fanExperience', 'incidents', 'finance', 'admin'];
+    const entitlement = platform.commercialization.entitlements.evaluate(organizationId, tenantId);
     return {
       status: 200,
-      body: modules.map((key) => ({ moduleKey: key, enabled: platform.featureFlags.isModuleEnabled(key, tenantFlags) })),
+      body: modules.map((key) => {
+        const licensed = entitlement.modules.find((m) => m.key === key)?.enabled ?? false;
+        const flagEnabled = platform.featureFlags.isModuleEnabled(key, tenantFlags);
+        return { moduleKey: key, enabled: licensed && flagEnabled };
+      }),
     };
   }
 
