@@ -5,6 +5,14 @@ export const kpiArtifactType = 'KPI' as const;
 
 export const kpiDomains = [
   'race-day-operations',
+  'racing-calendar',
+  'trainer-management',
+  'jockey-management',
+  'veterinary-operations',
+  'paddock-operations',
+  'steward-operations',
+  'starting-gate-operations',
+  'surface-intelligence',
   'equine-welfare',
   'safety-incidents',
   'stewarding',

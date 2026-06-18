@@ -299,7 +299,7 @@ test('track configuration map contract carries gate work order, GPS verification
 });
 
 test('shared API contract schemas and endpoint catalog cover read-only ROS metadata facade', () => {
-  for (const schemaName of ['RosUniversalSchemaDto','RosStandardizationFrameworkDto','RosSaasTiersDto','RosCertifiedTrackDto','RosDataModelDto','RosIntelligenceCoreDto','RosFederationDto']) {
+  for (const schemaName of ['RosUniversalSchemaDto','RosStandardizationFrameworkDto','RosSaasTiersDto','RosCertifiedTrackDto','RosDataModelDto','RosIntelligenceCoreDto','RosFederationDto','RacingOperatingModelDto','RacingOsConvergenceReportDto','RacingExpansionSequenceDto']) {
     assert.ok(apiContractSchemas[schemaName], `${schemaName} missing`);
   }
 
@@ -321,10 +321,11 @@ test('shared API contract schemas and endpoint catalog cover read-only ROS metad
   assert.deepEqual(validateContract('RosUniversalSchemaDto', rosSchema, apiContractSchemas.RosUniversalSchemaDto), { valid: true, errors: [] });
 
   const endpoints = apiEndpointContracts.filter((endpoint) => endpoint.path.startsWith('/api/v1/ros/'));
-  assert.equal(endpoints.length, 7);
+  assert.equal(endpoints.length, 10);
   assert.ok(endpoints.every((endpoint) => endpoint.method === 'GET'));
   assert.ok(endpoints.every((endpoint) => endpoint.emits.length === 0));
-  assert.ok(endpoints.every((endpoint) => endpoint.audits.includes('ros.metadata.read')));
+  assert.ok(endpoints.filter((endpoint) => endpoint.path.includes('operating-model') || endpoint.path.includes('expansion-sequence') || endpoint.path.includes('convergence')).every((endpoint) => endpoint.audits.some((audit) => audit.startsWith('ros.'))));
+  assert.ok(endpoints.filter((endpoint) => !endpoint.path.includes('operating-model') && !endpoint.path.includes('expansion-sequence') && !endpoint.path.includes('convergence')).every((endpoint) => endpoint.audits.includes('ros.metadata.read')));
   assert.ok(!apiEndpointContracts.some((endpoint) => endpoint.path.startsWith('/api/v1/ros/') && endpoint.method === 'POST'));
 });
 
@@ -400,7 +401,7 @@ test('surface intelligence contract covers scorecards, factor panels, heatmaps, 
   assert.deepEqual(validateContract('SurfaceIntelligenceDto', surfaceWorkspace, apiContractSchemas.SurfaceIntelligenceDto), { valid: true, errors: [] });
   assert.ok(surfaceWorkspace.recommendations.every((item) => item.requiresHumanApproval && item.executionState === 'approval-required'));
   assert.ok(surfaceWorkspace.approvalActions.every((action) => action.locked && action.approvalApi.includes('/approvals/')));
-  assert.ok(apiEndpointContracts.some((endpoint) => endpoint.path === '/api/v1/surface-intelligence/workspace' && endpoint.response === 'SurfaceIntelligenceDto'));
+  assert.ok(apiEndpointContracts.some((endpoint) => endpoint.path === '/api/v1/surface-intelligence/workspace' && endpoint.response === 'SurfaceIntelligenceOperationsDto'));
 });
 
 test('steward center contract covers inquiry evidence, AI boundaries, and human-only final posture', () => {

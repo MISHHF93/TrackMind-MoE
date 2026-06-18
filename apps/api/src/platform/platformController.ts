@@ -8,8 +8,6 @@ import { createAIModelCardRegistry } from './aiRegistryService.js';
 import { createAuditPersistenceAdapter } from './auditAdapter.js';
 import { DurableApprovalStore } from './approvalStore.js';
 import { federationKpiAggregation, executeProviderAdapter } from './dataHubAdapter.js';
-import { createFanExperienceWorkspace, handleFanExperienceRequest, type FanExperienceRequestType } from './fanExperience.js';
-import { createFinancePlatformWorkspace } from './financePlatform.js';
 import { globalSearch } from './globalSearchService.js';
 import { IdentityService } from './identityService.js';
 import { IncidentService } from './incidentService.js';
@@ -251,17 +249,6 @@ export function handlePlatformRequest(
     } catch {
       return { status: 404, body: { ok: false, error: { code: 'not_found', message: 'Incident not found' } } };
     }
-  }
-  if (method === 'GET' && path === '/fan-experience/workspace') {
-    return { status: 200, body: createFanExperienceWorkspace() };
-  }
-  if (method === 'POST' && path === '/fan-experience/requests') {
-    const type = (isRecord(body) ? body.type : 'refund') as FanExperienceRequestType;
-    const payload = isRecord(body) ? body : {};
-    return { status: 202, body: handleFanExperienceRequest(type, payload) };
-  }
-  if (method === 'GET' && path === '/finance/workspace') {
-    return { status: 200, body: createFinancePlatformWorkspace() };
   }
   if (method === 'GET' && path === '/ai-governance/model-registry') {
     return { status: 200, body: createAIModelCardRegistry() };

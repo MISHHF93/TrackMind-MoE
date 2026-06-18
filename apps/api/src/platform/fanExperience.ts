@@ -1,33 +1,30 @@
-import type { FanExperienceWorkspaceDto } from '@trackmind/shared';
+import { createSeededFanExperience } from '../fanExperiencePlatform.js';
+import type { FanExperienceOperationsDto, FanExperienceRequestResultDto } from '@trackmind/shared';
 
 const now = () => new Date().toISOString();
 
-export function createFanExperienceWorkspace(): FanExperienceWorkspaceDto {
-  return {
-    generatedAt: now(),
-    attendance: { current: 8420, capacity: 12000, utilizationPercent: 70 },
-    guestServices: [
-      { id: 'gs-1', category: 'accessibility', status: 'open', waitMinutes: 5 },
-      { id: 'gs-2', category: 'guest-relations', status: 'open', waitMinutes: 12 },
-      { id: 'gs-3', category: 'parking', status: 'watch', waitMinutes: 20 },
-    ],
-    crowdDensity: [
-      { zone: 'grandstand', level: 'medium' },
-      { zone: 'paddock', level: 'high' },
-      { zone: 'club-level', level: 'low' },
-    ],
-    hospitalityReadiness: { score: 91, openIssues: 2 },
-    ticketInventory: { available: 3580, sold: 8420, held: 120 },
-    mock: false,
-  };
+export function createFanExperienceWorkspace(): FanExperienceOperationsDto {
+  return createSeededFanExperience().workspace(now());
 }
 
-export type FanExperienceRequestType = 'refund' | 'parking' | 'crowd-density' | 'accessibility';
+export type FanExperienceRequestType = 'refund' | 'parking' | 'parking-pass' | 'crowd-density' | 'crowd-density-alert' | 'accessibility';
 
-export function handleFanExperienceRequest(type: FanExperienceRequestType, payload: Record<string, unknown>): { ok: true; requestId: string; type: FanExperienceRequestType; status: 'draft-created'; mock: false } {
+export function handleFanExperienceRequest(type: FanExperienceRequestType, payload: Record<string, unknown>): FanExperienceRequestResultDto {
+  const platform = createSeededFanExperience();
+  const category = type === 'accessibility' ? 'accessibility' : type === 'parking' || type === 'parking-pass' ? 'parking' : type === 'crowd-density' || type === 'crowd-density-alert' ? 'crowd-density' : 'refund';
+  const result = platform.createGuestServiceRequest({
+    category,
+    status: 'open',
+    priority: category === 'refund' ? 'high' : 'medium',
+    submittedAt: now(),
+    guestLabel: String(payload.guestLabel ?? 'Guest'),
+    zone: payload.zone ? String(payload.zone) : undefined,
+    waitMinutes: Number(payload.waitMinutes ?? 0),
+    details: String(payload.details ?? `${type} request draft`),
+  });
   return {
     ok: true,
-    requestId: `fan-${type}-${Date.now().toString(36)}`,
+    requestId: result.requestId ?? result.auditId,
     type,
     status: 'draft-created',
     mock: false,

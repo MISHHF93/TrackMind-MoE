@@ -327,3 +327,56 @@ export * from './customerManagement.js';
 export * from './nexusPlatformExpansion.js';
 
 export * from './platformFoundation.js';
+
+export * from './racingCalendar.js';
+export * from './raceCardManagement.js';
+export * from './horseRegistry.js';
+export * from './trainerManagement.js';
+export * from './jockeyManagement.js';
+export * from './veterinaryOperations.js';
+export * from './paddockOperations.js';
+export * from './stewardOperations.js';
+export * from './startingGateOperations.js';
+export * from './surfaceIntelligence.js';
+export * from './fanExperienceOperations.js';
+export * from './racingFinanceOperations.js';
+export * from './equineWelfareIntelligence.js';
+export * from './racingKnowledgeGraph.js';
+export * from './industryIntelligence.js';
+
+export {
+  racingOperatingModelSchemaVersion,
+  racingOperatingDomains,
+  technologyArtifactDimensions,
+  racingOperatingCapabilities,
+  racingOperatingConvergenceInconsistencies,
+  racingExpansionSequence,
+  getRacingOperatingCapability,
+  getRacingOperatingCapabilitiesByWave,
+  buildRacingOperatingModel,
+  buildRacingOperatingConvergenceReport,
+  validateRacingOperatingModel,
+  type RacingOperatingDomain,
+  type TechnologyArtifactDimension,
+  type RacingLifecycleStage,
+  type ArtifactImplementationStatus,
+  type RacingLifecycleTransition,
+  type TechnologyArtifactBinding,
+  type RacingOperatingCapability,
+  type RacingExpansionWave,
+  type RacingOperatingModelDto,
+} from './racingOperatingModel.js';
+export {
+  racingOsConvergenceSchemaVersion,
+  racingOsConvergencePrinciple,
+  racingOsConvergenceDimensions,
+  convergenceDimensionLabels,
+  normalizeCapabilityArtifacts,
+  normalizeRacingOperatingCapabilities,
+  buildDomainConvergenceProfile,
+  buildRacingOsConvergenceReport,
+  validateRacingOsConvergence,
+  type RacingOsConvergenceDimension,
+  type RacingOsDomainConvergenceDto,
+  type RacingOsConvergenceReportDto,
+} from './racingOsConvergence.js';

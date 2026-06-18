@@ -11,6 +11,7 @@ Canonical architecture references:
 - KPI artifacts: `kpi-artifacts.md`
 - Racing Data API Hub: `racing-data-api-hub.md`
 - Implementation traceability: `IMPLEMENTATION_TRACEABILITY.md`
+- Racing operating model and expansion sequence: `racing-operating-model-expansion-sequence.md`
 - Nexus platform expansion (prompts 03–20): `nexus-platform-expansion.md`
 
 Historical or sequence documents should not override shared contracts in `packages/shared/src/` or runtime manifests in `apps/frontend/src/routes/routes.ts` and `packages/shared/src/apiContracts.ts`.

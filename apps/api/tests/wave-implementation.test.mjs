@@ -54,11 +54,15 @@ test('wave 16 fan experience and wave 17 finance workspace', async () => {
   const state = createApiFacadeState();
   const fan = await handleApiRequest('GET', '/api/v1/fan-experience/workspace', undefined, state, adminHeaders);
   assert.equal(fan.status, 200);
+  assert.equal(fan.body.schemaVersion, 'trackmind.fan-experience-operations.v1');
   assert.ok(fan.body.attendance);
+  assert.ok(fan.body.dashboard.panels.length >= 6);
 
   const finance = await handleApiRequest('GET', '/api/v1/finance/workspace', undefined, state, adminHeaders);
   assert.equal(finance.status, 200);
+  assert.equal(finance.body.schemaVersion, 'trackmind.racing-finance-operations.v1');
   assert.ok(finance.body.revenue);
+  assert.ok(finance.body.dashboard.panels.length >= 6);
 });
 
 test('wave 18 model registry and wave 19 federation KPIs', async () => {

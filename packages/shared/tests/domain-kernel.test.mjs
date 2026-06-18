@@ -5,7 +5,7 @@ import { createDigitalTwinRef, createDomainEntityBase, deserializeDomainEntity, 
 const now = '2026-06-13T00:00:00.000Z';
 
 test('domain kernel registers schemas for all core TrackMind Nexus entities', () => {
-  assert.deepEqual(Object.keys(domainSchemas), ['organization','tenant','user','role','permission','racetrack','race-meet','race-day','race','horse','jockey','trainer','owner','veterinarian','steward','barn','stall','track-sector','facility','asset','starting-gate','sensor','vehicle','incident','security-event','workflow','ai-recommendation','approval','audit-event','audit-record','compliance-record']);
+  assert.deepEqual(Object.keys(domainSchemas), ['organization','tenant','user','role','permission','racetrack','race-meet','racing-season','race-day','race-card','race','horse','jockey','trainer','owner','veterinarian','steward','official','fan','data-provider','federation-participant','finance-record','barn','stall','track-sector','facility','asset','starting-gate','sensor','vehicle','incident','security-event','workflow','ai-recommendation','approval','audit-event','audit-record','compliance-record']);
   assert.equal(domainSchemas.horse.schemaVersion, domainKernelSchemaVersion);
   assert.ok(domainSchemas.organization.rules.some((rule) => rule.path === 'tenantIds'));
   assert.ok(domainSchemas.tenant.rules.some((rule) => rule.path === 'isolationMode'));

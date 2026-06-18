@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { apiEndpointContracts, createTrackMindIntelligenceCoreMetadata, createTrackMindNexusUpgradePackage, createUnifiedDataModelWorkspace, hasAnyPermission, hasPermission, isProtectedAction, isRole, nexusApiBasePath, permissionsForApprovalAction, roles, type AIControlPlaneDraftResultDto, type AIControlPlaneWorkspaceDto, type ApiResponse, type ApiResponseMetadata, type ApprovalDto, type AuditEventDto, type KPIArtifact, type Permission, type Role, type RosFacadeStateDto, type TrackCertificationCandidateDto, type TrackMindIntelligenceCoreDto, type TrackMindNexusUpgradePackage, type TUSTwinStandardDto } from '@trackmind/shared';
+import { apiEndpointContracts, createTrackMindIntelligenceCoreMetadata, createTrackMindNexusUpgradePackage, createUnifiedDataModelWorkspace, hasAnyPermission, hasPermission, isProtectedAction, isRole, nexusApiBasePath, permissionsForApprovalAction, roles, buildRacingOperatingModel, buildRacingOperatingConvergenceReport, racingExpansionSequence, type AIControlPlaneDraftResultDto, type AIControlPlaneWorkspaceDto, type ApiResponse, type ApiResponseMetadata, type ApprovalDto, type AuditEventDto, type FederationWorkspaceDto, type KPIArtifact, type Permission, type Role, type RosFacadeStateDto, type TrackCertificationCandidateDto, type TrackMindIntelligenceCoreDto, type TrackMindNexusUpgradePackage, type TUSTwinStandardDto } from '@trackmind/shared';
 import { listAIAgentRegistryRecords, listExpertModelRegistry } from './aiControlPlane.js';
 import { createApiHubEventCatalog } from './apiHubAdapters.js';
 import { CentralizedApprovalService, type ApprovalActor, type ApprovalToken, type ControlledAction, type ControlledActionRequest } from './approvals.js';
@@ -22,6 +22,16 @@ import { createMockPlatformHealth } from './platformObservability.js';
 import { createRacingDataApiFacadeState, createRacingDataDraftResult, createRacingDataLicenseDenied, findRacingDataProvider, findRacingDataStatus, isRacingDataLicenseAllowed, type RacingDataApiFacadeState } from './racingDataApiHub.js';
 import { seededRacingDataLicensePolicyService } from './racingDataLicensePolicy.js';
 import { RaceDayReadinessService } from './raceDayReadiness.js';
+import { createSeededRacingCalendarPlatform, RacingCalendarPlatform } from './racingCalendarPlatform.js';
+import { createSeededRaceCardManagement, RaceCardManagementPlatform } from './raceCardManagement.js';
+import { EquineIntelligencePlatform } from './equineIntelligencePlatform.js';
+import { createSeededHorseRegistry, HorseRegistryPlatform } from './horseRegistryPlatform.js';
+import { createSeededTrainerManagement, TrainerManagementPlatform } from './trainerManagementPlatform.js';
+import { createSeededJockeyManagement, JockeyManagementPlatform } from './jockeyManagementPlatform.js';
+import { createSeededVeterinaryOperations, resolveVeterinaryAccess, VeterinaryOperationsPlatform } from './veterinaryOperationsPlatform.js';
+import { createSeededPaddockOperations, PaddockOperationsPlatform } from './paddockOperationsPlatform.js';
+import { createSeededStewardOperations, StewardOperationsPlatform } from './stewardOperationsPlatform.js';
+import { createSeededStartingGateOperations, StartingGateOperationsPlatform } from './startingGateOperationsPlatform.js';
 import { RaceOperationsPlatform, type RaceTelemetrySignal } from './raceOperationsPlatform.js';
 import { ResponsibleAIGovernancePlatform } from './responsibleAiGovernor.js';
 import { createSafetyIntelligenceController, type SafetyIntelligenceController } from './safetyIntelligence/index.js';
@@ -29,8 +39,13 @@ import { SecurityOperationsService, type SecurityActor } from './securityOps.js'
 import { createApexDomainControllers, type ApexDomainControllers } from './services/controllers.js';
 import { createEquineIntelligenceController, type EquineIntelligenceController } from './services/equine/index.js';
 import { createRtkTelemetryController, type RtkTelemetryController } from './telemetry/index.js';
-import { buildSurfaceIntelligenceWorkspace, type SurfaceIntelligenceInput } from './trackSurface.js';
-import { listStewardInquiries } from './stewarding.js';
+import { createSeededSurfaceIntelligence, SurfaceIntelligencePlatform } from './surfaceIntelligencePlatform.js';
+import { createSeededFanExperience, FanExperiencePlatform } from './fanExperiencePlatform.js';
+import { createSeededRacingFinance, RacingFinancePlatform } from './racingFinancePlatform.js';
+import { createSeededEquineWelfareIntelligence, EquineWelfareIntelligencePlatform } from './equineWelfareIntelligencePlatform.js';
+import { createSeededRacingKnowledgeGraph, RacingKnowledgeGraphPlatform } from './racingKnowledgeGraphPlatform.js';
+import { createSeededIndustryIntelligence, IndustryIntelligencePlatform } from './industryIntelligencePlatform.js';
+import { createAnalyticsWorkspace } from './platform/analyticsService.js';
 import { createTUSStandardizationWorkspace, legacyAssetToTUSAsset } from './tusStandardization.js';
 import { workflowTemplateRegistry } from './workflowEngine.js';
 import { seedWorkforceOperations } from './workforceOperations.js';
@@ -247,25 +262,6 @@ function evidenceKind(evidenceId: string): 'event' | 'audit' | 'digital-twin' | 
   if (evidenceId.startsWith('model:')) return 'model';
   if (evidenceId.startsWith('policy:')) return 'policy';
   return 'document';
-}
-
-function createSurfaceFacadeInput(timestamp: string): SurfaceIntelligenceInput {
-  return {
-    trackId: 'main-track',
-    generatedAt: timestamp,
-    telemetry: [
-      { id: 'surface-live-1', sectionId: 'far-turn', surfaceType: 'dirt', latitude: 38.049, longitude: -76.944, moisture: 27, compaction: 276, drainageRate: 6, cushionDepth: 2.8, temperature: 83, rainfall: 3, observedAt: timestamp },
-      { id: 'surface-live-2', sectionId: 'backstretch', surfaceType: 'dirt', latitude: 38.041, longitude: -76.958, moisture: 14, compaction: 205, drainageRate: 11, cushionDepth: 3.7, temperature: 82, rainfall: 1, observedAt: timestamp },
-      { id: 'surface-live-3', sectionId: 'stretch', surfaceType: 'synthetic', latitude: 38.044, longitude: -76.949, moisture: 12, compaction: 212, drainageRate: 13, cushionDepth: 3.1, temperature: 80, rainfall: 1, observedAt: timestamp },
-    ],
-    inspections: [{ id: 'surface-inspection-live-1', sectionId: 'far-turn', inspectedAt: timestamp, inspector: 'track-superintendent', surfaceType: 'dirt', footingUniformity: 72, divots: 4, standingWater: true, railWear: 3, observations: ['standing water near inside lane'] }],
-    weather: { observedAt: timestamp, rainfallMm: 5, forecastRainMm: 14, temperature: 83, windMph: 12 },
-    maintenanceRecords: [
-      { id: 'surface-maint-live-1', sectionId: 'far-turn', completedAt: timestamp, action: 'harrow', effectiveness: 6, notes: 'partial improvement before additional drainage review' },
-      { id: 'surface-maint-live-2', sectionId: 'backstretch', completedAt: timestamp, action: 'water', effectiveness: 8, notes: 'routine moisture adjustment' },
-    ],
-    observations: [{ id: 'surface-observation-live-1', sectionId: 'far-turn', observedAt: timestamp, role: 'jockey', severity: 4, note: 'uneven footing on turn' }],
-  };
 }
 
 function createServiceBackedFacilitiesWorkspace(timestamp: string): JsonBody {
@@ -766,6 +762,31 @@ export interface ApiFacadeState {
   operations: JsonBody;
   readiness: JsonBody;
   raceOffice: JsonBody;
+  racingCalendar: JsonBody;
+  racingCalendarService: RacingCalendarPlatform;
+  raceCardManagement: JsonBody;
+  raceCardManagementService: RaceCardManagementPlatform;
+  horseRegistry: JsonBody;
+  horseRegistryService: HorseRegistryPlatform;
+  trainerManagement: JsonBody;
+  trainerManagementService: TrainerManagementPlatform;
+  jockeyManagement: JsonBody;
+  jockeyManagementService: JockeyManagementPlatform;
+  veterinaryOperations: JsonBody;
+  veterinaryOperationsService: VeterinaryOperationsPlatform;
+  paddockOperations: JsonBody;
+  paddockOperationsService: PaddockOperationsPlatform;
+  stewardOperations: JsonBody;
+  stewardOperationsService: StewardOperationsPlatform;
+  startingGateOperations: JsonBody;
+  startingGateOperationsService: StartingGateOperationsPlatform;
+  surfaceIntelligenceService: SurfaceIntelligencePlatform;
+  fanExperienceService: FanExperiencePlatform;
+  racingFinanceService: RacingFinancePlatform;
+  equineWelfareIntelligenceService: EquineWelfareIntelligencePlatform;
+  racingKnowledgeGraphService: RacingKnowledgeGraphPlatform;
+  industryIntelligenceService: IndustryIntelligencePlatform;
+  equinePlatform: EquineIntelligencePlatform;
   surface: JsonBody;
   equine: JsonBody;
   barn: JsonBody;
@@ -806,7 +827,8 @@ export function createApiFacadeState(): ApiFacadeState {
   const contract = createCommandCenterContractSnapshot();
   const timestamp = now();
   const artifacts = createUniversalArtifactFrameworkState(timestamp);
-  const barnOperations = createSeededBarnOperationsService().snapshot();
+  const barnService = createSeededBarnOperationsService();
+  const barnOperations = barnService.snapshot();
   const workforce = seedWorkforceOperations({}, 'track-1', timestamp).dashboard(timestamp);
   const facilitiesMaintenance = createServiceBackedFacilitiesWorkspace(timestamp) as any;
   const compliance = seededComplianceLibrary().dashboard();
@@ -818,8 +840,6 @@ export function createApiFacadeState(): ApiFacadeState {
   const intelligenceCore = { ...createTrackMindIntelligenceCoreMetadata(), generatedAt: timestamp, mock: false } satisfies TrackMindIntelligenceCoreDto;
   const platformHealth = { ...createMockPlatformHealth(), generatedAt: timestamp };
   const auditLedger = createAuditLedgerFacade(timestamp, contract.auditEvents) as unknown as { verification?: { valid?: boolean }; complianceExport?: { records?: unknown[] } };
-  const surfaceWorkspace = buildSurfaceIntelligenceWorkspace(createSurfaceFacadeInput(timestamp));
-  const stewardCenter = { inquiries: listStewardInquiries(), permissions: { canRead: true, canDraft: true, canFinalize: false, canExportAppeal: true }, mock: false };
   const security = createSecurityOperationsFacade(timestamp) as any;
   const emergency = createServiceBackedEmergencyWorkspace(workforce, timestamp) as any;
   const raceOperations = createServiceBackedRaceOperations(timestamp);
@@ -838,6 +858,117 @@ export function createApiFacadeState(): ApiFacadeState {
   const kpis = createKPIWorkspace({ generatedAt: timestamp, tenantId: 'trackmind', organizationId: 'org-trackmind-network', racetrackId: 'main-track' });
   const ros = createRosMetadataFacade(timestamp, nexusUpgrade, aiControlPlane as AIControlPlaneWorkspaceDto, tusStandardization, trackCertification);
   const approvalService = new CentralizedApprovalService();
+  const racingCalendarService = createSeededRacingCalendarPlatform({
+    racePlatform: raceOperations.platform,
+    readinessDashboard,
+    approvalService,
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+  }, timestamp);
+  const racingCalendar = racingCalendarService.workspace(timestamp);
+  const raceCardAuditLog = new ImmutableAuditLog();
+  const raceCardManagementService = createSeededRaceCardManagement({
+    racePlatform: raceOperations.platform,
+    approvalService,
+    auditLog: raceCardAuditLog,
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+  }, timestamp);
+  const raceCardManagement = raceCardManagementService.workspace(timestamp);
+  const equineAuditLog = new ImmutableAuditLog();
+  const equinePlatform = new EquineIntelligencePlatform({ auditLog: equineAuditLog });
+  const horseRegistryService = createSeededHorseRegistry({
+    equinePlatform,
+    auditLog: equineAuditLog,
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+  }, timestamp);
+  const horseRegistry = horseRegistryService.workspace(timestamp);
+  const trainerAuditLog = new ImmutableAuditLog();
+  const trainerManagementService = createSeededTrainerManagement({
+    horseRegistry: horseRegistryService,
+    raceCardManagement: raceCardManagementService,
+    barnOperations: barnService,
+    auditLog: trainerAuditLog,
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+  }, timestamp);
+  const trainerManagement = trainerManagementService.workspace(timestamp);
+  const jockeyAuditLog = new ImmutableAuditLog();
+  const jockeyManagementService = createSeededJockeyManagement({
+    raceCardManagement: raceCardManagementService,
+    auditLog: jockeyAuditLog,
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+  }, timestamp);
+  const jockeyManagement = jockeyManagementService.workspace(timestamp);
+  const veterinaryAuditLog = new ImmutableAuditLog();
+  const veterinaryOperationsService = createSeededVeterinaryOperations({
+    equinePlatform,
+    auditLog: veterinaryAuditLog,
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+  }, timestamp);
+  const veterinaryOperations = veterinaryOperationsService.workspace(timestamp, resolveVeterinaryAccess('vet-live', 'veterinarian'));
+  const paddockAuditLog = new ImmutableAuditLog();
+  const paddockOperationsService = createSeededPaddockOperations({
+    raceCardManagement: raceCardManagementService,
+    raceOperations: raceOperations.platform,
+    auditLog: paddockAuditLog,
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+  }, timestamp);
+  const paddockOperations = paddockOperationsService.workspace(timestamp);
+  const stewardAuditLog = new ImmutableAuditLog();
+  const stewardOperationsService = createSeededStewardOperations({
+    auditLog: stewardAuditLog,
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+  });
+  const stewardOperations = stewardOperationsService.workspace(timestamp);
+  const stewardCenter = stewardOperationsService.centerDto(timestamp);
+  const startingGateAuditLog = new ImmutableAuditLog();
+  const startingGateOperationsService = createSeededStartingGateOperations({
+    raceCardManagement: raceCardManagementService,
+    raceOperations: raceOperations.platform,
+    approvalService,
+    auditLog: startingGateAuditLog,
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+  }, timestamp);
+  const startingGateOperations = startingGateOperationsService.workspace(timestamp);
+  const surfaceAuditLog = new ImmutableAuditLog();
+  const surfaceIntelligenceService = createSeededSurfaceIntelligence({
+    approvalService,
+    auditLog: surfaceAuditLog,
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+    trackId: 'main-track',
+  }, timestamp);
+  const surfaceWorkspace = surfaceIntelligenceService.workspace(timestamp);
+  const fanExperienceAuditLog = new ImmutableAuditLog();
+  const fanExperienceService = createSeededFanExperience({
+    approvalService,
+    auditLog: fanExperienceAuditLog,
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+    eventId: 'race-day-main',
+  }, timestamp);
+  const racingFinanceAuditLog = new ImmutableAuditLog();
+  const racingFinanceService = createSeededRacingFinance({
+    approvalService,
+    auditLog: racingFinanceAuditLog,
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+    raceDayId: 'race-day-main',
+  }, timestamp);
+  const equineWelfareAuditLog = new ImmutableAuditLog();
+  const equineWelfareIntelligenceService = createSeededEquineWelfareIntelligence({
+    equinePlatform,
+    auditLog: equineWelfareAuditLog,
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+  }, timestamp);
   const apex = createApexDomainControllers();
   const cqrs = createCqrsCommandHandler();
   const complianceReporting = createComplianceReportingController();
@@ -885,6 +1016,31 @@ export function createApiFacadeState(): ApiFacadeState {
     racingData,
     federation: federation as unknown as Record<string, unknown>,
     equine: equineWorkspace,
+  });
+  const racingKnowledgeGraphService = createSeededRacingKnowledgeGraph({
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+    equineWorkspace,
+    horseRegistryService,
+    trainerManagementService,
+    jockeyManagementService,
+    raceCardManagementService,
+    approvalService,
+    auditEvents: auditEventsForState,
+    securityIncidents: security.incidents,
+    stewardInquiries: stewardCenter.inquiries,
+    facilitiesMaintenance,
+    kpis: kpis.kpis,
+    aiRecommendations: contract.aiRecommendations,
+    equineWelfareIntelligenceService,
+  });
+  const industryIntelligenceService = createSeededIndustryIntelligence({
+    organizationId: 'org-trackmind-network',
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+    federation: federation as FederationWorkspaceDto,
+    analytics: createAnalyticsWorkspace(),
+    kpis: kpis.kpis,
   });
   notificationFramework.publish({ category: 'platform', severity: 'info', title: 'Platform services online', message: 'Foundation platform wave services are active.', targetRoles: ['*'] });
   notificationFramework.publish({ category: 'approval', severity: 'warning', title: 'Pending approvals', message: 'Review approval queue before race-day mutations.', targetRoles: ['admin', 'steward'] });
@@ -991,6 +1147,31 @@ export function createApiFacadeState(): ApiFacadeState {
     },
     readiness: readinessDashboard,
     raceOffice,
+    racingCalendar,
+    racingCalendarService,
+    raceCardManagement,
+    raceCardManagementService,
+    horseRegistry,
+    horseRegistryService,
+    trainerManagement,
+    trainerManagementService,
+    jockeyManagement,
+    jockeyManagementService,
+    veterinaryOperations,
+    veterinaryOperationsService,
+    paddockOperations,
+    paddockOperationsService,
+    stewardOperations,
+    stewardOperationsService,
+    startingGateOperations,
+    startingGateOperationsService,
+    surfaceIntelligenceService,
+    fanExperienceService,
+    racingFinanceService,
+    equineWelfareIntelligenceService,
+    racingKnowledgeGraphService,
+    industryIntelligenceService,
+    equinePlatform,
     surface: { ...surfaceWorkspace, mock: false },
     equine: equineWorkspace,
     barn: { ...barnOperations, mock: false },
@@ -1692,6 +1873,182 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   const authHeaders = authHeadersFromQuery(method, path, requestUrl.searchParams, headers);
   const authorization = authorizeApiRequest(method, path, authHeaders, requestId);
   if (authorization) return authorization;
+  if (method === 'GET' && path === '/race-operations/paddock') {
+    return { status: 200, body: state.paddockOperationsService.workspace(now()) };
+  }
+  if (method === 'GET' && path === '/race-operations/starting-gate') {
+    return { status: 200, body: state.startingGateOperationsService.workspace(now()) };
+  }
+  if (method === 'GET' && path === '/fan-experience/workspace') {
+    return { status: 200, body: state.fanExperienceService.workspace(now()) };
+  }
+  if (method === 'GET' && path === '/fan-experience/dashboard') {
+    return { status: 200, body: state.fanExperienceService.kpiDashboard(now()) };
+  }
+  if (method === 'GET' && path === '/fan-experience/audit-trail') {
+    const eventId = requestUrl.searchParams.get('eventId') ?? undefined;
+    return { status: 200, body: state.fanExperienceService.auditTrail(eventId, now()) };
+  }
+  if (method === 'POST' && path === '/fan-experience/attendance-snapshots') {
+    const input = isRecord(body) ? body : {};
+    return { status: 201, body: state.fanExperienceService.recordAttendanceSnapshot({ recordedAt: String(input.recordedAt ?? now()), current: Number(input.current ?? 0), capacity: Number(input.capacity ?? 12000), entryRatePerMinute: Number(input.entryRatePerMinute ?? 0) }, String(input.actor ?? 'ticketing-manager')) };
+  }
+  if (method === 'POST' && path === '/fan-experience/guest-services') {
+    const input = isRecord(body) ? body : {};
+    return { status: 201, body: state.fanExperienceService.createGuestServiceRequest({ category: (input.category as 'guest-relations' | undefined) ?? 'guest-relations', status: (input.status as 'open' | undefined) ?? 'open', priority: (input.priority as 'medium' | undefined) ?? 'medium', submittedAt: String(input.submittedAt ?? now()), guestLabel: String(input.guestLabel ?? 'Guest'), zone: input.zone ? String(input.zone) : undefined, waitMinutes: Number(input.waitMinutes ?? 0), details: String(input.details ?? 'Guest service request') }, String(input.actor ?? 'ticketing-manager')) };
+  }
+  const fanGuestServiceStatusMatch = path.match(/^\/fan-experience\/guest-services\/([^/]+)\/status$/);
+  if (method === 'POST' && fanGuestServiceStatusMatch) {
+    const input = isRecord(body) ? body : {};
+    return { status: 202, body: state.fanExperienceService.updateGuestServiceStatus(decodeURIComponent(fanGuestServiceStatusMatch[1]), (input.status as 'in-progress' | undefined) ?? 'in-progress', String(input.actor ?? 'ticketing-manager')) };
+  }
+  if (method === 'POST' && path === '/fan-experience/satisfaction-surveys') {
+    const input = isRecord(body) ? body : {};
+    return { status: 201, body: state.fanExperienceService.recordSatisfactionSurvey({ eventId: String(input.eventId ?? 'race-day-main'), submittedAt: String(input.submittedAt ?? now()), overallRating: Number(input.overallRating ?? 4), categories: Array.isArray(input.categories) ? input.categories : [], comment: input.comment ? String(input.comment) : undefined }, String(input.actor ?? 'ticketing-manager')) };
+  }
+  const fanHospitalityIssueMatch = path.match(/^\/fan-experience\/hospitality\/([^/]+)\/issues$/);
+  if (method === 'POST' && fanHospitalityIssueMatch) {
+    const input = isRecord(body) ? body : {};
+    return { status: 201, body: state.fanExperienceService.recordHospitalityIssue(decodeURIComponent(fanHospitalityIssueMatch[1]), String(input.issue ?? 'Hospitality issue reported'), String(input.actor ?? 'ticketing-manager')) };
+  }
+  const fanHospitalityResolveMatch = path.match(/^\/fan-experience\/hospitality\/([^/]+)\/resolve$/);
+  if (method === 'POST' && fanHospitalityResolveMatch) {
+    const input = isRecord(body) ? body : {};
+    return { status: 202, body: state.fanExperienceService.resolveHospitalityIssue(decodeURIComponent(fanHospitalityResolveMatch[1]), String(input.actor ?? 'ticketing-manager')) };
+  }
+  const fanPremiumSeatingMatch = path.match(/^\/fan-experience\/premium-seating\/([^/]+)$/);
+  if (method === 'POST' && fanPremiumSeatingMatch) {
+    const input = isRecord(body) ? body : {};
+    return { status: 202, body: state.fanExperienceService.updatePremiumSeating(decodeURIComponent(fanPremiumSeatingMatch[1]), { seatsSold: input.seatsSold !== undefined ? Number(input.seatsSold) : undefined, seatsHeld: input.seatsHeld !== undefined ? Number(input.seatsHeld) : undefined, status: input.status as 'available' | 'sold-out' | 'held' | 'comp' | undefined, revenueToday: input.revenueToday !== undefined ? Number(input.revenueToday) : undefined }, String(input.actor ?? 'ticketing-manager')) };
+  }
+  if (method === 'POST' && path === '/fan-experience/requests') {
+    const input = isRecord(body) ? body : {};
+    const type = String(input.type ?? 'refund');
+    const category = type === 'accessibility' ? 'accessibility' : type === 'parking' || type === 'parking-pass' ? 'parking' : type === 'crowd-density' || type === 'crowd-density-alert' ? 'crowd-density' : type === 'refund' ? 'refund' : 'guest-relations';
+    const result = state.fanExperienceService.createGuestServiceRequest({
+      category,
+      status: 'open',
+      priority: category === 'refund' ? 'high' : 'medium',
+      submittedAt: now(),
+      guestLabel: String(input.guestLabel ?? 'Guest'),
+      zone: input.zone ? String(input.zone) : undefined,
+      waitMinutes: Number(input.waitMinutes ?? 0),
+      details: String(input.details ?? `${type} request draft`),
+    }, String(input.actor ?? 'ticketing-manager'));
+    return { status: 202, body: { ok: true, requestId: result.requestId ?? result.auditId, type, status: 'draft-created', mock: false } };
+  }
+  if (method === 'GET' && path === '/finance/workspace') {
+    return { status: 200, body: state.racingFinanceService.workspace(now()) };
+  }
+  if (method === 'GET' && path === '/finance/dashboard') {
+    return { status: 200, body: state.racingFinanceService.kpiDashboard(now()) };
+  }
+  if (method === 'GET' && path === '/finance/audit-trail') {
+    const raceDayId = requestUrl.searchParams.get('raceDayId') ?? undefined;
+    return { status: 200, body: state.racingFinanceService.auditTrail(raceDayId, now()) };
+  }
+  if (method === 'POST' && path === '/finance/purses') {
+    const input = isRecord(body) ? body : {};
+    return { status: 201, body: state.racingFinanceService.allocatePurse({ raceId: String(input.raceId ?? ''), raceNumber: input.raceNumber !== undefined ? Number(input.raceNumber) : undefined, allocatedAmount: Number(input.allocatedAmount ?? 0), currency: String(input.currency ?? 'USD'), status: (input.status as 'allocated' | undefined) ?? 'allocated', beneficiaries: Array.isArray(input.beneficiaries) ? input.beneficiaries : [] }, String(input.actor ?? 'finance')) };
+  }
+  const purseReleaseMatch = path.match(/^\/finance\/purses\/([^/]+)\/release$/);
+  if (method === 'POST' && purseReleaseMatch) {
+    const input = isRecord(body) ? body : {};
+    return { status: 202, body: state.racingFinanceService.requestPurseRelease(decodeURIComponent(purseReleaseMatch[1]), String(input.actor ?? 'finance')) };
+  }
+  if (method === 'POST' && path === '/finance/race-day-expenses') {
+    const input = isRecord(body) ? body : {};
+    return { status: 201, body: state.racingFinanceService.recordRaceDayExpense({ raceDayId: String(input.raceDayId ?? 'race-day-main'), category: (input.category as 'race-day' | undefined) ?? 'race-day', label: String(input.label ?? 'Race-day expense'), amount: Number(input.amount ?? 0), currency: String(input.currency ?? 'USD'), status: (input.status as 'recorded' | undefined) ?? 'recorded', incurredAt: String(input.incurredAt ?? now()), vendorId: input.vendorId ? String(input.vendorId) : undefined }, String(input.actor ?? 'finance')) };
+  }
+  if (method === 'POST' && path === '/finance/operational-costs') {
+    const input = isRecord(body) ? body : {};
+    return { status: 201, body: state.racingFinanceService.recordOperationalCost({ costCenter: String(input.costCenter ?? 'race-operations'), label: String(input.label ?? 'Operational cost'), amount: Number(input.amount ?? 0), currency: String(input.currency ?? 'USD'), period: String(input.period ?? now().slice(0, 7)), status: (input.status as 'recorded' | undefined) ?? 'recorded', incurredAt: String(input.incurredAt ?? now()) }, String(input.actor ?? 'finance')) };
+  }
+  if (method === 'POST' && path === '/finance/facility-costs') {
+    const input = isRecord(body) ? body : {};
+    return { status: 201, body: state.racingFinanceService.recordFacilityCost({ facilityId: String(input.facilityId ?? ''), facilityName: String(input.facilityName ?? 'Facility'), workOrderId: input.workOrderId ? String(input.workOrderId) : undefined, label: String(input.label ?? 'Facility cost'), amount: Number(input.amount ?? 0), currency: String(input.currency ?? 'USD'), status: (input.status as 'recorded' | undefined) ?? 'recorded', incurredAt: String(input.incurredAt ?? now()) }, String(input.actor ?? 'finance')) };
+  }
+  if (method === 'POST' && path === '/finance/ticket-revenue') {
+    const input = isRecord(body) ? body : {};
+    return { status: 201, body: state.racingFinanceService.recordTicketRevenue({ raceDayId: String(input.raceDayId ?? 'race-day-main'), source: (input.source as 'ticketing' | undefined) ?? 'ticketing', label: String(input.label ?? 'Ticket revenue'), grossAmount: Number(input.grossAmount ?? 0), netAmount: Number(input.netAmount ?? 0), currency: String(input.currency ?? 'USD'), ticketCount: Number(input.ticketCount ?? 0), recordedAt: String(input.recordedAt ?? now()), fanExperienceReference: input.fanExperienceReference ? String(input.fanExperienceReference) : undefined }, String(input.actor ?? 'finance')) };
+  }
+  if (method === 'POST' && path === '/finance/hospitality-revenue') {
+    const input = isRecord(body) ? body : {};
+    return { status: 201, body: state.racingFinanceService.recordHospitalityRevenue({ raceDayId: String(input.raceDayId ?? 'race-day-main'), packageId: String(input.packageId ?? ''), packageName: String(input.packageName ?? 'Hospitality package'), grossAmount: Number(input.grossAmount ?? 0), netAmount: Number(input.netAmount ?? 0), currency: String(input.currency ?? 'USD'), guestCount: Number(input.guestCount ?? 0), recordedAt: String(input.recordedAt ?? now()), fanExperienceReference: input.fanExperienceReference ? String(input.fanExperienceReference) : undefined }, String(input.actor ?? 'finance')) };
+  }
+  if (method === 'POST' && path === '/finance/payout-requests') {
+    const input = isRecord(body) ? body : {};
+    return { status: 202, body: state.racingFinanceService.requestPayout(Number(input.amount ?? 0), String(input.recipientLabel ?? 'Recipient'), String(input.actor ?? 'finance')) };
+  }
+  if (method === 'GET' && path === '/equine-welfare/workspace') {
+    return { status: 200, body: state.equineWelfareIntelligenceService.workspace(now()) };
+  }
+  if (method === 'GET' && path === '/equine-welfare/dashboard') {
+    return { status: 200, body: state.equineWelfareIntelligenceService.kpiRegistry(now()) };
+  }
+  if (method === 'GET' && path === '/equine-welfare/audit-trail') {
+    const horseId = requestUrl.searchParams.get('horseId') ?? undefined;
+    return { status: 200, body: state.equineWelfareIntelligenceService.auditTrail(horseId, now()) };
+  }
+  const equineWelfareHorseMatch = path.match(/^\/equine-welfare\/horses\/([^/]+)$/);
+  if (method === 'GET' && equineWelfareHorseMatch && !path.endsWith('/retirement-readiness')) {
+    return { status: 200, body: state.equineWelfareIntelligenceService.horseDetail(decodeURIComponent(equineWelfareHorseMatch[1]), now()) };
+  }
+  const equineWelfareRetirementMatch = path.match(/^\/equine-welfare\/horses\/([^/]+)\/retirement-readiness$/);
+  if (method === 'POST' && equineWelfareRetirementMatch) {
+    const input = isRecord(body) ? body : {};
+    return { status: 202, body: state.equineWelfareIntelligenceService.assessRetirementReadiness(decodeURIComponent(equineWelfareRetirementMatch[1]), String(input.actor ?? 'veterinarian')) };
+  }
+  if (method === 'POST' && path === '/equine-welfare/observations') {
+    const input = isRecord(body) ? body : {};
+    return { status: 201, body: state.equineWelfareIntelligenceService.recordObservation({ horseId: String(input.horseId ?? 'horse-1'), observedAt: String(input.observedAt ?? now()), observerId: String(input.observerId ?? input.actor ?? 'veterinarian'), role: (input.role as 'veterinarian' | undefined) ?? 'veterinarian', score: Number(input.score ?? 80), category: String(input.category ?? 'observation'), notes: String(input.notes ?? 'Welfare observation recorded'), interventions: Array.isArray(input.interventions) ? input.interventions : [], evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'veterinarian')) };
+  }
+  const equineWelfareAlertAckMatch = path.match(/^\/equine-welfare\/alerts\/([^/]+)\/acknowledge$/);
+  if (method === 'POST' && equineWelfareAlertAckMatch) {
+    const input = isRecord(body) ? body : {};
+    return { status: 202, body: state.equineWelfareIntelligenceService.acknowledgeAlert(decodeURIComponent(equineWelfareAlertAckMatch[1]), String(input.actor ?? 'veterinarian')) };
+  }
+  const equineWelfareAlertResolveMatch = path.match(/^\/equine-welfare\/alerts\/([^/]+)\/resolve$/);
+  if (method === 'POST' && equineWelfareAlertResolveMatch) {
+    const input = isRecord(body) ? body : {};
+    return { status: 202, body: state.equineWelfareIntelligenceService.resolveAlert(decodeURIComponent(equineWelfareAlertResolveMatch[1]), String(input.actor ?? 'veterinarian')) };
+  }
+  if (method === 'GET' && path === '/knowledge-graph/workspace') {
+    const q = requestUrl.searchParams.get('q') ?? '';
+    return { status: 200, body: state.racingKnowledgeGraphService.workspace(q, now()) };
+  }
+  if (method === 'GET' && path === '/knowledge-graph/search') {
+    const q = requestUrl.searchParams.get('q') ?? '';
+    return { status: 200, body: state.racingKnowledgeGraphService.search(q, now()) };
+  }
+  const knowledgeGraphExploreMatch = path.match(/^\/knowledge-graph\/nodes\/([^/]+)\/relationships$/);
+  if (method === 'GET' && knowledgeGraphExploreMatch) {
+    const depth = Number(requestUrl.searchParams.get('depth') ?? 2);
+    try {
+      return { status: 200, body: state.racingKnowledgeGraphService.explore(decodeURIComponent(knowledgeGraphExploreMatch[1]), depth, now()) };
+    } catch (error) {
+      return { status: 404, body: { ok: false, error: { code: 'not_found', message: error instanceof Error ? error.message : 'Unknown knowledge graph node' } } };
+    }
+  }
+  if (method === 'GET' && path === '/search/global') {
+    const q = requestUrl.searchParams.get('q') ?? '';
+    return { status: 200, body: { query: q, results: state.racingKnowledgeGraphService.globalSearchResults(q), generatedAt: now(), mock: false } };
+  }
+  if (method === 'GET' && path === '/industry-intelligence/workspace') {
+    return { status: 200, body: state.industryIntelligenceService.workspace(now()) };
+  }
+  if (method === 'GET' && path === '/industry-intelligence/dashboard') {
+    return { status: 200, body: state.industryIntelligenceService.dashboard(now()) };
+  }
+  if (method === 'GET' && path === '/industry-intelligence/benchmarks') {
+    return { status: 200, body: state.industryIntelligenceService.benchmarks(now()) };
+  }
+  if (method === 'GET' && path === '/industry-intelligence/trends') {
+    return { status: 200, body: state.industryIntelligenceService.trends(now()) };
+  }
+  if (method === 'GET' && path === '/federation-intelligence/workspace') {
+    return { status: 200, body: state.industryIntelligenceService.federationIntelligenceLegacy(now()) };
+  }
   const platformResponse = handlePlatformRequest(method, path, body, {
     auditEvents: state.auditEvents as AuditEventDto[],
     auditLedger: state.auditLedger as unknown as ImmutableAuditLog,
@@ -1787,18 +2144,382 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   }
   if (method === 'GET' && path === '/races') return { status: 200, body: (state.readiness as any).races ?? [] };
   if (method === 'GET' && path === '/race-day-readiness/dashboard') return { status: 200, body: state.readiness };
+  if (method === 'GET' && path === '/racing-calendar/workspace') return { status: 200, body: state.racingCalendar };
+  if (method === 'GET' && path === '/racing-calendar/seasons') return { status: 200, body: state.racingCalendarService.listSeasonsView(now()) };
+  if (method === 'GET' && path === '/racing-calendar/conflicts') return { status: 200, body: state.racingCalendarService.listConflicts(now()) };
+  if (method === 'GET' && path === '/racing-calendar/kpis') return { status: 200, body: state.racingCalendarService.calendarKpis(now()) };
+  if (method === 'POST' && path === '/racing-calendar/seasons/draft-requests') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.racingCalendarService.requestSeasonDraft({ label: String(input.label ?? 'New Season'), year: Number(input.year ?? new Date().getFullYear()), startsOn: String(input.startsOn ?? now().slice(0, 10)), endsOn: String(input.endsOn ?? now().slice(0, 10)), racetrackId: input.racetrackId }) };
+  }
+  if (method === 'POST' && path === '/racing-calendar/meets/draft-requests') {
+    const input = (body ?? {}) as Record<string, any>;
+    const seasonId = String(input.seasonId ?? (state.racingCalendar as { seasons?: Array<{ id: string }> }).seasons?.[0]?.id ?? '');
+    return { status: 202, body: state.racingCalendarService.requestMeetDraft({ seasonId, name: String(input.name ?? 'Draft Meet'), startsOn: String(input.startsOn ?? now().slice(0, 10)), endsOn: String(input.endsOn ?? now().slice(0, 10)), racetrackId: input.racetrackId }) };
+  }
+  if (method === 'POST' && path === '/racing-calendar/race-days/draft-requests') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.racingCalendarService.requestRaceDayDraft({ meetId: String(input.meetId ?? (state.racingCalendar as { meets?: Array<{ id: string }> }).meets?.[0]?.id ?? ''), raceDate: String(input.raceDate ?? now().slice(0, 10)), racetrackId: input.racetrackId }) };
+  }
+  if (method === 'POST' && path === '/racing-calendar/schedules/draft-requests') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.racingCalendarService.requestScheduleDraft({ raceDayId: String(input.raceDayId ?? (state.racingCalendar as { raceDays?: Array<{ id: string }> }).raceDays?.[0]?.id ?? ''), raceNumber: Number(input.raceNumber ?? 1), scheduledPostTime: String(input.scheduledPostTime ?? now()), surface: input.surface ?? 'dirt', distanceFurlongs: Number(input.distanceFurlongs ?? 6) }) };
+  }
+  if (method === 'GET' && path === '/race-cards/workspace') return { status: 200, body: state.raceCardManagementService.workspace(now()) };
+  if (method === 'GET' && path === '/race-cards/audit-trail') {
+    const cardId = requestUrl.searchParams.get('raceCardId') ?? undefined;
+    return { status: 200, body: { generatedAt: now(), schemaVersion: 'trackmind.race-card-management.v1', records: state.raceCardManagementService.auditTrail(cardId), mock: false } };
+  }
+  const raceCardMatch = path.match(/^\/race-cards\/([^/]+)$/);
+  if (method === 'GET' && raceCardMatch) {
+    const card = state.raceCardManagementService.getCard(decodeURIComponent(raceCardMatch[1]));
+    return card ? { status: 200, body: card } : apiNotFound(`Unknown race card ${raceCardMatch[1]}`, path, requestId);
+  }
+  if (method === 'POST' && path === '/race-cards') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.raceCardManagementService.createCard({ raceDayId: String(input.raceDayId ?? ''), racetrackId: String(input.racetrackId ?? 'main-track'), raceDate: String(input.raceDate ?? now().slice(0, 10)), raceNumber: Number(input.raceNumber ?? 1), scheduledPostTime: String(input.scheduledPostTime ?? now()), conditions: input.conditions, classification: input.classification, purse: input.purse }, String(input.actor ?? 'racing-secretary')) };
+  }
+  const raceCardConditionsMatch = path.match(/^\/race-cards\/([^/]+)\/conditions$/);
+  if (method === 'POST' && raceCardConditionsMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.raceCardManagementService.updateConditions(decodeURIComponent(raceCardConditionsMatch[1]), input.conditions ?? input, String(input.actor ?? 'racing-secretary')) };
+  }
+  const raceCardClassificationMatch = path.match(/^\/race-cards\/([^/]+)\/classification$/);
+  if (method === 'POST' && raceCardClassificationMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.raceCardManagementService.updateClassification(decodeURIComponent(raceCardClassificationMatch[1]), input.classification ?? input, String(input.actor ?? 'racing-secretary')) };
+  }
+  const raceCardPurseMatch = path.match(/^\/race-cards\/([^/]+)\/purse$/);
+  if (method === 'POST' && raceCardPurseMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.raceCardManagementService.updatePurse(decodeURIComponent(raceCardPurseMatch[1]), input.purse ?? input, String(input.actor ?? 'racing-secretary')) };
+  }
+  const raceCardEntriesMatch = path.match(/^\/race-cards\/([^/]+)\/entries$/);
+  if (method === 'POST' && raceCardEntriesMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.raceCardManagementService.addEntry(decodeURIComponent(raceCardEntriesMatch[1]), { horseId: String(input.horseId ?? ''), trainerId: String(input.trainerId ?? ''), ownerIds: Array.isArray(input.ownerIds) ? input.ownerIds.map(String) : [String(input.ownerId ?? 'owner-unknown')], jockeyId: input.jockeyId, programNumber: input.programNumber, weightLbs: input.weightLbs }, String(input.actor ?? 'racing-secretary')) };
+  }
+  const raceCardHorseMatch = path.match(/^\/race-cards\/([^/]+)\/entries\/([^/]+)\/horse$/);
+  if (method === 'POST' && raceCardHorseMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.raceCardManagementService.assignHorse(decodeURIComponent(raceCardHorseMatch[1]), decodeURIComponent(raceCardHorseMatch[2]), String(input.horseId ?? ''), String(input.actor ?? 'racing-secretary')) };
+  }
+  const raceCardTrainerMatch = path.match(/^\/race-cards\/([^/]+)\/entries\/([^/]+)\/trainer$/);
+  if (method === 'POST' && raceCardTrainerMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.raceCardManagementService.assignTrainer(decodeURIComponent(raceCardTrainerMatch[1]), decodeURIComponent(raceCardTrainerMatch[2]), String(input.trainerId ?? ''), String(input.actor ?? 'racing-secretary')) };
+  }
+  const raceCardJockeyMatch = path.match(/^\/race-cards\/([^/]+)\/entries\/([^/]+)\/jockey$/);
+  if (method === 'POST' && raceCardJockeyMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.raceCardManagementService.assignJockey(decodeURIComponent(raceCardJockeyMatch[1]), decodeURIComponent(raceCardJockeyMatch[2]), String(input.jockeyId ?? ''), String(input.actor ?? 'racing-secretary')) };
+  }
+  const raceCardPostMatch = path.match(/^\/race-cards\/([^/]+)\/entries\/([^/]+)\/post-position$/);
+  if (method === 'POST' && raceCardPostMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.raceCardManagementService.assignPostPosition(decodeURIComponent(raceCardPostMatch[1]), decodeURIComponent(raceCardPostMatch[2]), Number(input.postPosition ?? 1), String(input.actor ?? 'racing-secretary')) };
+  }
+  const raceCardLifecycleMatch = path.match(/^\/race-cards\/([^/]+)\/lifecycle-transitions$/);
+  if (method === 'POST' && raceCardLifecycleMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.raceCardManagementService.transitionLifecycle(decodeURIComponent(raceCardLifecycleMatch[1]), String(input.toStatus ?? input.lifecycleStatus ?? 'review') as any, String(input.actor ?? 'racing-secretary'), String(input.reason ?? 'lifecycle transition')) };
+  }
+  if (method === 'GET' && path === '/horse-registry/workspace') return { status: 200, body: state.horseRegistryService.workspace(now()) };
+  if (method === 'GET' && path === '/horse-registry/audit-trail') {
+    const horseId = requestUrl.searchParams.get('horseId') ?? undefined;
+    return { status: 200, body: state.horseRegistryService.auditTrail(horseId, now()) };
+  }
+  const horseRegistryMatch = path.match(/^\/horse-registry\/horses\/([^/]+)$/);
+  if (method === 'GET' && horseRegistryMatch) {
+    const horse = state.horseRegistryService.getHorse(decodeURIComponent(horseRegistryMatch[1]));
+    return horse ? { status: 200, body: horse } : apiNotFound(`Unknown horse ${horseRegistryMatch[1]}`, path, requestId);
+  }
+  const horseTwinSyncMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/twin-sync$/);
+  if (method === 'GET' && horseTwinSyncMatch) {
+    const twin = state.horseRegistryService.twinSyncStatus(decodeURIComponent(horseTwinSyncMatch[1]));
+    return twin ? { status: 200, body: twin } : apiNotFound(`Unknown horse ${horseTwinSyncMatch[1]}`, path, requestId);
+  }
+  if (method === 'POST' && path === '/horse-registry/horses') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.horseRegistryService.registerHorse({ identity: { horseId: String(input.horseId ?? `horse-${Date.now().toString(36)}`), name: String(input.name ?? 'New Horse'), microchipId: input.microchipId, foaled: input.foaled, sex: input.sex, breed: input.breed, racetrackId: input.racetrackId ?? 'main-track', lifecycleStatus: input.lifecycleStatus ?? 'active', tenantId: input.tenantId }, breedingMetadata: input.breedingMetadata, registrationRecords: input.registrationRecords, ownership: input.ownership, trainer: input.trainer }, String(input.actor ?? 'racing-secretary')) };
+  }
+  const horseIdentityMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/identity$/);
+  if (method === 'POST' && horseIdentityMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.horseRegistryService.updateIdentity(decodeURIComponent(horseIdentityMatch[1]), input.identity ?? input, String(input.actor ?? 'racing-secretary')) };
+  }
+  const horseOwnershipMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/ownership$/);
+  if (method === 'POST' && horseOwnershipMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.horseRegistryService.recordOwnership(decodeURIComponent(horseOwnershipMatch[1]), Array.isArray(input.ownershipHistory) ? input.ownershipHistory : input.ownership ?? [], String(input.actor ?? 'racing-secretary')) };
+  }
+  const horseTrainerMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/trainer$/);
+  if (method === 'POST' && horseTrainerMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.horseRegistryService.recordTrainer(decodeURIComponent(horseTrainerMatch[1]), input.trainer ?? input, String(input.actor ?? 'racing-secretary')) };
+  }
+  const horseStableMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/stable$/);
+  if (method === 'POST' && horseStableMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.horseRegistryService.recordStableAssignment(decodeURIComponent(horseStableMatch[1]), { barnId: String(input.barnId ?? ''), stallId: input.stallId, assignedAt: String(input.assignedAt ?? now()), assignedBy: String(input.assignedBy ?? input.actor ?? 'racing-secretary'), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'racing-secretary')) };
+  }
+  const horseBreedingMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/breeding$/);
+  if (method === 'POST' && horseBreedingMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.horseRegistryService.updateBreedingMetadata(decodeURIComponent(horseBreedingMatch[1]), input.breedingMetadata ?? input, String(input.actor ?? 'racing-secretary')) };
+  }
+  const horseRegistrationMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/registrations$/);
+  if (method === 'POST' && horseRegistrationMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.horseRegistryService.addRegistrationRecord(decodeURIComponent(horseRegistrationMatch[1]), input.registration ?? input, String(input.actor ?? 'racing-secretary')) };
+  }
+  const horseRetirementMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/retirement$/);
+  if (method === 'POST' && horseRetirementMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.horseRegistryService.recordRetirement(decodeURIComponent(horseRetirementMatch[1]), { retiredAt: String(input.retiredAt ?? now()), reason: String(input.reason ?? 'retirement'), destination: String(input.destination ?? 'aftercare'), aftercareContact: input.aftercareContact, evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'racing-secretary')) };
+  }
+  if (method === 'GET' && path === '/trainer-management/workspace') return { status: 200, body: state.trainerManagementService.workspace(now()) };
+  if (method === 'GET' && path === '/trainer-management/audit-trail') {
+    const trainerId = requestUrl.searchParams.get('trainerId') ?? undefined;
+    return { status: 200, body: state.trainerManagementService.auditTrail(trainerId, now()) };
+  }
+  const trainerMatch = path.match(/^\/trainer-management\/trainers\/([^/]+)$/);
+  if (method === 'GET' && trainerMatch) {
+    const trainer = state.trainerManagementService.getTrainer(decodeURIComponent(trainerMatch[1]), now());
+    return trainer ? { status: 200, body: trainer } : apiNotFound(`Unknown trainer ${trainerMatch[1]}`, path, requestId);
+  }
+  if (method === 'POST' && path === '/trainer-management/trainers') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.trainerManagementService.createTrainer({ trainerId: String(input.trainerId ?? `trainer-${Date.now().toString(36)}`), displayName: String(input.displayName ?? 'New Trainer'), licensing: input.licensing ?? { licenseNumber: 'PENDING', issuingAuthority: 'State Racing Commission', jurisdiction: 'US-NY', status: 'pending-renewal', issuedOn: now().slice(0, 10), expiresOn: now().slice(0, 10), restrictions: [], evidence: [] }, status: input.status, compliancePosture: input.compliancePosture }, String(input.actor ?? 'racing-secretary')) };
+  }
+  const trainerLicensingMatch = path.match(/^\/trainer-management\/trainers\/([^/]+)\/licensing$/);
+  if (method === 'POST' && trainerLicensingMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.trainerManagementService.updateLicensing(decodeURIComponent(trainerLicensingMatch[1]), input.licensing ?? input, String(input.actor ?? 'racing-secretary')) };
+  }
+  const trainerStableMatch = path.match(/^\/trainer-management\/trainers\/([^/]+)\/stable$/);
+  if (method === 'POST' && trainerStableMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.trainerManagementService.assignStable(decodeURIComponent(trainerStableMatch[1]), { barnId: String(input.barnId ?? ''), barnName: input.barnName, assignedAt: String(input.assignedAt ?? now()), assignedBy: String(input.assignedBy ?? input.actor ?? 'racing-secretary'), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'racing-secretary')) };
+  }
+  const trainerHorseMatch = path.match(/^\/trainer-management\/trainers\/([^/]+)\/horses$/);
+  if (method === 'POST' && trainerHorseMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.trainerManagementService.assignHorse(decodeURIComponent(trainerHorseMatch[1]), { horseId: String(input.horseId ?? ''), horseName: input.horseName, assignedAt: String(input.assignedAt ?? now()), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'racing-secretary')) };
+  }
+  const trainerPerformanceMatch = path.match(/^\/trainer-management\/trainers\/([^/]+)\/performance$/);
+  if (method === 'POST' && trainerPerformanceMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.trainerManagementService.recordPerformance(decodeURIComponent(trainerPerformanceMatch[1]), { raceId: String(input.raceId ?? ''), raceDate: String(input.raceDate ?? now().slice(0, 10)), trackId: String(input.trackId ?? 'main-track'), horseId: String(input.horseId ?? ''), finishPosition: input.finishPosition, earningsCents: input.earningsCents, status: input.status ?? 'entered', evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'racing-secretary')) };
+  }
+  const trainerComplianceMatch = path.match(/^\/trainer-management\/trainers\/([^/]+)\/compliance$/);
+  if (method === 'POST' && trainerComplianceMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.trainerManagementService.updateCompliancePosture(decodeURIComponent(trainerComplianceMatch[1]), input.compliancePosture ?? input, String(input.actor ?? 'compliance-officer')) };
+  }
+  const trainerIncidentMatch = path.match(/^\/trainer-management\/trainers\/([^/]+)\/incidents$/);
+  if (method === 'POST' && trainerIncidentMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.trainerManagementService.linkIncident(decodeURIComponent(trainerIncidentMatch[1]), String(input.incidentId ?? ''), String(input.actor ?? 'steward')) };
+  }
+  if (method === 'GET' && path === '/jockey-management/workspace') return { status: 200, body: state.jockeyManagementService.workspace(now()) };
+  if (method === 'GET' && path === '/jockey-management/dashboard') return { status: 200, body: state.jockeyManagementService.kpiDashboard(now()) };
+  if (method === 'GET' && path === '/jockey-management/audit-trail') {
+    const jockeyId = requestUrl.searchParams.get('jockeyId') ?? undefined;
+    return { status: 200, body: state.jockeyManagementService.auditTrail(jockeyId, now()) };
+  }
+  const jockeyMatch = path.match(/^\/jockey-management\/jockeys\/([^/]+)$/);
+  if (method === 'GET' && jockeyMatch) {
+    const jockey = state.jockeyManagementService.getJockey(decodeURIComponent(jockeyMatch[1]), now());
+    return jockey ? { status: 200, body: jockey } : apiNotFound(`Unknown jockey ${jockeyMatch[1]}`, path, requestId);
+  }
+  if (method === 'POST' && path === '/jockey-management/jockeys') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.jockeyManagementService.createJockey({ jockeyId: String(input.jockeyId ?? `jockey-${Date.now().toString(36)}`), displayName: String(input.displayName ?? 'New Jockey'), licensing: input.licensing ?? { licenseNumber: 'PENDING', issuingAuthority: 'State Racing Commission', jurisdiction: 'US-NY', status: 'pending-renewal', issuedOn: now().slice(0, 10), expiresOn: now().slice(0, 10), restrictions: [], evidence: [] }, status: input.status, eligibility: input.eligibility }, String(input.actor ?? 'racing-secretary')) };
+  }
+  const jockeyLicensingMatch = path.match(/^\/jockey-management\/jockeys\/([^/]+)\/licensing$/);
+  if (method === 'POST' && jockeyLicensingMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.jockeyManagementService.updateLicensing(decodeURIComponent(jockeyLicensingMatch[1]), input.licensing ?? input, String(input.actor ?? 'racing-secretary')) };
+  }
+  const jockeyAssignmentMatch = path.match(/^\/jockey-management\/jockeys\/([^/]+)\/assignments$/);
+  if (method === 'POST' && jockeyAssignmentMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.jockeyManagementService.recordAssignment(decodeURIComponent(jockeyAssignmentMatch[1]), { horseId: String(input.horseId ?? ''), horseName: input.horseName, raceCardId: input.raceCardId, entryId: input.entryId, assignedAt: String(input.assignedAt ?? now()), weightLbs: input.weightLbs, postPosition: input.postPosition, evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'racing-secretary')) };
+  }
+  const jockeyParticipationMatch = path.match(/^\/jockey-management\/jockeys\/([^/]+)\/participation$/);
+  if (method === 'POST' && jockeyParticipationMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.jockeyManagementService.recordParticipation(decodeURIComponent(jockeyParticipationMatch[1]), { raceId: String(input.raceId ?? ''), raceCardId: input.raceCardId, raceDate: String(input.raceDate ?? now().slice(0, 10)), trackId: String(input.trackId ?? 'main-track'), horseId: String(input.horseId ?? ''), finishPosition: input.finishPosition, earningsCents: input.earningsCents, status: input.status ?? 'declared', evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'racing-secretary')) };
+  }
+  const jockeyComplianceMatch = path.match(/^\/jockey-management\/jockeys\/([^/]+)\/compliance$/);
+  if (method === 'POST' && jockeyComplianceMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.jockeyManagementService.addComplianceRecord(decodeURIComponent(jockeyComplianceMatch[1]), { recordedAt: String(input.recordedAt ?? now()), category: input.category ?? 'other', summary: String(input.summary ?? 'Compliance record'), status: input.status ?? 'open', stewardInquiryId: input.stewardInquiryId, evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'steward')) };
+  }
+  const jockeyEligibilityMatch = path.match(/^\/jockey-management\/jockeys\/([^/]+)\/eligibility$/);
+  if (method === 'POST' && jockeyEligibilityMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.jockeyManagementService.updateEligibility(decodeURIComponent(jockeyEligibilityMatch[1]), input.eligibility ?? input, String(input.actor ?? 'steward')) };
+  }
+  const jockeyInquiryMatch = path.match(/^\/jockey-management\/jockeys\/([^/]+)\/inquiries$/);
+  if (method === 'POST' && jockeyInquiryMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.jockeyManagementService.linkStewardInquiry(decodeURIComponent(jockeyInquiryMatch[1]), String(input.inquiryId ?? ''), String(input.actor ?? 'steward')) };
+  }
+  const vetAccess = resolveVeterinaryAccess(
+    stringValue((isRecord(body) ? body.actor : undefined) ?? headerValue(authHeaders, 'x-trackmind-role')),
+    headerValue(authHeaders, 'x-trackmind-role') ?? requestUrl.searchParams.get('role') ?? undefined,
+  );
+  const veterinaryDenied = (error: unknown) => ({
+    status: /require|access|only|Unknown/i.test(error instanceof Error ? error.message : String(error)) ? 403 : 400,
+    body: { ok: false, error: { code: 'veterinary_request_denied', message: error instanceof Error ? error.message : String(error) } },
+  });
+  if (method === 'GET' && path === '/veterinary-operations/workspace') return { status: 200, body: state.veterinaryOperationsService.workspace(now(), vetAccess) };
+  if (method === 'GET' && path === '/veterinary-operations/dashboard') return { status: 200, body: state.veterinaryOperationsService.workspace(now(), vetAccess).dashboard };
+  if (method === 'GET' && path === '/veterinary-operations/audit-trail') {
+    const horseId = requestUrl.searchParams.get('horseId') ?? undefined;
+    return { status: 200, body: state.veterinaryOperationsService.auditTrail(horseId, now()) };
+  }
+  const vetCaseMatch = path.match(/^\/veterinary-operations\/horses\/([^/]+)$/);
+  if (method === 'GET' && vetCaseMatch) {
+    const horseCase = state.veterinaryOperationsService.getCase(decodeURIComponent(vetCaseMatch[1]), vetAccess, now());
+    return horseCase ? { status: 200, body: horseCase } : apiNotFound(`Unknown veterinary case ${vetCaseMatch[1]}`, path, requestId);
+  }
+  const vetRecordMatch = path.match(/^\/veterinary-operations\/horses\/([^/]+)\/records$/);
+  if (method === 'POST' && vetRecordMatch) {
+    try {
+      const input = (body ?? {}) as Record<string, any>;
+      return { status: 201, body: state.veterinaryOperationsService.addRecord(decodeURIComponent(vetRecordMatch[1]), { recordedAt: String(input.recordedAt ?? now()), veterinarianId: String(input.veterinarianId ?? vetAccess.actorId), category: input.category ?? 'other', summary: String(input.summary ?? 'Veterinary record'), privacyScope: input.privacyScope ?? 'veterinary-confidential', diagnosis: input.diagnosis, medication: input.medication, dosage: input.dosage, withdrawalUntil: input.withdrawalUntil, restrictedDetail: input.restrictedDetail, evidence: Array.isArray(input.evidence) ? input.evidence : [] }, vetAccess) };
+    } catch (error) { return veterinaryDenied(error); }
+  }
+  const vetExamMatch = path.match(/^\/veterinary-operations\/horses\/([^/]+)\/examinations$/);
+  if (method === 'POST' && vetExamMatch) {
+    try {
+      const input = (body ?? {}) as Record<string, any>;
+      return { status: 201, body: state.veterinaryOperationsService.addExamination(decodeURIComponent(vetExamMatch[1]), { examinedAt: String(input.examinedAt ?? now()), veterinarianId: String(input.veterinarianId ?? vetAccess.actorId), examType: input.examType ?? 'routine', findingsSummary: String(input.findingsSummary ?? 'Examination recorded'), gaitAssessment: input.gaitAssessment, bodyConditionScore: input.bodyConditionScore, privacyScope: input.privacyScope ?? 'veterinary-confidential', clearanceRequired: Boolean(input.clearanceRequired), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, vetAccess) };
+    } catch (error) { return veterinaryDenied(error); }
+  }
+  const vetObsMatch = path.match(/^\/veterinary-operations\/horses\/([^/]+)\/observations$/);
+  if (method === 'POST' && vetObsMatch) {
+    try {
+      const input = (body ?? {}) as Record<string, any>;
+      return { status: 201, body: state.veterinaryOperationsService.addObservation(decodeURIComponent(vetObsMatch[1]), { observedAt: String(input.observedAt ?? now()), observerId: String(input.observerId ?? vetAccess.actorId), observerRole: String(input.observerRole ?? vetAccess.role), category: input.category ?? 'other', summary: String(input.summary ?? 'Observation recorded'), severity: input.severity ?? 'low', privacyScope: input.privacyScope ?? 'care-team', evidence: Array.isArray(input.evidence) ? input.evidence : [] }, vetAccess) };
+    } catch (error) { return veterinaryDenied(error); }
+  }
+  const vetTreatmentMatch = path.match(/^\/veterinary-operations\/horses\/([^/]+)\/treatments$/);
+  if (method === 'POST' && vetTreatmentMatch) {
+    try {
+      const input = (body ?? {}) as Record<string, any>;
+      return { status: 201, body: state.veterinaryOperationsService.addTreatment(decodeURIComponent(vetTreatmentMatch[1]), { startedAt: String(input.startedAt ?? now()), veterinarianId: String(input.veterinarianId ?? vetAccess.actorId), treatmentType: String(input.treatmentType ?? 'general'), status: input.status ?? 'planned', summary: String(input.summary ?? 'Treatment recorded'), medication: input.medication, privacyScope: input.privacyScope ?? 'veterinary-confidential', linkedRecordIds: Array.isArray(input.linkedRecordIds) ? input.linkedRecordIds : [], evidence: Array.isArray(input.evidence) ? input.evidence : [] }, vetAccess) };
+    } catch (error) { return veterinaryDenied(error); }
+  }
+  const vetTreatmentStatusMatch = path.match(/^\/veterinary-operations\/horses\/([^/]+)\/treatments\/([^/]+)\/status$/);
+  if (method === 'POST' && vetTreatmentStatusMatch) {
+    try {
+      const input = (body ?? {}) as Record<string, any>;
+      return { status: 202, body: state.veterinaryOperationsService.updateTreatmentStatus(decodeURIComponent(vetTreatmentStatusMatch[1]), decodeURIComponent(vetTreatmentStatusMatch[2]), input.status ?? 'completed', vetAccess) };
+    } catch (error) { return veterinaryDenied(error); }
+  }
+  const vetClearanceMatch = path.match(/^\/veterinary-operations\/horses\/([^/]+)\/clearances$/);
+  if (method === 'POST' && vetClearanceMatch) {
+    try {
+      const input = (body ?? {}) as Record<string, any>;
+      return { status: 201, body: state.veterinaryOperationsService.startClearanceWorkflow(decodeURIComponent(vetClearanceMatch[1]), { clearanceType: input.clearanceType ?? 'general', requestedBy: input.requestedBy, requiredApprovals: input.requiredApprovals, evidence: input.evidence }, vetAccess) };
+    } catch (error) { return veterinaryDenied(error); }
+  }
+  const vetClearanceAdvanceMatch = path.match(/^\/veterinary-operations\/horses\/([^/]+)\/clearances\/([^/]+)$/);
+  if (method === 'POST' && vetClearanceAdvanceMatch) {
+    try {
+      const input = (body ?? {}) as Record<string, any>;
+      return { status: 202, body: state.veterinaryOperationsService.advanceClearanceWorkflow(decodeURIComponent(vetClearanceAdvanceMatch[1]), decodeURIComponent(vetClearanceAdvanceMatch[2]), { status: input.status ?? 'in-review', failedRules: input.failedRules, evidence: input.evidence }, vetAccess) };
+    } catch (error) { return veterinaryDenied(error); }
+  }
+  const vetWelfareMatch = path.match(/^\/veterinary-operations\/horses\/([^/]+)\/welfare$/);
+  if (method === 'POST' && vetWelfareMatch) {
+    try {
+      const input = (body ?? {}) as Record<string, any>;
+      return { status: 201, body: state.veterinaryOperationsService.addWelfareIndicator(decodeURIComponent(vetWelfareMatch[1]), { observedAt: String(input.observedAt ?? now()), category: input.category ?? 'behavior', score: Number(input.score ?? 80), band: input.band ?? 'acceptable', summary: String(input.summary ?? 'Welfare indicator recorded'), privacyScope: input.privacyScope ?? 'care-team', evidence: Array.isArray(input.evidence) ? input.evidence : [] }, vetAccess) };
+    } catch (error) { return veterinaryDenied(error); }
+  }
+  if (method === 'GET' && path === '/paddock-operations/workspace') return { status: 200, body: state.paddockOperationsService.workspace(now()) };
+  if (method === 'GET' && path === '/paddock-operations/dashboard') return { status: 200, body: state.paddockOperationsService.kpiDashboard(now()) };
+  if (method === 'GET' && path === '/paddock-operations/audit-trail') {
+    const horseId = requestUrl.searchParams.get('horseId') ?? undefined;
+    return { status: 200, body: state.paddockOperationsService.auditTrail(horseId, now()) };
+  }
+  if (method === 'POST' && path === '/paddock-operations/assignments') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.paddockOperationsService.assignPaddock({ horseId: String(input.horseId ?? ''), horseName: input.horseName, raceId: String(input.raceId ?? ''), raceCardId: input.raceCardId, entryId: input.entryId, saddleCloth: Number(input.saddleCloth ?? 0), paddockSlot: String(input.paddockSlot ?? 'A-1'), postPosition: input.postPosition, jockeyId: input.jockeyId, trainerId: input.trainerId, status: input.status ?? 'waiting', assignedAt: String(input.assignedAt ?? now()), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'racing-secretary')) };
+  }
+  if (method === 'POST' && path === '/paddock-operations/arrivals') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.paddockOperationsService.recordArrival({ horseId: String(input.horseId ?? ''), horseName: input.horseName, raceId: String(input.raceId ?? ''), expectedAt: String(input.expectedAt ?? now()), arrivedAt: input.arrivedAt, fromLocation: String(input.fromLocation ?? 'barn'), escortId: input.escortId, status: input.status ?? 'arrived', evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'paddock-judge')) };
+  }
+  if (method === 'POST' && path === '/paddock-operations/inspections') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.paddockOperationsService.recordInspection({ horseId: String(input.horseId ?? ''), raceId: String(input.raceId ?? ''), inspectedAt: String(input.inspectedAt ?? now()), inspectorId: String(input.inspectorId ?? input.actor ?? 'paddock-judge'), inspectionType: input.inspectionType ?? 'general', status: input.status ?? 'passed', findings: Array.isArray(input.findings) ? input.findings : [], evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'paddock-judge')) };
+  }
+  if (method === 'POST' && path === '/paddock-operations/readiness-checks') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.paddockOperationsService.recordReadinessCheck({ horseId: input.horseId, raceId: String(input.raceId ?? ''), checkedAt: String(input.checkedAt ?? now()), checkedBy: String(input.checkedBy ?? input.actor ?? 'paddock-judge'), domain: input.domain ?? 'horse', status: input.status ?? 'watch', score: Number(input.score ?? 80), blockers: Array.isArray(input.blockers) ? input.blockers : [], evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'paddock-judge')) };
+  }
+  if (method === 'POST' && path === '/paddock-operations/personnel') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.paddockOperationsService.assignPersonnel({ personnelId: String(input.personnelId ?? `person-${Date.now().toString(36)}`), displayName: String(input.displayName ?? 'Paddock Staff'), role: input.role ?? 'other', raceId: input.raceId, paddockZone: input.paddockZone, assignedAt: String(input.assignedAt ?? now()), releasedAt: input.releasedAt, active: input.active ?? true, evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'operations')) };
+  }
+  if (method === 'POST' && path === '/paddock-operations/incidents') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.paddockOperationsService.reportIncident({ raceId: input.raceId, horseId: input.horseId, reportedAt: String(input.reportedAt ?? now()), reportedBy: String(input.reportedBy ?? input.actor ?? 'paddock-judge'), severity: input.severity ?? 'medium', status: input.status ?? 'open', title: String(input.title ?? 'Paddock incident'), summary: String(input.summary ?? 'Incident reported'), zoneId: input.zoneId, stewardInquiryId: input.stewardInquiryId, evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'paddock-judge')) };
+  }
+  const paddockIncidentStatusMatch = path.match(/^\/paddock-operations\/incidents\/([^/]+)\/status$/);
+  if (method === 'POST' && paddockIncidentStatusMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.paddockOperationsService.updateIncidentStatus(decodeURIComponent(paddockIncidentStatusMatch[1]), input.status ?? 'contained', String(input.actor ?? 'steward')) };
+  }
   if (method === 'GET' && path === '/assets/search') return { status: 200, body: state.assetRegistry };
   if (method === 'GET' && path === '/assets/standard') return { status: 200, body: (state.tusStandardization as any).assets };
   if (method === 'GET' && path === '/assets') return { status: 200, body: (state.trackMap as any).assets };
   if (method === 'GET' && path === '/track-sectors') return { status: 200, body: (state.trackMap as any).sectors };
-  if (method === 'GET' && path === '/starting-gate/position') return { status: 200, body: createCommandCenterContractSnapshot().gatePosition };
+  if (method === 'GET' && path === '/starting-gate/position') {
+    return { status: 200, body: { ...state.startingGateOperationsService.gatePosition(), mock: false } };
+  }
   if (method === 'GET' && path === '/race-distance/configuration') return { status: 200, body: createCommandCenterContractSnapshot().raceDistanceConfiguration };
   if (method === 'GET' && path === '/digital-twin/state') return { status: 200, body: createCommandCenterContractSnapshot().digitalTwinState };
   if (method === 'GET' && path === '/digital-twin/standard') return { status: 200, body: (state.tusStandardization as any).twins };
   if (method === 'GET' && path === '/tus/standardization') return { status: 200, body: state.tusStandardization };
   if (method === 'GET' && path === '/tus/data-model') return { status: 200, body: state.unifiedDataModel };
   if (method === 'GET' && path === '/race-operations/race-office') return { status: 200, body: state.raceOffice };
-  if (method === 'GET' && path === '/surface-intelligence/workspace') return { status: 200, body: state.surface };
+  if (method === 'GET' && path === '/surface-intelligence/workspace') return { status: 200, body: state.surfaceIntelligenceService.workspace(now()) };
+  if (method === 'GET' && path === '/surface-intelligence/dashboard') return { status: 200, body: state.surfaceIntelligenceService.kpiDashboard(now()) };
+  if (method === 'GET' && path === '/surface-intelligence/audit-trail') {
+    const sectionId = requestUrl.searchParams.get('sectionId') ?? undefined;
+    return { status: 200, body: state.surfaceIntelligenceService.auditTrail(sectionId, now()) };
+  }
+  if (method === 'POST' && path === '/surface-intelligence/observations') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.surfaceIntelligenceService.recordObservation({ sectionId: String(input.sectionId ?? 'far-turn'), observedAt: String(input.observedAt ?? now()), observerId: String(input.observerId ?? input.actor ?? 'track-superintendent'), role: input.role ?? 'track-superintendent', severity: Number(input.severity ?? 3), note: String(input.note ?? 'Surface observation recorded'), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'track-superintendent')) };
+  }
+  if (method === 'POST' && path === '/surface-intelligence/inspections') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.surfaceIntelligenceService.recordInspection({ sectionId: String(input.sectionId ?? 'far-turn'), inspectedAt: String(input.inspectedAt ?? now()), inspectorId: String(input.inspectorId ?? input.actor ?? 'track-superintendent'), surfaceType: input.surfaceType ?? 'dirt', footingUniformity: Number(input.footingUniformity ?? 80), divots: Number(input.divots ?? 0), standingWater: Boolean(input.standingWater), railWear: Number(input.railWear ?? 0), findings: Array.isArray(input.findings) ? input.findings : [], workflowId: input.workflowId }, String(input.actor ?? 'track-superintendent')) };
+  }
+  if (method === 'POST' && path === '/surface-intelligence/inspection-workflows') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.surfaceIntelligenceService.openInspectionWorkflow({ sectionId: String(input.sectionId ?? 'far-turn'), inspectionType: input.inspectionType ?? 'routine', scheduledAt: String(input.scheduledAt ?? now()), findings: Array.isArray(input.findings) ? input.findings : [] }, String(input.actor ?? 'track-superintendent')) };
+  }
+  if (method === 'POST' && path === '/surface-intelligence/maintenance-events') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.surfaceIntelligenceService.recordMaintenance({ sectionId: String(input.sectionId ?? 'far-turn'), completedAt: String(input.completedAt ?? now()), action: input.action ?? 'harrow', effectiveness: Number(input.effectiveness ?? 7), notes: String(input.notes ?? 'Maintenance completed'), performedBy: String(input.performedBy ?? input.actor ?? 'maintenance-crew'), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'track-superintendent')) };
+  }
+  if (method === 'POST' && path === '/surface-intelligence/operational-actions') {
+    const input = (body ?? {}) as Record<string, any>;
+    try {
+      return { status: 202, body: state.surfaceIntelligenceService.requestOperationalAction({ action: input.action ?? 'harrowing', sectionId: String(input.sectionId ?? 'far-turn'), reason: String(input.reason ?? 'Surface operational action requested'), requestedBy: input.requestedBy ?? input.actor, payload: input.payload }, String(input.actor ?? 'track-superintendent')) };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'surface_request_denied', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
   const equineIntelligenceMatch = path.match(/^\/equine-intelligence\/horses\/([^/]+)$/);
   if (method === 'GET' && equineIntelligenceMatch) {
     const horseId = decodeURIComponent(equineIntelligenceMatch[1]);
@@ -1806,7 +2527,134 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   }
   if (method === 'GET' && path === '/barn-operations/workspace') return { status: 200, body: state.barn };
   if (method === 'GET' && path === '/facilities-maintenance/workspace') return { status: 200, body: state.facilitiesMaintenance };
-  if (method === 'GET' && path === '/stewarding/inquiries') return { status: 200, body: state.steward };
+  if (method === 'GET' && path === '/stewarding/inquiries') return { status: 200, body: state.stewardOperationsService.centerDto(now()) };
+  if (method === 'GET' && path === '/steward-operations/workspace') return { status: 200, body: state.stewardOperationsService.workspace(now()) };
+  if (method === 'GET' && path === '/steward-operations/dashboard') return { status: 200, body: state.stewardOperationsService.kpiDashboard(now()) };
+  if (method === 'GET' && path === '/steward-operations/audit-trail') {
+    const inquiryId = requestUrl.searchParams.get('inquiryId') ?? undefined;
+    return { status: 200, body: state.stewardOperationsService.auditTrail(inquiryId, now()) };
+  }
+  const stewardInquiryMatch = path.match(/^\/steward-operations\/inquiries\/([^/]+)$/);
+  if (method === 'GET' && stewardInquiryMatch) {
+    const inquiry = state.stewardOperationsService.getInquiry(decodeURIComponent(stewardInquiryMatch[1]), now());
+    return inquiry ? { status: 200, body: { ...state.stewardOperationsService.workspace(now()), inquiries: [inquiry], reviews: inquiry.reviews, decisionWorkflows: inquiry.decisionWorkflows } } : apiNotFound(`Unknown steward inquiry ${stewardInquiryMatch[1]}`, path, requestId);
+  }
+  if (method === 'POST' && path === '/steward-operations/inquiries') {
+    const input = (body ?? {}) as Record<string, any>;
+    try {
+      return { status: 201, body: state.stewardOperationsService.openInquiry({ id: String(input.id ?? `inq-${Date.now().toString(36)}`), raceId: String(input.raceId ?? 'race-7'), openedAt: String(input.openedAt ?? now()), openedBy: String(input.openedBy ?? input.actor ?? 'steward'), involvedHorses: Array.isArray(input.involvedHorses) ? input.involvedHorses : [], involvedJockeys: Array.isArray(input.involvedJockeys) ? input.involvedJockeys : [], evidenceReferences: input.evidenceReferences, ruleReferences: input.ruleReferences, incidentsUnderReview: input.incidentsUnderReview, objections: input.objections }, String(input.actor ?? 'steward')) };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'steward_request_denied', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
+  const stewardObjectionMatch = path.match(/^\/steward-operations\/inquiries\/([^/]+)\/objections$/);
+  if (method === 'POST' && stewardObjectionMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.stewardOperationsService.recordObjection(decodeURIComponent(stewardObjectionMatch[1]), { id: String(input.id ?? `obj-${Date.now().toString(36)}`), filedBy: String(input.filedBy ?? input.actor ?? 'steward'), filedAt: String(input.filedAt ?? now()), horseId: input.horseId, jockeyId: input.jockeyId, allegation: String(input.allegation ?? 'Objection filed'), status: input.status ?? 'filed' }, String(input.actor ?? 'steward')) };
+  }
+  const stewardEvidenceMatch = path.match(/^\/steward-operations\/inquiries\/([^/]+)\/evidence$/);
+  if (method === 'POST' && stewardEvidenceMatch && !path.endsWith('/organize')) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.stewardOperationsService.addEvidence(decodeURIComponent(stewardEvidenceMatch[1]), { id: String(input.id ?? `ev-${Date.now().toString(36)}`), kind: input.kind ?? 'official-note', uri: String(input.uri ?? 'audit://evidence'), capturedAt: String(input.capturedAt ?? now()), addedBy: String(input.addedBy ?? input.actor ?? 'steward'), description: String(input.description ?? 'Evidence added'), aiGenerated: input.aiGenerated, sourceSystem: input.sourceSystem, twinContextIds: input.twinContextIds, tags: input.tags, content: input.content }, String(input.actor ?? 'steward')) };
+  }
+  const stewardEvidenceOrganizeMatch = path.match(/^\/steward-operations\/inquiries\/([^/]+)\/evidence\/organize$/);
+  if (method === 'POST' && stewardEvidenceOrganizeMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.stewardOperationsService.organizeEvidence(decodeURIComponent(stewardEvidenceOrganizeMatch[1]), String(input.actor ?? 'steward-ai')) };
+  }
+  const stewardRuleMatch = path.match(/^\/steward-operations\/inquiries\/([^/]+)\/rules$/);
+  if (method === 'POST' && stewardRuleMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.stewardOperationsService.addRuleReference(decodeURIComponent(stewardRuleMatch[1]), { id: String(input.id ?? `rule-${Date.now().toString(36)}`), jurisdiction: String(input.jurisdiction ?? 'NY'), rulebook: String(input.rulebook ?? 'Racing Rules'), section: String(input.section ?? '1'), citation: String(input.citation ?? 'citation'), summary: String(input.summary ?? 'Rule reference') }, String(input.actor ?? 'steward')) };
+  }
+  const stewardInvestigationMatch = path.match(/^\/steward-operations\/inquiries\/([^/]+)\/investigations$/);
+  if (method === 'POST' && stewardInvestigationMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.stewardOperationsService.openInvestigation(decodeURIComponent(stewardInvestigationMatch[1]), { id: String(input.id ?? `investigation-${Date.now().toString(36)}`), openedAt: String(input.openedAt ?? now()), leadStewardId: String(input.leadStewardId ?? input.actor ?? 'steward'), status: input.status ?? 'open', focus: String(input.focus ?? 'Investigation'), taskIds: Array.isArray(input.taskIds) ? input.taskIds : [], evidenceIds: Array.isArray(input.evidenceIds) ? input.evidenceIds : [], ruleIds: Array.isArray(input.ruleIds) ? input.ruleIds : [], digitalTwinRefs: Array.isArray(input.digitalTwinRefs) ? input.digitalTwinRefs : [], workflowDefinitionId: input.workflowDefinitionId, tenantId: input.tenantId }, String(input.actor ?? 'steward')) };
+  }
+  const stewardReviewMatch = path.match(/^\/steward-operations\/inquiries\/([^/]+)\/reviews$/);
+  if (method === 'POST' && stewardReviewMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.stewardOperationsService.recordReview(decodeURIComponent(stewardReviewMatch[1]), { reviewedAt: String(input.reviewedAt ?? now()), reviewerId: String(input.reviewerId ?? input.actor ?? 'steward'), reviewerRole: String(input.reviewerRole ?? 'steward'), reviewType: input.reviewType ?? 'panel', status: input.status ?? 'in-progress', findings: Array.isArray(input.findings) ? input.findings : [], evidenceIds: Array.isArray(input.evidenceIds) ? input.evidenceIds : [], ruleIds: Array.isArray(input.ruleIds) ? input.ruleIds : [] }, String(input.actor ?? 'steward')) };
+  }
+  const stewardRecommendationMatch = path.match(/^\/steward-operations\/inquiries\/([^/]+)\/recommendations$/);
+  if (method === 'POST' && stewardRecommendationMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.stewardOperationsService.createAdvisoryRecommendation(decodeURIComponent(stewardRecommendationMatch[1]), String(input.actor ?? 'steward-ai')) };
+  }
+  const stewardDraftMatch = path.match(/^\/steward-operations\/inquiries\/([^/]+)\/decision-drafts$/);
+  if (method === 'POST' && stewardDraftMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    try {
+      return { status: 201, body: state.stewardOperationsService.saveDraft(decodeURIComponent(stewardDraftMatch[1]), { id: String(input.id ?? `draft-${Date.now().toString(36)}`), authorId: String(input.authorId ?? input.actor ?? 'steward'), authorRole: input.authorRole ?? 'steward', createdAt: String(input.createdAt ?? now()), recommendation: String(input.recommendation ?? 'Draft recommendation'), rationale: String(input.rationale ?? ''), evidenceIds: Array.isArray(input.evidenceIds) ? input.evidenceIds : [], ruleIds: Array.isArray(input.ruleIds) ? input.ruleIds : [], aiGenerated: Boolean(input.aiGenerated) }, String(input.actor ?? 'steward')) };
+    } catch (error) {
+      return { status: 403, body: { ok: false, error: { code: 'steward_request_denied', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
+  const stewardApprovalMatch = path.match(/^\/steward-operations\/inquiries\/([^/]+)\/approvals$/);
+  if (method === 'POST' && stewardApprovalMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.stewardOperationsService.requestApproval(decodeURIComponent(stewardApprovalMatch[1]), { tenantId: String(input.tenantId ?? 'trackmind'), racetrackId: input.racetrackId, requestedBy: String(input.requestedBy ?? input.actor ?? 'steward'), actorType: input.actorType ?? 'human', reason: String(input.reason ?? 'Final steward approval requested'), evidence: Array.isArray(input.evidence) ? input.evidence : [], workflowInstanceId: input.workflowInstanceId, id: input.id, now: input.now }, String(input.actor ?? 'steward')) };
+  }
+  const stewardTimelineMatch = path.match(/^\/steward-operations\/inquiries\/([^/]+)\/timeline$/);
+  if (method === 'POST' && stewardTimelineMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.stewardOperationsService.generateTimeline(decodeURIComponent(stewardTimelineMatch[1]), String(input.actor ?? 'steward')) };
+  }
+  const stewardAppealMatch = path.match(/^\/steward-operations\/inquiries\/([^/]+)\/appeals$/);
+  if (method === 'POST' && stewardAppealMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.stewardOperationsService.exportAppeal(decodeURIComponent(stewardAppealMatch[1]), String(input.actor ?? 'steward-clerk')) };
+  }
+  if (method === 'GET' && path === '/starting-gate-operations/workspace') return { status: 200, body: state.startingGateOperationsService.workspace(now()) };
+  if (method === 'GET' && path === '/starting-gate-operations/dashboard') return { status: 200, body: state.startingGateOperationsService.kpiDashboard(now()) };
+  if (method === 'GET' && path === '/starting-gate-operations/audit-trail') {
+    const raceId = requestUrl.searchParams.get('raceId') ?? undefined;
+    return { status: 200, body: state.startingGateOperationsService.auditTrail(raceId, now()) };
+  }
+  if (method === 'POST' && path === '/starting-gate-operations/assignments') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.startingGateOperationsService.assignGate({ horseId: String(input.horseId ?? ''), horseName: input.horseName, raceId: String(input.raceId ?? ''), entryId: input.entryId, postPosition: input.postPosition, stallNumber: Number(input.stallNumber ?? input.postPosition ?? 0), gateSlot: String(input.gateSlot ?? `G-${input.stallNumber ?? input.postPosition ?? 0}`), status: input.status ?? 'assigned', assignedAt: String(input.assignedAt ?? now()), loadedAt: input.loadedAt, evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'starter')) };
+  }
+  if (method === 'POST' && path === '/starting-gate-operations/readiness-checks') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.startingGateOperationsService.recordReadiness({ raceId: String(input.raceId ?? ''), horseId: input.horseId, checkedAt: String(input.checkedAt ?? now()), checkedBy: String(input.checkedBy ?? input.actor ?? 'starter'), domain: input.domain ?? 'gate', status: input.status ?? 'watch', score: Number(input.score ?? 80), blockers: Array.isArray(input.blockers) ? input.blockers : [], evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'starter')) };
+  }
+  if (method === 'POST' && path === '/starting-gate-operations/delays') {
+    const input = (body ?? {}) as Record<string, any>;
+    try {
+      return { status: 202, body: state.startingGateOperationsService.reportDelay({ raceId: String(input.raceId ?? ''), reportedAt: String(input.reportedAt ?? now()), reportedBy: String(input.reportedBy ?? input.actor ?? 'starter'), reason: String(input.reason ?? 'Gate delay'), estimatedMinutes: Number(input.estimatedMinutes ?? 5), status: input.status ?? 'active', evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'starter')) };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'starting_gate_request_denied', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
+  const gateDelayClearMatch = path.match(/^\/starting-gate-operations\/delays\/([^/]+)\/clear$/);
+  if (method === 'POST' && gateDelayClearMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    try {
+      return { status: 202, body: state.startingGateOperationsService.clearDelay(decodeURIComponent(gateDelayClearMatch[1]), String(input.actor ?? 'starter')) };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'starting_gate_request_denied', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
+  if (method === 'POST' && path === '/starting-gate-operations/incidents') {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 201, body: state.startingGateOperationsService.reportIncident({ raceId: String(input.raceId ?? ''), horseId: input.horseId, stallNumber: input.stallNumber, reportedAt: String(input.reportedAt ?? now()), reportedBy: String(input.reportedBy ?? input.actor ?? 'starter'), severity: input.severity ?? 'medium', status: input.status ?? 'open', title: String(input.title ?? 'Gate incident'), summary: String(input.summary ?? 'Incident reported'), stewardInquiryId: input.stewardInquiryId, evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'starter')) };
+  }
+  const gateIncidentStatusMatch = path.match(/^\/starting-gate-operations\/incidents\/([^/]+)\/status$/);
+  if (method === 'POST' && gateIncidentStatusMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    return { status: 202, body: state.startingGateOperationsService.updateIncidentStatus(decodeURIComponent(gateIncidentStatusMatch[1]), input.status ?? 'contained', String(input.actor ?? 'steward')) };
+  }
+  const gateRaceStartApprovalMatch = path.match(/^\/starting-gate-operations\/races\/([^/]+)\/race-start-approval$/);
+  if (method === 'POST' && gateRaceStartApprovalMatch) {
+    const input = (body ?? {}) as Record<string, any>;
+    try {
+      return { status: 202, body: state.startingGateOperationsService.requestRaceStartApproval(decodeURIComponent(gateRaceStartApprovalMatch[1]), { reason: String(input.reason ?? 'Race start approval requested from starting gate operations'), evidence: Array.isArray(input.evidence) ? input.evidence : ['starting-gate-readiness'], requestedBy: input.requestedBy ?? input.actor }, String(input.actor ?? 'starter')) };
+    } catch (error) {
+      return { status: 403, body: { ok: false, error: { code: 'starting_gate_request_denied', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
   if (method === 'GET' && path === '/security-operations/workspace') return { status: 200, body: state.security };
   if (method === 'GET' && path === '/emergency-operations/workspace') return { status: 200, body: state.emergency };
   if (method === 'GET' && path === '/workforce-operations/workspace') return { status: 200, body: state.workforce };
@@ -1923,6 +2771,9 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'GET' && path === '/ros/data-model') return { status: 200, body: state.ros.dataModel };
   if (method === 'GET' && path === '/ros/intelligence-core') return { status: 200, body: state.ros.intelligenceCore };
   if (method === 'GET' && path === '/ros/federation') return { status: 200, body: state.ros.federation };
+  if (method === 'GET' && path === '/ros/operating-model') return { status: 200, body: buildRacingOperatingModel(now()) };
+  if (method === 'GET' && path === '/ros/convergence') return { status: 200, body: buildRacingOperatingConvergenceReport(now()) };
+  if (method === 'GET' && path === '/ros/expansion-sequence') return { status: 200, body: { generatedAt: now(), schemaVersion: 'trackmind.racing-operating-model.v1' as const, expansionSequence: [...racingExpansionSequence], mock: false as const } };
   if (method === 'GET' && path === '/events/stream') return { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'x-trackmind-request-id': requestId }, body: `event: heartbeat\ndata: ${JSON.stringify({ time: now(), service: 'trackmind-api', requestId })}\n\n` };
   if (method === 'POST' && path === '/racing-data/providers') {
     const input = (body ?? {}) as Record<string, any>;

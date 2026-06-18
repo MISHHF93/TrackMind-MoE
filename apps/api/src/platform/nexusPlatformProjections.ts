@@ -18,7 +18,7 @@ import type {
   SecuritySocWorkspaceDto,
   WorkflowAutomationWorkspaceDto,
 } from '@trackmind/shared';
-import { computeReadinessBand, nexusPlatformExpansionSchemaVersion, welfareBand } from '@trackmind/shared';
+import { computeReadinessBand, buildRacingOperatingConvergenceReport, nexusPlatformExpansionSchemaVersion, welfareBand } from '@trackmind/shared';
 import type { CommandCenterContractSnapshot } from '../commandCenterV1.js';
 import type { ComplianceControlLibrary } from '../complianceControlLibrary.js';
 import type { DigitalTwinRuntime } from '../digitalTwinRuntime.js';
@@ -406,6 +406,7 @@ export function projectEnterpriseReadiness(
   const overallScore = Math.round(scored.reduce((a, c) => a + c.score, 0));
   const partialAreas = scored.filter((c) => c.status === 'partial').length;
   const failAreas = scored.filter((c) => c.status === 'fail').length;
+  const rosConvergence = buildRacingOperatingConvergenceReport();
   return {
     generatedAt: now(),
     schemaVersion: nexusPlatformExpansionSchemaVersion,
@@ -413,9 +414,9 @@ export function projectEnterpriseReadiness(
     readinessBand: computeReadinessBand(overallScore),
     checks: scored,
     convergence: {
-      platformAreas: 20,
-      implementedAreas: 20 - failAreas,
-      partialAreas: partialAreas + failAreas,
+      platformAreas: rosConvergence.summary.totalDomains,
+      implementedAreas: rosConvergence.summary.fullyConvergedDomains,
+      partialAreas: rosConvergence.summary.totalDomains - rosConvergence.summary.fullyConvergedDomains,
       saasOperatingSystem: 'TrackMind Nexus ROS',
     },
     mock: false,

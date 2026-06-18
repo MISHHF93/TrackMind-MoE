@@ -238,7 +238,7 @@ export function permissionForApiEndpoint(input: { method: 'GET' | 'POST'; path: 
   if (input.path.includes('/operational-intelligence') || input.path.includes('/equine-welfare') || input.path.includes('/predictive-analytics')
     || input.path.includes('/reporting') || input.path.includes('/workflow-automation') || input.path.includes('/integration-hub')
     || input.path.includes('/mobile-operations') || input.path.includes('/compliance-command-center') || input.path.includes('/security-soc')
-    || input.path.includes('/facilities-command') || input.path.includes('/federation-intelligence') || input.path.includes('/ai-governance-registry')
+    || input.path.includes('/facilities-command') || input.path.includes('/federation-intelligence') || input.path.includes('/industry-intelligence') || input.path.includes('/ai-governance-registry')
     || input.path.includes('/knowledge-graph') || input.path.includes('/executive-intelligence') || input.path.includes('/enterprise-readiness')
     || input.path.includes('/digital-twin/platform')) {
     return input.method === 'GET' ? 'read:any' : 'workflow:execute';

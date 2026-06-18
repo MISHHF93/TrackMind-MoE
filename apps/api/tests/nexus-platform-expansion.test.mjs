@@ -59,11 +59,16 @@ test('equine welfare delegates to canonical equine service', async () => {
   const state = createApiFacadeState();
   const welfare = await handleApiRequest('GET', '/api/v1/equine-welfare/workspace', undefined, state);
   assert.equal(welfare.status, 200);
+  assert.equal(welfare.body.schemaVersion, 'trackmind.equine-welfare-intelligence.v1');
+  assert.equal(welfare.body.guardrails.aiRecommendationsAdvisoryOnly, true);
+  assert.ok(welfare.body.welfareIndicators.length >= 1);
+  assert.ok(welfare.body.digitalTwinLinks.length >= 1);
   const horse = welfare.body.horses.find((h) => h.horseId === 'horse-1');
   assert.ok(horse, 'expected canonical horse-1 welfare projection');
   const detail = await handleApiRequest('GET', '/api/v1/equine-welfare/horses/horse-1', undefined, state);
   assert.equal(detail.status, 200);
   assert.equal(detail.body.horseId, 'horse-1');
+  assert.ok(detail.body.observations.length >= 1);
 });
 
 test('workflow automation projects canonical template registry', async () => {
@@ -92,6 +97,32 @@ test('equine welfare and predictive analytics workspaces', async () => {
   const predictive = await handleApiRequest('GET', '/api/v1/predictive-analytics/workspace', undefined, state);
   assert.equal(predictive.status, 200);
   assert.equal(predictive.body.forecasts.length, 5);
+});
+
+test('knowledge graph workspace connects canonical racing entities', async () => {
+  process.env.TRACKMIND_REPO_ROOT = repoRoot;
+  const state = createApiFacadeState();
+  const graph = await handleApiRequest('GET', '/api/v1/knowledge-graph/workspace', undefined, state);
+  assert.equal(graph.status, 200);
+  assert.equal(graph.body.schemaVersion, 'trackmind.racing-knowledge-graph.v1');
+  assert.ok(graph.body.entityCounts.horses >= 1);
+  assert.ok(graph.body.entityCounts.trainers >= 1);
+  assert.ok(graph.body.entityCounts.kpis >= 1);
+});
+
+test('industry intelligence workspace enforces anonymized federation governance', async () => {
+  process.env.TRACKMIND_REPO_ROOT = repoRoot;
+  const state = createApiFacadeState();
+  const workspace = await handleApiRequest('GET', '/api/v1/industry-intelligence/workspace', undefined, state);
+  assert.equal(workspace.status, 200);
+  assert.equal(workspace.body.schemaVersion, 'trackmind.industry-intelligence.v1');
+  assert.ok(workspace.body.anonymizedBenchmarks.length >= 3);
+  assert.equal(workspace.body.guardrails.rawCrossTrackRecordSharing, false);
+  assert.ok(workspace.body.federationAnalytics.every((analytic) => analytic.rawRecordRefs.length === 0));
+
+  const federationLegacy = await handleApiRequest('GET', '/api/v1/federation-intelligence/workspace', undefined, state);
+  assert.equal(federationLegacy.status, 200);
+  assert.equal(federationLegacy.body.anonymized, true);
 });
 
 test('enterprise readiness convergence scorecard', async () => {

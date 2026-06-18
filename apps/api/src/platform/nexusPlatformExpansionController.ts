@@ -120,16 +120,6 @@ export function handleNexusPlatformExpansionRequest(
       return { status: 200, body: exp.operationalIntelligence(scope) };
     }
 
-    if (method === 'GET' && path === '/equine-welfare/workspace') {
-      return { status: 200, body: exp.equineWelfare(scope) };
-    }
-    const welfareHorseMatch = path.match(/^\/equine-welfare\/horses\/([^/]+)$/);
-    if (method === 'GET' && welfareHorseMatch) {
-      const ws = exp.equineWelfare(scope);
-      const horse = ws.horses.find((h) => h.horseId === decodeURIComponent(welfareHorseMatch[1]));
-      return horse ? { status: 200, body: horse } : { status: 404, body: { ok: false, error: { code: 'not_found', message: 'Horse not found' } } };
-    }
-
     if (method === 'GET' && path === '/predictive-analytics/workspace') {
       return { status: 200, body: exp.predictiveAnalytics(scope) };
     }
@@ -169,17 +159,8 @@ export function handleNexusPlatformExpansionRequest(
       return { status: 200, body: exp.facilitiesCommand(scope) };
     }
 
-    if (method === 'GET' && path === '/federation-intelligence/workspace') {
-      return { status: 200, body: exp.federationIntelligence(scope) };
-    }
-
     if (method === 'GET' && path === '/ai-governance-registry/workspace') {
       return { status: 200, body: exp.aiGovernanceRegistry() };
-    }
-
-    if (method === 'GET' && path === '/knowledge-graph/workspace') {
-      const q = searchParams.get('q') ?? '';
-      return { status: 200, body: exp.knowledgeGraph(scope, q) };
     }
 
     if (method === 'GET' && path === '/executive-intelligence/suite') {

@@ -14,6 +14,31 @@ test('runtime API facade serves dashboard live-client endpoints', async () => {
     '/api/v1/operations/command-center',
     '/api/v1/races',
     '/api/v1/race-day-readiness/dashboard',
+    '/api/v1/racing-calendar/workspace',
+    '/api/v1/racing-calendar/seasons',
+    '/api/v1/racing-calendar/conflicts',
+    '/api/v1/racing-calendar/kpis',
+    '/api/v1/race-cards/workspace',
+    '/api/v1/race-cards/audit-trail',
+    '/api/v1/horse-registry/workspace',
+    '/api/v1/horse-registry/audit-trail',
+    '/api/v1/trainer-management/workspace',
+    '/api/v1/trainer-management/audit-trail',
+    '/api/v1/jockey-management/workspace',
+    '/api/v1/jockey-management/dashboard',
+    '/api/v1/jockey-management/audit-trail',
+    '/api/v1/veterinary-operations/workspace',
+    '/api/v1/veterinary-operations/dashboard',
+    '/api/v1/veterinary-operations/audit-trail',
+    '/api/v1/paddock-operations/workspace',
+    '/api/v1/paddock-operations/dashboard',
+    '/api/v1/paddock-operations/audit-trail',
+    '/api/v1/steward-operations/workspace',
+    '/api/v1/steward-operations/dashboard',
+    '/api/v1/steward-operations/audit-trail',
+    '/api/v1/starting-gate-operations/workspace',
+    '/api/v1/starting-gate-operations/dashboard',
+    '/api/v1/starting-gate-operations/audit-trail',
     '/api/v1/starting-gate/position',
     '/api/v1/race-distance/configuration',
     '/api/v1/digital-twin/state',
@@ -23,6 +48,25 @@ test('runtime API facade serves dashboard live-client endpoints', async () => {
     '/api/v1/tus/data-model',
     '/api/v1/race-operations/race-office',
     '/api/v1/surface-intelligence/workspace',
+    '/api/v1/surface-intelligence/dashboard',
+    '/api/v1/surface-intelligence/audit-trail',
+    '/api/v1/fan-experience/workspace',
+    '/api/v1/fan-experience/dashboard',
+    '/api/v1/fan-experience/audit-trail',
+    '/api/v1/finance/workspace',
+    '/api/v1/finance/dashboard',
+    '/api/v1/finance/audit-trail',
+    '/api/v1/equine-welfare/workspace',
+    '/api/v1/equine-welfare/dashboard',
+    '/api/v1/equine-welfare/audit-trail',
+    '/api/v1/knowledge-graph/workspace',
+    '/api/v1/knowledge-graph/search',
+    '/api/v1/search/global',
+    '/api/v1/industry-intelligence/workspace',
+    '/api/v1/industry-intelligence/dashboard',
+    '/api/v1/industry-intelligence/benchmarks',
+    '/api/v1/industry-intelligence/trends',
+    '/api/v1/federation-intelligence/workspace',
     '/api/v1/equine-intelligence/horses/horse-1',
     '/api/v1/barn-operations/workspace',
     '/api/v1/facilities-maintenance/workspace',
@@ -55,6 +99,9 @@ test('runtime API facade serves dashboard live-client endpoints', async () => {
     '/api/v1/ros/data-model',
     '/api/v1/ros/intelligence-core',
     '/api/v1/ros/federation',
+    '/api/v1/ros/operating-model',
+    '/api/v1/ros/convergence',
+    '/api/v1/ros/expansion-sequence',
   ];
 
   for (const route of routes) {
@@ -101,14 +148,15 @@ test('runtime KPI facade exposes governed artifacts, snapshots, filtering, and m
   assert.ok(!apiEndpointContracts.some((endpoint) => endpoint.path.startsWith('/api/v1/artifacts/kpis')));
 
   const workspace = await handleApiRequest('GET', '/api/v1/kpis?tenantId=trackmind&racetrackId=main-track', undefined, state, adminHeaders);
-  assert.equal(workspace.body.kpis.length, 20);
+  assert.equal(workspace.body.kpis.length, 28);
   assert.equal(workspace.body.governance.aiMutationAllowed, false);
   assert.equal(workspace.body.governance.regulatedExecutionAllowed, false);
   assert.deepEqual(validateContract('KPIWorkspaceDto', workspace.body, apiContractSchemas.KPIWorkspaceDto), { valid: true, errors: [] });
   assert.ok(workspace.body.kpis.every((kpi) => validateKPIArtifact(kpi).valid));
   assert.ok(workspace.body.kpis.some((kpi) => kpi.domain === 'multi-track-federation' && kpi.visibility === 'federation-aggregate'));
+  assert.deepEqual(workspace.body.kpis.find((kpi) => kpi.domain === 'multi-track-federation')?.sourceEvents, ['federation.benchmark.published', 'industry-intelligence.aggregate.generated', 'federation.aggregate.generated']);
   assert.equal(workspace.body.kpis.find((kpi) => kpi.domain === 'safety-incidents')?.threshold.targetDirection, 'below');
-  assert.deepEqual(workspace.body.kpis.find((kpi) => kpi.domain === 'equine-welfare')?.sourceEvents, ['equine.profile.viewed', 'equine.veterinary.recorded']);
+  assert.deepEqual(workspace.body.kpis.find((kpi) => kpi.domain === 'equine-welfare')?.sourceEvents, ['equine-welfare.observation.recorded', 'equine-welfare.alert.raised', 'equine.profile.viewed']);
   assert.deepEqual(workspace.body.kpis.find((kpi) => kpi.domain === 'veterinary-privacy')?.sourceEvents, ['equine.profile.viewed', 'equine.hisa.verification']);
 
   const queryRoleOnly = await handleApiRequest('GET', '/api/v1/kpis?role=admin&tenantId=trackmind&racetrackId=main-track', undefined, state);
@@ -276,6 +324,45 @@ test('runtime steward facade exposes connected inquiry queues without ruling aut
   assert.ok(inquiry.integrations.eventTypes.includes('steward.approval.requested'));
   assert.ok(inquiry.appealPackages[0].contents.guardrailStatement.includes('AI may summarize and organize evidence only'));
   assert.equal(inquiry.finalRuling, undefined);
+});
+
+test('runtime steward operations workspace exposes reviews workflows and advisory recommendation support', async () => {
+  const response = await handleApiRequest('GET', '/api/v1/steward-operations/workspace');
+  assert.equal(response.status, 200);
+  assert.equal(response.body.schemaVersion, 'trackmind.steward-operations.v1');
+  assert.ok(response.body.inquiries.length >= 1);
+  assert.ok(response.body.reviews.length >= 1);
+  assert.ok(response.body.decisionWorkflows.length >= 1);
+  assert.equal(response.body.recommendationSupport.advisoryOnly, true);
+  assert.equal(response.body.recommendationSupport.mayIssueOfficialRuling, false);
+  assert.ok(response.body.dashboard.openInquiries >= 1);
+  assert.ok(response.body.auditTrail.length >= 1);
+
+  const dashboard = await handleApiRequest('GET', '/api/v1/steward-operations/dashboard');
+  assert.equal(dashboard.status, 200);
+  assert.ok(dashboard.body.panels.length >= 5);
+
+  const trail = await handleApiRequest('GET', '/api/v1/steward-operations/audit-trail');
+  assert.equal(trail.status, 200);
+  assert.ok(trail.body.records.length >= 1);
+});
+
+test('runtime starting gate operations workspace blocks automated race starts and exposes approval controls', async () => {
+  const response = await handleApiRequest('GET', '/api/v1/starting-gate-operations/workspace');
+  assert.equal(response.status, 200);
+  assert.equal(response.body.schemaVersion, 'trackmind.starting-gate-operations.v1');
+  assert.equal(response.body.guardrails.mayAutoStartRace, false);
+  assert.equal(response.body.guardrails.raceStartAutomation, false);
+  assert.equal(response.body.guardrails.approvalGovernedWorkflows, true);
+  assert.ok(response.body.assignments.length >= 1);
+  assert.ok(response.body.readinessChecks.length >= 1);
+  assert.ok(response.body.raceReadinessIndicators.length >= 6);
+  assert.ok(response.body.approvalControls.some((control) => control.action === 'race-start'));
+
+  const position = await handleApiRequest('GET', '/api/v1/starting-gate/position');
+  assert.equal(position.status, 200);
+  assert.equal(position.body.mock, false);
+  assert.ok(position.body.gateId);
 });
 
 test('runtime API facade serves auxiliary adapter endpoints and consistent fallback errors', async () => {
@@ -613,6 +700,23 @@ test('runtime API facade exposes read-only ROS metadata slices', async () => {
   assert.equal(federation.status, 200);
   assert.equal(federation.body.tenantIsolation, true);
   assert.equal(federation.body.unsafeExecutionAcrossBoundaryAllowed, false);
+
+  const operatingModel = await handleApiRequest('GET', '/api/v1/ros/operating-model');
+  assert.equal(operatingModel.status, 200);
+  assert.equal(operatingModel.body.schemaVersion, 'trackmind.racing-operating-model.v1');
+  assert.equal(operatingModel.body.capabilities.length, 18);
+  assert.equal(operatingModel.body.artifactDimensions.length, 11);
+
+  const convergence = await handleApiRequest('GET', '/api/v1/ros/convergence');
+  assert.equal(convergence.status, 200);
+  assert.equal(convergence.body.schemaVersion, 'trackmind.racing-os-convergence.v1');
+  assert.equal(convergence.body.domainProfiles.length, 18);
+  assert.equal(convergence.body.dimensions.length, 11);
+  assert.equal(convergence.body.guardrails.singleCoherentOperatingSystem, true);
+
+  const expansionSequence = await handleApiRequest('GET', '/api/v1/ros/expansion-sequence');
+  assert.equal(expansionSequence.status, 200);
+  assert.equal(expansionSequence.body.expansionSequence.length, 13);
 });
 
 test('runtime API facade exposes no ROS protected execution routes', async () => {
@@ -801,12 +905,140 @@ test('runtime API facade exposes enriched Steward Center inquiry data', async ()
 test('runtime API facade serves enriched surface intelligence workspace', async () => {
   const response = await handleApiRequest('GET', '/api/v1/surface-intelligence/workspace');
   assert.equal(response.status, 200);
+  assert.equal(response.body.schemaVersion, 'trackmind.surface-intelligence.v1');
   assert.equal(response.body.operationalActionsRequireHumanApproval, true);
+  assert.ok(response.body.observations.length >= 1);
+  assert.ok(response.body.conditionHistory.length >= 1);
+  assert.ok(response.body.inspectionWorkflows.length >= 1);
+  assert.ok(response.body.trendAnalytics.length >= 1);
+  assert.ok(response.body.readinessIndicators.length >= 5);
   assert.ok(response.body.conditionScorecards.length >= 1);
   assert.ok(response.body.metricPanels.some((panel) => panel.factor === 'compaction'));
   assert.ok(response.body.forecasts.every((forecast) => forecast.advisoryOnly));
   assert.ok(response.body.drainageAnalysis.some((item) => item.status === 'restricted'));
   assert.ok(response.body.approvalActions.every((action) => action.locked));
+
+  const dashboard = await handleApiRequest('GET', '/api/v1/surface-intelligence/dashboard');
+  assert.equal(dashboard.status, 200);
+  assert.ok(dashboard.body.panels.length >= 5);
+});
+
+test('runtime API facade serves enriched fan experience workspace', async () => {
+  const response = await handleApiRequest('GET', '/api/v1/fan-experience/workspace');
+  assert.equal(response.status, 200);
+  assert.equal(response.body.schemaVersion, 'trackmind.fan-experience-operations.v1');
+  assert.ok(response.body.attendanceTracking.snapshots.length >= 1);
+  assert.ok(response.body.hospitality.packages.length >= 2);
+  assert.ok(response.body.premiumSeating.length >= 3);
+  assert.ok(response.body.guestServices.length >= 3);
+  assert.ok(response.body.eventSatisfaction.length >= 1);
+  assert.ok(response.body.fanAnalytics.trends.length >= 5);
+  assert.ok(response.body.revenueLinkage.length >= 5);
+  assert.equal(response.body.guardrails.refundsRequireApproval, true);
+  assert.ok(response.body.attendance.current > 0);
+
+  const dashboard = await handleApiRequest('GET', '/api/v1/fan-experience/dashboard');
+  assert.equal(dashboard.status, 200);
+  assert.ok(dashboard.body.panels.length >= 6);
+});
+
+test('runtime API facade serves enriched racing finance workspace', async () => {
+  const response = await handleApiRequest('GET', '/api/v1/finance/workspace');
+  assert.equal(response.status, 200);
+  assert.equal(response.body.schemaVersion, 'trackmind.racing-finance-operations.v1');
+  assert.ok(response.body.purses.length >= 2);
+  assert.ok(response.body.raceDayExpenses.length >= 2);
+  assert.ok(response.body.operationalCosts.length >= 2);
+  assert.ok(response.body.facilityCosts.length >= 2);
+  assert.ok(response.body.ticketRevenue.length >= 2);
+  assert.ok(response.body.hospitalityRevenue.length >= 1);
+  assert.equal(response.body.guardrails.financialMutationsAudited, true);
+  assert.ok(response.body.auditTrail.length >= 1);
+  assert.ok(response.body.revenue.today > 0);
+
+  const dashboard = await handleApiRequest('GET', '/api/v1/finance/dashboard');
+  assert.equal(dashboard.status, 200);
+  assert.ok(dashboard.body.panels.length >= 6);
+
+  const auditTrail = await handleApiRequest('GET', '/api/v1/finance/audit-trail');
+  assert.equal(auditTrail.status, 200);
+  assert.ok(auditTrail.body.records.length >= 1);
+});
+
+test('runtime API facade serves enriched equine welfare intelligence workspace', async () => {
+  const response = await handleApiRequest('GET', '/api/v1/equine-welfare/workspace');
+  assert.equal(response.status, 200);
+  assert.equal(response.body.schemaVersion, 'trackmind.equine-welfare-intelligence.v1');
+  assert.ok(response.body.welfareIndicators.length >= 1);
+  assert.ok(response.body.observations.length >= 1);
+  assert.ok(response.body.trendAnalytics.length >= 1);
+  assert.ok(response.body.retirementReadiness.length >= 1);
+  assert.ok(response.body.digitalTwinLinks.length >= 1);
+  assert.equal(response.body.guardrails.aiRecommendationsAdvisoryOnly, true);
+  assert.ok(response.body.advisoryRecommendations.every((rec) => rec.advisoryOnly === true));
+  assert.ok(response.body.auditTrail.length >= 1);
+
+  const dashboard = await handleApiRequest('GET', '/api/v1/equine-welfare/dashboard');
+  assert.equal(dashboard.status, 200);
+  assert.ok(dashboard.body.panels.length >= 6);
+
+  const horseDetail = await handleApiRequest('GET', '/api/v1/equine-welfare/horses/horse-1');
+  assert.equal(horseDetail.status, 200);
+  assert.equal(horseDetail.body.horseId, 'horse-1');
+  assert.ok(horseDetail.body.welfareIndicators.length >= 1);
+});
+
+test('runtime API facade serves racing knowledge graph workspace search and relationship exploration', async () => {
+  const workspace = await handleApiRequest('GET', '/api/v1/knowledge-graph/workspace');
+  assert.equal(workspace.status, 200);
+  assert.equal(workspace.body.schemaVersion, 'trackmind.racing-knowledge-graph.v1');
+  assert.ok(workspace.body.nodes.length >= 10);
+  assert.ok(workspace.body.edges.length >= 5);
+  assert.ok(workspace.body.entityCounts.horses >= 1);
+  assert.ok(workspace.body.entityCounts.kpis >= 1);
+  assert.equal(workspace.body.guardrails.readOnlyExploration, true);
+
+  const search = await handleApiRequest('GET', '/api/v1/knowledge-graph/search?q=horse-1');
+  assert.equal(search.status, 200);
+  assert.ok(search.body.results.some((result) => result.nodeId === 'horse-1'));
+
+  const explore = await handleApiRequest('GET', '/api/v1/knowledge-graph/nodes/horse-1/relationships?depth=2');
+  assert.equal(explore.status, 200);
+  assert.equal(explore.body.focusNodeId, 'horse-1');
+  assert.ok(explore.body.nodes.length >= 1);
+
+  const globalSearch = await handleApiRequest('GET', '/api/v1/search/global?q=horse');
+  assert.equal(globalSearch.status, 200);
+  assert.ok(globalSearch.body.results.length >= 1);
+});
+
+test('runtime API facade serves industry intelligence with anonymized federation analytics', async () => {
+  const workspace = await handleApiRequest('GET', '/api/v1/industry-intelligence/workspace');
+  assert.equal(workspace.status, 200);
+  assert.equal(workspace.body.schemaVersion, 'trackmind.industry-intelligence.v1');
+  assert.ok(workspace.body.anonymizedBenchmarks.length >= 3);
+  assert.ok(workspace.body.federationAnalytics.length >= 2);
+  assert.ok(workspace.body.aggregateKpis.length >= 3);
+  assert.ok(workspace.body.trendComparisons.length >= 3);
+  assert.ok(workspace.body.industryScorecards.length >= 3);
+  assert.equal(workspace.body.guardrails.rawCrossTrackRecordSharing, false);
+  assert.equal(workspace.body.guardrails.federationGovernanceRespected, true);
+
+  const dashboard = await handleApiRequest('GET', '/api/v1/industry-intelligence/dashboard');
+  assert.equal(dashboard.status, 200);
+  assert.ok(dashboard.body.panels.length >= 3);
+
+  const benchmarks = await handleApiRequest('GET', '/api/v1/industry-intelligence/benchmarks');
+  assert.equal(benchmarks.status, 200);
+  assert.ok(benchmarks.body.benchmarks.every((benchmark) => benchmark.anonymized === true));
+
+  const trends = await handleApiRequest('GET', '/api/v1/industry-intelligence/trends');
+  assert.equal(trends.status, 200);
+  assert.ok(trends.body.comparisons.length >= 3);
+
+  const legacy = await handleApiRequest('GET', '/api/v1/federation-intelligence/workspace');
+  assert.equal(legacy.status, 200);
+  assert.equal(legacy.body.anonymized, true);
 });
 
 test('runtime API facade exposes unified data model store metadata', async () => {

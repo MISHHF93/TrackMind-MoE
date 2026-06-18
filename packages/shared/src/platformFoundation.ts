@@ -126,17 +126,7 @@ export interface IncidentDto {
   mock: boolean;
 }
 
-export interface PaddockOperationsDto {
-  generatedAt: string;
-  tenantId: string;
-  racetrackId: string;
-  assignments: Array<{ horseId: string; horseName: string; saddleCloth: number; paddockSlot: string; status: string }>;
-  paradeSchedule: Array<{ at: string; raceId: string; label: string }>;
-  readinessScore: number;
-  gateReadiness: { status: string; lastCheckAt: string };
-  timeline: Array<{ at: string; label: string; status: string }>;
-  mock: boolean;
-}
+export type { PaddockOperationsDto } from './paddockOperations.js';
 
 export interface RaceScheduleDto {
   generatedAt: string;
@@ -186,7 +176,7 @@ export interface AIModelCardRegistryDto {
 
 export interface GlobalSearchResultDto {
   id: string;
-  kind: 'horse' | 'incident' | 'audit' | 'kpi' | 'asset';
+  kind: 'horse' | 'race' | 'trainer' | 'jockey' | 'incident' | 'approval' | 'audit' | 'facility' | 'recommendation' | 'kpi' | 'asset';
   title: string;
   subtitle?: string;
   path: string;
