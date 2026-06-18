@@ -1,0 +1,121 @@
+import { routeApiPathGroups } from '@/api/paths';
+import type { DomainRouteId, NavigationGroup } from '@/domain/support';
+import { routes, type AppRoute } from '@/routes/routes';
+
+export const navigationGroups = [
+  'Command',
+  'Race Operations',
+  'Safety & Facilities',
+  'Governance',
+  'Business Controls',
+  'Data Governance',
+  'Platform',
+  'System Status',
+] as const satisfies readonly NavigationGroup[];
+
+export const workspacePanelRouteIds = [
+  'dashboard',
+  'admin',
+  'raceDay',
+  'surface',
+  'equine',
+  'stewarding',
+  'approvals',
+  'audit',
+  'compliance',
+  'security',
+  'incidents',
+  'emergency',
+  'facilities',
+  'workforce',
+  'digitalTwin',
+  'ticketing',
+  'finance',
+  'federation',
+  'dataHub',
+  'settings',
+  'analytics',
+  'fanExperience',
+  'notifications',
+] as const satisfies readonly DomainRouteId[];
+
+export const sidebarIconKeys = [
+  'command-center',
+  'race-day',
+  'horse',
+  'steward',
+  'surface',
+  'approval',
+  'incident',
+  'emergency',
+  'compliance',
+  'security',
+  'facility',
+  'workforce',
+  'twin',
+  'ticket',
+  'finance',
+  'federation',
+  'data-hub',
+  'audit',
+  'admin',
+  'analytics',
+  'fan',
+  'notifications',
+  'settings',
+] as const;
+
+export function routePathSegment(route: AppRoute): string {
+  return route.path.replace(/^\//, '');
+}
+
+export function validateRouteInventory(source: {
+  routerPaths: string[];
+  panelRouteIds: readonly string[];
+  sidebarIconKeys: readonly string[];
+}): string[] {
+  const errors: string[] = [];
+  const routeIds = new Set<string>(routes.map((route) => route.id));
+  const routePaths = new Set<string>(routes.map((route) => route.path));
+
+  for (const route of routes) {
+    const routeId = route.id;
+    if (!route.label.trim()) errors.push(`route ${routeId} missing label`);
+    if (!route.dataSource.trim()) errors.push(`route ${routeId} missing dataSource`);
+    if (!route.backendPaths.length) errors.push(`route ${routeId} missing backendPaths`);
+    if (!(navigationGroups as readonly string[]).includes(route.navigationGroup)) {
+      errors.push(`route ${routeId} has unknown navigationGroup: ${route.navigationGroup}`);
+    }
+    if (!source.sidebarIconKeys.includes(route.iconKey)) {
+      errors.push(`route ${routeId} iconKey not registered in sidebar: ${route.iconKey}`);
+    }
+    const apiPaths = routeApiPathGroups[route.id];
+    if (!apiPaths?.length) errors.push(`route ${routeId} missing routeApiPathGroups entry`);
+    if (!source.panelRouteIds.includes(route.id)) {
+      errors.push(`route ${routeId} missing WorkspaceDomainPanels case`);
+    }
+    const segment = routePathSegment(route);
+    if (!source.routerPaths.includes(segment)) {
+      errors.push(`route ${routeId} path /${segment} missing from app router`);
+    }
+  }
+
+  for (const routerPath of source.routerPaths) {
+    const fullPath = `/${routerPath}`;
+    if (!routePaths.has(fullPath)) {
+      errors.push(`orphaned router path not in routes.ts: /${routerPath}`);
+    }
+  }
+
+  for (const panelId of source.panelRouteIds) {
+    if (!routeIds.has(panelId)) {
+      errors.push(`orphaned WorkspaceDomainPanels case: ${panelId}`);
+    }
+  }
+
+  if (routes.length !== source.panelRouteIds.length) {
+    errors.push(`route count mismatch: routes.ts=${routes.length} panels=${source.panelRouteIds.length}`);
+  }
+
+  return errors;
+}

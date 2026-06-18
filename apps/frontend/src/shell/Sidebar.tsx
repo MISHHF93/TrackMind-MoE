@@ -2,6 +2,7 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
+  Bell,
   Building2,
   ClipboardCheck,
   Database,
@@ -12,7 +13,9 @@ import {
   Layers,
   Settings,
   Shield,
+  Sparkles,
   Ticket,
+  TrendingUp,
   Users,
   Waypoints,
 } from 'lucide-react';
@@ -40,6 +43,9 @@ const iconMap: Record<string, LucideIcon> = {
   'data-hub': Database,
   audit: Activity,
   admin: Activity,
+  analytics: TrendingUp,
+  fan: Sparkles,
+  notifications: Bell,
   settings: Settings,
 };
 

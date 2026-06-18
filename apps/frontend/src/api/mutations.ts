@@ -94,3 +94,36 @@ export async function evaluateAiRecommendation(body: Record<string, unknown>) {
 export async function draftArtifactRegistration(body: Record<string, unknown>) {
   return postJson('/artifacts/registry/draft-registrations', body);
 }
+
+export async function registerModelCard(body: {
+  id: string;
+  name: string;
+  version: string;
+  riskLevel: string;
+  path: string;
+  lastEvaluatedAt?: string;
+}) {
+  return postJson('/ai-governance/model-registry/models', body);
+}
+
+export async function registerPromptCard(body: {
+  id: string;
+  name: string;
+  version: string;
+  path: string;
+  lineage: string[];
+}) {
+  return postJson('/ai-governance/model-registry/prompts', body);
+}
+
+export async function activateEmergencyWorkflow(body: {
+  id: string;
+  planId: string;
+  scenario: string;
+  severity: string;
+  location: string;
+  activatedBy: string;
+  roles?: string[];
+}) {
+  return postJson('/emergency-operations/workflows', body);
+}

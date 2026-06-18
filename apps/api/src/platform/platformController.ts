@@ -4,7 +4,16 @@ import type { CentralizedApprovalService } from '../approvals.js';
 import type { ImmutableAuditLog } from '../auditLog.js';
 import type { RacingDataApiFacadeState } from '../racingDataApiHub.js';
 import { createAnalyticsWorkspace } from './analyticsService.js';
-import { createAIModelCardRegistry } from './aiRegistryService.js';
+import {
+  buildDomainOwnershipRegistry,
+  buildExecutiveScorecard,
+  buildGovernedArtifactRegistry,
+  buildPlatformMaturityReview,
+  buildReadinessScorecards,
+  buildWorkflowHealth,
+  validateGovernanceLineage,
+} from './governancePlatformService.js';
+import { createAIModelCardRegistry, aiModelCardRegistryStore } from './aiRegistryService.js';
 import { createAuditPersistenceAdapter } from './auditAdapter.js';
 import { DurableApprovalStore } from './approvalStore.js';
 import { federationKpiAggregation, executeProviderAdapter } from './dataHubAdapter.js';
@@ -12,6 +21,7 @@ import { globalSearch } from './globalSearchService.js';
 import { IdentityService } from './identityService.js';
 import { IncidentService } from './incidentService.js';
 import { kpiCalculationService } from './kpiCalculationService.js';
+import { createMockPlatformHealth } from '../platformObservability.js';
 import { notificationFramework } from './notificationFramework.js';
 import { createPaddockOperationsWorkspace } from './paddockOperations.js';
 import { createCommercializationServices, handleCommercializationRequest, type CommercializationServices } from './commercializationController.js';
@@ -50,6 +60,7 @@ export interface PlatformState {
   racingData: RacingDataApiFacadeState;
   federation: Record<string, unknown>;
   equine: { horse?: { horseId: string; name?: string } };
+  aiControlPlane?: { recommendations?: unknown[] };
 }
 
 export interface PlatformServices {
@@ -181,16 +192,87 @@ export function handlePlatformRequest(
   }
   if (method === 'POST' && path === '/kpis/recalculate') {
     const workspace = state.kpis as { kpis?: KPIArtifact[] };
+    const readiness = buildReadinessScorecards(workspace.kpis ?? []);
+    const domainScores = {
+      'race-day-operations': readiness.operational.score,
+      'equine-welfare': readiness.equine.score,
+      compliance: readiness.compliance.score,
+      facilities: readiness.facilities.score,
+      security: readiness.security.score,
+      'data-quality': workspace.kpis?.find((kpi) => kpi.domain === 'data-quality')?.value,
+      'system-health': workspace.kpis?.find((kpi) => kpi.domain === 'system-health')?.value,
+    };
     const calculated = kpiCalculationService.calculateFromProjections(workspace.kpis ?? [], {
       eventCount: platform.incidents.list().length,
       approvalPendingCount: platform.approvalStore.list().filter((a) => a.status === 'pending').length,
       incidentOpenCount: platform.incidents.list().filter((i) => !['resolved', 'closed'].includes(i.status)).length,
-      readinessScore: 88,
+      readinessScore: readiness.operational.score,
+      domainScores,
+      dataQualityScore: state.racingData.dataQualityReports?.[0]?.score != null
+        ? Math.round(state.racingData.dataQualityReports[0].score * 100)
+        : undefined,
     });
     return { status: 200, body: { generatedAt: new Date().toISOString(), kpis: calculated, mock: false } };
   }
+  if (method === 'GET' && path === '/platform/domain-ownership') {
+    return { status: 200, body: buildDomainOwnershipRegistry((state.kpis as { kpis?: KPIArtifact[] }).kpis ?? []) };
+  }
+  if (method === 'GET' && path === '/platform/governance-lineage/validation') {
+    const recommendations = Array.isArray(state.aiControlPlane?.recommendations)
+      ? state.aiControlPlane.recommendations
+      : [];
+    return {
+      status: 200,
+      body: validateGovernanceLineage({
+        kpis: (state.kpis as { kpis?: KPIArtifact[] }).kpis ?? [],
+        auditEvents: state.auditEvents as AuditEventDto[],
+        recommendations,
+        approvalService: state.approvalService,
+        notificationCount: notificationFramework.count(),
+      }),
+    };
+  }
+  if (method === 'GET' && path === '/platform/readiness-scorecards') {
+    return { status: 200, body: buildReadinessScorecards((state.kpis as { kpis?: KPIArtifact[] }).kpis ?? []) };
+  }
+  if (method === 'GET' && path === '/platform/executive-scorecard') {
+    return { status: 200, body: buildExecutiveScorecard((state.kpis as { kpis?: KPIArtifact[] }).kpis ?? []) };
+  }
+  if (method === 'GET' && path === '/platform/workflow-health') {
+    return { status: 200, body: buildWorkflowHealth(createMockPlatformHealth()) };
+  }
+  if (method === 'GET' && path === '/platform/governed-artifacts') {
+    return { status: 200, body: buildGovernedArtifactRegistry((state.kpis as { kpis?: KPIArtifact[] }).kpis ?? [], state.approvalService) };
+  }
+  if (method === 'GET' && path === '/platform/maturity-review') {
+    const kpis = (state.kpis as { kpis?: KPIArtifact[] }).kpis ?? [];
+    const readiness = buildReadinessScorecards(kpis);
+    const executive = buildExecutiveScorecard(kpis);
+    const recommendations = Array.isArray(state.aiControlPlane?.recommendations)
+      ? state.aiControlPlane.recommendations
+      : [];
+    const lineageReport = validateGovernanceLineage({
+      kpis,
+      auditEvents: state.auditEvents as AuditEventDto[],
+      recommendations,
+      approvalService: state.approvalService,
+      notificationCount: notificationFramework.count(),
+    });
+    return {
+      status: 200,
+      body: buildPlatformMaturityReview({
+        lineageReport,
+        readiness,
+        executive,
+        workflowHealth: buildWorkflowHealth(createMockPlatformHealth()),
+        notificationCoverage: notificationFramework.count() > 0,
+      }),
+    };
+  }
   if (method === 'GET' && path === '/analytics/workspace') {
-    return { status: 200, body: createAnalyticsWorkspace() };
+    const kpis = (state.kpis as { kpis?: KPIArtifact[] }).kpis ?? [];
+    const executive = buildExecutiveScorecard(kpis);
+    return { status: 200, body: createAnalyticsWorkspace([], executive, kpis) };
   }
   if (method === 'GET' && path === '/race-operations/paddock') {
     return { status: 200, body: createPaddockOperationsWorkspace(tenantId, racetrackId) };
@@ -252,6 +334,36 @@ export function handlePlatformRequest(
   }
   if (method === 'GET' && path === '/ai-governance/model-registry') {
     return { status: 200, body: createAIModelCardRegistry() };
+  }
+  if (method === 'POST' && path === '/ai-governance/model-registry/models') {
+    const input = isRecord(body) ? body : {};
+    try {
+      return { status: 201, body: aiModelCardRegistryStore.registerModel({
+        id: String(input.id ?? ''),
+        name: String(input.name ?? ''),
+        version: String(input.version ?? ''),
+        riskLevel: String(input.riskLevel ?? 'medium'),
+        path: String(input.path ?? ''),
+        lastEvaluatedAt: typeof input.lastEvaluatedAt === 'string' ? input.lastEvaluatedAt : undefined,
+      }) };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: (error as Error).message } } };
+    }
+  }
+  if (method === 'POST' && path === '/ai-governance/model-registry/prompts') {
+    const input = isRecord(body) ? body : {};
+    try {
+      const lineage = Array.isArray(input.lineage) ? input.lineage.map((ref) => String(ref)) : [];
+      return { status: 201, body: aiModelCardRegistryStore.registerPrompt({
+        id: String(input.id ?? ''),
+        name: String(input.name ?? ''),
+        version: String(input.version ?? ''),
+        path: String(input.path ?? ''),
+        lineage,
+      }) };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: (error as Error).message } } };
+    }
   }
   const providerAdapterMatch = path.match(/^\/racing-data\/providers\/([^/]+)\/invoke$/);
   if (method === 'POST' && providerAdapterMatch) {

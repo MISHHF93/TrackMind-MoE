@@ -1,11 +1,15 @@
 import type { ReactElement } from 'react';
+import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/design/components/badge';
 import { KpiStrip } from '@/design/components/kpi-strip';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
 import { SectionPanel } from '@/design/components/section-panel';
+import { Button } from '@/design/components/button';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { feedData } from '../feedUtils';
+import { activateEmergencyWorkflow } from '@/api/mutations';
 
 function securityData(results: WorkspaceDataResult[]) {
   return feedData<Record<string, unknown>>(results, '/security-operations/workspace');
@@ -141,10 +145,34 @@ export function IncidentPanels({ results }: { results: WorkspaceDataResult[] }):
 }
 
 export function EmergencyPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+  const queryClient = useQueryClient();
+  const [activationMessage, setActivationMessage] = useState<string | null>(null);
   const emergency = feedData<Record<string, unknown>>(results, '/emergency-operations/workspace');
   const checklist = extractArray<Record<string, unknown>>(emergency, 'checklist');
   const comms = extractArray<Record<string, unknown>>(emergency, 'communicationLog');
   const roles = extractArray<Record<string, unknown>>(emergency, 'commandRoles');
+
+  const activateWorkflow = useMutation({
+    mutationFn: () =>
+      activateEmergencyWorkflow({
+        id: `wf-drill-${Date.now()}`,
+        planId: 'plan-weather',
+        scenario: 'severe-weather',
+        severity: 'major',
+        location: 'Grandstand shelter level',
+        activatedBy: 'incident-commander',
+        roles: ['admin'],
+      }),
+    onSuccess: (response) => {
+      setActivationMessage(
+        typeof response === 'object' && response && 'message' in response
+          ? String((response as { message?: string }).message)
+          : 'Emergency workflow activated.',
+      );
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+    onError: (error: Error) => setActivationMessage(error.message),
+  });
 
   return (
     <div className="space-y-4">
@@ -155,6 +183,22 @@ export function EmergencyPanels({ results }: { results: WorkspaceDataResult[] })
           { id: 'roles', label: 'Command roles', value: String(roles.length) },
         ]}
       />
+      <SectionPanel title="Incident command activation" description="Human-governed emergency workflow activation; AI cannot block life-safety actions.">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="governance"
+            disabled={activateWorkflow.isPending}
+            onClick={() => {
+              setActivationMessage(null);
+              activateWorkflow.mutate();
+            }}
+          >
+            Activate severe-weather workflow
+          </Button>
+          {activationMessage ? <p className="text-xs text-[var(--muted-foreground)]">{activationMessage}</p> : null}
+        </div>
+      </SectionPanel>
       <div className="grid gap-4 xl:grid-cols-2">
         <SectionPanel title="Emergency checklist">
           <RecordTable

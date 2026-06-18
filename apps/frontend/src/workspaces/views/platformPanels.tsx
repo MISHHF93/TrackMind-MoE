@@ -8,9 +8,16 @@ import { feedData } from '../feedUtils';
 
 export function AnalyticsPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
   const workspace = feedData<Record<string, unknown>>(results, '/analytics/workspace');
+  const knowledgeGraph = feedData<Record<string, unknown>>(results, '/knowledge-graph/workspace');
+  const reporting = feedData<Record<string, unknown>>(results, '/reporting/workspace');
+  const searchFeed = feedData<Record<string, unknown>>(results, '/search/global');
   const summary = extractArray<Record<string, unknown>>(workspace, 'executiveSummary');
   const trends = extractArray<Record<string, unknown>>(workspace, 'kpiTrends');
   const benchmarks = extractArray<Record<string, unknown>>(workspace, 'federationBenchmarks');
+  const graphNodes = extractArray<Record<string, unknown>>(knowledgeGraph, 'nodes');
+  const reportTemplates = extractArray<Record<string, unknown>>(reporting, 'templates');
+  const reportJobs = extractArray<Record<string, unknown>>(reporting, 'recentJobs');
+  const searchResults = extractArray<Record<string, unknown>>(searchFeed, 'results');
 
   return (
     <div className="space-y-4">
@@ -23,6 +30,62 @@ export function AnalyticsPanels({ results }: { results: WorkspaceDataResult[] })
           status: 'nominal',
         }))}
       />
+      <SectionPanel title="Global search index" description="Cross-domain search results for operational artifacts.">
+        <RecordTable
+          columns={[
+            { key: 'kind', label: 'Kind' },
+            { key: 'title', label: 'Title' },
+            { key: 'path', label: 'Path' },
+            { key: 'score', label: 'Score' },
+          ]}
+          rows={mapRecords(searchResults, (r) => ({
+            kind: String(r.kind ?? '—'),
+            title: String(r.title ?? '—'),
+            path: String(r.path ?? '—'),
+            score: r.score != null ? String(r.score) : '—',
+          }))}
+          emptyLabel="Run a search from the command palette to populate results."
+        />
+      </SectionPanel>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionPanel title="Knowledge graph" description="Linked entities across racing domains.">
+          <RecordTable
+            columns={[
+              { key: 'node', label: 'Node' },
+              { key: 'type', label: 'Type' },
+              { key: 'links', label: 'Links' },
+            ]}
+            rows={mapRecords(graphNodes, (n) => ({
+              node: String(n.label ?? n.id ?? '—'),
+              type: String(n.type ?? n.kind ?? '—'),
+              links: String(extractArray(n, 'edges').length || (n.linkCount ?? '—')),
+            }))}
+            emptyLabel="No knowledge graph nodes."
+          />
+        </SectionPanel>
+        <SectionPanel title="Reporting workspace" description="Templates and recent report generation jobs.">
+          <RecordTable
+            columns={[
+              { key: 'name', label: 'Template / job' },
+              { key: 'status', label: 'Status' },
+              { key: 'format', label: 'Format' },
+            ]}
+            rows={[
+              ...mapRecords(reportTemplates, (t) => ({
+                name: String(t.name ?? t.templateId ?? '—'),
+                status: 'template',
+                format: String(t.format ?? '—'),
+              })),
+              ...mapRecords(reportJobs, (j) => ({
+                name: String(j.name ?? j.jobId ?? '—'),
+                status: String(j.status ?? '—'),
+                format: String(j.format ?? '—'),
+              })),
+            ]}
+            emptyLabel="No reporting templates or jobs."
+          />
+        </SectionPanel>
+      </div>
       <SectionPanel title="KPI trends" description="Historical snapshots from the KPI calculation engine.">
         <RecordTable
           columns={[
@@ -126,9 +189,13 @@ export function NotificationsPanels({ results }: { results: WorkspaceDataResult[
 export function AdminFoundationPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
   const foundation = feedData<Record<string, unknown>>(results, '/platform/foundation');
   const environment = feedData<Record<string, unknown>>(results, '/platform/environment');
+  const identity = feedData<Record<string, unknown>>(results, '/identity/workspace');
   const orgs = extractArray<Record<string, unknown>>(foundation, 'organizations');
   const tenants = extractArray<Record<string, unknown>>(foundation, 'tenants');
   const flags = extractArray<Record<string, unknown>>(foundation, 'featureFlags');
+  const users = extractArray<Record<string, unknown>>(identity, 'users');
+  const roleAssignments = extractArray<Record<string, unknown>>(identity, 'roleAssignments');
+  const accessRequests = extractArray<Record<string, unknown>>(identity, 'accessRequests');
 
   return (
     <div className="space-y-4">
@@ -172,6 +239,33 @@ export function AdminFoundationPanels({ results }: { results: WorkspaceDataResul
             { key: 'description', label: 'Description' },
           ]}
           rows={mapRecords(flags, (f) => ({ key: String(f.key ?? '—'), description: String(f.description ?? '—') }))}
+        />
+      </SectionPanel>
+      <SectionPanel title="Identity & access" description="Users, role assignments, and pending access requests.">
+        <RecordTable
+          columns={[
+            { key: 'principal', label: 'Principal' },
+            { key: 'role', label: 'Role' },
+            { key: 'status', label: 'Status' },
+          ]}
+          rows={[
+            ...mapRecords(users, (u) => ({
+              principal: String(u.displayName ?? u.userId ?? '—'),
+              role: String(u.primaryRole ?? '—'),
+              status: String(u.status ?? 'active'),
+            })),
+            ...mapRecords(roleAssignments, (r) => ({
+              principal: String(r.userId ?? '—'),
+              role: String(r.role ?? '—'),
+              status: 'assigned',
+            })),
+            ...mapRecords(accessRequests, (r) => ({
+              principal: String(r.userId ?? '—'),
+              role: String(r.requestedRole ?? '—'),
+              status: String(r.status ?? 'pending'),
+            })),
+          ]}
+          emptyLabel="No identity records returned."
         />
       </SectionPanel>
     </div>

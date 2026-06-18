@@ -68,7 +68,7 @@ test('frontend uses workspace pages wired to backend paths', async () => {
   assert.match(workspace, /MetricGrid/);
   assert.match(workspace, /PriorityQueue/);
   assert.match(workspace, /AdvisoryCard/);
-  assert.match(router, /DashboardPage/);
+  assert.match(router, /WorkspacePage routeId=\{route\.id\}/);
   assert.match(components, /MetricGrid/);
   assert.match(components, /PriorityQueue/);
 });

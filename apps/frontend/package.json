@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prestart": "npm --prefix ../../packages/shared run build",
     "start": "vite --host 127.0.0.1 --port 5173",
-    "test": "node tests/frontend-contracts.test.mjs"
+    "test": "node tests/frontend-contracts.test.mjs && node tests/route-inventory.test.mjs && node tests/platform-verification.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "1.1.15",

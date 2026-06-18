@@ -33,11 +33,24 @@ export function ErrorState({ title, message, onRetry }: { title: string; message
   );
 }
 
-export function EmptyState({ title, description }: { title: string; description?: string }): ReactElement {
+export function EmptyState({
+  title,
+  description,
+  onRetry,
+}: {
+  title: string;
+  description?: string;
+  onRetry?: () => void;
+}): ReactElement {
   return (
     <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--border)] p-8 text-center">
       <h3 className="font-medium">{title}</h3>
       {description ? <p className="mt-1 text-sm text-[var(--muted-foreground)]">{description}</p> : null}
+      {onRetry ? (
+        <button type="button" className="mt-3 text-sm font-medium text-[var(--primary)]" onClick={onRetry}>
+          Retry
+        </button>
+      ) : null}
     </div>
   );
 }

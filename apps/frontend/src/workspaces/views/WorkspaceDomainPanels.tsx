@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import type { DomainRouteId } from '@/domain/support';
+import { EmptyState } from '@/design/components/states';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { AdminPanels, CommandCenterPanels } from './commandPanels';
 import { RaceDayPanels } from './racePanels';
@@ -20,7 +21,7 @@ export function WorkspaceDomainPanels({
 }: {
   routeId: DomainRouteId;
   results: WorkspaceDataResult[];
-}): ReactElement | null {
+}): ReactElement {
   switch (routeId) {
     case 'dashboard':
       return <CommandCenterPanels results={results} />;
@@ -68,7 +69,14 @@ export function WorkspaceDomainPanels({
       return <FanExperiencePanels results={results} />;
     case 'notifications':
       return <NotificationsPanels results={results} />;
-    default:
-      return null;
+    default: {
+      const unknownRoute: never = routeId;
+      return (
+        <EmptyState
+          title="Workspace panels unavailable"
+          description={`No domain panel is registered for route ${String(unknownRoute)}.`}
+        />
+      );
+    }
   }
 }

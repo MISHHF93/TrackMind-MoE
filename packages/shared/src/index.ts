@@ -328,6 +328,10 @@ export * from './nexusPlatformExpansion.js';
 
 export * from './platformFoundation.js';
 
+export * from './alertModel.js';
+
+export * from './governanceLineage.js';
+
 export * from './racingCalendar.js';
 export * from './raceCardManagement.js';
 export * from './horseRegistry.js';

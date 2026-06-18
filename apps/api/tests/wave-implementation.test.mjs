@@ -71,8 +71,41 @@ test('wave 18 model registry and wave 19 federation KPIs', async () => {
   assert.equal(registry.status, 200);
   assert.ok(registry.body.modelCards.length > 0);
 
+  const promptRegistration = await handleApiRequest('POST', '/api/v1/ai-governance/model-registry/prompts', {
+    id: 'surface-intervention-v5',
+    name: 'Surface Intervention',
+    version: '5.0.0',
+    path: 'ai/prompt-cards/surface-intervention-v5.md',
+    lineage: ['surface-intervention-v4', 'surface-advisor-v2'],
+  }, state, adminHeaders);
+  assert.equal(promptRegistration.status, 201);
+  assert.equal(promptRegistration.body.eventType, 'ai.prompt-card.registered');
+  assert.ok(promptRegistration.body.registry.promptCards.some((card) => card.id === 'surface-intervention-v5'));
+
   const federation = await handleApiRequest('GET', '/api/v1/federation/kpi-aggregation', undefined, state, adminHeaders);
   assert.equal(federation.status, 200);
+});
+
+test('wave 09 emergency workflow activation mutation', async () => {
+  const state = createApiFacadeState();
+  const before = await handleApiRequest('GET', '/api/v1/emergency-operations/workspace', undefined, state, adminHeaders);
+  assert.equal(before.status, 200);
+
+  const activation = await handleApiRequest('POST', '/api/v1/emergency-operations/workflows', {
+    id: 'wf-weather-drill',
+    planId: 'plan-weather',
+    scenario: 'severe-weather',
+    severity: 'major',
+    location: 'Grandstand',
+    activatedBy: 'incident-commander',
+    roles: ['admin'],
+  }, state, adminHeaders);
+  assert.equal(activation.status, 201);
+  assert.equal(activation.body.eventType, 'emergency.workflow.activated');
+  assert.equal(activation.body.workflowId, 'wf-weather-drill');
+
+  const after = await handleApiRequest('GET', '/api/v1/emergency-operations/workspace', undefined, state, adminHeaders);
+  assert.notEqual(after.body.activeEmergencyStatus, before.body.activeEmergencyStatus);
 });
 
 test('wave 20 global search and notifications', async () => {

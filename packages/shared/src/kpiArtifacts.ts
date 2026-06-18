@@ -58,6 +58,8 @@ export interface KPISourceEntityRef {
 
 export interface KPIAuditReference {
   auditEventIds: string[];
+  /** Alias consumed by domain KPI DTOs and lineage validators. */
+  auditIds?: string[];
   eventIds: string[];
   correlationId: string;
   calculationRunId: string;

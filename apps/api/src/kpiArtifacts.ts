@@ -171,6 +171,7 @@ function toArtifact(definition: KPIDefinitionSeed, generatedAt: string, tenantId
   const calculationRunId = `calc-${kpiId}-v1`;
   const auditReference = {
     auditEventIds: [`audit-${kpiId}-definition`, `audit-${kpiId}-calculation`],
+    auditIds: [`audit-${kpiId}-definition`, `audit-${kpiId}-calculation`],
     eventIds: definition.sourceEvents,
     correlationId: `corr-${kpiId}`,
     calculationRunId,

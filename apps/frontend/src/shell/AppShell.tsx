@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { backendSupportLabels, canViewRoute } from '@/domain/support';
+import { navigationGroups } from '@/routes/validateRoutes';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { routes, type AppRoute } from '@/routes/routes';
 import { useWorkspaceContext } from '@/hooks/useWorkspaceContext';
@@ -14,7 +15,7 @@ import { CommandPalette } from './CommandPalette';
 import { MoEChatPanel } from '@/features/assistant/MoEChatPanel';
 import { NotificationCenter } from './NotificationCenter';
 
-const navigationOrder = ['Command', 'Race Operations', 'Safety & Facilities', 'Governance', 'Business Controls', 'Data Governance', 'Platform', 'System Status'] as const;
+const navigationOrder = navigationGroups;
 
 export function AppShell(): ReactElement {
   const { session } = useTenantSession();

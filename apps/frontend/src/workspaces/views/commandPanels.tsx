@@ -81,10 +81,31 @@ export function CommandCenterPanels({ results }: { results: WorkspaceDataResult[
 
 export function AdminPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
   const health = feedData<Record<string, unknown>>(results, '/platform/health');
+  const ownership = feedData<Record<string, unknown>>(results, '/platform/domain-ownership');
+  const lineage = feedData<Record<string, unknown>>(results, '/platform/governance-lineage/validation');
+  const executive = feedData<Record<string, unknown>>(results, '/platform/executive-scorecard');
+  const maturity = feedData<Record<string, unknown>>(results, '/platform/maturity-review');
   const services = extractArray<Record<string, unknown>>(health, 'services');
+  const lineageSummary = lineage?.summary as Record<string, unknown> | undefined;
+
   return (
     <div className="space-y-4">
       <AdminFoundationPanels results={results} />
+      <SectionPanel title="Governance & maturity" description="Domain ownership, lineage validation, readiness scorecards, and platform maturity review.">
+        <RecordTable
+          columns={[
+            { key: 'artifact', label: 'Artifact' },
+            { key: 'metric', label: 'Metric' },
+            { key: 'status', label: 'Status' },
+          ]}
+          rows={[
+            { artifact: 'Domain ownership entries', metric: String(extractArray(ownership, 'entries').length), status: 'registry' },
+            { artifact: 'Lineage checks valid', metric: String(lineageSummary?.valid ?? '—'), status: 'validated' },
+            { artifact: 'Executive overall score', metric: String(executive?.overall ?? '—'), status: 'score' },
+            { artifact: 'Platform maturity grade', metric: String(maturity?.overallGrade ?? '—'), status: 'grade' },
+          ]}
+        />
+      </SectionPanel>
       <SectionPanel title="Platform services" description="Dependency health from platform observability.">
         <RecordTable
           columns={[

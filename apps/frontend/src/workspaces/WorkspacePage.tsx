@@ -12,7 +12,9 @@ import { routeById, type DomainRouteId } from '@/routes/routes';
 import { useWorkspaceData, extractArray, stringField, type WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { useWorkspaceContext } from '@/hooks/useWorkspaceContext';
 import { LoadingState, ErrorState, EmptyState } from '@/design/components/states';
+import { SupportStatusBadge } from '@/design/components/support-status-badge';
 import { Badge } from '@/design/components/badge';
+import { DegradedStateBanner } from '@/shell/DegradedStateBanner';
 import {
   AdvisoryCard,
   DataTable,
@@ -194,11 +196,21 @@ export function WorkspacePage({ routeId }: { routeId: DomainRouteId }): ReactEle
 
   const results = data ?? [];
   const allFailed = results.length > 0 && results.every((item) => item.status === 'error');
+  const allEmpty = results.length > 0 && results.every((item) => item.status === 'empty');
   if (isError || allFailed) {
     const message = allFailed
       ? results.find((item) => item.message)?.message ?? 'All backend feeds are unavailable. Start the API with npm run start:api.'
       : (error as Error)?.message;
     return <ErrorState title="Backend unavailable" message={message} onRetry={() => void refetch()} />;
+  }
+  if (allEmpty) {
+    return (
+      <EmptyState
+        title={`No ${route.label} data yet`}
+        description="Backend feeds returned empty collections. Retry when race-day or governance data is available."
+        onRetry={() => void refetch()}
+      />
+    );
   }
 
   const metrics = buildMetrics(routeId, results);
@@ -211,7 +223,7 @@ export function WorkspacePage({ routeId }: { routeId: DomainRouteId }): ReactEle
       <header className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">{route.label}</h1>
-          <Badge variant="secondary">{backendSupportLabels[route.supportStatus]}</Badge>
+          <SupportStatusBadge status={route.supportStatus} />
           {hasErrors ? <Badge variant="warning">degraded</Badge> : <Badge variant="nominal">connected</Badge>}
         </div>
         <p className="text-sm text-[var(--muted-foreground)] max-w-3xl">{route.dataSource}</p>
@@ -219,6 +231,10 @@ export function WorkspacePage({ routeId }: { routeId: DomainRouteId }): ReactEle
       </header>
 
       <MetricGrid metrics={metrics} />
+
+      {hasErrors ? (
+        <DegradedStateBanner message="Some backend feeds are unavailable. The console remains accessible in degraded mode." />
+      ) : null}
 
       <WorkspaceDomainPanels routeId={routeId} results={results} />
 
@@ -251,9 +267,6 @@ export function WorkspacePage({ routeId }: { routeId: DomainRouteId }): ReactEle
         </TabsContent>
       </Tabs>
 
-      {hasErrors ? (
-        <EmptyState title="Backend unavailable for some feeds" description="The console remains accessible in degraded mode. Retry or check API service status." />
-      ) : null}
     </div>
   );
 }

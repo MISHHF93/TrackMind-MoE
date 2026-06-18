@@ -1,7 +1,9 @@
 import { normalizeApprovalStatus, normalizeProtectedActionIntent, type ApprovalStatus, type ApprovalViewStatusDto, type ApprovalWorkflowStatus, type CanonicalApprovalRequest, type CanonicalApprovalStep, type ProtectedAction, type Role } from '@trackmind/shared';
+import { approvalPriorityFromAction } from '@trackmind/shared';
 import type { ImmutableAuditLog } from './auditLog.js';
 import type { UniversalEventBus } from './eventBus.js';
 import type { WorkflowOrchestrationEngine } from './workflowEngine.js';
+import { notificationFramework } from './platform/notificationFramework.js';
 
 export interface HumanApprovalRecord {
   id: string;
@@ -246,7 +248,9 @@ export class CentralizedApprovalService {
     const policy = this.policy(input.action); const now = input.now ?? new Date().toISOString();
     if (!input.racetrackId) throw new Error('Controlled action approval requests require racetrackId');
     const request: ControlledActionRequest = { ...input, id: input.id ?? id('approval'), createdAt: now, expiresAt: addMinutes(now, policy.expiresInMinutes), status: 'pending', decisions: [], escalatedToRoles: [] };
-    this.requests.set(request.id, request); const auditRef = this.audit('approval.requested', request.requestedBy, request, now); void this.publish('approval.requested', { ...request, auditRef }); this.notifyWorkflow('approval.requested', request, now); return clone(request);
+    this.requests.set(request.id, request); const auditRef = this.audit('approval.requested', request.requestedBy, request, now); void this.publish('approval.requested', { ...request, auditRef }); this.notifyWorkflow('approval.requested', request, now);
+    notificationFramework.publishOperational({ category: 'approval', title: `Approval requested: ${request.action}`, message: request.reason, targetRoles: [...new Set(policy.chain.flatMap((step) => step.roles))], severity: 'warning', priority: approvalPriorityFromAction(request.action) });
+    return clone(request);
   }
 
   delegate(principalId: string, delegateId: string, roles: Role[], expiresAt: string, reason: string, now = new Date().toISOString()): ApprovalDelegationRecord { if (isNonHumanActorId(principalId) || isNonHumanActorId(delegateId)) throw new Error('AI agents and services cannot receive approval delegation'); if (roles.length === 0) throw new Error('Approval delegation requires at least one role'); const record = { principalId, delegateId, roles: [...new Set(roles)], expiresAt, reason, createdAt: now }; this.delegations.set(principalId, [...(this.delegations.get(principalId) ?? []), record]); const auditRef = this.audit('approval.delegated', principalId, record, now); void this.publish('approval.delegated', { ...record, auditRef }); return clone(record); }
@@ -263,7 +267,9 @@ export class CentralizedApprovalService {
     for (const item of openStep.evidenceRequired) if (item === 'reason' ? !reason : !evidence.includes(item)) throw new Error(`Approval evidence missing: ${item}`);
     request.decisions.push({ stepId: openStep.id, actorId: actor.id, roles: effectiveRoles, decision, reason, evidence, decidedAt: now, delegatedFor: delegatedFor?.principalId });
     if (decision === 'rejected') request.status = 'rejected'; else if (policy.chain.every((step) => this.stepSatisfied(request, step))) request.status = 'approved';
-    const auditRef = this.audit(`approval.${decision}`, actor.id, request, now); void this.publish(`approval.${decision}`, { ...request, auditRef }); this.notifyWorkflow(`approval.${decision}`, request, now); return clone(request);
+    const auditRef = this.audit(`approval.${decision}`, actor.id, request, now); void this.publish(`approval.${decision}`, { ...request, auditRef }); this.notifyWorkflow(`approval.${decision}`, request, now);
+    notificationFramework.publishOperational({ category: 'approval', title: `Approval ${decision}: ${request.action}`, message: reason, targetRoles: [...new Set(policy.chain.flatMap((step) => step.roles))], severity: decision === 'rejected' ? 'critical' : 'info', priority: approvalPriorityFromAction(request.action) });
+    return clone(request);
   }
 
   authorizeExecution(input: { requestId: string; action: ControlledAction; target: string; tenantId: string; racetrackId: string; actor: ApprovalActor; now?: string }): ApprovalToken {
@@ -287,7 +293,7 @@ export class CentralizedApprovalService {
   }
 
   expire(requestId: string, now = new Date().toISOString()): ControlledActionRequest { const request = this.require(requestId); if (['pending', 'escalated'].includes(request.status) && request.expiresAt <= now) { request.status = 'expired'; const auditRef = this.audit('approval.expired', 'system', request, now); void this.publish('approval.expired', { ...request, auditRef }); this.notifyWorkflow('approval.expired', request, now); } return clone(request); }
-  evaluateEscalations(now = new Date().toISOString()): ControlledActionRequest[] { const changed: ControlledActionRequest[] = []; for (const request of this.requests.values()) { if (request.status !== 'pending') continue; this.expire(request.id, now); if (request.status !== 'pending') continue; const before = request.escalatedToRoles.length; for (const rule of this.policy(request.action).escalationRules) if (addMinutes(request.createdAt, rule.afterMinutes) <= now) request.escalatedToRoles = [...new Set([...request.escalatedToRoles, ...rule.escalateToRoles])]; if (request.escalatedToRoles.length > before) { request.status = 'escalated'; const auditRef = this.audit('approval.escalated', 'system', request, now); void this.publish('approval.escalated', { ...request, auditRef }); this.notifyWorkflow('approval.escalated', request, now); changed.push(clone(request)); } } return changed; }
+  evaluateEscalations(now = new Date().toISOString()): ControlledActionRequest[] { const changed: ControlledActionRequest[] = []; for (const request of this.requests.values()) { if (request.status !== 'pending') continue; this.expire(request.id, now); if (request.status !== 'pending') continue; const before = request.escalatedToRoles.length; const policy = this.policy(request.action); for (const rule of policy.escalationRules) if (addMinutes(request.createdAt, rule.afterMinutes) <= now) request.escalatedToRoles = [...new Set([...request.escalatedToRoles, ...rule.escalateToRoles])]; if (request.escalatedToRoles.length > before) { request.status = 'escalated'; const auditRef = this.audit('approval.escalated', 'system', request, now); void this.publish('approval.escalated', { ...request, auditRef }); this.notifyWorkflow('approval.escalated', request, now); notificationFramework.publishOperational({ category: 'approval', title: `Approval escalated: ${request.action}`, message: policy.escalationRules.map((item) => item.reason).join('; '), targetRoles: request.escalatedToRoles, severity: 'critical', priority: 'critical' }); changed.push(clone(request)); } } return changed; }
   getRequest(id: string): ControlledActionRequest { return clone(this.require(id)); }
   hasRequest(id: string): boolean { return this.requests.has(id); }
   allRequests(): ControlledActionRequest[] { return [...this.requests.values()].map(clone); }

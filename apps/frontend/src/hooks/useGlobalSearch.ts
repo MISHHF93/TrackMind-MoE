@@ -1,18 +1,12 @@
 import { useEffect, useState } from 'react';
+import type { GlobalSearchResponseDto, GlobalSearchResultDto } from '@trackmind/shared';
 import { getJson } from '@/api/client';
 import { apiPaths } from '@/api/paths';
 
-export interface GlobalSearchResult {
-  id: string;
-  kind: string;
-  title: string;
-  subtitle?: string;
-  path: string;
-  score: number;
-}
+export type GlobalSearchResult = GlobalSearchResultDto;
 
-export function useGlobalSearch(query: string, enabled: boolean): { results: GlobalSearchResult[]; loading: boolean } {
-  const [results, setResults] = useState<GlobalSearchResult[]>([]);
+export function useGlobalSearch(query: string, enabled: boolean): { results: GlobalSearchResultDto[]; loading: boolean } {
+  const [results, setResults] = useState<GlobalSearchResultDto[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -25,7 +19,7 @@ export function useGlobalSearch(query: string, enabled: boolean): { results: Glo
 
     const handle = window.setTimeout(() => {
       setLoading(true);
-      void getJson<{ results?: GlobalSearchResult[] }>(`${apiPaths.search.global}?q=${encodeURIComponent(trimmed)}`)
+      void getJson<GlobalSearchResponseDto>(`${apiPaths.search.global}?q=${encodeURIComponent(trimmed)}`)
         .then((response) => {
           setResults(response.status === 'ready' ? response.data?.results ?? [] : []);
         })

@@ -74,6 +74,10 @@ export function FinancePanels({ results }: { results: WorkspaceDataResult[] }): 
 
 export function FederationPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
   const data = feedData<Record<string, unknown>>(results, '/federation/workspace');
+  const industry = feedData<Record<string, unknown>>(results, '/industry-intelligence/workspace');
+  const benchmarksFeed = feedData<Record<string, unknown>>(results, '/industry-intelligence/benchmarks');
+  const trendsFeed = feedData<Record<string, unknown>>(results, '/industry-intelligence/trends');
+  const federationIntel = feedData<Record<string, unknown>>(results, '/federation-intelligence/workspace');
   const tracks = extractArray<Record<string, unknown>>(data, 'tracks');
   const benchmarks = (() => {
     const benchmarking = data && typeof data.crossTrackBenchmarking === 'object'
@@ -81,6 +85,9 @@ export function FederationPanels({ results }: { results: WorkspaceDataResult[] }
       : undefined;
     return extractArray<Record<string, unknown>>(benchmarking, 'metrics');
   })();
+  const industryBenchmarks = extractArray<Record<string, unknown>>(benchmarksFeed, 'benchmarks');
+  const industryTrends = extractArray<Record<string, unknown>>(trendsFeed, 'trends');
+  const aggregateSignals = extractArray<Record<string, unknown>>(federationIntel, 'aggregateSignals');
   const tenant = data && typeof data.tenant === 'object' ? data.tenant as Record<string, unknown> : undefined;
 
   return (
@@ -89,11 +96,12 @@ export function FederationPanels({ results }: { results: WorkspaceDataResult[] }
         items={[
           { id: 'cert', label: 'Certification', value: String(tenant?.certificationStatus ?? '—') },
           { id: 'tracks', label: 'Federation tracks', value: String(tracks.length) },
-          { id: 'benchmarks', label: 'Benchmarks', value: String(benchmarks.length) },
+          { id: 'benchmarks', label: 'Benchmarks', value: String(benchmarks.length + industryBenchmarks.length) },
+          { id: 'signals', label: 'Aggregate signals', value: String(aggregateSignals.length) },
         ]}
       />
       <div className="grid gap-4 xl:grid-cols-2">
-        <SectionPanel title="Track certification">
+        <SectionPanel title="Track certification" description="Aggregate certification posture — no tenant PII.">
           <RecordTable
             columns={[
               { key: 'track', label: 'Track' },
@@ -114,11 +122,43 @@ export function FederationPanels({ results }: { results: WorkspaceDataResult[] }
               { key: 'value', label: 'Value' },
               { key: 'percentile', label: 'Percentile' },
             ]}
-            rows={mapRecords(benchmarks, (m) => ({
+            rows={mapRecords([...benchmarks, ...industryBenchmarks], (m) => ({
               metric: String(m.metric ?? m.name ?? '—'),
-              value: String(m.value ?? '—'),
-              percentile: m.percentile != null ? String(m.percentile) : '—',
+              value: String(m.value ?? m.trackValue ?? '—'),
+              percentile: m.percentile != null ? String(m.percentile) : String(m.industryMedian ?? '—'),
             }))}
+          />
+        </SectionPanel>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionPanel title="Industry intelligence" description="Anonymized federation-wide trends.">
+          <RecordTable
+            columns={[
+              { key: 'metric', label: 'Metric' },
+              { key: 'direction', label: 'Direction' },
+              { key: 'confidence', label: 'Confidence' },
+            ]}
+            rows={mapRecords(industryTrends.length ? industryTrends : extractArray(industry, 'trends'), (t) => ({
+              metric: String(t.metric ?? t.label ?? '—'),
+              direction: String(t.direction ?? t.trend ?? '—'),
+              confidence: t.confidence != null ? String(t.confidence) : '—',
+            }))}
+            emptyLabel="No industry trends returned."
+          />
+        </SectionPanel>
+        <SectionPanel title="Federation intelligence" description="Permission-governed aggregate signals only.">
+          <RecordTable
+            columns={[
+              { key: 'signal', label: 'Signal' },
+              { key: 'domain', label: 'Domain' },
+              { key: 'score', label: 'Score' },
+            ]}
+            rows={mapRecords(aggregateSignals, (s) => ({
+              signal: String(s.label ?? s.signalId ?? '—'),
+              domain: String(s.domain ?? '—'),
+              score: s.score != null ? String(s.score) : '—',
+            }))}
+            emptyLabel="No federation intelligence signals."
           />
         </SectionPanel>
       </div>

@@ -13,7 +13,7 @@ export interface KpiItem {
 export function KpiStrip({ items, className }: { items: KpiItem[]; className?: string }): ReactElement | null {
   if (items.length === 0) return null;
   return (
-    <div className={cn('grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6', className)}>
+    <div className={cn('kpi-strip grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6', className)}>
       {items.map((item) => (
         <div key={item.id} className="rounded-md border border-[var(--border)] bg-[var(--card)] p-3 shadow-sm">
           <p className="text-xs text-[var(--muted-foreground)]">{item.label}</p>

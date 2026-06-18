@@ -167,10 +167,75 @@ export interface FinancePlatformWorkspaceDto {
   mock: boolean;
 }
 
+export interface AIModelCardDto {
+  id: string;
+  name: string;
+  version: string;
+  riskLevel: string;
+  path: string;
+  lastEvaluatedAt: string;
+}
+
+export interface AIPromptCardDto {
+  id: string;
+  name: string;
+  version: string;
+  path: string;
+  lineage: string[];
+}
+
 export interface AIModelCardRegistryDto {
   generatedAt: string;
-  modelCards: Array<{ id: string; name: string; version: string; riskLevel: string; path: string; lastEvaluatedAt: string }>;
-  promptCards: Array<{ id: string; name: string; version: string; path: string; lineage: string[] }>;
+  modelCards: AIModelCardDto[];
+  promptCards: AIPromptCardDto[];
+  mock: boolean;
+}
+
+export interface AIModelCardRegistrationInput {
+  id: string;
+  name: string;
+  version: string;
+  riskLevel: string;
+  path: string;
+  lastEvaluatedAt?: string;
+}
+
+export interface AIPromptCardRegistrationInput {
+  id: string;
+  name: string;
+  version: string;
+  path: string;
+  lineage: string[];
+}
+
+export interface AIModelCardRegistryMutationResultDto {
+  accepted: true;
+  registry: AIModelCardRegistryDto;
+  registeredId: string;
+  eventType: string;
+  message: string;
+  mock: boolean;
+}
+
+export interface EmergencyWorkflowActivationInput {
+  id: string;
+  planId: string;
+  scenario: 'severe-weather' | 'medical-emergency' | 'fire-incident' | 'infrastructure-failure' | 'evacuation' | 'security-incident' | 'business-continuity' | 'disaster-recovery';
+  severity: 'watch' | 'minor' | 'major' | 'critical';
+  location: string;
+  activatedBy: string;
+  roles?: string[];
+  tenantId?: string;
+  racetrackId?: string;
+}
+
+export interface EmergencyWorkflowMutationResultDto {
+  accepted: true;
+  workflowId: string;
+  auditId: string;
+  eventType: string;
+  message: string;
+  workspace: Record<string, unknown>;
   mock: boolean;
 }
 

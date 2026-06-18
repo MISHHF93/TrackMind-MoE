@@ -11,7 +11,7 @@ import { createCommandCenterContractSnapshot } from './commandCenterV1.js';
 import { CollaborationService, type CollaborationActivityQuery, type CollaborationCreateAssignmentInput, type CollaborationCreateCommentInput, type CollaborationCreateDecisionInput, type CollaborationPrincipal, type CollaborationThreadQuery } from './collaborationService.js';
 import { seededComplianceLibrary } from './complianceControlLibrary.js';
 import { createComplianceReportingController, type ComplianceReportingController } from './compliance/index.js';
-import { EmergencyOperationsPlatform } from './emergencyOperations.js';
+import { EmergencyOperationsPlatform, type EmergencyWorkflowInput } from './emergencyOperations.js';
 import { createCqrsCommandHandler, type CqrsCommandHandler, type RaceStartCommandBody, type SafetyCriticalCommandBody } from './events/index.js';
 import { createNexusEventCatalog } from './eventBus.js';
 import { FacilitiesMaintenanceService } from './facilitiesMaintenance.js';
@@ -296,7 +296,7 @@ function createServiceBackedFacilitiesWorkspace(timestamp: string): JsonBody {
   return service.workspace(principal);
 }
 
-function createServiceBackedEmergencyWorkspace(workforce: Record<string, any>, timestamp: string): JsonBody {
+function createServiceBackedEmergencyWorkspace(workforce: Record<string, any>, timestamp: string): { platform: EmergencyOperationsPlatform; workspace: JsonBody } {
   const platform = new EmergencyOperationsPlatform();
   platform.registerWorkflowDefinitions('trackmind');
   platform.registerEmergencyPlan({ id: 'plan-fire', name: 'Barn fire and evacuation plan', scenarios: ['fire-incident', 'evacuation'], ownerRole: 'incident-commander', activationCriteria: ['alarm activation', 'smoke report', 'human commander declaration'], communicationChannels: ['radio', 'public-address', 'mass-notification'], evacuationZoneIds: ['zone-barn'], drillCadenceDays: 90 });
@@ -321,7 +321,7 @@ function createServiceBackedEmergencyWorkspace(workforce: Record<string, any>, t
   platform.runSimulationExercise('drill-weather-1', 'severe-weather', ['ops', 'security', 'facilities']);
   platform.completeDrill('drill-weather-1', 'Sam Patel', ['Shelter capacity reconciled with digital twin']);
   platform.afterActionReport('inc-100', [{ finding: 'Access-control feed failed over slowly', severity: 'major', owner: 'security' }]);
-  return platform.workspace(false);
+  return { platform, workspace: platform.workspace(false) };
 }
 
 function createServiceBackedRaceOperations(timestamp: string) {
@@ -794,6 +794,7 @@ export interface ApiFacadeState {
   steward: JsonBody;
   security: JsonBody;
   emergency: JsonBody;
+  emergencyPlatform: EmergencyOperationsPlatform;
   workforce: JsonBody;
   compliance: JsonBody;
   federation: JsonBody;
@@ -841,7 +842,9 @@ export function createApiFacadeState(): ApiFacadeState {
   const platformHealth = { ...createMockPlatformHealth(), generatedAt: timestamp };
   const auditLedger = createAuditLedgerFacade(timestamp, contract.auditEvents) as unknown as { verification?: { valid?: boolean }; complianceExport?: { records?: unknown[] } };
   const security = createSecurityOperationsFacade(timestamp) as any;
-  const emergency = createServiceBackedEmergencyWorkspace(workforce, timestamp) as any;
+  const emergencySeed = createServiceBackedEmergencyWorkspace(workforce, timestamp);
+  const emergency = emergencySeed.workspace as any;
+  const emergencyPlatform = emergencySeed.platform;
   const raceOperations = createServiceBackedRaceOperations(timestamp);
   const raceOffice = raceOperations.workspace as any;
   const readinessDashboard = createServiceBackedReadiness({ racePlatform: raceOperations.platform, workforce, facilities: facilitiesMaintenance, security, timestamp }) as any;
@@ -1179,6 +1182,7 @@ export function createApiFacadeState(): ApiFacadeState {
     steward: stewardCenter,
     security,
     emergency,
+    emergencyPlatform,
     workforce: { ...workforce, mock: false },
     compliance: { ...compliance, trackCertificationCandidate: trackCertification, franchiseOperatingStandards: trackCertification.operatingStandards, mock: false },
     federation,
@@ -2057,6 +2061,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     racingData: state.racingData,
     federation: state.federation as Record<string, unknown>,
     equine: state.equine as { horse?: { horseId: string; name?: string } },
+    aiControlPlane: state.aiControlPlane as { recommendations?: unknown[] },
   }, state.platformServices, requestUrl.searchParams);
   if (platformResponse) return platformResponse;
   if (method === 'GET' && path === '/health') return { status: 200, headers: { 'x-trackmind-request-id': requestId }, body: { ok: true, service: 'trackmind-api', status: 'healthy', time: now(), requestId, observability: { structuredLogs: true, requestIdHeader: 'x-trackmind-request-id', serviceHealthEndpoint: `${nexusApiBasePath}/platform/health`, eventStreamEndpoint: `${nexusApiBasePath}/events/stream` } } };
@@ -2657,6 +2662,59 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   }
   if (method === 'GET' && path === '/security-operations/workspace') return { status: 200, body: state.security };
   if (method === 'GET' && path === '/emergency-operations/workspace') return { status: 200, body: state.emergency };
+  if (method === 'POST' && path === '/emergency-operations/workflows') {
+    const input = isRecord(body) ? body : {};
+    const roles = (Array.isArray(input.roles) ? input.roles : ['admin']).filter((role): role is Role => isRole(role));
+    const activatedRoles = roles.length > 0 ? roles : (['admin'] as Role[]);
+    const scenario = String(input.scenario ?? 'severe-weather') as EmergencyWorkflowInput['incident']['scenario'];
+    const severity = String(input.severity ?? 'major') as EmergencyWorkflowInput['incident']['severity'];
+    const workflowId = String(input.id ?? `wf-${Date.now()}`);
+    const planId = String(input.planId ?? 'plan-weather');
+    const location = String(input.location ?? 'Track perimeter');
+    const activatedBy = String(input.activatedBy ?? 'incident-commander');
+    const tenantId = String(input.tenantId ?? 'trackmind');
+    const racetrackId = String(input.racetrackId ?? 'main-track');
+    try {
+      const workflow = state.emergencyPlatform.createEmergencyWorkflow({
+        id: workflowId,
+        planId,
+        activatedBy,
+        activatedByRoles: activatedRoles,
+        tenantId,
+        racetrackId,
+        incident: {
+          id: `inc-${workflowId}`,
+          scenario,
+          severity,
+          location,
+          reportedAt: now(),
+          populationAtRisk: 0,
+          affectedAssets: [{ assetId: 'grandstand', zone: 'zone-grandstand', risk: severity === 'critical' ? 'critical' : 'major' }],
+          systems: [{ system: 'workflow-engine', status: 'online', dataFeeds: ['workflow-state'] }],
+        },
+        commandRoles: [{ id: 'role-ic', role: 'incident-commander', assignee: activatedBy, permissions: ['activate-workflow', 'override-ai', 'dispatch-resource', 'send-communication', 'close-incident'] }],
+        resources: [{ id: `res-${workflowId}`, kind: 'personnel', label: 'Incident response team', status: 'assigned', zoneId: 'zone-grandstand', coordinates: { latitude: 38.044, longitude: -76.949 } }],
+        evacuationZones: [{ id: 'zone-grandstand', name: 'Grandstand', status: 'open', route: ['main concourse'], assemblyArea: 'South Plaza', capacity: 1200 }],
+        communicationChecklist: [{ id: `comm-${workflowId}`, audience: 'field teams', channel: 'radio', message: `Emergency workflow ${workflowId} activated`, completed: false }],
+      });
+      state.emergency = state.emergencyPlatform.workspace(false);
+      const auditId = workflow.auditTimeline.at(-1)?.id ?? `audit-emergency-${workflowId}`;
+      return {
+        status: 201,
+        body: {
+          accepted: true,
+          workflowId: workflow.id,
+          auditId,
+          eventType: 'emergency.workflow.activated',
+          message: `Emergency workflow ${workflow.id} activated under human incident command authority.`,
+          workspace: state.emergency,
+          mock: false,
+        },
+      };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: (error as Error).message } } };
+    }
+  }
   if (method === 'GET' && path === '/workforce-operations/workspace') return { status: 200, body: state.workforce };
   if (method === 'GET' && path === '/compliance/control-library') return { status: 200, body: state.compliance };
   if (method === 'GET' && path === '/federation/workspace') return { status: 200, body: state.federation };
