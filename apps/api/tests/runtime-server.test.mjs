@@ -148,7 +148,9 @@ test('runtime KPI facade exposes governed artifacts, snapshots, filtering, and m
   assert.ok(!apiEndpointContracts.some((endpoint) => endpoint.path.startsWith('/api/v1/artifacts/kpis')));
 
   const workspace = await handleApiRequest('GET', '/api/v1/kpis?tenantId=trackmind&racetrackId=main-track', undefined, state, adminHeaders);
-  assert.equal(workspace.body.kpis.length, 28);
+  assert.equal(workspace.body.kpis.length, 44);
+  assert.ok(workspace.body.kpis.some((kpi) => kpi.kpiId === 'kpi-facilities-readiness'));
+  assert.ok(workspace.body.kpis.some((kpi) => kpi.kpiId === 'kpi-facilities-maintenance-backlog'));
   assert.equal(workspace.body.governance.aiMutationAllowed, false);
   assert.equal(workspace.body.governance.regulatedExecutionAllowed, false);
   assert.deepEqual(validateContract('KPIWorkspaceDto', workspace.body, apiContractSchemas.KPIWorkspaceDto), { valid: true, errors: [] });
@@ -266,6 +268,27 @@ test('runtime API workspaces reject placeholder facades on service-backed routes
   assert.ok(facilities.body.workOrders.length > 0);
   assert.ok(facilities.body.approvals.length > 0);
   assert.ok(facilities.body.twins.length > 0);
+  assert.ok(facilities.body.inventory.length > 0);
+  assert.equal(facilities.body.kpiPackId, 'facilities-kpi-pack-v1');
+
+  const facilitiesMap = await handleApiRequest('GET', '/api/v1/facilities-maintenance/map', undefined, state);
+  assert.equal(facilitiesMap.status, 200);
+  assert.ok(facilitiesMap.body.features.length > 0);
+
+  const schedulePending = await handleApiRequest('POST', '/api/v1/facilities-maintenance/maintenance-schedules', {
+    assetId: 'PATRON_ELEVATOR_A',
+    title: 'Elevator preventive service',
+    priority: 'high',
+    scheduledFor: '2026-06-15T18:00:00.000Z',
+    dueAt: '2026-06-15T20:00:00.000Z',
+    tasks: ['inspect doors', 'verify safety circuit'],
+    evidence: ['door-fault-watch'],
+    operationalImpact: 'operational-impact',
+    requestedBy: 'facilities-supervisor',
+  }, state);
+  assert.equal(schedulePending.status, 202);
+  assert.equal(schedulePending.body.approvalRequired, true);
+  assert.ok(schedulePending.body.approvalRequestId);
 
   const emergency = await handleApiRequest('GET', '/api/v1/emergency-operations/workspace', undefined, state);
   assert.equal(emergency.body.emergencyActions.aiMayBlock, false);
@@ -620,7 +643,7 @@ test('runtime Racing Data API Hub enforces license restrictions before drafts', 
 
 test('runtime Racing Data API Hub uses shared API constants and performs no external calls', async () => {
   const racingDataContracts = apiEndpointContracts.filter((endpoint) => endpoint.path.startsWith('/api/v1/racing-data/'));
-  assert.equal(racingDataContracts.length, 19);
+  assert.equal(racingDataContracts.length, 20);
   assert.ok(racingDataContracts.some((endpoint) => endpoint.operationId === 'createRacingDataIngestDraft' && endpoint.description.includes('no external pull')));
   assert.ok(racingDataContracts.filter((endpoint) => endpoint.method === 'POST').every((endpoint) => /draft/i.test(endpoint.description)));
 

@@ -63,12 +63,25 @@ export interface StewardInquiry {
   id: string; raceId: string; openedAt: string; status: StewardCaseStatus; objections: StewardObjection[]; incidentsUnderReview: StewardIncidentUnderReview[]; investigations: StewardInvestigation[]; involvedHorses: InvolvedHorse[]; involvedJockeys: InvolvedJockey[]; evidenceReferences: StewardEvidenceReference[]; ruleReferences: StewardRuleReference[]; decisionDrafts: StewardDecisionDraft[]; evidenceOrganizations: StewardEvidenceOrganization[]; timeline: StewardTimelineEntry[]; finalRuling?: StewardFinalRuling; appealPackages: StewardAppealPackage[]; auditRecords: StewardAuditRecord[]; integrations: StewardIntegrationSnapshot; aiGuardrails: { advisoryOnly: true; mayIssueOfficialRuling: false; mayModifyOfficialResults: false };
 }
 
+export interface StewardNotificationPublisher {
+  publishOperational: (input: {
+    category: 'approval' | 'incident' | 'compliance' | 'platform' | 'ai-recommendation';
+    title: string;
+    message: string;
+    targetRoles: string[];
+    severity?: 'info' | 'warning' | 'critical' | 'advisory';
+    priority?: 'low' | 'medium' | 'high' | 'critical';
+    correlationId?: string;
+  }) => unknown;
+}
+
 export interface StewardCenterIntegrations {
   auditLog?: Pick<ImmutableAuditLog, 'append'>;
   eventBus?: Pick<UniversalEventBus, 'publish'>;
   approvals?: Pick<CentralizedApprovalService, 'createRequest' | 'assertAuthorized'>;
   workflow?: Pick<WorkflowOrchestrationEngine, 'start'>;
   evidenceVault?: Pick<AuditEvidenceCollectionVault, 'collect'>;
+  notifications?: StewardNotificationPublisher;
   observability?: { recordSignal?: (signal: { name: string; severity: 'info' | 'warning' | 'critical'; traceId: string; attributes: Record<string, unknown>; timestamp: string }) => void };
 }
 
@@ -81,6 +94,17 @@ function mirror(inquiry: StewardInquiry, entry: StewardAuditRecord, deps?: Stewa
   deps?.auditLog?.append({ id: `steward:${entry.id}`, type: 'regulatory-activity', actor: entry.actorId, timestamp: entry.at, payload: { action: entry.action, inquiryId: inquiry.id, subjectId: entry.subjectId }, subjectId: inquiry.id, correlationId: `steward:${inquiry.id}`, severity: entry.action === 'access.denied' ? 'critical' : 'warning', regulations: ['HISA', 'ARCI'], evidenceIds: entry.evidenceIds });
   deps?.observability?.recordSignal?.({ name: `steward.${entry.action}`, severity: entry.action === 'access.denied' ? 'critical' : 'info', traceId: `trace-steward-${inquiry.id}`, attributes: { inquiryId: inquiry.id, subjectId: entry.subjectId }, timestamp: entry.at });
 }
+function notifyStewards(inquiry: StewardInquiry, input: { title: string; message: string; severity?: 'info' | 'warning' | 'critical' | 'advisory'; category?: 'approval' | 'incident' | 'compliance' | 'platform' | 'ai-recommendation' }, deps?: StewardCenterIntegrations) {
+  deps?.notifications?.publishOperational({
+    category: input.category ?? 'incident',
+    title: input.title,
+    message: input.message,
+    targetRoles: ['steward', 'admin', 'compliance-officer'],
+    severity: input.severity ?? 'warning',
+    correlationId: `steward:${inquiry.id}`,
+  });
+}
+
 function publish(inquiry: StewardInquiry, type: string, payload: Record<string, unknown>, at: string, deps?: StewardCenterIntegrations) {
   inquiry.integrations.eventTypes.push(type);
   signal(inquiry, type, 'info', at);
@@ -168,7 +192,27 @@ export function addStewardEvidence(inquiry: StewardInquiry, evidenceInput: Omit<
   const entry = audit(inquiry, { at: evidence.capturedAt, actorId: evidence.addedBy, actorRole: evidence.aiGenerated ? 'ai-agent' : 'steward', action: 'evidence.added', subjectId: evidence.id, evidenceIds: [evidence.id], ruleIds: [] }, deps);
   evidence.auditRecordId = entry.id;
   publish(inquiry, 'steward.evidence.added', { evidenceId: evidence.id, kind: evidence.kind, hash: evidence.hash, twinContextIds: evidence.twinContextIds ?? [] }, evidence.capturedAt, deps);
+  notifyStewards(inquiry, { title: 'Steward evidence added', message: `${evidence.kind} evidence ${evidence.id} added to inquiry ${inquiry.id} with custody chain.`, severity: 'info', category: 'incident' }, deps);
   return { ...evidence, custody: evidence.custody ? { ...evidence.custody, custodyRecordIds: [...evidence.custody.custodyRecordIds], chainOfCustody: evidence.custody.chainOfCustody.map((step) => ({ ...step })) } : undefined };
+}
+
+export function getStewardEvidenceReference(inquiry: StewardInquiry, evidenceId: string): StewardEvidenceReference | undefined {
+  const evidence = inquiry.evidenceReferences.find((item) => item.id === evidenceId);
+  if (!evidence) return undefined;
+  return {
+    ...evidence,
+    twinContextIds: [...(evidence.twinContextIds ?? [])],
+    tags: [...(evidence.tags ?? [])],
+    custody: evidence.custody ? {
+      ...evidence.custody,
+      custodyRecordIds: [...evidence.custody.custodyRecordIds],
+      chainOfCustody: evidence.custody.chainOfCustody.map((step) => ({ ...step })),
+    } : undefined,
+  };
+}
+
+export function listStewardEvidenceReferences(inquiry: StewardInquiry): StewardEvidenceReference[] {
+  return inquiry.evidenceReferences.map((evidence) => getStewardEvidenceReference(inquiry, evidence.id)!);
 }
 
 export function addStewardRuleReference(inquiry: StewardInquiry, rule: StewardRuleReference, actorId = 'steward-clerk', at = new Date().toISOString(), deps?: StewardCenterIntegrations): StewardRuleReference {
@@ -243,21 +287,30 @@ export function requestStewardFinalApproval(inquiry: StewardInquiry, input: { te
   inquiry.integrations.approvalRequestIds.push(request.id);
   audit(inquiry, { at: now, actorId: input.requestedBy, actorRole: input.actorType === 'ai-agent' ? 'ai-agent' : 'steward', action: 'approval.requested', subjectId: request.id, evidenceIds: input.evidence, ruleIds: [] }, deps);
   publish(inquiry, 'steward.approval.requested', { approvalRequestId: request.id, workflowInstanceId: input.workflowInstanceId }, now, deps);
+  notifyStewards(inquiry, { title: 'Steward final approval requested', message: input.reason, severity: 'warning', category: 'approval' }, deps);
   return request;
 }
 
+export function validateFinalRulingInvariants(ruling: StewardFinalRuling): { valid: boolean; violations: string[] } {
+  const violations: string[] = [];
+  if (!finalRulingRoles.includes(ruling.issuedByRole) || String(ruling.issuedByRole) === 'ai-agent') violations.push('official steward rulings require an authorized human steward role');
+  if (ruling.officialResultsModified !== false) violations.push('steward center may not modify official results');
+  return { valid: violations.length === 0, violations };
+}
+
 export function issueFinalRuling(inquiry: StewardInquiry, ruling: StewardFinalRuling, options: { approvalToken?: ApprovalToken; approvalService?: Pick<CentralizedApprovalService, 'assertAuthorized'>; tenantId?: string; racetrackId?: string; now?: string; deps?: StewardCenterIntegrations } = {}): StewardFinalRuling {
-  if (!finalRulingRoles.includes(ruling.issuedByRole) || String(ruling.issuedByRole) === 'ai-agent') {
+  const invariantCheck = validateFinalRulingInvariants(ruling);
+  if (!invariantCheck.valid) {
     audit(inquiry, { at: ruling.issuedAt, actorId: ruling.issuedBy, actorRole: ruling.issuedByRole, action: 'access.denied', subjectId: inquiry.id, evidenceIds: ruling.evidenceIds, ruleIds: ruling.ruleIds }, options.deps);
-    throw new Error('official steward rulings require an authorized human steward role');
+    throw new Error(invariantCheck.violations[0]);
   }
-  if (ruling.officialResultsModified !== false) throw new Error('steward center may not modify official results');
   requireKnownEvidenceAndRules(inquiry, ruling.evidenceIds, ruling.ruleIds);
   if (options.approvalService) options.approvalService.assertAuthorized(options.approvalToken, 'steward-decision', inquiry.id, options.tenantId ?? 'track-1', options.racetrackId ?? inquiry.raceId, options.now ?? ruling.issuedAt);
   inquiry.finalRuling = { ...ruling, evidenceIds: [...ruling.evidenceIds], ruleIds: [...ruling.ruleIds], officialResultsModified: false };
   inquiry.status = 'finalized';
   audit(inquiry, { at: ruling.issuedAt, actorId: ruling.issuedBy, actorRole: ruling.issuedByRole, action: 'final-ruling.recorded', subjectId: ruling.id, evidenceIds: ruling.evidenceIds, ruleIds: ruling.ruleIds }, options.deps);
   publish(inquiry, 'steward.final-ruling.recorded', { rulingId: ruling.id, approvalRequestId: ruling.approvalRequestId, officialResultsModified: false }, ruling.issuedAt, options.deps);
+  notifyStewards(inquiry, { title: 'Steward final ruling recorded', message: ruling.decision, severity: 'info', category: 'compliance' }, options.deps);
   return inquiry.finalRuling;
 }
 

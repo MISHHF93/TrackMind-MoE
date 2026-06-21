@@ -251,6 +251,14 @@ export interface SecurityActor { id: string; permissions: SecurityOpsPermission[
 export interface SecurityAuditRecord { id: string; action: SecurityAction; actorId: string; subjectId: string; timestamp: string; hash: string; previousHash: string; sensitiveFields: string[]; sharedAuditId: string }
 export interface RestrictedZone { id: string; name: string; classification: 'public' | 'staff-only' | 'restricted' | 'critical'; requiredCredential: string; cameraIds: string[]; twinId?: string; assetId?: string; retentionPolicy?: string }
 export interface CameraAsset { id: string; zoneId: string; label: string; health: 'online' | 'degraded' | 'offline'; privacyMasking: boolean; lastHeartbeatAt: string; twinId?: string; assetId?: string; coverage?: string[] }
+export interface SecuritySensorAsset { id: string; zoneId: string; label: string; sensorType: 'door-contact' | 'motion' | 'environmental' | 'access-panel'; health: 'online' | 'degraded' | 'offline'; lastHeartbeatAt: string; twinId?: string; assetId?: string }
+export interface SecurityZoneLiveEntry { zoneId: string; name: string; occupancy: number; status: 'nominal' | 'watch' | 'critical'; lastEventAt: string }
+export interface SecurityZoneLiveSnapshot { generatedAt: string; zones: SecurityZoneLiveEntry[]; mock: boolean }
+export interface SecurityIntegrationReadinessItem { id: string; zoneId: string; label: string; health: CameraAsset['health']; integrationStatus: 'ready' | 'watch' | 'blocked'; lastHeartbeatAt: string; webhookConfigured: boolean; twinLinked: boolean }
+export interface SecurityIntegrationReadinessSnapshot { generatedAt: string; score: number; ready: number; watch: number; blocked: number; items: SecurityIntegrationReadinessItem[]; mock: boolean }
+export interface SecurityKpiPack { generatedAt: string; coveragePercent: number; restrictedZoneEvents: number; cameraHealthScore: number; sensorHealthScore: number; activeIncidents: number; openEscalations: number; kpis: Array<{ kpiId: string; value: number; label: string; unit: string }>; mock: boolean }
+export interface AccessWebhookPayload { adapterId: string; zoneId: string; credentialId: string; personDisplayName: string; personLegalName?: string; decision: 'granted' | 'denied'; reason: string; occurredAt: string; signatureValid?: boolean }
+export interface AccessWebhookResult { accepted: boolean; accessEventId: string; eventId: string; auditId: string; webhookAdapterId: string; incidentCreated: boolean }
 export interface AccessControlEvent { id: string; zoneId: string; credentialId: string; personDisplayName: string; personLegalName?: string; decision: 'granted' | 'denied'; reason: string; occurredAt: string; eventId: string; auditId: string }
 export interface SecurityIncident { id: string; title: string; severity: RiskLevel; status: 'open' | 'triaged' | 'escalated' | 'resolved'; zoneId: string; eventIds: string[]; assignedTo?: string; createdAt: string; auditId: string; approvalRequestId?: string }
 export interface SecurityInvestigation { id: string; incidentId: string; status: 'queued' | 'active' | 'closed'; lead: string; evidence: string[]; openedAt: string; auditId: string; approvalRequestId?: string }
@@ -310,6 +318,7 @@ const riskByZone: Record<RestrictedZone['classification'], AssetRiskLevel> = { p
 export class SecurityOperationsService {
   private zones = new Map<string, RestrictedZone>();
   private cameras = new Map<string, CameraAsset>();
+  private sensors = new Map<string, SecuritySensorAsset>();
   private accessEvents: AccessControlEvent[] = [];
   private incidents = new Map<string, SecurityIncident>();
   private investigations = new Map<string, SecurityInvestigation>();
@@ -498,6 +507,120 @@ export class SecurityOperationsService {
   listAuditRecords(): SecurityAuditRecord[] { return this.audits.map(clone); }
   listTwinUpdates(): SecurityTwinUpdate[] { return this.twinUpdates.map(clone); }
 
+  getZonesLive(actor: SecurityActor): SecurityZoneLiveSnapshot {
+    this.require(actor, 'security:read');
+    const generatedAt = this.clock();
+    const zones = this.values(this.zones)
+      .filter((zone) => zone.classification !== 'public')
+      .map((zone) => {
+        const zoneAccess = this.accessEvents.filter((event) => event.zoneId === zone.id);
+        const zoneVisitors = this.visitors.filter((visitor) => visitor.zoneId === zone.id && !visitor.checkedOutAt);
+        const openIncident = [...this.incidents.values()].find((incident) => incident.zoneId === zone.id && incident.status !== 'resolved');
+        const deniedRecent = zoneAccess.some((event) => event.decision === 'denied');
+        const lastEventAt = zoneAccess.at(-1)?.occurredAt ?? generatedAt;
+        const status: SecurityZoneLiveEntry['status'] = openIncident?.severity === 'critical' || (zone.classification === 'critical' && deniedRecent)
+          ? 'critical'
+          : deniedRecent || openIncident || zone.classification === 'critical'
+            ? 'watch'
+            : 'nominal';
+        return {
+          zoneId: zone.id,
+          name: zone.name,
+          occupancy: zoneVisitors.length + zoneAccess.filter((event) => event.decision === 'granted').length,
+          status,
+          lastEventAt,
+        };
+      });
+    return { generatedAt, zones, mock: false };
+  }
+
+  getCameraReadiness(actor: SecurityActor): SecurityIntegrationReadinessSnapshot {
+    this.require(actor, 'security:read');
+    const items = this.values(this.cameras).map((camera) => ({
+      id: camera.id,
+      zoneId: camera.zoneId,
+      label: camera.label,
+      health: camera.health,
+      integrationStatus: camera.health === 'online' ? 'ready' as const : camera.health === 'degraded' ? 'watch' as const : 'blocked' as const,
+      lastHeartbeatAt: camera.lastHeartbeatAt,
+      webhookConfigured: true,
+      twinLinked: Boolean(camera.twinId),
+    }));
+    return this.integrationReadinessSnapshot(items);
+  }
+
+  getSensorReadiness(actor: SecurityActor): SecurityIntegrationReadinessSnapshot {
+    this.require(actor, 'security:read');
+    const items = this.values(this.sensors).map((sensor) => ({
+      id: sensor.id,
+      zoneId: sensor.zoneId,
+      label: sensor.label,
+      health: sensor.health,
+      integrationStatus: sensor.health === 'online' ? 'ready' as const : sensor.health === 'degraded' ? 'watch' as const : 'blocked' as const,
+      lastHeartbeatAt: sensor.lastHeartbeatAt,
+      webhookConfigured: true,
+      twinLinked: Boolean(sensor.twinId),
+    }));
+    return this.integrationReadinessSnapshot(items);
+  }
+
+  ingestAccessWebhook(actor: SecurityActor, payload: AccessWebhookPayload): AccessWebhookResult {
+    this.require(actor, 'security:manage');
+    if (payload.signatureValid === false) {
+      const auditId = this.audit('security.authorization.failed', actor.id, payload.adapterId, ['webhookSignature']);
+      this.emitDomainEvent('security.authorization.failed', payload.adapterId, 'high', auditId, { reason: 'invalid webhook signature', adapterId: payload.adapterId });
+      throw new Error('invalid webhook signature');
+    }
+    const beforeIncidents = this.incidents.size;
+    const access = this.recordAccessEvent(actor, {
+      zoneId: payload.zoneId,
+      credentialId: payload.credentialId,
+      personDisplayName: payload.personDisplayName,
+      personLegalName: payload.personLegalName,
+      decision: payload.decision,
+      reason: `[webhook:${payload.adapterId}] ${payload.reason}`,
+      occurredAt: payload.occurredAt,
+    });
+    const incidentCreated = this.incidents.size > beforeIncidents;
+    return {
+      accepted: true,
+      accessEventId: access.id,
+      eventId: access.eventId,
+      auditId: access.auditId,
+      webhookAdapterId: payload.adapterId,
+      incidentCreated,
+    };
+  }
+
+  computeSecurityKpiPack(): SecurityKpiPack {
+    const generatedAt = this.clock();
+    const cameraItems = [...this.cameras.values()];
+    const sensorItems = [...this.sensors.values()];
+    const integrationAssets = cameraItems.length + sensorItems.length;
+    const readyAssets = cameraItems.filter((camera) => camera.health === 'online').length + sensorItems.filter((sensor) => sensor.health === 'online').length;
+    const coveragePercent = integrationAssets ? Math.round((readyAssets / integrationAssets) * 100) : 100;
+    const cameraHealthScore = cameraItems.length ? Math.round((cameraItems.filter((camera) => camera.health === 'online').length / cameraItems.length) * 100) : 100;
+    const sensorHealthScore = sensorItems.length ? Math.round((sensorItems.filter((sensor) => sensor.health === 'online').length / sensorItems.length) * 100) : 100;
+    const dashboard = this.dashboard();
+    return {
+      generatedAt,
+      coveragePercent,
+      restrictedZoneEvents: dashboard.restrictedZoneEvents,
+      cameraHealthScore,
+      sensorHealthScore,
+      activeIncidents: dashboard.activeAlerts,
+      openEscalations: dashboard.openEscalations,
+      kpis: [
+        { kpiId: 'kpi-security', value: coveragePercent, label: 'Security operations coverage', unit: '%' },
+        { kpiId: 'security-restricted-zone-events', value: dashboard.restrictedZoneEvents, label: 'Restricted zone access events', unit: 'count' },
+        { kpiId: 'security-camera-health', value: cameraHealthScore, label: 'Camera integration health', unit: '%' },
+        { kpiId: 'security-sensor-health', value: sensorHealthScore, label: 'Sensor integration health', unit: '%' },
+        { kpiId: 'security-active-incidents', value: dashboard.activeAlerts, label: 'Active security incidents', unit: 'count' },
+      ],
+      mock: false,
+    };
+  }
+
   private dashboard(): SecurityOperationsWorkspace['dashboard'] {
     const health = { online: 0, degraded: 0, offline: 0 };
     [...this.cameras.values()].forEach((camera) => health[camera.health] += 1);
@@ -668,6 +791,14 @@ export class SecurityOperationsService {
     ] satisfies SecurityDomainEventType[]).forEach((type) => this.eventBus.registerEvent({ type: `${type}.v1`, version: 1, description: `Security Operations ${type}`, owner, payloadFields: ['subjectId', 'severity', 'auditId'], compliance: 'regulated' }));
   }
 
+  private integrationReadinessSnapshot(items: SecurityIntegrationReadinessItem[]): SecurityIntegrationReadinessSnapshot {
+    const ready = items.filter((item) => item.integrationStatus === 'ready').length;
+    const watch = items.filter((item) => item.integrationStatus === 'watch').length;
+    const blocked = items.filter((item) => item.integrationStatus === 'blocked').length;
+    const score = items.length ? Math.round((ready / items.length) * 100) : 100;
+    return { generatedAt: this.clock(), score, ready, watch, blocked, items, mock: false };
+  }
+
   private seed(): void {
     this.zones.set('zone-backstretch-medication', { id: 'zone-backstretch-medication', name: 'Backstretch medication storage', classification: 'critical', requiredCredential: 'veterinary-security', cameraIds: ['cam-med-1'], twinId: 'twin:zone-backstretch-medication', assetId: 'SEC-ZONE-MEDICATION', retentionPolicy: 'security-evidence-7y' });
     this.zones.set('zone-grandstand', { id: 'zone-grandstand', name: 'Grandstand public concourse', classification: 'public', requiredCredential: 'ticket', cameraIds: ['cam-grand-1'], twinId: 'twin:zone-grandstand', assetId: 'SEC-ZONE-GRANDSTAND' });
@@ -675,6 +806,30 @@ export class SecurityOperationsService {
     this.cameras.set('cam-med-1', { id: 'cam-med-1', zoneId: 'zone-backstretch-medication', label: 'Medication Corridor Camera Metadata', health: 'degraded', privacyMasking: true, lastHeartbeatAt: this.clock(), twinId: 'twin:cam-med-1', assetId: 'SEC-CAMERA-CAM-MED-1', coverage: ['medication-storage', 'restricted-door'] });
     this.cameras.set('cam-grand-1', { id: 'cam-grand-1', zoneId: 'zone-grandstand', label: 'Grandstand Overview', health: 'online', privacyMasking: true, lastHeartbeatAt: this.clock(), twinId: 'twin:cam-grand-1', assetId: 'SEC-CAMERA-CAM-GRAND-1', coverage: ['public-concourse'] });
     this.cameras.set('cam-pad-1', { id: 'cam-pad-1', zoneId: 'zone-paddock', label: 'Paddock Gate Fixed', health: 'online', privacyMasking: true, lastHeartbeatAt: this.clock(), twinId: 'twin:cam-pad-1', assetId: 'SEC-CAMERA-CAM-PAD-1', coverage: ['paddock-gate'] });
+    this.sensors.set('sensor-med-door', { id: 'sensor-med-door', zoneId: 'zone-backstretch-medication', label: 'Medication Door Contact', sensorType: 'door-contact', health: 'online', lastHeartbeatAt: this.clock(), twinId: 'twin:sensor-med-door', assetId: 'SEC-SENSOR-MED-DOOR' });
+    this.sensors.set('sensor-paddock-motion', { id: 'sensor-paddock-motion', zoneId: 'zone-paddock', label: 'Paddock Motion Sensor', sensorType: 'motion', health: 'online', lastHeartbeatAt: this.clock(), twinId: 'twin:sensor-paddock-motion', assetId: 'SEC-SENSOR-PADDOCK-MOTION' });
+    this.sensors.set('sensor-grand-env', { id: 'sensor-grand-env', zoneId: 'zone-grandstand', label: 'Grandstand Environmental', sensorType: 'environmental', health: 'degraded', lastHeartbeatAt: this.clock(), twinId: 'twin:sensor-grand-env', assetId: 'SEC-SENSOR-GRAND-ENV' });
     this.watchlist.push({ id: 'watch-placeholder-1', category: 'banned-person', displayLabel: 'Human-reviewed watchlist placeholder', sensitiveNotes: 'Do not display without security sensitive permission or approval', requiresHumanReview: true });
   }
+}
+
+export function createSeededSecurityOperationsService(clock: () => string = () => new Date().toISOString(), options: SecurityOperationsOptions = {}): SecurityOperationsService {
+  const service = new SecurityOperationsService(clock, options);
+  const commander: SecurityActor = {
+    id: 'sec-commander',
+    roles: ['security'],
+    tenantId: 'trackmind',
+    human: true,
+    permissions: ['security:read', 'security:sensitive-read', 'security:manage', 'security:investigate'],
+  };
+  service.checkCredential(commander, { credentialId: 'cred-live-1', holderDisplayName: 'Contractor A', holderLegalName: 'Contractor Alpha', zoneId: 'zone-backstretch-medication', status: 'expired' });
+  const access = service.recordAccessEvent(commander, { zoneId: 'zone-backstretch-medication', credentialId: 'cred-live-1', personDisplayName: 'Contractor A', personLegalName: 'Contractor Alpha', decision: 'denied', reason: 'Credential expired', occurredAt: clock() });
+  const incident = service.getWorkspace({ ...commander, permissions: ['security:read'] }).incidents[0];
+  if (incident) {
+    service.openInvestigation(commander, incident.id, 'investigator-1', ['video://cam-med-1/clip-1', access.eventId]);
+    service.escalateIncident(commander, incident.id);
+  }
+  service.logVisitor(commander, { visitorDisplayName: 'Vendor Escort', visitorLegalName: 'Vendor Escort Legal', host: 'facilities-manager', zoneId: 'zone-paddock', credentialId: 'cred-visitor-1', credentialStatus: 'valid' });
+  service.updateCameraHealth(commander, 'cam-pad-1', 'offline', clock());
+  return service;
 }

@@ -24,6 +24,7 @@ export const permissionRegistry = {
   'data-hub:read': { group: 'integration', description: 'Read Racing Data API Hub provider readiness, lineage, quality, and sharing-control metadata.' },
   'artifact:read': { group: 'integration', description: 'Read Universal Artifact registry, schemas, training inputs, and storage maps.' },
   'kpi:read': { group: 'read', description: 'Read governed KPI artifacts and model-readable context.' },
+  'kpi:admin': { group: 'service', description: 'Administer KPI definitions and request threshold changes.' },
   'ai:approve': { group: 'ai-governance', description: 'Approve or review AI-governed recommendations and protected draft actions.' },
   'ai:read': { group: 'ai-governance', description: 'Read AI governance, control-plane, model, feature, and recommendation metadata.' },
   'discipline:issue': { group: 'race-operations', description: 'Issue steward rulings and disciplinary decisions after approval.' },
@@ -72,7 +73,7 @@ export const rolePermissions: Record<Role, Permission[]> = {
   'racing-secretary': ['read:any','race:request-start','horse:scratch','track:readings','ai:read','ai:approve','workflow:execute','integration:invoke','data-hub:read','kpi:read'],
   'compliance-officer': ['read:any','security:read','compliance:audit','compliance:report','audit:read','audit:export','ai:read','ai:approve','artifact:read','integration:invoke','data-hub:read','kpi:read','policy:manage','access:review'],
   'read-only-auditor': ['read:any','audit:read','compliance:report','artifact:read','data-hub:read','kpi:read'],
-  'operations-admin': ['read:any','identity:read','identity:write','tenant:admin','access:request','access:approve','access:review','workflow:execute','service:operate','integration:invoke','track:readings','incident:manage','kpi:read'],
+  'operations-admin': ['read:any','identity:read','identity:write','tenant:admin','access:request','access:approve','access:review','workflow:execute','service:operate','integration:invoke','track:readings','incident:manage','kpi:read','kpi:admin'],
   'ai-safety-agent': ['read:any','ai:read','ai-agent:act','kpi:read'],
 };
 
@@ -119,7 +120,7 @@ export function normalizeApprovalStatus(value: string): ApprovalWorkflowStatus {
 }
 export type RaceDayEventType = 'horse-arrived'|'vet-check-completed'|'track-reading-ingested'|'race-start-requested'|'steward-inquiry-opened'|'incident-created'|'ticket-sale-completed'|'emergency-alert-raised';
 export type ExpertDomain = 'RaceOps'|'Stewarding'|'EquineSafety'|'VetCompliance'|'TrackSurface'|'WeatherEnvironment'|'WageringIntegrity'|'TicketingFanExperience'|'SecuritySOC'|'FacilitiesIoT'|'MaintenanceOps'|'FinanceRevenue'|'LegalRegulatory'|'ExecutiveDecisionSupport'|'ResponsibleAIGovernor';
-export const protectedActions = ['race-start','race-stop','race-cancellation','official-results','modify-official-results','scratch-horse','race-office-scratch','medication-decision','clear-vet-flag','veterinary-clearance','emergency-action','emergency-personnel-override','payout','disciplinary-decision','steward-ruling','steward-decision','safety-critical-control','starting-gate-move','race-distance-configuration','race-status-change','race-office-configuration','facility-maintenance-execution','surface-irrigation','surface-harrowing','surface-rolling','surface-track-closure-recommendation','track-closure','track-reopen','compliance-filing-approval'] as const;
+export const protectedActions = ['race-start','race-stop','race-cancellation','official-results','modify-official-results','scratch-horse','race-office-scratch','medication-decision','clear-vet-flag','veterinary-clearance','emergency-action','emergency-personnel-override','payout','disciplinary-decision','steward-ruling','steward-decision','safety-critical-control','starting-gate-move','race-distance-configuration','race-status-change','race-office-configuration','facility-maintenance-execution','surface-irrigation','surface-harrowing','surface-rolling','surface-track-closure-recommendation','track-closure','track-reopen','compliance-filing-approval','kpi-threshold-change'] as const;
 export type ProtectedAction = typeof protectedActions[number];
 
 export const approvalActionPermissionRegistry: Record<ProtectedAction, Permission[]> = {
@@ -152,6 +153,7 @@ export const approvalActionPermissionRegistry: Record<ProtectedAction, Permissio
   'track-closure': ['track:readings','incident:manage'],
   'track-reopen': ['track:readings','incident:manage'],
   'compliance-filing-approval': ['compliance:audit'],
+  'kpi-threshold-change': ['kpi:admin'],
 };
 
 export function isProtectedAction(value: string): value is ProtectedAction { return (protectedActions as readonly string[]).includes(value); }
@@ -189,6 +191,7 @@ export const workflowPermissionRegistry = {
 
 export const auditExportPermissionRegistry = {
   '/api/v1/audit/events': 'audit:read',
+  '/api/v1/audit/search': 'audit:read',
   '/api/v1/audit/verification': 'audit:read',
   '/api/v1/audit/evidence-path': 'audit:read',
   '/api/v1/audit/forensic-reconstruction': 'audit:export',
@@ -196,13 +199,14 @@ export const auditExportPermissionRegistry = {
   '/api/v1/audit/legal-holds': 'audit:export',
 } as const satisfies Record<string, Permission>;
 
-export function permissionForApiEndpoint(input: { method: 'GET' | 'POST'; path: string; operationId: string }): Permission {
+export function permissionForApiEndpoint(input: { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; path: string; operationId: string }): Permission {
   if (input.path in auditExportPermissionRegistry) return auditExportPermissionRegistry[input.path as keyof typeof auditExportPermissionRegistry];
   if (input.operationId === 'requestRaceStopCommand') return 'incident:manage';
   if (input.operationId === 'requestRaceScratchCommand') return 'horse:scratch';
   if (input.operationId === 'requestRaceStartCommand') return 'race:request-start';
   if (input.path.includes('/services/safety/')) return 'incident:manage';
   if (input.path.includes('/services/security/')) return input.method === 'GET' ? 'security:read' : 'security:manage';
+  if (input.path.includes('/safety-intelligence/hot-path') || input.path.includes('/safety-intelligence/warm-path') || input.path.includes('/safety-intelligence/debrief')) return 'incident:manage';
   if (input.path.includes('/safety-intelligence/')) return input.method === 'GET' ? 'incident:manage' : 'security:manage';
   if (input.path.includes('/telemetry/')) return input.method === 'GET' ? 'track:readings' : 'integration:invoke';
   if (input.path.includes('/collaboration/')) return input.method === 'GET' ? 'read:any' : 'workflow:execute';
@@ -210,16 +214,28 @@ export function permissionForApiEndpoint(input: { method: 'GET' | 'POST'; path: 
   if (input.path.includes('/ai-control-plane') || input.path.includes('/ai-governance') || input.path.includes('/ai/')) return input.method === 'GET' ? 'ai:read' : 'ai:approve';
   if (input.path.includes('/racing-data')) return input.method === 'GET' ? 'data-hub:read' : 'integration:invoke';
   if (input.path.includes('/artifacts/')) return input.method === 'GET' ? 'artifact:read' : 'integration:invoke';
+  if (input.path.includes('/security-operations')) return input.method === 'GET' ? 'security:read' : 'security:manage';
+  if (input.path.includes('/kpis/definitions') || input.path.includes('/kpis/thresholds')) return input.method === 'GET' ? 'kpi:read' : 'kpi:admin';
+  if (input.path.includes('/kpis/registry') || input.path.includes('/kpis/sources')) return 'kpi:read';
   if (input.path.includes('/kpis')) return 'kpi:read';
   if (input.path.includes('/audit/')) return 'audit:read';
+  if (input.path.includes('/audit-trail')) return 'read:any';
   if (input.path.includes('/compliance/') || input.path.includes('/ros/')) return 'compliance:report';
-  if (input.path.includes('/security-operations')) return input.method === 'GET' ? 'security:read' : 'security:manage';
   if (input.path.includes('/emergency-operations') || input.path.includes('/incidents')) return 'incident:manage';
   if (input.path.includes('/services/finance')) return input.operationId.toLowerCase().includes('payout') ? 'finance:payout' : 'ticketing:manage';
+  if (input.path.includes('/finance/ticket-revenue') || input.path.includes('/finance/hospitality-revenue')) return 'ticketing:manage';
   if (input.path.includes('/finance')) return 'finance:payout';
   if (input.path.includes('/ticket')) return 'ticketing:manage';
-  if (input.path.includes('/equine') || input.path.includes('/horses')) return 'vet:review';
+  if (input.path.includes('/horse-registry') || input.path.includes('/trainer-management') || input.path.includes('/jockey-management')) return 'read:any';
+  if (input.path.includes('/veterinary-operations')) {
+    if (input.method === 'GET') return 'read:any';
+    if (input.operationId === 'addVeterinaryObservation' || input.operationId === 'addVeterinaryWelfareIndicator') return 'read:any';
+    return 'vet:clear-flag';
+  }
+  if (input.path.includes('/equine-welfare')) return 'read:any';
+  if (input.path.includes('/equine') || (input.path.includes('/horses') && !input.path.includes('/trainer-management'))) return 'vet:review';
   if (input.path.includes('/barn')) return 'vet:review';
+  if (input.path.includes('/audit-trail') || input.operationId.toLowerCase().includes('audittrail')) return 'read:any';
   if (input.path.includes('/track') || input.path.includes('/surface') || input.path.includes('/starting-gate')) return 'track:readings';
   if (input.path.includes('/facilities')) return 'track:readings';
   if (input.path.includes('/race') || input.path.includes('/races')) return input.method === 'GET' ? 'read:any' : 'race:request-start';
@@ -242,6 +258,27 @@ export function permissionForApiEndpoint(input: { method: 'GET' | 'POST'; path: 
     || input.path.includes('/knowledge-graph') || input.path.includes('/executive-intelligence') || input.path.includes('/enterprise-readiness')
     || input.path.includes('/digital-twin/platform')) {
     return input.method === 'GET' ? 'read:any' : 'workflow:execute';
+  }
+  if (input.path.includes('/platform/users') || input.path.includes('/platform/roles')) {
+    return input.method === 'GET' ? 'identity:read' : 'identity:write';
+  }
+  if (input.path.includes('/platform/access-requests')) {
+    if (input.method === 'GET') return 'identity:read';
+    if (input.operationId === 'reviewPlatformAccessRequest') return 'access:approve';
+    return 'access:request';
+  }
+  if (input.path.includes('/platform/health') || input.path.includes('/platform/readiness-scorecards') || input.path.includes('/platform/nexus-upgrade') || input.path.includes('/platform/modules') || input.path.includes('/platform/feature-flags/evaluate')) {
+    return 'read:any';
+  }
+  if (input.path.includes('/platform/domain-ownership') || input.path.includes('/platform/governance-lineage') || input.path.includes('/platform/governed-artifacts') || input.path.includes('/platform/maturity-review') || input.path.includes('/platform/contract-coverage')) {
+    return 'compliance:report';
+  }
+  if (input.path.includes('/platform/executive-scorecard')) return 'read:any';
+  if (input.path.includes('/platform/workflow-health') || input.path.includes('/platform/foundation') || input.path.includes('/platform/environment') || input.path.includes('/platform/feature-flags') || input.path.includes('/platform/nexus-expansion') || input.path.includes('/platform/enterprise-readiness')) {
+    return input.method === 'GET' ? 'service:operate' : 'service:operate';
+  }
+  if (input.path.includes('/platform/organizations') || input.path.includes('/platform/tenants') || input.path.includes('/platform/racetracks')) {
+    return input.method === 'GET' ? 'identity:read' : 'identity:write';
   }
   if (input.path.includes('/platform')) return 'service:operate';
   if (input.path.includes('/identity') || input.path.includes('/organizations') || input.path.includes('/tenants') || input.path.includes('/racetracks')) return input.method === 'GET' ? 'identity:read' : 'identity:write';

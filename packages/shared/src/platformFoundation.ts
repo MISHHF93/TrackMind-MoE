@@ -126,6 +126,20 @@ export interface IncidentDto {
   mock: boolean;
 }
 
+export interface PostIncidentReviewDto {
+  id: string;
+  incidentId: string;
+  findings: Array<{ finding: string; severity: IncidentDto['severity']; owner: string }>;
+  correctiveActions: Array<{ id: string; action: string; owner: string; dueDays: number }>;
+  evidencePackage: string[];
+  auditIds: string[];
+  eventIds: string[];
+  status: 'draft' | 'submitted' | 'approved';
+  submittedBy: string;
+  submittedAt: string;
+  mock: boolean;
+}
+
 export type { PaddockOperationsDto } from './paddockOperations.js';
 
 export interface RaceScheduleDto {
@@ -217,6 +231,31 @@ export interface AIModelCardRegistryMutationResultDto {
   mock: boolean;
 }
 
+export interface AIModelCardListDto {
+  generatedAt: string;
+  modelCards: AIModelCardDto[];
+  mock: boolean;
+}
+
+export interface AIPromptCardListDto {
+  generatedAt: string;
+  promptCards: AIPromptCardDto[];
+  mock: boolean;
+}
+
+export interface AIGovernanceKpiPackDto {
+  generatedAt: string;
+  kpiPackId: 'ai-governance-kpi-pack-v1';
+  modelCardCount: number;
+  promptCardCount: number;
+  expertModelCount: number;
+  lineageCoveragePercent: number;
+  recommendationRegistryCompleteness: number;
+  moeRoutingDomains: number;
+  kpis: Array<{ kpiId: string; label: string; value: number; unit: string; status: string }>;
+  mock: boolean;
+}
+
 export interface EmergencyWorkflowActivationInput {
   id: string;
   planId: string;
@@ -241,7 +280,7 @@ export interface EmergencyWorkflowMutationResultDto {
 
 export interface GlobalSearchResultDto {
   id: string;
-  kind: 'horse' | 'race' | 'trainer' | 'jockey' | 'incident' | 'approval' | 'audit' | 'facility' | 'recommendation' | 'kpi' | 'asset';
+  kind: 'horse' | 'race' | 'trainer' | 'jockey' | 'incident' | 'approval' | 'audit' | 'facility' | 'recommendation' | 'kpi' | 'asset' | 'twin';
   title: string;
   subtitle?: string;
   path: string;
@@ -284,10 +323,81 @@ export interface ModuleEnablementDto {
 
 export interface AccessRequestDto {
   id: string;
+  tenantId: string;
   userId: string;
   requestedRole: string;
   status: 'pending' | 'approved' | 'rejected';
   createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+}
+
+export interface PlatformRoleDto {
+  role: string;
+  displayName: string;
+  group: string;
+  privileged: boolean;
+  assignable: boolean;
+  permissions: string[];
+}
+
+export interface RoleAssignmentDto {
+  userId: string;
+  role: string;
+  tenantId: string;
+  assignedAt: string;
+  assignedBy?: string;
+}
+
+export interface RoleAssignmentResultDto {
+  userId: string;
+  role: string;
+  tenantId: string;
+  assignedAt: string;
+  user: PlatformUserDto;
+}
+
+export interface TenantRbacPolicyDto {
+  id: string;
+  tenantId: string;
+  name: string;
+  permissions: string[];
+  roles: string[];
+  requiresApproval: boolean;
+  privileged: boolean;
+  updatedAt: string;
+}
+
+export interface TenantRbacPolicyStoreDto {
+  generatedAt: string;
+  tenantId: string;
+  policies: TenantRbacPolicyDto[];
+  mock: boolean;
+}
+
+export interface TenantSessionDto {
+  sessionId: string;
+  userId: string;
+  tenantId: string;
+  organizationId: string;
+  roles: string[];
+  issuedAt: string;
+  expiresAt: string;
+  authProvider: string;
+}
+
+export interface AuthProviderDescriptorDto {
+  providerId: string;
+  mode: 'noop' | 'header-role' | 'entra' | 'abstract';
+  sessionTtlMinutes: number;
+  summary: string;
+}
+
+export interface AuthProviderWorkspaceDto {
+  generatedAt: string;
+  provider: AuthProviderDescriptorDto;
+  activeSessions: number;
+  mock: boolean;
 }
 
 export interface KpiRecalculationResultDto {

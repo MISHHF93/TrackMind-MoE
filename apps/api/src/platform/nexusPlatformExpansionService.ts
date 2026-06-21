@@ -35,7 +35,8 @@ import {
   projectSecuritySoc,
   projectWorkflowAutomation,
 } from './nexusPlatformProjections.js';
-import type { FeatureFlagService, TenantService } from './tenantService.js';
+import type { FeatureFlagService } from './featureFlags.js';
+import type { TenantService } from './tenantService.js';
 
 const now = () => new Date().toISOString();
 

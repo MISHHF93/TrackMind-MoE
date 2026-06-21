@@ -5,7 +5,8 @@ import type { IncidentService } from './incidentService.js';
 import { createNexusPlatformCanonicalDeps } from './nexusPlatformCanonicalDeps.js';
 import { NexusPlatformExpansionService } from './nexusPlatformExpansionService.js';
 import type { PlatformState } from './platformController.js';
-import type { FeatureFlagService, TenantService } from './tenantService.js';
+import type { FeatureFlagService } from './featureFlags.js';
+import type { TenantService } from './tenantService.js';
 
 type HttpMethod = 'GET' | 'POST';
 type HandlerResult = { status: number; body: unknown } | undefined;

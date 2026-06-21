@@ -98,4 +98,7 @@ test('governance wave: analytics workspace reflects executive scorecard KPIs', a
   const analytics = await handleApiRequest('GET', '/api/v1/analytics/workspace', undefined, state);
   assert.equal(analytics.status, 200);
   assert.ok(analytics.body.executiveSummary.some((item) => /executive|readiness|safety|compliance|operations/i.test(item.label)));
+  assert.ok(analytics.body.kpiTrends.length >= 1);
+  assert.ok(analytics.body.kpiTrends.some((trend) => trend.points.length >= 1));
+  assert.ok(analytics.body.forecastingReadiness.score >= 0);
 });

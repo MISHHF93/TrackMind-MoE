@@ -17,18 +17,26 @@ export function CommandCenterPanels({ results }: { results: WorkspaceDataResult[
   const services = extractArray<Record<string, unknown>>(health, 'services');
   const kpiItems = extractArray<Record<string, unknown>>(kpis, 'kpis');
 
+  const kpiSnapshotCount = kpiItems.reduce((total, kpi) => {
+    return total + extractArray(kpi, 'historicalSnapshots').length;
+  }, 0);
+
   return (
     <div className="space-y-4">
       <KpiStrip
-        items={kpiItems.slice(0, 6).map((kpi, index) => ({
-          id: String(kpi.id ?? index),
-          label: String(kpi.label ?? kpi.name ?? 'KPI'),
-          value: String(kpi.value ?? '—'),
-          detail: kpi.target != null ? `Target ${kpi.target}` : undefined,
-          status: kpi.status === 'critical' ? 'critical' : kpi.status === 'warning' ? 'warning' : 'nominal',
-        }))}
+        items={kpiItems.slice(0, 6).map((kpi, index) => {
+          const snapshots = extractArray<Record<string, unknown>>(kpi, 'historicalSnapshots');
+          const latest = snapshots.length ? snapshots[snapshots.length - 1] : undefined;
+          return {
+            id: String(kpi.id ?? kpi.kpiId ?? index),
+            label: String(kpi.label ?? kpi.name ?? 'KPI'),
+            value: String(kpi.value ?? latest?.value ?? '—'),
+            detail: snapshots.length ? `${snapshots.length} snapshots` : kpi.target != null ? `Target ${kpi.target}` : undefined,
+            status: kpi.status === 'critical' ? 'critical' : kpi.status === 'warning' ? 'warning' : 'nominal',
+          };
+        })}
       />
-      <SectionPanel title="Command widgets" description="Role-aware operational cards from the command center feed.">
+      <SectionPanel title="Command widgets" description={`Role-aware operational cards from the command center feed. KPI engine: ${kpiSnapshotCount} historical snapshots.`}>
         <RecordTable
           columns={[
             { key: 'title', label: 'Widget' },

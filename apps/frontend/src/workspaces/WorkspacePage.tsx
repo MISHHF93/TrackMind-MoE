@@ -12,7 +12,7 @@ import { routeById, type DomainRouteId } from '@/routes/routes';
 import { useWorkspaceData, extractArray, stringField, type WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { useWorkspaceContext } from '@/hooks/useWorkspaceContext';
 import { LoadingState, ErrorState, EmptyState } from '@/design/components/states';
-import { SupportStatusBadge } from '@/design/components/support-status-badge';
+import { SupportStatusBadge } from '@/shell/SupportStatusBadge';
 import { Badge } from '@/design/components/badge';
 import { DegradedStateBanner } from '@/shell/DegradedStateBanner';
 import {

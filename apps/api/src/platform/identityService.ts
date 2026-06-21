@@ -1,6 +1,22 @@
-import type { IdentityWorkspaceDto, PlatformUserDto } from '@trackmind/shared';
-import { roles, type Role } from '@trackmind/shared';
+import type {
+  AccessRequestDto,
+  AuthProviderWorkspaceDto,
+  PlatformRoleDto,
+  PlatformUserDto,
+  RoleAssignmentResultDto,
+  TenantRbacPolicyDto,
+  TenantRbacPolicyStoreDto,
+  TenantSessionDto,
+} from '@trackmind/shared';
+import {
+  rolePermissions,
+  roleRegistry,
+  roles,
+  type Permission,
+  type Role,
+} from '@trackmind/shared';
 import { createRepository, type KeyValueRepository } from '../repository/index.js';
+import { createAuthProvider, type AuthProvider } from './authAbstraction.js';
 
 const now = () => new Date().toISOString();
 
@@ -30,20 +46,47 @@ const seedUsers = (): PlatformUserDto[] => [
   },
 ];
 
+const seedPolicies = (): TenantRbacPolicyDto[] => [
+  {
+    id: 'policy-ops-read',
+    tenantId: 'trackmind',
+    name: 'Operations read baseline',
+    permissions: ['read:any', 'kpi:read'],
+    roles: ['steward', 'racing-secretary', 'read-only-auditor'],
+    requiresApproval: false,
+    privileged: false,
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  },
+  {
+    id: 'policy-identity-governance',
+    tenantId: 'trackmind',
+    name: 'Identity governance',
+    permissions: ['identity:read', 'identity:write', 'access:request', 'access:approve', 'access:review'],
+    roles: ['operations-admin'],
+    requiresApproval: true,
+    privileged: true,
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  },
+];
+
 export class IdentityService {
   readonly users: KeyValueRepository<PlatformUserDto>;
-  private roleAssignments: Array<{ userId: string; role: string; tenantId: string; assignedAt: string }>;
-  private accessRequests: IdentityWorkspaceDto['accessRequests'];
+  readonly authProvider: AuthProvider;
+  private roleAssignments: Array<{ userId: string; role: string; tenantId: string; assignedAt: string; assignedBy?: string }>;
+  private accessRequests: AccessRequestDto[];
+  private rbacPolicies: TenantRbacPolicyDto[];
 
-  constructor() {
+  constructor(authProvider: AuthProvider = createAuthProvider()) {
+    this.authProvider = authProvider;
     this.users = createRepository(seedUsers());
     this.roleAssignments = seedUsers().flatMap((u) =>
       u.roles.map((role) => ({ userId: u.id, role, tenantId: u.tenantId, assignedAt: u.createdAt })),
     );
     this.accessRequests = [];
+    this.rbacPolicies = seedPolicies();
   }
 
-  workspace(): IdentityWorkspaceDto {
+  workspace() {
     return {
       generatedAt: now(),
       users: this.users.list(),
@@ -53,34 +96,157 @@ export class IdentityService {
     };
   }
 
-  assignRole(userId: string, role: Role, tenantId: string): void {
-    if (!roles.includes(role)) throw new Error(`Invalid role: ${role}`);
-    const user = this.users.get(userId);
-    if (!user) throw new Error(`User not found: ${userId}`);
-    const rolesForUser = [...new Set([...user.roles, role])];
-    this.users.upsert({ ...user, roles: rolesForUser });
-    this.roleAssignments.push({ userId, role, tenantId, assignedAt: now() });
+  listUsers(tenantId?: string): PlatformUserDto[] {
+    const users = this.users.list();
+    return tenantId ? users.filter((u) => u.tenantId === tenantId) : users;
   }
 
-  requestAccess(userId: string, requestedRole: string): IdentityWorkspaceDto['accessRequests'][number] {
-    const request = {
+  createUser(input: {
+    tenantId: string;
+    organizationId: string;
+    displayName: string;
+    email: string;
+    roles?: Role[];
+    status?: PlatformUserDto['status'];
+  }): PlatformUserDto {
+    const user: PlatformUserDto = {
+      id: `user-${Date.now().toString(36)}`,
+      tenantId: input.tenantId,
+      organizationId: input.organizationId,
+      displayName: input.displayName,
+      email: input.email,
+      roles: input.roles?.length ? [...input.roles] : ['read-only-auditor'],
+      status: input.status ?? 'pending',
+      createdAt: now(),
+      mock: false,
+    };
+    this.users.upsert(user);
+    for (const role of user.roles) {
+      if (roles.includes(role as Role)) {
+        this.roleAssignments.push({ userId: user.id, role, tenantId: user.tenantId, assignedAt: user.createdAt });
+      }
+    }
+    return user;
+  }
+
+  listRoles(): PlatformRoleDto[] {
+    return roles.map((role) => ({
+      role,
+      displayName: roleRegistry[role].displayName,
+      group: roleRegistry[role].group,
+      privileged: roleRegistry[role].privileged,
+      assignable: roleRegistry[role].assignable,
+      permissions: [...rolePermissions[role]],
+    }));
+  }
+
+  listRoleAssignments(tenantId?: string) {
+    return tenantId
+      ? this.roleAssignments.filter((a) => a.tenantId === tenantId)
+      : [...this.roleAssignments];
+  }
+
+  assignRole(
+    userId: string,
+    role: Role,
+    tenantId: string,
+    assignedBy?: string,
+  ): RoleAssignmentResultDto {
+    if (!roles.includes(role)) throw new Error(`Invalid role: ${role}`);
+    if (!roleRegistry[role].assignable && role !== 'admin') {
+      throw new Error(`Role is not assignable: ${role}`);
+    }
+    const user = this.users.get(userId);
+    if (!user) throw new Error(`User not found: ${userId}`);
+    if (user.tenantId !== tenantId) throw new Error(`Tenant isolation violation for user ${userId}`);
+    const rolesForUser = [...new Set([...user.roles, role])];
+    const assignedAt = now();
+    const updated = { ...user, roles: rolesForUser, status: user.status === 'pending' ? 'active' as const : user.status };
+    this.users.upsert(updated);
+    this.roleAssignments.push({ userId, role, tenantId, assignedAt, assignedBy });
+    return { userId, role, tenantId, assignedAt, user: updated };
+  }
+
+  listAccessRequests(tenantId?: string): AccessRequestDto[] {
+    return tenantId
+      ? this.accessRequests.filter((r) => r.tenantId === tenantId)
+      : [...this.accessRequests];
+  }
+
+  requestAccess(userId: string, requestedRole: string, tenantId: string): AccessRequestDto {
+    const user = this.users.get(userId);
+    if (!user) throw new Error(`User not found: ${userId}`);
+    if (user.tenantId !== tenantId) throw new Error(`Tenant isolation violation for user ${userId}`);
+    const request: AccessRequestDto = {
       id: `access-${Date.now().toString(36)}`,
+      tenantId,
       userId,
       requestedRole,
-      status: 'pending' as const,
+      status: 'pending',
       createdAt: now(),
     };
     this.accessRequests.push(request);
     return request;
   }
 
-  reviewAccessRequest(requestId: string, decision: 'approved' | 'rejected'): void {
+  reviewAccessRequest(
+    requestId: string,
+    decision: 'approved' | 'rejected',
+    reviewedBy: string,
+  ): AccessRequestDto {
     const request = this.accessRequests.find((r) => r.id === requestId);
     if (!request) throw new Error(`Access request not found: ${requestId}`);
     request.status = decision;
+    request.reviewedAt = now();
+    request.reviewedBy = reviewedBy;
     if (decision === 'approved' && roles.includes(request.requestedRole as Role)) {
-      const user = this.users.get(request.userId);
-      if (user) this.assignRole(request.userId, request.requestedRole as Role, user.tenantId);
+      this.assignRole(request.userId, request.requestedRole as Role, request.tenantId, reviewedBy);
     }
+    return { ...request };
+  }
+
+  rbacPolicyStore(tenantId: string): TenantRbacPolicyStoreDto {
+    return {
+      generatedAt: now(),
+      tenantId,
+      policies: this.rbacPolicies.filter((p) => p.tenantId === tenantId),
+      mock: false,
+    };
+  }
+
+  upsertRbacPolicy(input: Omit<TenantRbacPolicyDto, 'updatedAt'>): TenantRbacPolicyDto {
+    const policy: TenantRbacPolicyDto = { ...input, updatedAt: now() };
+    const index = this.rbacPolicies.findIndex((p) => p.id === policy.id);
+    if (index >= 0) this.rbacPolicies[index] = policy;
+    else this.rbacPolicies.push(policy);
+    return policy;
+  }
+
+  evaluatePolicy(tenantId: string, role: Role, permission: Permission): boolean {
+    const policies = this.rbacPolicies.filter((p) => p.tenantId === tenantId);
+    const rolePolicyMatch = policies.some(
+      (p) => p.permissions.includes(permission) && (!p.roles.length || p.roles.includes(role)),
+    );
+    return rolePolicyMatch || (rolePermissions[role]?.includes(permission) ?? false);
+  }
+
+  issueSession(userId: string): TenantSessionDto {
+    const user = this.users.get(userId);
+    if (!user) throw new Error(`User not found: ${userId}`);
+    return this.authProvider.issueSession({
+      userId: user.id,
+      tenantId: user.tenantId,
+      organizationId: user.organizationId,
+      roles: user.roles.filter((r): r is Role => roles.includes(r as Role)),
+    });
+  }
+
+  authWorkspace(): AuthProviderWorkspaceDto {
+    return {
+      generatedAt: now(),
+      provider: this.authProvider.descriptor,
+      activeSessions: this.authProvider.activeSessionCount(),
+      mock: false,
+    };
   }
 }

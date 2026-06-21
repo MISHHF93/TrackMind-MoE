@@ -73,8 +73,13 @@ test('platform verification: mobile and tablet responsive layout tokens exist', 
 
 test('platform verification: analytics route fetches searchable sample index', async () => {
   const paths = await source('src/api/paths.ts');
+  const panels = await source('src/workspaces/views/platformPanels.tsx');
   assert.match(paths, /globalSample: '\/search\/global\?q=horse'/);
   assert.match(paths, /apiPaths\.search\.globalSample/);
+  assert.match(paths, /federation\.kpiAggregation/);
+  assert.match(panels, /\/analytics\/workspace/);
+  assert.match(panels, /forecastingReadiness/);
+  assert.match(panels, /\/federation\/kpi-aggregation/);
 });
 
 test('platform verification: admin route wires governance platform endpoints', async () => {

@@ -1,9 +1,12 @@
+import { FACILITIES_KPI_PACK_ID, type UtilitiesAdapterSnapshot } from '@trackmind/shared';
 import { predictMaintenance, type MaintainableAssetType } from './assetIntelligence.js';
 import { ImmutableAuditLog, type AuditLogEntry } from './auditLog.js';
 import { CentralizedApprovalService, type ApprovalToken, type ControlledActionRequest } from './approvals.js';
 import { DigitalTwinRuntime, type DigitalTwinRuntimeTwin } from './digitalTwinRuntime.js';
 import { type ApiServiceDefinition } from './enterpriseApiGateway.js';
 import { UniversalEventBus, type RaceDayEvent } from './eventBus.js';
+import { GeospatialOperationsService, type GeospatialMapState } from './geospatialOperations.js';
+import { createFacilitiesUtilitiesAdapterRegistry, type FacilitiesUtilitiesAdapterRegistry } from './facilitiesUtilitiesAdapter.js';
 import { RacetrackAssetRegistryService, type AssetPrincipal, type MaintenanceStatus, type RegistryAsset } from './racetrackAssetRegistryService.js';
 import { racetrackAssetControlRegistry, type AssetRiskLevel } from './racetrackControlRegistry.js';
 import { WorkflowOrchestrationEngine, type WorkflowDefinition } from './workflowEngine.js';
@@ -62,6 +65,53 @@ export interface FacilityWorkOrder {
   completedBy?: string;
 }
 
+export interface FacilityInventoryItem {
+  assetId: string;
+  name: string;
+  assetType: string;
+  locationLabel: string;
+  quantity: number;
+  unit: string;
+  maintenanceStatus: MaintenanceStatus;
+  twinId?: string;
+  lastCountedAt: string;
+  sourceOfTruth: 'racetrack-asset-registry';
+}
+
+export interface FacilityIncident {
+  id: string;
+  assetId?: string;
+  title: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  status: 'open' | 'triaged' | 'mitigating' | 'resolved';
+  reportedBy: string;
+  reportedAt: string;
+  description: string;
+  evidence: string[];
+  eventId: string;
+  auditId: string;
+}
+
+export interface MaintenanceScheduleRequest {
+  assetId: string;
+  title: string;
+  priority: MaintenancePriority;
+  scheduledFor: string;
+  dueAt: string;
+  tasks: string[];
+  evidence: string[];
+  operationalImpact: WorkOrderOperationalImpact;
+  requestedBy: string;
+}
+
+export interface MaintenanceScheduleResult {
+  workOrder: FacilityWorkOrder;
+  approvalRequired: boolean;
+  approvalRequestId?: string;
+  auditId: string;
+  eventId: string;
+}
+
 export interface FacilityAssetHealthSummary {
   assetId: string;
   name: string;
@@ -85,6 +135,11 @@ export interface FacilitiesMaintenanceWorkspace {
   generatedAt: string;
   readiness: { score: number; status: FacilityReadinessStatus; ready: number; watch: number; blocked: number; evidence: string[] };
   assets: FacilityAssetHealthSummary[];
+  inventory: FacilityInventoryItem[];
+  utilities: UtilitiesAdapterSnapshot;
+  incidents: FacilityIncident[];
+  map: GeospatialMapState;
+  kpiPackId: typeof FACILITIES_KPI_PACK_ID;
   inspections: FacilityInspectionRecord[];
   preventiveMaintenance: PreventiveMaintenancePlan[];
   workOrders: FacilityWorkOrder[];
@@ -95,7 +150,7 @@ export interface FacilitiesMaintenanceWorkspace {
   twins: DigitalTwinRuntimeTwin[];
   observability: { serviceId: 'facilities-maintenance'; metrics: Array<{ name: string; value: number; unit: string }>; commandCenterWidgetIds: string[] };
   operationalActionsRequireApproval: true;
-  integrations: { assetRegistry: true; digitalTwinRuntime: true; approvals: true; workflows: true; audit: true; eventBus: true; observability: true };
+  integrations: { assetRegistry: true; digitalTwinRuntime: true; approvals: true; workflows: true; audit: true; eventBus: true; observability: true; utilitiesAdapters: true; geospatialMap: true };
   mock: boolean;
 }
 
@@ -112,6 +167,7 @@ const maintenancePenalty: Record<MaintenanceStatus, number> = { ok: 0, due: 12, 
 
 export class FacilitiesMaintenanceService {
   private readonly inspections: FacilityInspectionRecord[] = [];
+  private readonly incidents: FacilityIncident[] = [];
   private readonly preventivePlans = new Map<string, PreventiveMaintenancePlan>();
   private readonly workOrders = new Map<string, FacilityWorkOrder>();
   readonly assetRegistry: RacetrackAssetRegistryService;
@@ -120,14 +176,18 @@ export class FacilitiesMaintenanceService {
   readonly workflows: WorkflowOrchestrationEngine;
   readonly eventBus: UniversalEventBus;
   readonly auditLog: ImmutableAuditLog;
+  readonly utilities: FacilitiesUtilitiesAdapterRegistry;
+  readonly geospatial: GeospatialOperationsService;
 
-  constructor(options: { assetRegistry?: RacetrackAssetRegistryService; twins?: DigitalTwinRuntime; approvals?: CentralizedApprovalService; workflows?: WorkflowOrchestrationEngine; eventBus?: UniversalEventBus; auditLog?: ImmutableAuditLog } = {}) {
+  constructor(options: { assetRegistry?: RacetrackAssetRegistryService; twins?: DigitalTwinRuntime; approvals?: CentralizedApprovalService; workflows?: WorkflowOrchestrationEngine; eventBus?: UniversalEventBus; auditLog?: ImmutableAuditLog; utilities?: FacilitiesUtilitiesAdapterRegistry; geospatial?: GeospatialOperationsService; seedAt?: string } = {}) {
     this.eventBus = options.eventBus ?? new UniversalEventBus();
     this.auditLog = options.auditLog ?? new ImmutableAuditLog();
     this.assetRegistry = options.assetRegistry ?? new RacetrackAssetRegistryService({ eventBus: this.eventBus, auditLog: this.auditLog });
     this.twins = options.twins ?? new DigitalTwinRuntime({ eventBus: this.eventBus, auditLog: this.auditLog });
     this.approvals = options.approvals ?? new CentralizedApprovalService({ eventBus: this.eventBus, auditLog: this.auditLog, workflow: options.workflows });
     this.workflows = options.workflows ?? new WorkflowOrchestrationEngine();
+    this.utilities = options.utilities ?? createFacilitiesUtilitiesAdapterRegistry(options.seedAt);
+    this.geospatial = options.geospatial ?? new GeospatialOperationsService({ eventBus: this.eventBus, trackId: 'main-track' });
     this.registerEventSchemas();
   }
 
@@ -323,6 +383,141 @@ export class FacilitiesMaintenanceService {
     return clone(order);
   }
 
+  scheduleMaintenance(input: MaintenanceScheduleRequest, principal: AssetPrincipal, options: { approvalToken?: ApprovalToken } = {}): MaintenanceScheduleResult {
+    const asset = this.assetRegistry.get(input.assetId, this.readPrincipal(principal));
+    if (input.operationalImpact !== 'read-only') {
+      if (!options.approvalToken) {
+        const order = this.createWorkOrder({
+          assetId: input.assetId,
+          title: input.title,
+          priority: input.priority,
+          requestedBy: input.requestedBy,
+          dueAt: input.dueAt,
+          tasks: input.tasks,
+          evidence: input.evidence,
+          operationalImpact: input.operationalImpact,
+          scheduledFor: input.scheduledFor,
+        }, principal);
+        return {
+          workOrder: order,
+          approvalRequired: true,
+          approvalRequestId: order.approvalRequestId,
+          auditId: order.auditId,
+          eventId: order.eventId,
+        };
+      }
+      this.approvals.assertAuthorized(options.approvalToken, 'facility-maintenance-execution', asset.assetId, asset.tenantId, assetRacetrackId(asset));
+    }
+    const now = new Date().toISOString();
+    const auditId = id('audit-facility-schedule');
+    const eventId = id('evt-facility-schedule');
+    const order: FacilityWorkOrder = {
+      id: id('wo'),
+      assetId: asset.assetId,
+      title: input.title,
+      priority: input.priority,
+      status: 'scheduled',
+      operationalImpact: input.operationalImpact,
+      requestedBy: input.requestedBy,
+      requestedAt: now,
+      scheduledFor: input.scheduledFor,
+      dueAt: input.dueAt,
+      tasks: [...input.tasks],
+      evidence: [...input.evidence, 'human-approval-record'],
+      approvalRequestId: options.approvalToken?.requestId,
+      eventId,
+      auditId,
+      twinId: asset.digitalTwin?.twinId,
+    };
+    this.workOrders.set(order.id, order);
+    this.auditLog.append({
+      id: auditId,
+      type: 'workflow-action',
+      actor: input.requestedBy,
+      timestamp: now,
+      payload: { schedule: input, workOrderId: order.id, approvalRequestId: options.approvalToken?.requestId },
+      subjectId: asset.assetId,
+      tenantId: asset.tenantId,
+      racetrackId: assetRacetrackId(asset),
+      severity: input.priority === 'critical' ? 'critical' : input.priority === 'high' ? 'warning' : 'info',
+      regulations: asset.regulations.map((item) => item.authority),
+      evidenceIds: order.evidence,
+    });
+    void this.patchTwin(asset, { scheduledMaintenance: order, maintenanceStatus: 'scheduled' }, input.requestedBy, eventId);
+    void this.publish('facilities.maintenance-schedule.approved', asset.assetId, { assetId: asset.assetId, tenantId: asset.tenantId, actor: input.requestedBy, workOrder: order, approvalRequestId: options.approvalToken?.requestId });
+    return { workOrder: clone(order), approvalRequired: false, approvalRequestId: options.approvalToken?.requestId, auditId, eventId };
+  }
+
+  reportFacilityIncident(input: { assetId?: string; title: string; severity: FacilityIncident['severity']; description: string; evidence: string[]; reportedBy: string }, principal: AssetPrincipal): FacilityIncident {
+    const now = new Date().toISOString();
+    const auditId = id('audit-facility-incident');
+    const eventId = id('evt-facility-incident');
+    const incident: FacilityIncident = {
+      id: id('facility-incident'),
+      assetId: input.assetId,
+      title: input.title,
+      severity: input.severity,
+      status: 'open',
+      reportedBy: input.reportedBy,
+      reportedAt: now,
+      description: input.description,
+      evidence: [...input.evidence],
+      eventId,
+      auditId,
+    };
+    this.incidents.push(incident);
+    this.auditLog.append({
+      id: auditId,
+      type: 'workflow-action',
+      actor: input.reportedBy,
+      timestamp: now,
+      payload: incident,
+      subjectId: input.assetId ?? 'facilities-domain',
+      tenantId: principal.tenantId,
+      severity: input.severity === 'critical' ? 'critical' : input.severity === 'high' ? 'warning' : 'info',
+      evidenceIds: incident.evidence,
+    });
+    void this.publish('facilities.incident.reported', input.assetId ?? 'facilities-domain', { assetId: input.assetId ?? 'facilities-domain', incident, tenantId: principal.tenantId, actor: input.reportedBy });
+    return clone(incident);
+  }
+
+  mapState(principal: AssetPrincipal): GeospatialMapState {
+    const assets = this.assetRegistry.query({ domain: 'facilities' }, this.readPrincipal(principal)).assets;
+    this.geospatial.ingestAssets(assets);
+    this.geospatial.ingestTwinState(this.twins.queryTwins({ tenantId: principal.tenantId, domain: 'facilities' }));
+    for (const incident of this.incidents.filter((item) => item.status !== 'resolved')) {
+      const asset = incident.assetId ? assets.find((candidate) => candidate.assetId === incident.assetId) : undefined;
+      this.geospatial.upsertFeature({
+        id: `incident:${incident.id}`,
+        layer: 'incident',
+        label: incident.title,
+        geometry: { type: 'Point', coordinates: { latitude: Number(asset?.location.latitude ?? asset?.location.lat ?? 38.045), longitude: Number(asset?.location.longitude ?? asset?.location.lon ?? -76.95) } },
+        status: incident.severity === 'critical' ? 'critical' : incident.severity === 'high' ? 'warning' : 'nominal',
+        timestamp: incident.reportedAt,
+        source: 'event-service',
+        linkedAssetId: incident.assetId,
+        properties: { incidentId: incident.id, severity: incident.severity, status: incident.status },
+      });
+    }
+    for (const order of [...this.workOrders.values()].filter((item) => item.status !== 'completed' && item.status !== 'cancelled')) {
+      const asset = assets.find((candidate) => candidate.assetId === order.assetId);
+      if (!asset) continue;
+      this.geospatial.upsertFeature({
+        id: `maintenance:${order.id}`,
+        layer: 'maintenance',
+        label: order.title,
+        geometry: { type: 'Point', coordinates: { latitude: Number(asset.location.latitude ?? asset.location.lat ?? 38.044), longitude: Number(asset.location.longitude ?? asset.location.lon ?? -76.951) } },
+        status: order.status === 'approval-required' ? 'warning' : 'in-progress',
+        timestamp: order.requestedAt,
+        source: 'asset-registry',
+        linkedAssetId: asset.assetId,
+        linkedTwinId: asset.digitalTwin?.twinId,
+        properties: { workOrderId: order.id, priority: order.priority, scheduledFor: order.scheduledFor },
+      });
+    }
+    return this.geospatial.render({ layers: ['facility', 'maintenance', 'incident', 'digital-twin'] }, 15);
+  }
+
   async completeWorkOrder(input: { workOrderId: string; completedBy: string; evidence: string[]; approvalToken?: ApprovalToken; assetApprovalToken?: ApprovalToken }, principal: AssetPrincipal): Promise<FacilityWorkOrder> {
     const order = this.requireWorkOrder(input.workOrderId);
     const asset = this.assetRegistry.get(order.assetId, this.readPrincipal(principal));
@@ -345,10 +540,20 @@ export class FacilitiesMaintenanceService {
       const prediction = this.predict(asset);
       return { assetId: asset.assetId, type: this.predictiveType(asset), failureProbability: prediction.failureProbability, priority: prediction.priority, evidence: [`risk:${asset.riskLevel}`, `maintenance:${asset.maintenance.status}`, `runtime:${this.numberState(asset, 'runtimeHours')}`] };
     });
+    const inventory = assets.map((asset) => this.inventoryItem(asset));
+    const utilities = this.utilities.snapshot();
+    const incidents = this.incidents.filter((incident) => !incident.assetId || assetIds.has(incident.assetId)).map(clone);
+    const map = this.mapState(principal);
+    const openWorkOrders = [...this.workOrders.values()].filter((order) => assetIds.has(order.assetId) && order.status !== 'completed').length;
     return {
       generatedAt: new Date().toISOString(),
       readiness,
       assets: summaries,
+      inventory,
+      utilities,
+      incidents,
+      map,
+      kpiPackId: FACILITIES_KPI_PACK_ID,
       inspections: this.inspections.filter((inspection) => assetIds.has(inspection.assetId)).map(clone),
       preventiveMaintenance: [...this.preventivePlans.values()].filter((plan) => assetIds.has(plan.assetId)).map(clone),
       workOrders: [...this.workOrders.values()].filter((order) => assetIds.has(order.assetId)).map(clone),
@@ -357,9 +562,9 @@ export class FacilitiesMaintenanceService {
       audit: this.auditLog.all().filter((entry) => Boolean(entry.subjectId && assetIds.has(entry.subjectId)) || (typeof entry.payload === 'object' && JSON.stringify(entry.payload).includes('facilities.'))),
       events: this.eventBus.events().filter((event) => String(event.type).startsWith('facilities.') || Boolean(event.lineage.aggregateId && assetIds.has(event.lineage.aggregateId))),
       twins: this.twins.queryTwins({ tenantId: principal.tenantId, domain: 'facilities' }),
-      observability: { serviceId: 'facilities-maintenance', metrics: [{ name: 'facility_readiness_score', value: readiness.score, unit: 'score' }, { name: 'facility_open_work_orders', value: [...this.workOrders.values()].filter((order) => assetIds.has(order.assetId) && order.status !== 'completed').length, unit: 'count' }, { name: 'facility_predictive_urgent', value: predictiveHooks.filter((hook) => hook.priority === 'urgent').length, unit: 'count' }], commandCenterWidgetIds: ['facility-status', 'facility-readiness', 'asset-health'] },
+      observability: { serviceId: 'facilities-maintenance', metrics: [{ name: 'facility_readiness_score', value: readiness.score, unit: 'score' }, { name: 'facility_open_work_orders', value: openWorkOrders, unit: 'count' }, { name: 'facility_predictive_urgent', value: predictiveHooks.filter((hook) => hook.priority === 'urgent').length, unit: 'count' }, { name: 'facility_utilities_coverage', value: utilities.coveragePct, unit: 'percent' }, { name: 'facility_open_incidents', value: incidents.filter((incident) => incident.status !== 'resolved').length, unit: 'count' }], commandCenterWidgetIds: ['facility-status', 'facility-readiness', 'asset-health', 'facility-map'] },
       operationalActionsRequireApproval: true,
-      integrations: { assetRegistry: true, digitalTwinRuntime: true, approvals: true, workflows: true, audit: true, eventBus: true, observability: true },
+      integrations: { assetRegistry: true, digitalTwinRuntime: true, approvals: true, workflows: true, audit: true, eventBus: true, observability: true, utilitiesAdapters: true, geospatialMap: true },
       mock: false,
     };
   }
@@ -398,8 +603,24 @@ export class FacilitiesMaintenanceService {
   private async publish(type: string, aggregateId: string, payload: Record<string, unknown>): Promise<RaceDayEvent> {
     return this.eventBus.publish({ type, aggregateId, producer: 'facilities-maintenance', payload, metadata: { team: 'facilities-maintenance', accountableRole: 'track-superintendent', compliance: 'regulated' } });
   }
+  private inventoryItem(asset: RegistryAsset): FacilityInventoryItem {
+    const location = asset.location;
+    const locationLabel = [location.facility, location.zone, location.barnId, location.sectorId].filter(Boolean).map(String).join(' / ') || 'main-track';
+    return {
+      assetId: asset.assetId,
+      name: asset.name,
+      assetType: asset.assetType,
+      locationLabel,
+      quantity: 1,
+      unit: 'asset',
+      maintenanceStatus: asset.maintenance.status,
+      twinId: asset.digitalTwin?.twinId,
+      lastCountedAt: asset.updatedAt,
+      sourceOfTruth: 'racetrack-asset-registry',
+    };
+  }
   private registerEventSchemas(): void {
-    ['facilities.asset.seeded', 'facilities.inspection.recorded', 'facilities.preventive-maintenance.scheduled', 'facilities.work-order.requested', 'facilities.work-order.completed', 'facilities.readiness.evaluated', 'facilities.predictive-maintenance.flagged'].forEach((type) => this.eventBus.registerEvent({ type, version: 1, description: `Facilities maintenance ${type}`, owner: { service: 'facilities-maintenance', team: 'facilities-maintenance', accountableRole: 'track-superintendent' }, payloadFields: ['assetId', 'tenantId', 'actor'], compliance: 'regulated' }));
+    ['facilities.asset.seeded', 'facilities.inspection.recorded', 'facilities.preventive-maintenance.scheduled', 'facilities.work-order.requested', 'facilities.work-order.completed', 'facilities.readiness.evaluated', 'facilities.predictive-maintenance.flagged', 'facilities.maintenance-schedule.approved', 'facilities.maintenance-schedule.requested', 'facilities.incident.reported', 'facilities.incident.updated', 'facilities.utilities.reading.ingested', 'facilities.inventory.evaluated'].forEach((type) => this.eventBus.registerEvent({ type, version: 1, description: `Facilities maintenance ${type}`, owner: { service: 'facilities-maintenance', team: 'facilities-maintenance', accountableRole: 'track-superintendent' }, payloadFields: ['assetId', 'tenantId', 'actor'], compliance: 'regulated' }));
   }
 }
 
@@ -425,9 +646,53 @@ export function facilitiesMaintenanceWorkflow(tenantId: string): WorkflowDefinit
 }
 
 export function facilitiesMaintenanceApiDefinition(): ApiServiceDefinition {
-  return { id: 'facilities-maintenance', name: 'Facilities Maintenance', domain: 'facilities', version: 'v1', basePath: '/api/v1/facilities-maintenance', description: 'RACR-backed facilities read model for inspections, preventive maintenance plans, work order requests, predictive hooks, asset health scoring, readiness metadata, approvals, audit references, workflows, events, and Digital Twin references.', owner: { team: 'facilities-maintenance', productOwner: 'Director of Facilities', technicalOwner: 'Facilities Maintenance Service Owner', supportChannel: '#trackmind-facilities' }, lifecycle: 'active', auth: ['jwt', 'oauth2', 'mtls'], rateLimit: { requests: 600, perSeconds: 60, burst: 100 }, tags: ['facilities', 'maintenance', 'asset-registry', 'digital-twin', 'audit', 'approval'], slo: { availability: 99.9, latencyMs: 250 }, endpoints: [
+  return { id: 'facilities-maintenance', name: 'Facilities Maintenance', domain: 'facilities', version: 'v1', basePath: '/api/v1/facilities-maintenance', description: 'RACR-backed facilities read model for inventory, utilities adapters, incidents, geospatial map, inspections, preventive maintenance plans, approval-gated maintenance schedules, work orders, predictive hooks, asset health scoring, readiness metadata, approvals, audit references, workflows, events, and Digital Twin references.', owner: { team: 'facilities-maintenance', productOwner: 'Director of Facilities', technicalOwner: 'Facilities Maintenance Service Owner', supportChannel: '#trackmind-facilities' }, lifecycle: 'active', auth: ['jwt', 'oauth2', 'mtls'], rateLimit: { requests: 600, perSeconds: 60, burst: 100 }, tags: ['facilities', 'maintenance', 'asset-registry', 'digital-twin', 'audit', 'approval', 'utilities', 'geospatial'], slo: { availability: 99.9, latencyMs: 250 }, endpoints: [
     { method: 'GET', path: '/workspace', summary: 'Read facilities maintenance command workspace', scopes: ['assets:read'] },
+    { method: 'GET', path: '/map', summary: 'Read facilities geospatial map overlays', scopes: ['assets:read'] },
+    { method: 'GET', path: '/utilities', summary: 'Read utilities adapter snapshot', scopes: ['assets:read'] },
+    { method: 'POST', path: '/maintenance-schedules', summary: 'Create approval-gated maintenance schedule', scopes: ['assets:write', 'assets:approve'] },
+    { method: 'POST', path: '/incidents', summary: 'Report facility incident with audit linkage', scopes: ['assets:write'] },
   ] };
+}
+
+export function createSeededFacilitiesMaintenanceService(timestamp = new Date().toISOString()): FacilitiesMaintenanceService {
+  const service = new FacilitiesMaintenanceService({ seedAt: timestamp });
+  const principal = { id: 'facilities-supervisor', tenantId: 'track-1', scopes: ['assets:read', 'assets:write', 'assets:approve'] };
+  service.seedFacilityAssetsSync(principal, timestamp);
+  service.recordInspectionSync({
+    assetId: 'GRANDSTAND_HVAC_01',
+    inspectedBy: principal.id,
+    checklist: ['filter pressure', 'airflow', 'motor temperature'],
+    findings: ['filter pressure elevated', 'airflow verified for patron areas'],
+    score: 84,
+    nextInspectionDueAt: '2026-06-15T12:00:00.000Z',
+  }, principal, timestamp);
+  service.createPreventiveMaintenancePlan({
+    assetId: 'GRANDSTAND_HVAC_01',
+    cadenceDays: 7,
+    checklist: ['replace filters', 'verify airflow', 'capture return-to-service evidence'],
+    nextDueAt: '2026-06-15T12:00:00.000Z',
+  }, principal);
+  service.createWorkOrder({
+    assetId: 'GRANDSTAND_HVAC_01',
+    title: 'Replace grandstand HVAC filters',
+    priority: 'high',
+    requestedBy: principal.id,
+    dueAt: '2026-06-14T20:00:00.000Z',
+    tasks: ['lockout unit', 'replace filters', 'verify airflow'],
+    evidence: ['inspection-hvac-live', 'telemetry:filterDeltaPressure=68'],
+    operationalImpact: 'operational-impact',
+    scheduledFor: '2026-06-14T18:00:00.000Z',
+  }, principal);
+  service.reportFacilityIncident({
+    assetId: 'PATRON_ELEVATOR_A',
+    title: 'Elevator door fault watch',
+    severity: 'medium',
+    description: 'Door fault count elevated; maintenance schedule under review.',
+    evidence: ['telemetry:doorFaults30d=3'],
+    reportedBy: principal.id,
+  }, principal);
+  return service;
 }
 
 export function createFacilitiesMaintenanceService() {
@@ -435,15 +700,6 @@ export function createFacilitiesMaintenanceService() {
 }
 
 export function createMockFacilitiesMaintenanceWorkspace(timestamp = new Date().toISOString()): FacilitiesMaintenanceWorkspace {
-  const assets: FacilityAssetHealthSummary[] = [
-    { assetId: 'GRANDSTAND_HVAC_01', name: 'Grandstand HVAC 01', assetType: 'HVACSystem', riskLevel: 'medium', maintenanceStatus: 'due', lifecycleStatus: 'active', healthScore: 78, readinessStatus: 'watch', predictedFailureRisk: 46, predictivePriority: 'planned', nextInspectionDueAt: '2026-06-15T12:00:00.000Z', lastInspectionAt: '2026-06-12T13:30:00.000Z', openWorkOrderIds: ['wo-hvac-filter'], twinId: 'twin:GRANDSTAND_HVAC_01', controlsRequiringApproval: ['adjust-hvac-setpoint', 'return-to-service'], sourceOfTruth: 'racetrack-asset-registry' },
-    { assetId: 'BACKUP_GENERATOR_A', name: 'Backup Generator A', assetType: 'BackupGenerator', riskLevel: 'high', maintenanceStatus: 'ok', lifecycleStatus: 'active', healthScore: 88, readinessStatus: 'ready', predictedFailureRisk: 32, predictivePriority: 'monitor', nextInspectionDueAt: '2026-06-20T12:00:00.000Z', lastInspectionAt: '2026-06-13T07:15:00.000Z', openWorkOrderIds: [], twinId: 'twin:BACKUP_GENERATOR_A', controlsRequiringApproval: ['schedule-load-test', 'life-safety-power-transfer'], sourceOfTruth: 'racetrack-asset-registry' },
-    { assetId: 'PATRON_ELEVATOR_A', name: 'Patron Elevator A', assetType: 'Elevator', riskLevel: 'high', maintenanceStatus: 'due', lifecycleStatus: 'active', healthScore: 69, readinessStatus: 'watch', predictedFailureRisk: 64, predictivePriority: 'planned', nextInspectionDueAt: '2026-06-14T12:00:00.000Z', lastInspectionAt: '2026-06-10T09:00:00.000Z', openWorkOrderIds: ['wo-elevator-door'], twinId: 'twin:PATRON_ELEVATOR_A', controlsRequiringApproval: ['create-elevator-work-order', 'remove-from-service'], sourceOfTruth: 'racetrack-asset-registry' },
-  ];
-  const inspections: FacilityInspectionRecord[] = [{ id: 'inspection-hvac-1', assetId: 'GRANDSTAND_HVAC_01', inspectedBy: 'track-superintendent', inspectedAt: timestamp, checklist: ['filter differential', 'motor temperature', 'patron-area airflow'], findings: ['filter pressure elevated'], status: 'watch', score: 78, nextInspectionDueAt: '2026-06-15T12:00:00.000Z', eventId: 'facilities.inspection.recorded', auditId: 'audit-facility-hvac-1', twinId: 'twin:GRANDSTAND_HVAC_01' }];
-  const workOrders: FacilityWorkOrder[] = [{ id: 'wo-hvac-filter', assetId: 'GRANDSTAND_HVAC_01', title: 'Replace grandstand HVAC filters', priority: 'high', status: 'approval-required', operationalImpact: 'operational-impact', requestedBy: 'track-superintendent', requestedAt: timestamp, scheduledFor: '2026-06-14T18:00:00.000Z', dueAt: '2026-06-14T20:00:00.000Z', tasks: ['lockout unit', 'replace filters', 'verify airflow', 'record return-to-service verification'], evidence: ['telemetry:filterDeltaPressure=68', 'inspection-hvac-1'], approvalRequestId: 'approval-facility-hvac', workflowInstanceId: 'facilities-maintenance-work-order-1', eventId: 'facilities.work-order.requested', auditId: 'audit-wo-hvac', twinId: 'twin:GRANDSTAND_HVAC_01' }];
-  const preventiveMaintenance: PreventiveMaintenancePlan[] = assets.map((asset) => ({ id: `pm-${asset.assetId.toLowerCase()}`, assetId: asset.assetId, cadenceDays: asset.riskLevel === 'high' ? 7 : 14, checklist: ['verify required telemetry', 'inspect safety controls', 'confirm approval path'], nextDueAt: asset.nextInspectionDueAt ?? timestamp, approvalRequiredForExecution: true, predictiveHooks: ['runtime-hours', 'fault-count-30d', 'required-telemetry'] }));
-  const predictiveHooks = assets.map((asset) => ({ assetId: asset.assetId, type: asset.assetType === 'Elevator' ? 'elevator' as const : asset.assetType === 'BackupGenerator' ? 'generator' as const : 'hvac' as const, failureProbability: asset.predictedFailureRisk / 100, priority: asset.predictivePriority, evidence: [`${asset.assetId}:health=${asset.healthScore}`, `${asset.assetId}:maintenance=${asset.maintenanceStatus}`] }));
-  const readiness = { score: 78, status: 'watch' as const, ready: 1, watch: 2, blocked: 0, evidence: assets.flatMap((asset) => [`${asset.assetId}:health=${asset.healthScore}`, `${asset.assetId}:twin=${asset.twinId}`]) };
-  return { generatedAt: timestamp, readiness, assets, inspections, preventiveMaintenance, workOrders, predictiveHooks, approvals: [{ id: 'approval-facility-hvac', tenantId: 'saratoga', racetrackId: 'main-track', action: 'facility-maintenance-execution', target: 'GRANDSTAND_HVAC_01', requestedBy: 'track-superintendent', actorType: 'human', reason: 'Replace filters before patron load increases', evidence: ['human-approval-record', 'inspection-hvac-1'], createdAt: timestamp, expiresAt: '2026-06-14T20:45:00.000Z', status: 'pending', decisions: [], escalatedToRoles: [], workflowInstanceId: 'facilities-maintenance-work-order-1' }], audit: [], events: [], twins: [], observability: { serviceId: 'facilities-maintenance', metrics: [{ name: 'facility_readiness_score', value: readiness.score, unit: 'score' }, { name: 'facility_open_work_orders', value: workOrders.length, unit: 'count' }, { name: 'facility_predictive_urgent', value: 0, unit: 'count' }], commandCenterWidgetIds: ['facility-status', 'facility-readiness', 'asset-health'] }, operationalActionsRequireApproval: true, integrations: { assetRegistry: true, digitalTwinRuntime: true, approvals: true, workflows: true, audit: true, eventBus: true, observability: true }, mock: true };
+  const service = createSeededFacilitiesMaintenanceService(timestamp);
+  return { ...service.workspace({ id: 'facilities-supervisor', tenantId: 'track-1', scopes: ['assets:read'] }), mock: true };
 }

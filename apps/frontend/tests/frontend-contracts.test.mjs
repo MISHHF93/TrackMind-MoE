@@ -23,7 +23,7 @@ test('frontend has canonical entrypoint and control surface shell', async () => 
   assert.match(main, /design\/tokens\.css/);
   assert.match(app, /RouterProvider/);
   assert.match(shell, /export function AppShell/);
-  assert.match(shell, /canViewRoute\(route, session\.role\)/);
+  assert.match(shell, /canAccessRoute\(route, session\.role, enabledModules/);
 });
 
 test('route constants cover required backend-driven sections', async () => {
@@ -89,8 +89,8 @@ test('frontend route filtering honors tenant scope headers', async () => {
   const shell = await source('src/shell/AppShell.tsx');
   const client = await source('src/api/client.ts');
   const session = await source('src/auth/TenantSessionProvider.tsx');
-  assert.match(shell, /canViewRoute\(route, session\.role\)/);
-  assert.match(session, /useTenantSession/);
+  assert.match(shell, /canAccessRoute\(route, session\.role, enabledModules/);
+  assert.match(shell, /useModuleEnablement/);
   assert.match(client, /getTenantContext\(\)/);
   assert.match(client, /x-trackmind-tenant-id/);
   assert.match(client, /x-trackmind-role/);

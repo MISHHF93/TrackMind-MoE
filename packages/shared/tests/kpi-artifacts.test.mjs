@@ -76,3 +76,13 @@ test('model-readable KPI context exposes metadata only and blocks execution', ()
   assert.ok(context.prohibitedUse.includes('expose raw cross-track records'));
   assert.equal(validateModelReadableKPIContext({ ...context, allowedUse: [...context.allowedUse, 'execute regulated actions'] }).valid, false);
 });
+
+test('KPI status and trend helpers evaluate thresholds and history', async () => {
+  const { computeKpiTrend, evaluateKpiStatus } = await import('../dist/kpiArtifacts.js');
+  assert.equal(evaluateKpiStatus(92, { warning: 75, critical: 60, targetDirection: 'above', description: 'Higher is better.' }, 'score'), 'nominal');
+  assert.equal(evaluateKpiStatus(70, { warning: 75, critical: 60, targetDirection: 'above', description: 'Higher is better.' }, 'score'), 'warning');
+  assert.equal(evaluateKpiStatus(45, { warning: 30, critical: 40, targetDirection: 'below', description: 'Lower pressure is better.' }, 'score'), 'critical');
+  assert.equal(computeKpiTrend([{ snapshotId: 's1', kpiId: 'k1', value: 80, status: 'watch', trend: 'flat', confidence: 0.8, dataQualityScore: 0.8, calculatedAt: '2026-01-01T00:00:00.000Z', sourceEvents: ['e1'], auditReference: { auditEventIds: ['a1'], eventIds: ['e1'], correlationId: 'c1', calculationRunId: 'r1' } }], 85), 'up');
+  assert.equal(computeKpiTrend([{ snapshotId: 's1', kpiId: 'k1', value: 80, status: 'watch', trend: 'flat', confidence: 0.8, dataQualityScore: 0.8, calculatedAt: '2026-01-01T00:00:00.000Z', sourceEvents: ['e1'], auditReference: { auditEventIds: ['a1'], eventIds: ['e1'], correlationId: 'c1', calculationRunId: 'r1' } }], 80.2), 'flat');
+  assert.equal(computeKpiTrend([], 80), 'insufficient-history');
+});

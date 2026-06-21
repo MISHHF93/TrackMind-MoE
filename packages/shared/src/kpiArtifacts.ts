@@ -14,6 +14,7 @@ export const kpiDomains = [
   'starting-gate-operations',
   'surface-intelligence',
   'equine-welfare',
+  'equine-intelligence',
   'safety-incidents',
   'stewarding',
   'compliance',
@@ -275,4 +276,168 @@ export function validateModelReadableKPIContext(value: unknown): { valid: boolea
     }
   }
   return { valid: errors.length === 0, errors };
+}
+
+export interface KpiDefinitionDto {
+  kpiId: string;
+  tenantId: string;
+  organizationId: string;
+  racetrackId?: string;
+  domain: KPIDomain;
+  name: string;
+  description: string;
+  metricType: KPIMetricType;
+  unit: string;
+  target: number;
+  ownerRole: Role;
+  visibility: KPIVisibility;
+  approvalSensitivity: KPIApprovalSensitivity;
+  requiredPermission?: Permission;
+  calculationMethod: string;
+  refreshCadence: string;
+  sourceEvents: string[];
+  sourceEntities: KPISourceEntityRef[];
+  modelReadable: boolean;
+  version: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KpiDefinitionRegistryDto {
+  generatedAt: string;
+  definitions: KpiDefinitionDto[];
+  mock: boolean;
+}
+
+export interface KpiThresholdRecordDto {
+  thresholdId: string;
+  kpiId: string;
+  tenantId: string;
+  racetrackId?: string;
+  warning?: number;
+  critical?: number;
+  targetDirection: KPIThresholdRule['targetDirection'];
+  description: string;
+  effectiveFrom: string;
+  status: 'active' | 'pending-approval' | 'superseded';
+  approvalId?: string;
+  auditEventIds: string[];
+  createdAt: string;
+}
+
+export interface KpiThresholdListDto {
+  generatedAt: string;
+  thresholds: KpiThresholdRecordDto[];
+  mock: boolean;
+}
+
+export interface KpiRegistryEntryDto {
+  kpiId: string;
+  domain: KPIDomain;
+  name: string;
+  ownerRole: Role;
+  visibility: KPIVisibility;
+  approvalSensitivity: KPIApprovalSensitivity;
+  sourceEventCount: number;
+  sourceEntityCount: number;
+  thresholdStatus: 'active' | 'pending-approval' | 'none';
+  lastCalculatedAt?: string;
+}
+
+export interface KpiRegistryDto {
+  generatedAt: string;
+  tenantId: string;
+  organizationId: string;
+  racetrackId?: string;
+  entries: KpiRegistryEntryDto[];
+  mock: boolean;
+}
+
+export interface KpiSourceMappingDto {
+  kpiId: string;
+  domain: KPIDomain;
+  sourceEvents: string[];
+  sourceEntities: KPISourceEntityRef[];
+  calculationMethod: string;
+  auditEventIds: string[];
+  eventIds: string[];
+  correlationId: string;
+}
+
+export interface KpiSourcesDto {
+  generatedAt: string;
+  mappings: KpiSourceMappingDto[];
+  consolidatedEventRefs: string[];
+  mock: boolean;
+}
+
+export interface KpiMutationDraftResultDto {
+  accepted: boolean;
+  draftId: string;
+  kpiId: string;
+  eventType: string;
+  approvalId?: string;
+  approvalRequired: boolean;
+  message: string;
+  auditEventIds: string[];
+  mock: boolean;
+}
+
+export function definitionFromArtifact(artifact: KPIArtifact): KpiDefinitionDto {
+  return {
+    kpiId: artifact.kpiId,
+    tenantId: artifact.tenantId,
+    organizationId: artifact.organizationId,
+    racetrackId: artifact.racetrackId,
+    domain: artifact.domain,
+    name: artifact.name,
+    description: artifact.description,
+    metricType: artifact.metricType,
+    unit: artifact.unit,
+    target: artifact.target,
+    ownerRole: artifact.ownerRole,
+    visibility: artifact.visibility,
+    approvalSensitivity: artifact.approvalSensitivity,
+    requiredPermission: artifact.requiredPermission,
+    calculationMethod: artifact.calculationMethod,
+    refreshCadence: artifact.refreshCadence,
+    sourceEvents: [...artifact.sourceEvents],
+    sourceEntities: [...artifact.sourceEntities],
+    modelReadable: artifact.modelReadable,
+    version: artifact.version,
+    createdAt: artifact.createdAt,
+    updatedAt: artifact.updatedAt,
+  };
+}
+
+export function evaluateKpiStatus(
+  value: number,
+  threshold: KPIThresholdRule,
+  metricType: KPIMetricType,
+  priorStatus?: KPIStatus,
+): KPIStatus {
+  if (metricType === 'readiness' || priorStatus === 'readiness-only') return 'readiness-only';
+  const { warning, critical, targetDirection } = threshold;
+  if (targetDirection === 'below') {
+    if (critical != null && value >= critical) return 'critical';
+    if (warning != null && value >= warning) return 'warning';
+    if (warning != null && value >= warning * 0.85) return 'watch';
+    return 'nominal';
+  }
+  if (targetDirection === 'above') {
+    if (critical != null && value <= critical) return 'critical';
+    if (warning != null && value <= warning) return 'warning';
+    if (warning != null && value <= warning * 1.05) return 'watch';
+    return 'nominal';
+  }
+  return priorStatus ?? 'watch';
+}
+
+export function computeKpiTrend(historicalSnapshots: KPIHistoricalSnapshot[], newValue: number): KPITrend {
+  const prior = historicalSnapshots.at(-1);
+  if (!prior) return 'insufficient-history';
+  const delta = newValue - prior.value;
+  const tolerance = Math.max(Math.abs(prior.value) * 0.01, 0.5);
+  if (Math.abs(delta) <= tolerance) return 'flat';
+  return delta > 0 ? 'up' : 'down';
 }

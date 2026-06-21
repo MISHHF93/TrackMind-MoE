@@ -19,7 +19,7 @@ export type IncidentSeverity = 'watch' | 'minor' | 'major' | 'critical';
 export type EmergencyRoleName = 'incident-commander' | 'safety-officer' | 'public-information-officer' | 'operations-section' | 'planning-section' | 'logistics-section' | 'medical-lead' | 'fire-lead' | 'weather-lead' | 'evacuation-lead';
 export type EmergencyResourceKind = 'personnel' | 'medical' | 'fire' | 'weather' | 'transport' | 'shelter' | 'communications' | 'equipment';
 export type EmergencyWorkflowStatus = 'draft' | 'active' | 'demobilizing' | 'closed';
-export type EmergencyEventType = 'emergency.incident.opened' | 'emergency.workflow.activated' | 'emergency.communication.completed' | 'emergency.drill.completed' | 'emergency.after-action.created' | 'emergency.digital-twin.patch.requested';
+export type EmergencyEventType = 'emergency.incident.opened' | 'emergency.workflow.activated' | 'emergency.communication.completed' | 'emergency.drill.completed' | 'emergency.after-action.created' | 'emergency.digital-twin.patch.requested' | 'incident.post-incident-review.synced';
 
 export interface OperationalSystemLink { system: string; status: 'online' | 'degraded' | 'offline'; dataFeeds: string[]; }
 export interface DigitalTwinImpact { assetId: string; zone: string; risk: IncidentSeverity; dependencies?: string[]; }
@@ -199,6 +199,16 @@ export class EmergencyOperationsPlatform {
     return clone(report);
   }
 
+  syncPostIncidentReview(incidentId: string, platformIncidentId: string, findings: Array<{ finding: string; severity: IncidentSeverity; owner: string }>) {
+    const report = this.afterActionReport(incidentId, findings);
+    this.appendEvent('incident.post-incident-review.synced', platformIncidentId, report.findings[0]?.severity ?? 'major', report.evidencePackage.at(-1) ?? incidentId, {
+      platformIncidentId,
+      emergencyIncidentId: incidentId,
+      correctiveActions: report.correctiveActions.length,
+    });
+    return { emergencyReport: report, platformIncidentId };
+  }
+
   continuityStatus() { return [...this.plans.values()].filter((plan): plan is ContinuityPlan => 'criticalProcesses' in plan).map((plan) => ({ planId: plan.id, name: plan.name, criticalProcesses: plan.criticalProcesses.length, rtoMinutes: plan.recoveryTimeObjectiveMinutes, rpoMinutes: plan.recoveryPointObjectiveMinutes, ready: plan.alternateSites.length > 0 && plan.manualWorkarounds.length > 0 })); }
   listAuditRecords() { return this.auditRecords.map(clone); }
   listEvents() { return this.events.map(clone); }
@@ -294,7 +304,7 @@ export class EmergencyOperationsPlatform {
 
   private registerEventSchemas(): void {
     const owner = { service: 'emergency-operations', team: 'emergency-operations', accountableRole: 'incident-commander' };
-    (['emergency.incident.opened', 'emergency.workflow.activated', 'emergency.communication.completed', 'emergency.drill.completed', 'emergency.after-action.created', 'emergency.digital-twin.patch.requested'] satisfies EmergencyEventType[]).forEach((type) => this.deps.eventBus?.registerEvent({ type, version: 1, description: `Emergency Operations ${type}`, owner, payloadFields: ['subjectId', 'severity', 'auditId'], compliance: 'regulated', operationalMetadata: { humanAuthority: true, aiMayBlock: false } }));
+    (['emergency.incident.opened', 'emergency.workflow.activated', 'emergency.communication.completed', 'emergency.drill.completed', 'emergency.after-action.created', 'emergency.digital-twin.patch.requested', 'incident.post-incident-review.synced'] satisfies EmergencyEventType[]).forEach((type) => this.deps.eventBus?.registerEvent({ type, version: 1, description: `Emergency Operations ${type}`, owner, payloadFields: ['subjectId', 'severity', 'auditId'], compliance: 'regulated', operationalMetadata: { humanAuthority: true, aiMayBlock: false } }));
   }
 
   private resourcePlan(input: EmergencyIncidentInput) { const base = ['incident command post', 'first-aid kits', 'radios', 'access-control staff']; const scenarioResources: Record<EmergencyScenario, string[]> = { 'severe-weather': ['weather radar feed', 'surface inspection crew', 'shelter capacity'], 'medical-emergency': ['ems unit', 'veterinary response', 'stretcher cart'], 'fire-incident': ['fire extinguishers', 'utility shutoff team', 'mutual-aid fire department'], 'infrastructure-failure': ['generator', 'maintenance crew', 'spare parts cache'], evacuation: ['buses', 'horse transport', 'assembly-area marshals'], 'security-incident': ['law enforcement liaison', 'camera review team', 'perimeter barriers'], 'business-continuity': ['alternate workspace', 'manual forms', 'vendor contact bridge'], 'disaster-recovery': ['backup restore team', 'clean-room credentials', 'network failover'] }; return [...base, ...scenarioResources[input.scenario]]; }

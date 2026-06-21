@@ -114,3 +114,44 @@ test('owner permissions prevent read-only auditors from collecting evidence or a
   assert.throws(() => lib.collectEvidence('ctrl-ai-evidence', 'owner-auditor', { id: 'ev-denied', uri: 'audit://x', description: 'denied', content: {} }), /cannot collect evidence/);
   assert.throws(() => lib.assess('ctrl-ai-evidence', 'owner-auditor', 'effective', 'denied'), /cannot assess controls/);
 });
+
+test('corrective actions support full CRUD lifecycle with audit linkage', () => {
+  const lib = seededComplianceLibrary('track-1');
+  const finding = lib.openFinding('ctrl-security-audit', 'low', 'Rotate restricted-zone credential evidence quarterly');
+  const created = lib.createCorrectiveAction(finding.id, 'owner-security', 'Schedule quarterly credential evidence refresh', '2026-08-01');
+  assert.equal(created.status, 'open');
+  assert.ok(lib.listCorrectiveActions().some((action) => action.id === created.id));
+  assert.deepEqual(lib.getCorrectiveAction(created.id).action, created.action);
+
+  const updated = lib.updateCorrectiveAction(created.id, { status: 'in-progress', action: 'Credential refresh scheduled with security team' }, 'owner-security', '2026-06-20T00:00:00.000Z');
+  assert.equal(updated.status, 'in-progress');
+  assert.ok(updated.auditRecordIds.length >= 2);
+
+  const completed = lib.updateCorrectiveAction(created.id, { status: 'done' }, 'owner-compliance', '2026-06-21T00:00:00.000Z');
+  assert.equal(completed.status, 'done');
+  assert.equal(lib.dashboard().findings.find((item) => item.id === finding.id)?.status, 'remediated');
+
+  const removed = lib.deleteCorrectiveAction(created.id, 'owner-compliance', '2026-06-22T00:00:00.000Z');
+  assert.equal(removed.deleted, true);
+  assert.throws(() => lib.getCorrectiveAction(created.id), /Unknown corrective action/);
+});
+
+test('policy registry and evidence packet generation expose HISA and ISO mappings', () => {
+  const lib = seededComplianceLibrary('track-1');
+  const policies = lib.policyRegistry();
+  assert.ok(policies.some((policy) => policy.frameworkId === 'ISO-42001'));
+  assert.ok(policies.some((policy) => policy.frameworkId === 'HISA' && policy.mappedFrameworks.some((target) => target.frameworkId === 'ARCI')));
+
+  const generated = lib.generateEvidencePacket({
+    id: 'pkg-generated-test',
+    title: 'Generated HISA and ISO readiness packet',
+    controlIds: ['ctrl-ai-evidence', 'ctrl-racing-safety-integrity'],
+    sealed: true,
+    frameworkIds: ['ISO-42001', 'HISA'],
+  });
+  assert.equal(generated.id, 'pkg-generated-test');
+  assert.equal(generated.sealed, true);
+  assert.ok(generated.frameworkIds.includes('ISO-42001'));
+  assert.ok(generated.frameworkIds.includes('HISA'));
+  assert.equal(generated.accreditationReadiness.externalCertificationClaimed, false);
+});

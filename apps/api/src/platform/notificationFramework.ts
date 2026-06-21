@@ -9,6 +9,63 @@ type NotificationRecord = NotificationInboxDto['notifications'][number] & {
   priority?: TrackMindAlertPriority;
 };
 
+export type NotificationDeliveryChannel = 'in-app' | 'sse' | 'email-stub';
+
+export type NotificationDeliveryResult = {
+  channel: NotificationDeliveryChannel;
+  delivered: boolean;
+  detail?: string;
+};
+
+export interface NotificationDeliveryAdapter {
+  channel: NotificationDeliveryChannel;
+  deliver(record: NotificationRecord): NotificationDeliveryResult;
+}
+
+class InAppDeliveryAdapter implements NotificationDeliveryAdapter {
+  readonly channel = 'in-app' as const;
+
+  deliver(): NotificationDeliveryResult {
+    return { channel: this.channel, delivered: true };
+  }
+}
+
+class SseDeliveryAdapter implements NotificationDeliveryAdapter {
+  readonly channel = 'sse' as const;
+  private deliveredCount = 0;
+
+  deliver(record: NotificationRecord): NotificationDeliveryResult {
+    this.deliveredCount += 1;
+    return {
+      channel: this.channel,
+      delivered: true,
+      detail: `sse:event:${record.id}`,
+    };
+  }
+
+  count(): number {
+    return this.deliveredCount;
+  }
+}
+
+class EmailStubDeliveryAdapter implements NotificationDeliveryAdapter {
+  readonly channel = 'email-stub' as const;
+  private queue: string[] = [];
+
+  deliver(record: NotificationRecord): NotificationDeliveryResult {
+    this.queue.unshift(record.id);
+    return {
+      channel: this.channel,
+      delivered: true,
+      detail: `email-stub:queued:${record.targetRoles.join(',')}`,
+    };
+  }
+
+  queuedIds(): string[] {
+    return [...this.queue];
+  }
+}
+
 function inboxSeverity(severity: TrackMindAlertSeverity): NotificationSeverity {
   if (severity === 'advisory') return 'info';
   return severity;
@@ -16,6 +73,16 @@ function inboxSeverity(severity: TrackMindAlertSeverity): NotificationSeverity {
 
 export class NotificationFramework {
   private notifications: NotificationRecord[] = [];
+  private adapters: NotificationDeliveryAdapter[];
+  private deliveryLog: NotificationDeliveryResult[] = [];
+
+  constructor(adapters: NotificationDeliveryAdapter[] = [
+    new InAppDeliveryAdapter(),
+    new SseDeliveryAdapter(),
+    new EmailStubDeliveryAdapter(),
+  ]) {
+    this.adapters = adapters;
+  }
 
   publish(input: Omit<NotificationRecord, 'id' | 'createdAt' | 'status'>): NotificationRecord {
     const normalized = normalizeAlertSeverity(input.severity);
@@ -28,6 +95,9 @@ export class NotificationFramework {
       createdAt: now(),
     };
     this.notifications.unshift(record);
+    for (const adapter of this.adapters) {
+      this.deliveryLog.unshift(adapter.deliver(record));
+    }
     return record;
   }
 
@@ -66,6 +136,19 @@ export class NotificationFramework {
 
   count(): number {
     return this.notifications.length;
+  }
+
+  deliveryAdapters(): NotificationDeliveryChannel[] {
+    return this.adapters.map((adapter) => adapter.channel);
+  }
+
+  deliveryStats(): Array<{ channel: NotificationDeliveryChannel; delivered: number }> {
+    const totals = new Map<NotificationDeliveryChannel, number>();
+    for (const result of this.deliveryLog) {
+      if (!result.delivered) continue;
+      totals.set(result.channel, (totals.get(result.channel) ?? 0) + 1);
+    }
+    return [...totals.entries()].map(([channel, delivered]) => ({ channel, delivered }));
   }
 }
 

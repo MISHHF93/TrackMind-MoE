@@ -91,7 +91,9 @@ export function Sidebar({
                     >
                       <Icon className="h-4 w-4 shrink-0" />
                       <span className="flex-1">{route.label}</span>
-                      <span className="text-[0.62rem] text-[var(--text-on-chrome-muted)]">{route.supportStatus === 'live-api' ? 'live' : 'ref'}</span>
+                      <span className="text-[0.62rem] text-[var(--text-on-chrome-muted)]">
+                        {route.supportLabel}
+                      </span>
                     </button>
                   </li>
                 );

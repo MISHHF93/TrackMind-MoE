@@ -62,6 +62,7 @@ test('route inventory stays synchronized across router, panels, navigation, and 
   assert.match(workspaceSource, /ErrorState/);
   assert.match(workspaceSource, /EmptyState/);
   assert.match(workspaceSource, /DegradedStateBanner/);
+  assert.match(workspaceSource, /SupportStatusBadge/);
   assert.match(routerSource, /RequireRouteAccess/);
   assert.match(guardsSource, /RequireRouteAccess/);
   assert.match(validateSource, /validateRouteInventory/);

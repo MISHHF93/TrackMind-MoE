@@ -1,4 +1,5 @@
 export * from './auditLogger.js';
+export * from './compliancePlatformService.js';
 export * from './controllers.js';
 export * from './governanceRules.js';
 export * from './policyEngine.js';

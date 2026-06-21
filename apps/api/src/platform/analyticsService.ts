@@ -1,11 +1,27 @@
 import type { AnalyticsWorkspaceDto, ExecutiveScorecardDto, KPIArtifact } from '@trackmind/shared';
+import { federationBenchmarksForAnalytics, type FederationKpiAggregationRow } from './dataHubAdapter.js';
 
 const now = () => new Date().toISOString();
+
+export function buildKpiTrendsFromArtifacts(kpis: KPIArtifact[]): AnalyticsWorkspaceDto['kpiTrends'] {
+  return kpis
+    .filter((kpi) => (kpi.historicalSnapshots ?? []).length > 0)
+    .slice(0, 8)
+    .map((kpi) => ({
+      kpiId: kpi.kpiId,
+      label: kpi.name,
+      points: (kpi.historicalSnapshots ?? []).slice(-6).map((snapshot) => ({
+        at: snapshot.calculatedAt,
+        value: snapshot.value,
+      })),
+    }));
+}
 
 export function createAnalyticsWorkspace(
   kpiTrends: AnalyticsWorkspaceDto['kpiTrends'] = [],
   executive?: ExecutiveScorecardDto,
   kpis: KPIArtifact[] = [],
+  federationAggregation: FederationKpiAggregationRow[] = [],
 ): AnalyticsWorkspaceDto {
   const readiness = kpis.find((kpi) => kpi.domain === 'race-day-operations')?.value ?? executive?.operations ?? 88;
   const openApprovals = kpis.find((kpi) => kpi.domain === 'approval-workflows')?.value ?? 4;
@@ -39,10 +55,12 @@ export function createAnalyticsWorkspace(
           })),
         })),
     forecastingReadiness: { score: Math.round(dataQuality * 0.8), modelsAvailable: ['readiness-forecast-v1', 'attendance-forecast-v1'], dataQualityScore: dataQuality },
-    federationBenchmarks: [
-      { metric: 'readiness-score', trackValue: readiness, industryMedian: Math.max(0, readiness - 4), anonymized: true },
-      { metric: 'incident-rate', trackValue: 0.02, industryMedian: 0.03, anonymized: true },
-    ],
+    federationBenchmarks: federationAggregation.length
+      ? federationBenchmarksForAnalytics(federationAggregation, kpis)
+      : [
+          { metric: 'readiness-score', trackValue: readiness, industryMedian: Math.max(0, readiness - 4), anonymized: true },
+          { metric: 'incident-rate', trackValue: 0.02, industryMedian: 0.03, anonymized: true },
+        ],
     mock: false,
   };
 }

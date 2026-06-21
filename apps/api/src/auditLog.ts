@@ -14,7 +14,8 @@ export type AuditEventType =
   | 'security-event'
   | 'digital-twin-update'
   | 'regulatory-activity'
-  | 'rulebook-citation';
+  | 'rulebook-citation'
+  | 'veterinary-access';
 
 export type AuditSeverity = 'info' | 'warning' | 'critical';
 export type RetentionDisposition = 'retain' | 'eligible-for-disposal' | 'legal-hold';

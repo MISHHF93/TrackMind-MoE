@@ -33,7 +33,8 @@ export interface ReviewCycle { id: string; frameworkId: ComplianceFrameworkId; p
 export interface FrameworkMapping { id: string; frameworkId: ComplianceFrameworkId; citation: string; mappedTo: Array<{ frameworkId: ComplianceFrameworkId; citation: string; relationship: 'equivalent'|'supports'|'overlaps'|'localizes' }>; racingCommissionRule?: string; controlIds: string[]; }
 export interface EvidencePackage { id: string; evidenceId: string; title: string; tenantId: string; racetrackId: string; source: EvidenceSourceReference; controlIds: string[]; evidenceIds: string[]; auditRecordIds: string[]; auditRefs: string[]; workflowInstanceIds: string[]; approvalRequestIds: string[]; digitalTwinRefs: string[]; eventIds: string[]; eventRefs: string[]; aiRecommendationRefs: string[]; frameworkIds: ComplianceFrameworkId[]; frameworkMappings: EvidenceFrameworkMapping[]; controlOwnerId: string; reviewCadence: ReviewCadence; hisaOperationalOversightCategories: HisaOperationalOversightCategory[]; accreditationReadiness: EvidenceAccreditationReadiness; sealed: boolean; readiness: 'collecting'|'review'|'evidence-package-ready'; }
 export interface AccreditationProgram { id: string; name: string; authority: string; frameworkIds: ComplianceFrameworkId[]; jurisdiction: string; status: 'not-started'|'collecting-evidence'|'internal-assessment'|'ready-for-internal-review'; requiredControlIds: string[]; evidencePackageIds: string[]; readinessScore: number; nextReviewAt: string; readinessOnly: true; externalCertificationClaimed: false; }
-export interface ComplianceAuditEvent extends Pick<CanonicalEventRef, 'eventId' | 'eventType' | 'tenantId' | 'racetrackId' | 'actorId' | 'source' | 'timestamp' | 'version'> { id: string; type: 'compliance.control.created'|'compliance.evidence.collected'|'compliance.assessment.completed'|'compliance.finding.opened'|'compliance.corrective-action.created'|'compliance.accreditation.readiness.updated'; occurredAt: string; frameworkIds: ComplianceFrameworkId[]; controlId?: string; auditRecordId: string; workflowInstanceId?: string; approvalRequestId?: string; }
+export interface ComplianceAuditEvent extends Pick<CanonicalEventRef, 'eventId' | 'eventType' | 'tenantId' | 'racetrackId' | 'actorId' | 'source' | 'timestamp' | 'version'> { id: string; type: 'compliance.control.created'|'compliance.evidence.collected'|'compliance.assessment.completed'|'compliance.finding.opened'|'compliance.corrective-action.created'|'compliance.corrective-action.updated'|'compliance.corrective-action.deleted'|'compliance.accreditation.readiness.updated'; occurredAt: string; frameworkIds: ComplianceFrameworkId[]; controlId?: string; auditRecordId: string; workflowInstanceId?: string; approvalRequestId?: string; }
+export interface CompliancePolicyRegistryEntry { id: string; frameworkId: ComplianceFrameworkId; citation: string; summary: string; controlIds: string[]; dueCadence: ReviewCadence; jurisdiction?: string; mappedFrameworks: Array<{ frameworkId: ComplianceFrameworkId; citation: string; relationship: string }>; racingCommissionRule?: string; }
 export interface AuditReadinessScore { score: number; totalControls: number; effectiveControls: number; evidenceCoverage: number; openFindings: number; overdueActions: number; byFramework: Array<{ frameworkId: ComplianceFrameworkId; score: number; controls: number }> }
 
 export const complianceFrameworkPlaceholders: ComplianceFramework[] = [
@@ -57,6 +58,8 @@ export const complianceEventContracts: EventContract[] = [
   { type: 'compliance.assessment.completed.v1', version: 1, description: 'A control assessment was completed with evidence and findings.', owner: { service: 'compliance-control-library', team: 'governance-risk-compliance', accountableRole: 'compliance-officer' }, payloadFields: ['controlId','assessmentId','rating'], compliance: 'regulated' },
   { type: 'compliance.finding.opened.v1', version: 1, description: 'A compliance finding was opened for corrective action.', owner: { service: 'compliance-control-library', team: 'governance-risk-compliance', accountableRole: 'compliance-officer' }, payloadFields: ['findingId','controlId','severity'], compliance: 'regulated' },
   { type: 'compliance.corrective-action.created.v1', version: 1, description: 'A corrective action was opened and tied to workflow/approval governance.', owner: { service: 'compliance-control-library', team: 'governance-risk-compliance', accountableRole: 'compliance-officer' }, payloadFields: ['correctiveActionId','findingId','ownerId','dueAt'], compliance: 'regulated' },
+  { type: 'compliance.corrective-action.updated.v1', version: 1, description: 'A corrective action was updated with audit linkage.', owner: { service: 'compliance-control-library', team: 'governance-risk-compliance', accountableRole: 'compliance-officer' }, payloadFields: ['correctiveActionId','status','ownerId'], compliance: 'regulated' },
+  { type: 'compliance.corrective-action.deleted.v1', version: 1, description: 'A corrective action was removed from the active register.', owner: { service: 'compliance-control-library', team: 'governance-risk-compliance', accountableRole: 'compliance-officer' }, payloadFields: ['correctiveActionId','findingId'], compliance: 'regulated' },
   { type: 'compliance.accreditation.readiness.updated.v1', version: 1, description: 'Accreditation readiness changed for a framework/program.', owner: { service: 'compliance-control-library', team: 'governance-risk-compliance', accountableRole: 'compliance-officer' }, payloadFields: ['programId','frameworkIds','readinessScore'], compliance: 'regulated' },
 ];
 
@@ -182,6 +185,139 @@ export class ComplianceControlLibrary {
     return structuredClone(ca);
   }
 
+  listCorrectiveActions(findingId?: string) {
+    this.syncOverdueCorrectiveActions();
+    return [...this.actions.values()]
+      .filter((action) => !findingId || action.findingId === findingId)
+      .map((action) => structuredClone(action));
+  }
+
+  getCorrectiveAction(id: string) {
+    this.syncOverdueCorrectiveActions();
+    const action = this.actions.get(id);
+    if (!action) throw new Error(`Unknown corrective action ${id}`);
+    return structuredClone(action);
+  }
+
+  updateCorrectiveAction(id: string, patch: Partial<Pick<CorrectiveAction, 'ownerId' | 'action' | 'dueAt' | 'status' | 'approvalRequestId'>>, actor: string, now = new Date().toISOString()) {
+    const existing = this.actions.get(id);
+    if (!existing) throw new Error(`Unknown corrective action ${id}`);
+    if (patch.ownerId && !this.owners.has(patch.ownerId)) throw new Error(`Unknown owner ${patch.ownerId}`);
+    const finding = this.findings.get(existing.findingId);
+    if (!finding) throw new Error(`Unknown finding ${existing.findingId}`);
+    const c = this.mutableControl(finding.controlId);
+    const audit = this.auditControl(finding.controlId, actor, now, 'corrective-action.updated', c.frameworkIds, finding.evidenceIds);
+    const updated: CorrectiveAction = {
+      ...existing,
+      ...patch,
+      status: patch.status ?? existing.status,
+      auditRecordIds: [...existing.auditRecordIds, audit.id],
+    };
+    if (patch.approvalRequestId) c.approvalRequestIds.push(patch.approvalRequestId);
+    this.actions.set(id, updated);
+    c.auditRecordIds.push(audit.id);
+    if (updated.status === 'done') finding.status = 'remediated';
+    this.recordReadinessEvent('compliance.corrective-action.updated', now, c.frameworkIds, audit.id, finding.controlId, updated.workflowInstanceId, updated.approvalRequestId);
+    void this.publish('compliance.corrective-action.updated', { correctiveActionId: id, findingId: existing.findingId, status: updated.status, ownerId: updated.ownerId }, c, audit, now, updated.workflowInstanceId, updated.approvalRequestId);
+    return structuredClone(updated);
+  }
+
+  deleteCorrectiveAction(id: string, actor: string, now = new Date().toISOString()) {
+    const existing = this.actions.get(id);
+    if (!existing) throw new Error(`Unknown corrective action ${id}`);
+    const finding = this.findings.get(existing.findingId);
+    if (!finding) throw new Error(`Unknown finding ${existing.findingId}`);
+    const c = this.mutableControl(finding.controlId);
+    const audit = this.auditControl(finding.controlId, actor, now, 'corrective-action.deleted', c.frameworkIds, finding.evidenceIds);
+    finding.correctiveActionIds = finding.correctiveActionIds.filter((actionId) => actionId !== id);
+    c.auditRecordIds.push(audit.id);
+    this.actions.delete(id);
+    this.recordReadinessEvent('compliance.corrective-action.deleted', now, c.frameworkIds, audit.id, finding.controlId, existing.workflowInstanceId, existing.approvalRequestId);
+    void this.publish('compliance.corrective-action.deleted', { correctiveActionId: id, findingId: existing.findingId }, c, audit, now, existing.workflowInstanceId, existing.approvalRequestId);
+    return { deleted: true, id, auditRecordId: audit.id };
+  }
+
+  policyRegistry(): CompliancePolicyRegistryEntry[] {
+    const entries = new Map<string, CompliancePolicyRegistryEntry>();
+    for (const obligation of this.obligations.values()) {
+      const mapping = [...this.mappings.values()].find((item) => item.frameworkId === obligation.frameworkId && item.controlIds.some((controlId) => obligation.controlIds.includes(controlId)));
+      entries.set(obligation.id, {
+        id: obligation.id,
+        frameworkId: obligation.frameworkId,
+        citation: obligation.citation,
+        summary: obligation.summary,
+        controlIds: [...obligation.controlIds],
+        dueCadence: obligation.dueCadence,
+        jurisdiction: obligation.jurisdiction,
+        mappedFrameworks: mapping?.mappedTo.map((target) => ({ ...target })) ?? [],
+        racingCommissionRule: mapping?.racingCommissionRule,
+      });
+    }
+    for (const mapping of this.mappings.values()) {
+      if (entries.has(mapping.id)) continue;
+      entries.set(mapping.id, {
+        id: mapping.id,
+        frameworkId: mapping.frameworkId,
+        citation: mapping.citation,
+        summary: `${mapping.frameworkId} framework mapping`,
+        controlIds: [...mapping.controlIds],
+        dueCadence: this.reviewCadenceForControls(mapping.controlIds),
+        mappedFrameworks: mapping.mappedTo.map((target) => ({ ...target })),
+        racingCommissionRule: mapping.racingCommissionRule,
+      });
+    }
+    return [...entries.values()];
+  }
+
+  generateEvidencePacket(input: {
+    id: string;
+    title: string;
+    controlIds: string[];
+    sealed?: boolean;
+    actor?: string;
+    racetrackId?: string;
+    frameworkIds?: ComplianceFrameworkId[];
+    approvalRequestIds?: string[];
+    now?: string;
+  }) {
+    const controls = input.controlIds.map((controlId) => this.control(controlId));
+    const evidenceIds = controls.flatMap((control) => control.evidenceIds);
+    const auditRecordIds = controls.flatMap((control) => control.auditRecordIds);
+    const workflowInstanceIds = controls.flatMap((control) => control.workflowInstanceIds);
+    const digitalTwinRefs = controls.flatMap((control) => control.digitalTwinRefs);
+    const eventIds = controls.flatMap((control) => control.eventIds);
+    const frameworkIds = uniqueStrings([...(input.frameworkIds ?? []), ...controls.flatMap((control) => control.frameworkIds)]) as ComplianceFrameworkId[];
+    const readiness = this.readiness(input.controlIds);
+    return this.createEvidencePackage({
+      id: input.id,
+      evidenceId: `evpkg-${input.id}`,
+      title: input.title,
+      tenantId: this.tenantId,
+      racetrackId: input.racetrackId ?? this.tenantId,
+      source: { objectType: 'control', objectId: input.controlIds[0] ?? input.id, controlId: input.controlIds[0] },
+      controlIds: input.controlIds,
+      evidenceIds,
+      auditRecordIds,
+      workflowInstanceIds,
+      approvalRequestIds: input.approvalRequestIds ?? [],
+      digitalTwinRefs,
+      eventIds,
+      frameworkIds,
+      controlOwnerId: controls[0]?.ownerId ?? 'owner-compliance',
+      reviewCadence: this.reviewCadenceForControls(input.controlIds),
+      hisaOperationalOversightCategories: this.hisaCategoriesForControls(input.controlIds),
+      accreditationReadiness: {
+        status: input.sealed ? 'ready-for-review' : 'internal-review',
+        score: readiness.score,
+        readinessOnly: true,
+        externalCertificationClaimed: false,
+        notes: 'Generated evidence packet for internal review; no external certification is claimed.',
+      },
+      sealed: input.sealed ?? false,
+      readiness: input.sealed ? 'evidence-package-ready' : 'review',
+    });
+  }
+
   createReviewCycle(cycle: Omit<ReviewCycle,'readinessScore'>) {
     const full = { ...cycle, controlIds: [...cycle.controlIds], readinessScore: this.readiness(cycle.controlIds).score };
     this.cycles.set(full.id, full);
@@ -278,6 +414,12 @@ export class ComplianceControlLibrary {
   }
 
   private mutableControl(id: string) { const c = this.controls.get(id); if (!c) throw new Error(`Unknown control ${id}`); return c; }
+  private syncOverdueCorrectiveActions(now = new Date().toISOString()) {
+    const dueMs = Date.parse(now);
+    for (const action of this.actions.values()) {
+      if ((action.status === 'open' || action.status === 'in-progress') && Date.parse(action.dueAt) < dueMs) action.status = 'overdue';
+    }
+  }
   private auditControl(controlId: string, actor: string, timestamp: string, action: string, regulations: string[], evidenceIds: string[] = []): AuditLogEntry { return this.audit.append({ id: `audit-compliance-${this.audit.all().length + 1}`, type: 'regulatory-activity', actor, timestamp, subjectId: controlId, tenantId: this.tenantId, severity: 'info', regulations, evidenceIds, payload: { action, controlId } }); }
   private recordReadinessEvent(type: ComplianceAuditEvent['type'], occurredAt: string, frameworkIds: ComplianceFrameworkId[], auditRecordId: string, controlId?: string, workflowInstanceId?: string, approvalRequestId?: string) { const eventId = `compliance-event-${this.auditReadinessEvents.length + 1}`; this.auditReadinessEvents.push({ eventId, eventType: `${type}.v1` as CanonicalEventRef['eventType'], tenantId: this.tenantId, racetrackId: 'main-track', actorId: 'compliance-control-library', source: 'compliance-control-library', timestamp: occurredAt, version: 1, id: eventId, type, occurredAt, frameworkIds: [...frameworkIds], controlId, auditRecordId, workflowInstanceId, approvalRequestId }); }
   private reviewCadenceForControls(controlIds: string[]): ReviewCadence {

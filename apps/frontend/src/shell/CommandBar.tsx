@@ -5,6 +5,7 @@ import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { roleDisplayName } from '@/domain/support';
 import { PostureBadge } from '@/design/components/badge';
 import type { OpsPosture } from '@/design/components/workspace';
+import { NotificationCenter } from './NotificationCenter';
 
 export function CommandBar({
   posture,
@@ -43,6 +44,7 @@ export function CommandBar({
               onFocus={onOpenPalette}
             />
           </div>
+          <NotificationCenter />
           <RoleSwitcher />
         </div>
       </div>

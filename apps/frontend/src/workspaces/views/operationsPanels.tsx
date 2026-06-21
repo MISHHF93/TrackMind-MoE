@@ -5,6 +5,7 @@ import { SectionPanel } from '@/design/components/section-panel';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { feedData } from '../feedUtils';
+import { FacilitiesGeospatialMap } from './FacilitiesGeospatialMap';
 
 export function FacilitiesPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
   const data = feedData<Record<string, unknown>>(results, '/facilities-maintenance/workspace');
@@ -12,6 +13,10 @@ export function FacilitiesPanels({ results }: { results: WorkspaceDataResult[] }
   const assets = extractArray<Record<string, unknown>>(data, 'assets');
   const workOrders = extractArray<Record<string, unknown>>(data, 'workOrders');
   const inspections = extractArray<Record<string, unknown>>(data, 'inspections');
+  const inventory = extractArray<Record<string, unknown>>(data, 'inventory');
+  const incidents = extractArray<Record<string, unknown>>(data, 'incidents');
+  const utilities = data && typeof data.utilities === 'object' ? data.utilities as Record<string, unknown> : undefined;
+  const map = data && typeof data.map === 'object' ? data.map as Record<string, unknown> : undefined;
 
   return (
     <div className="space-y-4">
@@ -19,10 +24,57 @@ export function FacilitiesPanels({ results }: { results: WorkspaceDataResult[] }
         items={[
           { id: 'score', label: 'Readiness', value: readiness?.score != null ? String(readiness.score) : '—' },
           { id: 'assets', label: 'Assets', value: String(assets.length) },
+          { id: 'inventory', label: 'Inventory', value: String(inventory.length) },
           { id: 'orders', label: 'Work orders', value: String(workOrders.length) },
-          { id: 'inspections', label: 'Inspections', value: String(inspections.length) },
+          { id: 'utilities', label: 'Utilities coverage', value: utilities?.coveragePct != null ? `${utilities.coveragePct}%` : '—' },
+          { id: 'incidents', label: 'Incidents', value: String(incidents.length) },
         ]}
       />
+      <FacilitiesGeospatialMap map={map} />
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionPanel title="Utilities adapters">
+          <RecordTable
+            columns={[
+              { key: 'adapter', label: 'Adapter' },
+              { key: 'kind', label: 'Kind' },
+              { key: 'status', label: 'Status' },
+            ]}
+            rows={mapRecords(extractArray<Record<string, unknown>>(utilities, 'adapters'), (adapter) => ({
+              adapter: String(adapter.adapterId ?? '—'),
+              kind: String(adapter.kind ?? '—'),
+              status: String(adapter.status ?? '—'),
+            }))}
+          />
+        </SectionPanel>
+        <SectionPanel title="Facility incidents">
+          <RecordTable
+            columns={[
+              { key: 'title', label: 'Incident' },
+              { key: 'severity', label: 'Severity' },
+              { key: 'status', label: 'Status' },
+            ]}
+            rows={mapRecords(incidents, (incident) => ({
+              title: String(incident.title ?? '—'),
+              severity: String(incident.severity ?? '—'),
+              status: String(incident.status ?? '—'),
+            }))}
+          />
+        </SectionPanel>
+      </div>
+      <SectionPanel title="Inventory">
+        <RecordTable
+          columns={[
+            { key: 'asset', label: 'Asset' },
+            { key: 'location', label: 'Location' },
+            { key: 'maintenance', label: 'Maintenance' },
+          ]}
+          rows={mapRecords(inventory, (item) => ({
+            asset: String(item.assetId ?? item.name ?? '—'),
+            location: String(item.locationLabel ?? '—'),
+            maintenance: String(item.maintenanceStatus ?? '—'),
+          }))}
+        />
+      </SectionPanel>
       <SectionPanel title="Asset health">
         <RecordTable
           columns={[

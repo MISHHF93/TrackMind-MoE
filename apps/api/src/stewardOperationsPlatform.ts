@@ -21,6 +21,9 @@ import {
   createStewardInquiry,
   exportAppealPackage,
   generateStewardTimeline,
+  getStewardEvidenceReference,
+  issueFinalRuling as recordStewardFinalRuling,
+  listStewardEvidenceReferences,
   listStewardInquiries,
   openStewardInvestigation,
   organizeEvidenceForStewards,
@@ -29,12 +32,14 @@ import {
   saveDecisionDraft,
   summarizeEvidenceForStewards,
   type StewardCenterIntegrations,
+  type StewardFinalRuling,
   type StewardInquiry,
 } from './stewarding.js';
 import { CentralizedApprovalService } from './approvals.js';
 import { AuditEvidenceCollectionVault, ImmutableAuditLog as AuditLog } from './auditLog.js';
 import { InMemoryEventBus } from './eventBus.js';
 import { investigationWorkflow, WorkflowOrchestrationEngine } from './workflowEngine.js';
+import { notificationFramework } from './platform/notificationFramework.js';
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const id = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -86,9 +91,38 @@ export class StewardOperationsPlatform {
     const workspace = this.workspace(now);
     return {
       inquiries: workspace.inquiries,
+      recommendationSupport: workspace.recommendationSupport,
       permissions: workspace.permissions,
       mock: false as const,
     };
+  }
+
+  listEvidence(inquiryId: string): StewardEvidenceReferenceDto[] {
+    const inquiry = this.requireInquiry(inquiryId);
+    return listStewardEvidenceReferences(inquiry).map((evidence) => ({ ...clone(evidence), inquiryId })) as StewardEvidenceReferenceDto[];
+  }
+
+  getEvidence(inquiryId: string, evidenceId: string): StewardEvidenceReferenceDto | undefined {
+    const inquiry = this.requireInquiry(inquiryId);
+    const evidence = getStewardEvidenceReference(inquiry, evidenceId);
+    return evidence ? { ...clone(evidence), inquiryId } as StewardEvidenceReferenceDto : undefined;
+  }
+
+  decisionSupport(inquiryId: string, now = new Date().toISOString()): StewardRecommendationSupportDto {
+    const inquiry = this.requireInquiry(inquiryId);
+    return this.buildRecommendationSupport([this.toInquiryDto(inquiry, now)]);
+  }
+
+  issueFinalRuling(inquiryId: string, ruling: Omit<StewardFinalRuling, 'officialResultsModified'>, actor = 'steward', options: { approvalToken?: import('./approvals.js').ApprovalToken; tenantId?: string; racetrackId?: string } = {}): StewardMutationResultDto {
+    const inquiry = this.requireInquiry(inquiryId);
+    recordStewardFinalRuling(inquiry, { ...ruling, officialResultsModified: false }, {
+      approvalService: this.deps.integrations?.approvals,
+      approvalToken: options.approvalToken,
+      tenantId: options.tenantId ?? this.deps.tenantId,
+      racetrackId: options.racetrackId ?? this.deps.racetrackId,
+      deps: this.deps.integrations,
+    });
+    return this.commit(inquiryId, actor, 'steward-operations.final-ruling.recorded', `Recorded final ruling ${ruling.id} without official result mutation`);
   }
 
   kpiDashboard(now = new Date().toISOString()): StewardOperationsKpiDashboardDto {
@@ -304,6 +338,7 @@ export class StewardOperationsPlatform {
           rationale: draft.rationale,
           evidenceIds: [...draft.evidenceIds],
           ruleIds: [...draft.ruleIds],
+          linkedEvidenceRefs: draft.evidenceIds.map((id) => `/api/v1/steward-operations/inquiries/${inquiry.id}/evidence/${id}`),
           officialRuling: false,
           advisoryOnly: true,
           createdAt: inquiry.openedAt,
@@ -319,6 +354,7 @@ export class StewardOperationsPlatform {
           rationale: org.limitations.join(' '),
           evidenceIds: org.clusters.flatMap((cluster) => cluster.evidenceIds),
           ruleIds: org.clusters.flatMap((cluster) => cluster.ruleIds),
+          linkedEvidenceRefs: org.clusters.flatMap((cluster) => cluster.evidenceIds.map((evidenceId) => `/api/v1/steward-operations/inquiries/${inquiry.id}/evidence/${evidenceId}`)),
           officialRuling: false,
           advisoryOnly: true,
           createdAt: org.generatedAt,
@@ -418,7 +454,15 @@ export function createStewardOperationsIntegrations(auditLog?: ImmutableAuditLog
   const workflow = new WorkflowOrchestrationEngine({ auditLog: log, eventBus, approvalService: approvals });
   workflow.register(investigationWorkflow('track-1'));
   const evidenceVault = new AuditEvidenceCollectionVault();
-  return { auditLog: log, eventBus, approvals, workflow, evidenceVault, observability: { recordSignal: () => undefined } };
+  return {
+    auditLog: log,
+    eventBus,
+    approvals,
+    workflow,
+    evidenceVault,
+    notifications: notificationFramework,
+    observability: { recordSignal: () => undefined },
+  };
 }
 
 export function createSeededStewardOperations(deps: StewardOperationsDeps = {}): StewardOperationsPlatform {

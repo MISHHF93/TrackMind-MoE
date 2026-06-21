@@ -18,17 +18,25 @@ function securityData(results: WorkspaceDataResult[]) {
 export function SecurityPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
   const data = securityData(results);
   const zonesLive = feedData<Record<string, unknown>>(results, '/security-operations/zones/live');
+  const cameraReadiness = feedData<Record<string, unknown>>(results, '/security-operations/cameras/readiness');
+  const sensorReadiness = feedData<Record<string, unknown>>(results, '/security-operations/sensors/readiness');
+  const securityKpis = feedData<Record<string, unknown>>(results, '/security-operations/kpis');
   const incidents = extractArray<Record<string, unknown>>(data, 'incidents');
   const cameras = extractArray<Record<string, unknown>>(data, 'cameras');
   const access = extractArray<Record<string, unknown>>(data, 'accessEvents');
   const liveZones = extractArray<Record<string, unknown>>(zonesLive, 'zones');
+  const cameraItems = extractArray<Record<string, unknown>>(cameraReadiness, 'items');
+  const sensorItems = extractArray<Record<string, unknown>>(sensorReadiness, 'items');
+  const kpiItems = extractArray<Record<string, unknown>>(securityKpis, 'kpis');
+  const dashboard = (data?.dashboard ?? {}) as Record<string, unknown>;
 
   return (
     <div className="space-y-4">
       <KpiStrip
         items={[
+          { id: 'coverage', label: 'Security coverage', value: `${String(securityKpis?.coveragePercent ?? '—')}%`, status: Number(securityKpis?.coveragePercent ?? 100) < 90 ? 'warning' : 'nominal' },
           { id: 'incidents', label: 'Active incidents', value: String(incidents.length), status: incidents.length ? 'warning' : 'nominal' },
-          { id: 'cameras', label: 'Cameras', value: String(cameras.length) },
+          { id: 'cameras', label: 'Camera readiness', value: `${String(cameraReadiness?.score ?? '—')}%` },
           { id: 'access', label: 'Access events', value: String(access.length) },
         ]}
       />
@@ -71,24 +79,61 @@ export function SecurityPanels({ results }: { results: WorkspaceDataResult[] }):
             { key: 'result', label: 'Result' },
           ]}
           rows={mapRecords(access, (a) => ({
-            time: String(a.timestamp ?? '—'),
-            person: String(a.personId ?? a.credentialId ?? '—'),
+            time: String(a.occurredAt ?? a.timestamp ?? '—'),
+            person: String(a.personDisplayName ?? a.personId ?? a.credentialId ?? '—'),
             zone: String(a.zoneId ?? '—'),
             result: String(a.result ?? a.decision ?? '—'),
           }))}
         />
       </SectionPanel>
-      <SectionPanel title="Live zone monitoring" description="Restricted zone occupancy from CQRS projections.">
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionPanel title="Live zone monitoring" description="Restricted zone occupancy from CQRS projections.">
+          <RecordTable
+            columns={[
+              { key: 'zone', label: 'Zone' },
+              { key: 'occupancy', label: 'Occupancy' },
+              { key: 'status', label: 'Status' },
+            ]}
+            rows={mapRecords(liveZones, (z) => ({
+              zone: String(z.name ?? z.zoneId ?? '—'),
+              occupancy: String(z.occupancy ?? '—'),
+              status: String(z.status ?? '—'),
+            }))}
+          />
+        </SectionPanel>
+        <SectionPanel title="Integration readiness" description="Camera and sensor adapter readiness for vendor webhooks.">
+          <RecordTable
+            columns={[
+              { key: 'asset', label: 'Asset' },
+              { key: 'type', label: 'Type' },
+              { key: 'status', label: 'Status' },
+            ]}
+            rows={[
+              ...mapRecords(cameraItems, (item) => ({
+                asset: String(item.label ?? item.id ?? '—'),
+                type: 'camera',
+                status: String(item.integrationStatus ?? item.health ?? '—'),
+              })),
+              ...mapRecords(sensorItems, (item) => ({
+                asset: String(item.label ?? item.id ?? '—'),
+                type: 'sensor',
+                status: String(item.integrationStatus ?? item.health ?? '—'),
+              })),
+            ]}
+          />
+        </SectionPanel>
+      </div>
+      <SectionPanel title="Security KPI pack" description="Projected security KPIs from zones, cameras, sensors, and incidents.">
         <RecordTable
           columns={[
-            { key: 'zone', label: 'Zone' },
-            { key: 'occupancy', label: 'Occupancy' },
-            { key: 'status', label: 'Status' },
+            { key: 'kpi', label: 'KPI' },
+            { key: 'value', label: 'Value' },
+            { key: 'unit', label: 'Unit' },
           ]}
-          rows={mapRecords(liveZones, (z) => ({
-            zone: String(z.name ?? z.zoneId ?? '—'),
-            occupancy: String(z.occupancy ?? '—'),
-            status: String(z.status ?? '—'),
+          rows={mapRecords(kpiItems.length ? kpiItems : [{ label: 'Restricted zone events', value: dashboard.restrictedZoneEvents, unit: 'count' }], (k) => ({
+            kpi: String(k.label ?? k.kpiId ?? '—'),
+            value: String(k.value ?? '—'),
+            unit: String(k.unit ?? '—'),
           }))}
         />
       </SectionPanel>

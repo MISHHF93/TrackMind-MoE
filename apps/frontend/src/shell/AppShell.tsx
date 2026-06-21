@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { backendSupportLabels, canViewRoute } from '@/domain/support';
+import { backendSupportLabels, canAccessRoute } from '@/domain/support';
+import { useModuleEnablement } from '@/hooks/useModuleEnablement';
+import { moduleKeyForRoute } from '@/routes/routes';
 import { navigationGroups } from '@/routes/validateRoutes';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { routes, type AppRoute } from '@/routes/routes';
@@ -13,7 +15,6 @@ import { ActionDock } from './ActionDock';
 import { LiveStatusBar } from './LiveStatusBar';
 import { CommandPalette } from './CommandPalette';
 import { MoEChatPanel } from '@/features/assistant/MoEChatPanel';
-import { NotificationCenter } from './NotificationCenter';
 
 const navigationOrder = navigationGroups;
 
@@ -25,8 +26,11 @@ export function AppShell(): ReactElement {
   const [searchQuery, setSearchQuery] = useState('');
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { status, lastHeartbeat } = useEventStream();
+  const { enabledModules } = useModuleEnablement();
 
-  const visibleRoutes = routes.filter((route) => canViewRoute(route, session.role));
+  const visibleRoutes = routes.filter((route) =>
+    canAccessRoute(route, session.role, enabledModules, moduleKeyForRoute(route.id)),
+  );
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const searchableRoutes = normalizedSearch
     ? visibleRoutes.filter((route) => routeSearchText(route).includes(normalizedSearch))
@@ -71,9 +75,6 @@ export function AppShell(): ReactElement {
           onSearchChange={setSearchQuery}
           onOpenPalette={() => setPaletteOpen(true)}
         />
-        <div className="px-4 pb-2 flex justify-end">
-          <NotificationCenter />
-        </div>
         <main className="shell-main">
           <Outlet />
         </main>

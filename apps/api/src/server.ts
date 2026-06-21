@@ -1,20 +1,21 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { apiEndpointContracts, createTrackMindIntelligenceCoreMetadata, createTrackMindNexusUpgradePackage, createUnifiedDataModelWorkspace, hasAnyPermission, hasPermission, isProtectedAction, isRole, nexusApiBasePath, permissionsForApprovalAction, roles, buildRacingOperatingModel, buildRacingOperatingConvergenceReport, racingExpansionSequence, type AIControlPlaneDraftResultDto, type AIControlPlaneWorkspaceDto, type ApiResponse, type ApiResponseMetadata, type ApprovalDto, type AuditEventDto, type FederationWorkspaceDto, type KPIArtifact, type Permission, type Role, type RosFacadeStateDto, type TrackCertificationCandidateDto, type TrackMindIntelligenceCoreDto, type TrackMindNexusUpgradePackage, type TUSTwinStandardDto } from '@trackmind/shared';
+import { apiEndpointContracts, createTrackMindIntelligenceCoreMetadata, createTrackMindNexusUpgradePackage, createUnifiedDataModelWorkspace, hasAnyPermission, hasPermission, isProtectedAction, isRole, nexusApiBasePath, permissionsForApprovalAction, rolePermissions, roles, buildRacingOperatingModel, buildRacingOperatingConvergenceReport, racingExpansionSequence, type AIControlPlaneDraftResultDto, type AIControlPlaneWorkspaceDto, type ApiResponse, type ApiResponseMetadata, type ApprovalDto, type AuditEventDto, type FederationWorkspaceDto, type KPIArtifact, type Permission, type Role, type RosFacadeStateDto, type TrackCertificationCandidateDto, type TrackMindIntelligenceCoreDto, type TrackMindNexusUpgradePackage, type TUSTwinStandardDto } from '@trackmind/shared';
 import { listAIAgentRegistryRecords, listExpertModelRegistry } from './aiControlPlane.js';
 import { createApiHubEventCatalog } from './apiHubAdapters.js';
-import { CentralizedApprovalService, type ApprovalActor, type ApprovalToken, type ControlledAction, type ControlledActionRequest } from './approvals.js';
+import { CentralizedApprovalService, buildApprovalArtifact, canonicalApprovalRequest, defaultApprovalPolicies, type ApprovalActor, type ApprovalToken, type ControlledAction, type ControlledActionRequest } from './approvals.js';
 import { createUniversalArtifactDraftRegistrationResult, createUniversalArtifactFrameworkState, type UniversalArtifactFrameworkState } from './artifacts.js';
 import { ImmutableAuditLog, type RetentionPolicy } from './auditLog.js';
+import { auditLogEntryToDto } from './auditAdapter.js';
 import { createSeededBarnOperationsService } from './barnOperations.js';
 import { createCommandCenterContractSnapshot } from './commandCenterV1.js';
 import { CollaborationService, type CollaborationActivityQuery, type CollaborationCreateAssignmentInput, type CollaborationCreateCommentInput, type CollaborationCreateDecisionInput, type CollaborationPrincipal, type CollaborationThreadQuery } from './collaborationService.js';
-import { seededComplianceLibrary } from './complianceControlLibrary.js';
-import { createComplianceReportingController, type ComplianceReportingController } from './compliance/index.js';
+import { seededComplianceLibrary, type ComplianceControlLibrary } from './complianceControlLibrary.js';
+import { createCompliancePlatformController, createCompliancePlatformService, createComplianceReportingController, type CompliancePlatformController, type CompliancePlatformService, type ComplianceReportingController } from './compliance/index.js';
 import { EmergencyOperationsPlatform, type EmergencyWorkflowInput } from './emergencyOperations.js';
 import { createCqrsCommandHandler, type CqrsCommandHandler, type RaceStartCommandBody, type SafetyCriticalCommandBody } from './events/index.js';
-import { createNexusEventCatalog } from './eventBus.js';
-import { FacilitiesMaintenanceService } from './facilitiesMaintenance.js';
+import { createNexusEventCatalog, InMemoryEventBus } from './eventBus.js';
+import { FacilitiesMaintenanceService, createSeededFacilitiesMaintenanceService } from './facilitiesMaintenance.js';
 import { createFederationWorkspace } from './federation.js';
 import { createTrackCertificationCandidate } from './franchiseCertification.js';
 import { createKPIWorkspace, filterKPIWorkspace } from './kpiArtifacts.js';
@@ -35,12 +36,13 @@ import { createSeededStartingGateOperations, StartingGateOperationsPlatform } fr
 import { RaceOperationsPlatform, type RaceTelemetrySignal } from './raceOperationsPlatform.js';
 import { ResponsibleAIGovernancePlatform } from './responsibleAiGovernor.js';
 import { createSafetyIntelligenceController, type SafetyIntelligenceController } from './safetyIntelligence/index.js';
-import { SecurityOperationsService, type SecurityActor } from './securityOps.js';
+import { SecurityOperationsService, createSeededSecurityOperationsService, type SecurityActor, type SecurityOpsPermission } from './securityOps.js';
 import { createApexDomainControllers, type ApexDomainControllers } from './services/controllers.js';
 import { createEquineIntelligenceController, type EquineIntelligenceController } from './services/equine/index.js';
 import { createRtkTelemetryController, type RtkTelemetryController } from './telemetry/index.js';
 import { createSeededSurfaceIntelligence, SurfaceIntelligencePlatform } from './surfaceIntelligencePlatform.js';
 import { createSeededFanExperience, FanExperiencePlatform } from './fanExperiencePlatform.js';
+import { handleFanExperienceApiRequest } from './fanExperience.js';
 import { createSeededRacingFinance, RacingFinancePlatform } from './racingFinancePlatform.js';
 import { createSeededEquineWelfareIntelligence, EquineWelfareIntelligencePlatform } from './equineWelfareIntelligencePlatform.js';
 import { createSeededRacingKnowledgeGraph, RacingKnowledgeGraphPlatform } from './racingKnowledgeGraphPlatform.js';
@@ -50,6 +52,8 @@ import { createTUSStandardizationWorkspace, legacyAssetToTUSAsset } from './tusS
 import { workflowTemplateRegistry } from './workflowEngine.js';
 import { seedWorkforceOperations } from './workforceOperations.js';
 import { createPlatformServices, handlePlatformRequest, type PlatformServices } from './platform/platformController.js';
+import { buildContractCoverageReport } from './platform/contractCoverageReport.js';
+import { createRaceScheduleWorkspace } from './platform/raceScheduleService.js';
 import { notificationFramework } from './platform/notificationFramework.js';
 
 type HttpMethod = 'GET' | 'POST' | 'OPTIONS';
@@ -264,37 +268,8 @@ function evidenceKind(evidenceId: string): 'event' | 'audit' | 'digital-twin' | 
   return 'document';
 }
 
-function createServiceBackedFacilitiesWorkspace(timestamp: string): JsonBody {
-  const service = new FacilitiesMaintenanceService();
-  const principal = { id: 'facilities-supervisor', tenantId: 'track-1', scopes: ['assets:read', 'assets:write', 'assets:approve'] };
-  service.seedFacilityAssetsSync(principal, timestamp);
-  service.recordInspectionSync({
-    assetId: 'GRANDSTAND_HVAC_01',
-    inspectedBy: principal.id,
-    checklist: ['filter pressure', 'airflow', 'motor temperature'],
-    findings: ['filter pressure elevated', 'airflow verified for patron areas'],
-    score: 84,
-    nextInspectionDueAt: '2026-06-15T12:00:00.000Z',
-  }, principal, timestamp);
-  service.createPreventiveMaintenancePlan({
-    assetId: 'GRANDSTAND_HVAC_01',
-    cadenceDays: 7,
-    checklist: ['replace filters', 'verify airflow', 'capture return-to-service evidence'],
-    nextDueAt: '2026-06-15T12:00:00.000Z',
-  }, principal);
-  service.createWorkOrder({
-    assetId: 'GRANDSTAND_HVAC_01',
-    title: 'Replace grandstand HVAC filters',
-    priority: 'high',
-    requestedBy: principal.id,
-    dueAt: '2026-06-14T20:00:00.000Z',
-    tasks: ['lockout unit', 'replace filters', 'verify airflow'],
-    evidence: ['inspection-hvac-live', 'telemetry:filterDeltaPressure=68'],
-    operationalImpact: 'operational-impact',
-    scheduledFor: '2026-06-14T18:00:00.000Z',
-  }, principal);
-  return service.workspace(principal);
-}
+
+const facilitiesPrincipal = { id: 'facilities-supervisor', tenantId: 'track-1', scopes: ['assets:read', 'assets:write', 'assets:approve'] };
 
 function createServiceBackedEmergencyWorkspace(workforce: Record<string, any>, timestamp: string): { platform: EmergencyOperationsPlatform; workspace: JsonBody } {
   const platform = new EmergencyOperationsPlatform();
@@ -598,23 +573,26 @@ function validateAIControlPlaneDraftBody(body: unknown): string | undefined {
   return undefined;
 }
 
-function createSecurityOperationsFacade(timestamp: string): JsonBody {
-  const service = new SecurityOperationsService(() => timestamp);
-  const commander: SecurityActor = { id: 'sec-commander', roles: ['security'], tenantId: 'trackmind', human: true, permissions: ['security:read', 'security:manage', 'security:investigate'] };
-  service.checkCredential(commander, { credentialId: 'cred-live-1', holderDisplayName: 'Contractor A', holderLegalName: 'Contractor Alpha', zoneId: 'zone-backstretch-medication', status: 'expired' });
-  const access = service.recordAccessEvent(commander, { zoneId: 'zone-backstretch-medication', credentialId: 'cred-live-1', personDisplayName: 'Contractor A', personLegalName: 'Contractor Alpha', decision: 'denied', reason: 'Credential expired', occurredAt: timestamp });
-  const incident = service.getWorkspace({ ...commander, permissions: ['security:read'] }).incidents[0];
-  if (incident) {
-    service.openInvestigation(commander, incident.id, 'investigator-1', ['video://cam-med-1/clip-1', access.eventId]);
-    service.escalateIncident(commander, incident.id);
-  }
-  service.logVisitor(commander, { visitorDisplayName: 'Vendor Escort', visitorLegalName: 'Vendor Escort Legal', host: 'facilities-manager', zoneId: 'zone-paddock', credentialId: 'cred-visitor-1', credentialStatus: 'valid' });
-  service.updateCameraHealth(commander, 'cam-pad-1', 'offline', timestamp);
-  const workspace = service.getWorkspace({ id: 'dashboard-security-reader', roles: ['security'], tenantId: 'trackmind', permissions: ['security:read'] });
-  return { ...workspace, mock: false };
+function securityActorFromHeaders(headers?: IncomingMessage['headers']): SecurityActor {
+  const rawRole = headerValue(headers ?? {}, 'x-trackmind-role');
+  const resolvedRole: Role = rawRole && isRole(rawRole) ? rawRole : 'security';
+  const permissions = (rolePermissions[resolvedRole] ?? []).filter((permission): permission is SecurityOpsPermission => permission.startsWith('security:'));
+  return {
+    id: headerValue(headers ?? {}, 'x-trackmind-actor-id') ?? `${resolvedRole}-operator`,
+    roles: [resolvedRole],
+    tenantId: headerValue(headers ?? {}, 'x-trackmind-tenant-id') ?? 'trackmind',
+    human: true,
+    permissions: permissions.length ? permissions : ['security:read'],
+  };
 }
 
-function createAuditLedgerFacade(timestamp: string, facadeEvents: Array<{ id: string; type: string; actor?: unknown; actorId?: string; subjectId?: string }>): JsonBody {
+function createSecurityOperationsFacade(timestamp: string): { service: SecurityOperationsService; workspace: JsonBody } {
+  const service = createSeededSecurityOperationsService(() => timestamp);
+  const workspace = service.getWorkspace({ id: 'dashboard-security-reader', roles: ['security'], tenantId: 'trackmind', permissions: ['security:read'] });
+  return { service, workspace: { ...workspace, mock: false } };
+}
+
+function createAuditLedgerBundle(timestamp: string, facadeEvents: Array<{ id: string; type: string; actor?: unknown; actorId?: string; subjectId?: string }>): { ledger: ImmutableAuditLog; views: JsonBody } {
   const ledger = new ImmutableAuditLog();
   ledger.append({ id: 'audit-api-read-1', type: 'user-action', actor: 'auditor-ui', actorType: 'api', timestamp, action: 'audit.read', reason: 'Audit ledger read requested by dashboard facade.', actionClass: 'api', apiRoute: '/api/v1/audit/events', subjectId: 'audit-ledger', correlationId: 'audit-facade', sourceService: 'trackmind-api', tenantId: 'trackmind', racetrackId: 'main-track', evidenceIds: ['api-contract:listAuditEvents'], regulations: ['SOC-2', 'ISO-27001'], payload: { sourceEvents: facadeEvents.map((event) => event.id) } });
   ledger.append({ id: 'audit-approval-1', type: 'approval', actor: 'centralized-approval-service', actorType: 'service', timestamp, action: 'approval.requested', reason: 'Race start requires explicit human approval.', actionClass: 'approval', subjectId: 'race-7', correlationId: 'audit-facade', sourceService: 'approval-engine', tenantId: 'trackmind', racetrackId: 'main-track', evidenceIds: ['human-approval-record'], regulations: ['HISA', 'ARCI'], payload: { action: 'race-start', target: 'race-7', approvalId: 'approval-race-start', evidence: ['human-approval-record'] } });
@@ -623,14 +601,17 @@ function createAuditLedgerFacade(timestamp: string, facadeEvents: Array<{ id: st
   ledger.placeLegalHold([incident.id], 'compliance-officer', timestamp, 'Regulator-facing surface review');
   const retentionPolicies: RetentionPolicy[] = [{ id: 'regulated-7-year', eventTypes: ['approval', 'digital-twin-update', 'security-event'], retainForDays: 2555, regulatoryBasis: 'regulated-racing-records' }];
   return {
-    generatedAt: timestamp,
-    verification: ledger.verify(),
-    coverage: ledger.coverageReport(undefined, timestamp),
-    evidencePath: ledger.evidencePath(),
-    forensicReconstruction: ledger.reconstruct({ correlationId: 'audit-facade' }),
-    complianceExport: ledger.exportCompliancePackage({ regulations: ['SOC-2', 'HISA'], generatedBy: 'trackmind-api', generatedAt: timestamp, retentionPolicies }),
-    legalHolds: [...ledger.activeLegalHolds().entries()].map(([recordId, hold]) => ({ recordId, ...hold })),
-    mock: false,
+    ledger,
+    views: {
+      generatedAt: timestamp,
+      verification: ledger.verify(),
+      coverage: ledger.coverageReport(undefined, timestamp),
+      evidencePath: ledger.evidencePath(),
+      forensicReconstruction: ledger.reconstruct({ correlationId: 'audit-facade' }),
+      complianceExport: ledger.exportCompliancePackage({ regulations: ['SOC-2', 'HISA'], generatedBy: 'trackmind-api', generatedAt: timestamp, retentionPolicies }),
+      legalHolds: [...ledger.activeLegalHolds().entries()].map(([recordId, hold]) => ({ recordId, ...hold })),
+      mock: false,
+    },
   };
 }
 
@@ -757,6 +738,7 @@ export interface ApiFacadeState {
   approvals: JsonBody;
   auditEvents: JsonBody;
   auditLedger: JsonBody;
+  immutableAuditLedger: ImmutableAuditLog;
   trackMap: JsonBody;
   assetRegistry: JsonBody;
   operations: JsonBody;
@@ -791,12 +773,17 @@ export interface ApiFacadeState {
   equine: JsonBody;
   barn: JsonBody;
   facilitiesMaintenance: JsonBody;
+  facilitiesMaintenanceService: FacilitiesMaintenanceService;
   steward: JsonBody;
   security: JsonBody;
+  securityOperationsService: SecurityOperationsService;
   emergency: JsonBody;
   emergencyPlatform: EmergencyOperationsPlatform;
   workforce: JsonBody;
   compliance: JsonBody;
+  complianceLibrary: ComplianceControlLibrary;
+  compliancePlatform: CompliancePlatformService;
+  compliancePlatformController: CompliancePlatformController;
   federation: JsonBody;
   kpis: JsonBody;
   racingData: RacingDataApiFacadeState;
@@ -824,6 +811,22 @@ export interface ApiFacadeState {
   platformServices: PlatformServices;
 }
 
+function refreshComplianceFacadeState(state: ApiFacadeState) {
+  const dashboard = state.complianceLibrary.dashboard();
+  state.compliance = {
+    ...dashboard,
+    trackCertificationCandidate: state.trackCertification,
+    franchiseOperatingStandards: (state.trackCertification as { operatingStandards?: unknown }).operatingStandards,
+    mock: false,
+  };
+  const generatedAt = new Date().toISOString();
+  state.kpis = {
+    ...(state.kpis as ReturnType<typeof createKPIWorkspace>),
+    generatedAt,
+    kpis: state.compliancePlatform.syncKpiArtifacts((state.kpis as ReturnType<typeof createKPIWorkspace>).kpis, generatedAt),
+  };
+}
+
 export function createApiFacadeState(): ApiFacadeState {
   const contract = createCommandCenterContractSnapshot();
   const timestamp = now();
@@ -831,8 +834,11 @@ export function createApiFacadeState(): ApiFacadeState {
   const barnService = createSeededBarnOperationsService();
   const barnOperations = barnService.snapshot();
   const workforce = seedWorkforceOperations({}, 'track-1', timestamp).dashboard(timestamp);
-  const facilitiesMaintenance = createServiceBackedFacilitiesWorkspace(timestamp) as any;
-  const compliance = seededComplianceLibrary().dashboard();
+  const facilitiesMaintenanceService = createSeededFacilitiesMaintenanceService(timestamp);
+  const facilitiesMaintenance = facilitiesMaintenanceService.workspace(facilitiesPrincipal) as any;
+  const complianceLibrary = seededComplianceLibrary('trackmind');
+  const compliancePlatform = createCompliancePlatformService(complianceLibrary);
+  const compliance = complianceLibrary.dashboard();
   const racingData = createRacingDataApiFacadeState(timestamp);
   const racingDataPolicyAudit = new ImmutableAuditLog();
   const racingDataPolicies = seededRacingDataLicensePolicyService(timestamp, { auditLog: racingDataPolicyAudit }).workspace(timestamp);
@@ -840,8 +846,13 @@ export function createApiFacadeState(): ApiFacadeState {
   const aiControlPlane = createSeededAIControlPlaneWorkspace(timestamp, false) as unknown as AIControlPlaneWorkspaceDto;
   const intelligenceCore = { ...createTrackMindIntelligenceCoreMetadata(), generatedAt: timestamp, mock: false } satisfies TrackMindIntelligenceCoreDto;
   const platformHealth = { ...createMockPlatformHealth(), generatedAt: timestamp };
-  const auditLedger = createAuditLedgerFacade(timestamp, contract.auditEvents) as unknown as { verification?: { valid?: boolean }; complianceExport?: { records?: unknown[] } };
-  const security = createSecurityOperationsFacade(timestamp) as any;
+  const auditLedgerBundle = createAuditLedgerBundle(timestamp, contract.auditEvents);
+  const auditLedger = auditLedgerBundle.views as unknown as { verification?: { valid?: boolean }; complianceExport?: { records?: unknown[] } };
+  const immutableAuditLedger = auditLedgerBundle.ledger;
+  const securitySeed = createSecurityOperationsFacade(timestamp);
+  const securityOperationsService = securitySeed.service;
+  const security = securitySeed.workspace as any;
+  const securityKpiPack = securityOperationsService.computeSecurityKpiPack();
   const emergencySeed = createServiceBackedEmergencyWorkspace(workforce, timestamp);
   const emergency = emergencySeed.workspace as any;
   const emergencyPlatform = emergencySeed.platform;
@@ -858,9 +869,17 @@ export function createApiFacadeState(): ApiFacadeState {
   const tusStandardization = createTUSStandardizationFacade(timestamp);
   const nexusUpgrade = createTrackMindNexusUpgradePackage(timestamp);
   const federation = createFederationWorkspace(timestamp, false);
-  const kpis = createKPIWorkspace({ generatedAt: timestamp, tenantId: 'trackmind', organizationId: 'org-trackmind-network', racetrackId: 'main-track' });
+  const kpis = {
+    ...createKPIWorkspace({ generatedAt: timestamp, tenantId: 'trackmind', organizationId: 'org-trackmind-network', racetrackId: 'main-track' }),
+    kpis: compliancePlatform.syncKpiArtifacts(createKPIWorkspace({ generatedAt: timestamp, tenantId: 'trackmind', organizationId: 'org-trackmind-network', racetrackId: 'main-track' }).kpis, timestamp)
+      .map((kpi) => kpi.kpiId === 'kpi-security'
+        ? { ...kpi, value: securityKpiPack.coveragePercent, lastCalculatedAt: timestamp, sourceEvents: [...kpi.sourceEvents, 'security.zone.observed', 'camera.health.updated'] }
+        : kpi),
+  };
   const ros = createRosMetadataFacade(timestamp, nexusUpgrade, aiControlPlane as AIControlPlaneWorkspaceDto, tusStandardization, trackCertification);
-  const approvalService = new CentralizedApprovalService();
+  const governanceAuditLog = new ImmutableAuditLog();
+  const approvalEventBus = new InMemoryEventBus();
+  const approvalService = new CentralizedApprovalService({ auditLog: governanceAuditLog, eventBus: approvalEventBus });
   const racingCalendarService = createSeededRacingCalendarPlatform({
     racePlatform: raceOperations.platform,
     readinessDashboard,
@@ -975,6 +994,7 @@ export function createApiFacadeState(): ApiFacadeState {
   const apex = createApexDomainControllers();
   const cqrs = createCqrsCommandHandler();
   const complianceReporting = createComplianceReportingController();
+  const compliancePlatformController = createCompliancePlatformController(compliancePlatform);
   const equinePrivacy = createEquineIntelligenceController();
   const rtkTelemetry = createRtkTelemetryController(cqrs);
   const safetyIntelligence = createSafetyIntelligenceController();
@@ -1010,10 +1030,16 @@ export function createApiFacadeState(): ApiFacadeState {
     privacy: { tenantId: 'tenant-1', veterinaryRecordsVisible: 0, veterinaryRecordsRedacted: 1 },
     mock: false,
   };
-  const auditEventsForState = contract.auditEvents.length ? contract.auditEvents : [{ auditEventId: 'audit-live-1', id: 'audit-live-1', type: 'api.facade.started', actor: { actorId: 'trackmind-api', actorType: 'service' }, actorId: 'trackmind-api', entity: { entityId: 'api-facade', entityType: 'api-route', tenantId: 'trackmind', racetrackId: 'main-track' }, action: 'api.facade.started', reason: 'API facade started with canonical audit fallback.', timestamp, tenantScope: { tenantId: 'trackmind', racetrackId: 'main-track' }, integrityReference: { previousHash: 'genesis', hash: 'sha256:api-facade', algorithm: 'sha256', chainScope: 'tenant' }, severity: 'info', previousHash: 'genesis', hash: 'sha256:api-facade', mock: false }];
+  const contractAuditEvents = contract.auditEvents as AuditEventDto[];
+  const seededLedgerEvents = immutableAuditLedger.all().map((entry) => auditLogEntryToDto(entry));
+  const auditEventsById = new Map<string, AuditEventDto>();
+  for (const event of [...contractAuditEvents, ...seededLedgerEvents]) auditEventsById.set(event.id, event);
+  const auditEventsForState: AuditEventDto[] = auditEventsById.size
+    ? [...auditEventsById.values()]
+    : [{ auditEventId: 'audit-live-1', id: 'audit-live-1', type: 'api.facade.started', actor: { actorId: 'trackmind-api', actorType: 'service' as const }, actorId: 'trackmind-api', entity: { entityId: 'api-facade', entityType: 'api-route', tenantId: 'trackmind', racetrackId: 'main-track' }, action: 'api.facade.started', reason: 'API facade started with canonical audit fallback.', timestamp, tenantScope: { tenantId: 'trackmind', racetrackId: 'main-track' }, integrityReference: { previousHash: 'genesis', hash: 'sha256:api-facade', algorithm: 'sha256' as const, chainScope: 'tenant' as const }, severity: 'info' as const, previousHash: 'genesis', hash: 'sha256:api-facade', mock: false }];
   const platformServices = createPlatformServices({
-    auditEvents: auditEventsForState as AuditEventDto[],
-    auditLedger: auditLedger as unknown as ImmutableAuditLog,
+    auditEvents: auditEventsForState,
+    auditLedger: immutableAuditLedger,
     approvalService,
     kpis,
     racingData,
@@ -1051,6 +1077,7 @@ export function createApiFacadeState(): ApiFacadeState {
     approvals: contract.approvals,
     auditEvents: auditEventsForState,
     auditLedger,
+    immutableAuditLedger,
     trackMap: {
       trackId: 'main-track',
       distanceMeters: 1609,
@@ -1179,12 +1206,17 @@ export function createApiFacadeState(): ApiFacadeState {
     equine: equineWorkspace,
     barn: { ...barnOperations, mock: false },
     facilitiesMaintenance: { ...facilitiesMaintenance, mock: false },
+    facilitiesMaintenanceService,
     steward: stewardCenter,
     security,
+    securityOperationsService,
     emergency,
     emergencyPlatform,
     workforce: { ...workforce, mock: false },
     compliance: { ...compliance, trackCertificationCandidate: trackCertification, franchiseOperatingStandards: trackCertification.operatingStandards, mock: false },
+    complianceLibrary,
+    compliancePlatform,
+    compliancePlatformController,
     federation,
     kpis,
     racingData,
@@ -1800,7 +1832,11 @@ function findRacingDataRawPayloadReview(racingData: RacingDataApiFacadeState, pa
 }
 
 function approvalDtoFromControlledRequest(request: ControlledActionRequest): ApprovalDto {
+  const policy = defaultApprovalPolicies().find((candidate) => candidate.action === request.action);
+  const canonical = canonicalApprovalRequest(request, { policy, policies: defaultApprovalPolicies(), correlationId: request.id });
+  const artifact = buildApprovalArtifact(request, { policy, policies: defaultApprovalPolicies(), correlationId: request.id });
   const decisionRoles = [...new Set(request.decisions.flatMap((decision) => decision.roles))];
+  const requiredRoles = [...new Set(canonical.steps.flatMap((step) => step.approverRoles))];
   return {
     id: request.id,
     approvalRequestId: request.id,
@@ -1813,15 +1849,23 @@ function approvalDtoFromControlledRequest(request: ControlledActionRequest): App
     createdAt: request.createdAt,
     expiresAt: request.expiresAt,
     status: request.status,
-    canonicalStatus: request.status,
-    approverRoles: decisionRoles,
-    requiredRoles: decisionRoles,
-    approvalSteps: [],
-    escalation: request.escalatedToRoles.map((role) => ({ afterMinutes: 0, approverRoles: [role], reason: 'Centralized approval escalation metadata', escalatedAt: request.createdAt })),
-    auditLinkage: { auditIds: [], eventIds: [], workflowInstanceId: request.workflowInstanceId, correlationId: request.id },
+    canonicalStatus: canonical.status,
+    approverRoles: [...new Set([...decisionRoles, ...request.escalatedToRoles])],
+    requiredRoles,
+    approvalSteps: canonical.steps,
+    escalation: canonical.escalation,
+    auditLinkage: { auditIds: [], eventIds: [], workflowInstanceId: request.workflowInstanceId, workflowTaskId: request.workflowTaskId, correlationId: request.id },
     workflowId: request.workflowInstanceId,
     auditIds: [],
     eventIds: [],
+    history: artifact.approvals.map((decision) => ({
+      id: `${request.id}:${decision.stepId}:${decision.decidedAt}`,
+      actor: { id: decision.actorId, displayName: decision.actorId, role: decision.roles[0] ?? 'unknown', actorType: 'human' },
+      decision: decision.decision,
+      reason: decision.reason,
+      evidence: [...decision.evidence],
+      timestamp: decision.decidedAt,
+    })),
     mock: false,
   };
 }
@@ -1841,6 +1885,8 @@ function handleCentralizedApprovalDecision(
   body: unknown,
   approvalService: CentralizedApprovalService,
   headers?: IncomingMessage['headers'],
+  platformServices?: PlatformServices,
+  kpiState?: { kpis?: KPIArtifact[] },
 ): { status: number; body: JsonBody } | undefined {
   if (!approvalService.hasRequest(approvalRequestId)) return undefined;
   const context = approvalDecisionContext(body);
@@ -1863,6 +1909,11 @@ function handleCentralizedApprovalDecision(
       reason,
       evidenceWithDefault,
     );
+    if (decision === 'approve' && decided.action === 'kpi-threshold-change' && platformServices && kpiState) {
+      platformServices.kpiPlatform.applyApprovedThreshold(decided.target, decided.id);
+      const synced = platformServices.kpiPlatform.syncArtifacts(kpiState.kpis ?? []);
+      kpiState.kpis = synced;
+    }
     return { status: 200, body: { accepted: true, ...approvalDtoFromControlledRequest(decided), mock: false } };
   } catch (error) {
     return badRequest(error instanceof Error ? error.message : 'Approval decision could not be recorded');
@@ -1880,67 +1931,24 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'GET' && path === '/race-operations/paddock') {
     return { status: 200, body: state.paddockOperationsService.workspace(now()) };
   }
+  if (method === 'GET' && path === '/race-operations/schedule') {
+    return {
+      status: 200,
+      body: createRaceScheduleWorkspace({
+        tenantId: 'trackmind',
+        racetrackId: 'main-track',
+        raceCardManagement: state.raceCardManagementService,
+        raceOffice: state.raceOffice as { lifecycle?: Array<{ raceId: string; status: string }> },
+        paddockOperations: state.paddockOperationsService,
+        surfaceIntelligence: state.surfaceIntelligenceService,
+      }, now()),
+    };
+  }
   if (method === 'GET' && path === '/race-operations/starting-gate') {
     return { status: 200, body: state.startingGateOperationsService.workspace(now()) };
   }
-  if (method === 'GET' && path === '/fan-experience/workspace') {
-    return { status: 200, body: state.fanExperienceService.workspace(now()) };
-  }
-  if (method === 'GET' && path === '/fan-experience/dashboard') {
-    return { status: 200, body: state.fanExperienceService.kpiDashboard(now()) };
-  }
-  if (method === 'GET' && path === '/fan-experience/audit-trail') {
-    const eventId = requestUrl.searchParams.get('eventId') ?? undefined;
-    return { status: 200, body: state.fanExperienceService.auditTrail(eventId, now()) };
-  }
-  if (method === 'POST' && path === '/fan-experience/attendance-snapshots') {
-    const input = isRecord(body) ? body : {};
-    return { status: 201, body: state.fanExperienceService.recordAttendanceSnapshot({ recordedAt: String(input.recordedAt ?? now()), current: Number(input.current ?? 0), capacity: Number(input.capacity ?? 12000), entryRatePerMinute: Number(input.entryRatePerMinute ?? 0) }, String(input.actor ?? 'ticketing-manager')) };
-  }
-  if (method === 'POST' && path === '/fan-experience/guest-services') {
-    const input = isRecord(body) ? body : {};
-    return { status: 201, body: state.fanExperienceService.createGuestServiceRequest({ category: (input.category as 'guest-relations' | undefined) ?? 'guest-relations', status: (input.status as 'open' | undefined) ?? 'open', priority: (input.priority as 'medium' | undefined) ?? 'medium', submittedAt: String(input.submittedAt ?? now()), guestLabel: String(input.guestLabel ?? 'Guest'), zone: input.zone ? String(input.zone) : undefined, waitMinutes: Number(input.waitMinutes ?? 0), details: String(input.details ?? 'Guest service request') }, String(input.actor ?? 'ticketing-manager')) };
-  }
-  const fanGuestServiceStatusMatch = path.match(/^\/fan-experience\/guest-services\/([^/]+)\/status$/);
-  if (method === 'POST' && fanGuestServiceStatusMatch) {
-    const input = isRecord(body) ? body : {};
-    return { status: 202, body: state.fanExperienceService.updateGuestServiceStatus(decodeURIComponent(fanGuestServiceStatusMatch[1]), (input.status as 'in-progress' | undefined) ?? 'in-progress', String(input.actor ?? 'ticketing-manager')) };
-  }
-  if (method === 'POST' && path === '/fan-experience/satisfaction-surveys') {
-    const input = isRecord(body) ? body : {};
-    return { status: 201, body: state.fanExperienceService.recordSatisfactionSurvey({ eventId: String(input.eventId ?? 'race-day-main'), submittedAt: String(input.submittedAt ?? now()), overallRating: Number(input.overallRating ?? 4), categories: Array.isArray(input.categories) ? input.categories : [], comment: input.comment ? String(input.comment) : undefined }, String(input.actor ?? 'ticketing-manager')) };
-  }
-  const fanHospitalityIssueMatch = path.match(/^\/fan-experience\/hospitality\/([^/]+)\/issues$/);
-  if (method === 'POST' && fanHospitalityIssueMatch) {
-    const input = isRecord(body) ? body : {};
-    return { status: 201, body: state.fanExperienceService.recordHospitalityIssue(decodeURIComponent(fanHospitalityIssueMatch[1]), String(input.issue ?? 'Hospitality issue reported'), String(input.actor ?? 'ticketing-manager')) };
-  }
-  const fanHospitalityResolveMatch = path.match(/^\/fan-experience\/hospitality\/([^/]+)\/resolve$/);
-  if (method === 'POST' && fanHospitalityResolveMatch) {
-    const input = isRecord(body) ? body : {};
-    return { status: 202, body: state.fanExperienceService.resolveHospitalityIssue(decodeURIComponent(fanHospitalityResolveMatch[1]), String(input.actor ?? 'ticketing-manager')) };
-  }
-  const fanPremiumSeatingMatch = path.match(/^\/fan-experience\/premium-seating\/([^/]+)$/);
-  if (method === 'POST' && fanPremiumSeatingMatch) {
-    const input = isRecord(body) ? body : {};
-    return { status: 202, body: state.fanExperienceService.updatePremiumSeating(decodeURIComponent(fanPremiumSeatingMatch[1]), { seatsSold: input.seatsSold !== undefined ? Number(input.seatsSold) : undefined, seatsHeld: input.seatsHeld !== undefined ? Number(input.seatsHeld) : undefined, status: input.status as 'available' | 'sold-out' | 'held' | 'comp' | undefined, revenueToday: input.revenueToday !== undefined ? Number(input.revenueToday) : undefined }, String(input.actor ?? 'ticketing-manager')) };
-  }
-  if (method === 'POST' && path === '/fan-experience/requests') {
-    const input = isRecord(body) ? body : {};
-    const type = String(input.type ?? 'refund');
-    const category = type === 'accessibility' ? 'accessibility' : type === 'parking' || type === 'parking-pass' ? 'parking' : type === 'crowd-density' || type === 'crowd-density-alert' ? 'crowd-density' : type === 'refund' ? 'refund' : 'guest-relations';
-    const result = state.fanExperienceService.createGuestServiceRequest({
-      category,
-      status: 'open',
-      priority: category === 'refund' ? 'high' : 'medium',
-      submittedAt: now(),
-      guestLabel: String(input.guestLabel ?? 'Guest'),
-      zone: input.zone ? String(input.zone) : undefined,
-      waitMinutes: Number(input.waitMinutes ?? 0),
-      details: String(input.details ?? `${type} request draft`),
-    }, String(input.actor ?? 'ticketing-manager'));
-    return { status: 202, body: { ok: true, requestId: result.requestId ?? result.auditId, type, status: 'draft-created', mock: false } };
-  }
+  const fanExperienceResponse = handleFanExperienceApiRequest(method, path, body, state.fanExperienceService, requestUrl.searchParams, now);
+  if (fanExperienceResponse) return fanExperienceResponse;
   if (method === 'GET' && path === '/finance/workspace') {
     return { status: 200, body: state.racingFinanceService.workspace(now()) };
   }
@@ -2034,10 +2042,6 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
       return { status: 404, body: { ok: false, error: { code: 'not_found', message: error instanceof Error ? error.message : 'Unknown knowledge graph node' } } };
     }
   }
-  if (method === 'GET' && path === '/search/global') {
-    const q = requestUrl.searchParams.get('q') ?? '';
-    return { status: 200, body: { query: q, results: state.racingKnowledgeGraphService.globalSearchResults(q), generatedAt: now(), mock: false } };
-  }
   if (method === 'GET' && path === '/industry-intelligence/workspace') {
     return { status: 200, body: state.industryIntelligenceService.workspace(now()) };
   }
@@ -2053,16 +2057,60 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'GET' && path === '/federation-intelligence/workspace') {
     return { status: 200, body: state.industryIntelligenceService.federationIntelligenceLegacy(now()) };
   }
+  if (method === 'GET' && path === '/security-operations/zones/live') {
+    try {
+      return { status: 200, body: state.securityOperationsService.getZonesLive(securityActorFromHeaders(authHeaders)) };
+    } catch (error) {
+      return { status: 403, body: { ok: false, error: { code: 'security_forbidden', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
+  if (method === 'GET' && path === '/security-operations/cameras/readiness') {
+    try {
+      return { status: 200, body: state.securityOperationsService.getCameraReadiness(securityActorFromHeaders(authHeaders)) };
+    } catch (error) {
+      return { status: 403, body: { ok: false, error: { code: 'security_forbidden', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
+  if (method === 'GET' && path === '/security-operations/sensors/readiness') {
+    try {
+      return { status: 200, body: state.securityOperationsService.getSensorReadiness(securityActorFromHeaders(authHeaders)) };
+    } catch (error) {
+      return { status: 403, body: { ok: false, error: { code: 'security_forbidden', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
+  if (method === 'GET' && path === '/security-operations/kpis') {
+    return { status: 200, body: state.securityOperationsService.computeSecurityKpiPack() };
+  }
+  if (method === 'POST' && path === '/security-operations/webhooks/access-events') {
+    const input = isRecord(body) ? body : {};
+    try {
+      const payload = state.apex.services.security.normalizeAccessWebhookPayload(input);
+      const result = state.securityOperationsService.ingestAccessWebhook(securityActorFromHeaders(authHeaders), payload);
+      return { status: 202, body: { ...result, mock: false } };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'security_webhook_rejected', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
+  if (method === 'GET' && path === '/platform/contract-coverage') {
+    const coverage = await buildContractCoverageReport(async (probeMethod, probePath) => {
+      const response = await handleApiRequest(probeMethod, `${nexusApiBasePath}/${probePath.replace(/^\//, '')}`, undefined, state, authHeaders);
+      return { status: response.status };
+    });
+    return { status: 200, body: coverage };
+  }
   const platformResponse = handlePlatformRequest(method, path, body, {
     auditEvents: state.auditEvents as AuditEventDto[],
-    auditLedger: state.auditLedger as unknown as ImmutableAuditLog,
+    auditLedger: state.immutableAuditLedger,
     approvalService: state.approvalService,
     kpis: state.kpis as { kpis?: KPIArtifact[] },
     racingData: state.racingData,
     federation: state.federation as Record<string, unknown>,
     equine: state.equine as { horse?: { horseId: string; name?: string } },
     aiControlPlane: state.aiControlPlane as { recommendations?: unknown[] },
-  }, state.platformServices, requestUrl.searchParams);
+  }, state.platformServices, requestUrl.searchParams, (() => {
+    const headerRole = headerValue(headers, 'x-trackmind-role');
+    return headerRole && isRole(headerRole) ? headerRole : undefined;
+  })());
   if (platformResponse) return platformResponse;
   if (method === 'GET' && path === '/health') return { status: 200, headers: { 'x-trackmind-request-id': requestId }, body: { ok: true, service: 'trackmind-api', status: 'healthy', time: now(), requestId, observability: { structuredLogs: true, requestIdHeader: 'x-trackmind-request-id', serviceHealthEndpoint: `${nexusApiBasePath}/platform/health`, eventStreamEndpoint: `${nexusApiBasePath}/events/stream` } } };
   if (method === 'GET' && path === '/approvals/requests') {
@@ -2080,6 +2128,8 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
       body,
       state.approvalService,
       authHeaders,
+      state.platformServices,
+      state.kpis as { kpis?: KPIArtifact[] },
     );
     if (centralized) return centralized;
   }
@@ -2132,6 +2182,13 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (safetyIntelligenceResponse) return safetyIntelligenceResponse;
   const complianceResponse = state.complianceReporting.handle(method, path);
   if (complianceResponse) return complianceResponse;
+  const compliancePlatformResponse = state.compliancePlatformController.handle(method, path, body, requestUrl.searchParams);
+  if (compliancePlatformResponse) {
+    if (compliancePlatformResponse.status >= 200 && compliancePlatformResponse.status < 300 && method !== 'GET') {
+      refreshComplianceFacadeState(state);
+    }
+    return compliancePlatformResponse;
+  }
   const equinePrivacyResponse = state.equinePrivacy.handle(method, path, body, requestUrl.searchParams);
   if (equinePrivacyResponse) return equinePrivacyResponse;
   if (method === 'GET' && path === '/workflows/templates') return { status: 200, body: state.workflowTemplates };
@@ -2531,7 +2588,42 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     return horseId === (state.equine as any).horse?.horseId ? { status: 200, body: state.equine } : apiNotFound(`No equine intelligence profile for ${horseId}`, path, requestId);
   }
   if (method === 'GET' && path === '/barn-operations/workspace') return { status: 200, body: state.barn };
-  if (method === 'GET' && path === '/facilities-maintenance/workspace') return { status: 200, body: state.facilitiesMaintenance };
+  if (method === 'GET' && path === '/facilities-maintenance/workspace') return { status: 200, body: state.facilitiesMaintenanceService.workspace(facilitiesPrincipal) };
+  if (method === 'GET' && path === '/facilities-maintenance/map') return { status: 200, body: state.facilitiesMaintenanceService.mapState(facilitiesPrincipal) };
+  if (method === 'GET' && path === '/facilities-maintenance/utilities') return { status: 200, body: state.facilitiesMaintenanceService.utilities.snapshot(now()) };
+  if (method === 'POST' && path === '/facilities-maintenance/maintenance-schedules') {
+    const input = (body ?? {}) as Record<string, any>;
+    try {
+      const result = state.facilitiesMaintenanceService.scheduleMaintenance({
+        assetId: String(input.assetId ?? 'GRANDSTAND_HVAC_01'),
+        title: String(input.title ?? 'Scheduled facility maintenance'),
+        priority: input.priority ?? 'normal',
+        scheduledFor: String(input.scheduledFor ?? now()),
+        dueAt: String(input.dueAt ?? now()),
+        tasks: Array.isArray(input.tasks) ? input.tasks : ['verify lockout', 'perform maintenance', 'capture evidence'],
+        evidence: Array.isArray(input.evidence) ? input.evidence : [],
+        operationalImpact: input.operationalImpact ?? 'operational-impact',
+        requestedBy: String(input.requestedBy ?? input.actor ?? 'facilities-supervisor'),
+      }, facilitiesPrincipal, { approvalToken: input.approvalToken });
+      return { status: result.approvalRequired ? 202 : 201, body: result };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'facilities_schedule_denied', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
+  if (method === 'POST' && path === '/facilities-maintenance/incidents') {
+    const input = (body ?? {}) as Record<string, any>;
+    return {
+      status: 201,
+      body: state.facilitiesMaintenanceService.reportFacilityIncident({
+        assetId: input.assetId ? String(input.assetId) : undefined,
+        title: String(input.title ?? 'Facility incident reported'),
+        severity: input.severity ?? 'medium',
+        description: String(input.description ?? 'Facility incident recorded for triage.'),
+        evidence: Array.isArray(input.evidence) ? input.evidence : [],
+        reportedBy: String(input.reportedBy ?? input.actor ?? 'facilities-supervisor'),
+      }, facilitiesPrincipal),
+    };
+  }
   if (method === 'GET' && path === '/stewarding/inquiries') return { status: 200, body: state.stewardOperationsService.centerDto(now()) };
   if (method === 'GET' && path === '/steward-operations/workspace') return { status: 200, body: state.stewardOperationsService.workspace(now()) };
   if (method === 'GET' && path === '/steward-operations/dashboard') return { status: 200, body: state.stewardOperationsService.kpiDashboard(now()) };
@@ -2543,6 +2635,31 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'GET' && stewardInquiryMatch) {
     const inquiry = state.stewardOperationsService.getInquiry(decodeURIComponent(stewardInquiryMatch[1]), now());
     return inquiry ? { status: 200, body: { ...state.stewardOperationsService.workspace(now()), inquiries: [inquiry], reviews: inquiry.reviews, decisionWorkflows: inquiry.decisionWorkflows } } : apiNotFound(`Unknown steward inquiry ${stewardInquiryMatch[1]}`, path, requestId);
+  }
+  const stewardEvidenceListMatch = path.match(/^\/steward-operations\/inquiries\/([^/]+)\/evidence$/);
+  if (method === 'GET' && stewardEvidenceListMatch) {
+    const inquiryId = decodeURIComponent(stewardEvidenceListMatch[1]);
+    try {
+      return { status: 200, body: { inquiryId, evidenceReferences: state.stewardOperationsService.listEvidence(inquiryId), mock: false } };
+    } catch (error) {
+      return apiNotFound(error instanceof Error ? error.message : String(error), path, requestId);
+    }
+  }
+  const stewardEvidenceRefMatch = path.match(/^\/steward-operations\/inquiries\/([^/]+)\/evidence\/([^/]+)$/);
+  if (method === 'GET' && stewardEvidenceRefMatch) {
+    const inquiryId = decodeURIComponent(stewardEvidenceRefMatch[1]);
+    const evidenceId = decodeURIComponent(stewardEvidenceRefMatch[2]);
+    const evidence = state.stewardOperationsService.getEvidence(inquiryId, evidenceId);
+    return evidence ? { status: 200, body: evidence } : apiNotFound(`Unknown steward evidence ${evidenceId}`, path, requestId);
+  }
+  const stewardDecisionSupportMatch = path.match(/^\/steward-operations\/inquiries\/([^/]+)\/decision-support$/);
+  if (method === 'GET' && stewardDecisionSupportMatch) {
+    const inquiryId = decodeURIComponent(stewardDecisionSupportMatch[1]);
+    try {
+      return { status: 200, body: state.stewardOperationsService.decisionSupport(inquiryId, now()) };
+    } catch (error) {
+      return apiNotFound(error instanceof Error ? error.message : String(error), path, requestId);
+    }
   }
   if (method === 'POST' && path === '/steward-operations/inquiries') {
     const input = (body ?? {}) as Record<string, any>;
@@ -2660,7 +2777,13 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
       return { status: 403, body: { ok: false, error: { code: 'starting_gate_request_denied', message: error instanceof Error ? error.message : String(error) } } };
     }
   }
-  if (method === 'GET' && path === '/security-operations/workspace') return { status: 200, body: state.security };
+  if (method === 'GET' && path === '/security-operations/workspace') {
+    try {
+      return { status: 200, body: { ...state.securityOperationsService.getWorkspace(securityActorFromHeaders(authHeaders)), mock: false } };
+    } catch (error) {
+      return { status: 403, body: { ok: false, error: { code: 'security_forbidden', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
   if (method === 'GET' && path === '/emergency-operations/workspace') return { status: 200, body: state.emergency };
   if (method === 'POST' && path === '/emergency-operations/workflows') {
     const input = isRecord(body) ? body : {};

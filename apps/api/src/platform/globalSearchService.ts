@@ -8,8 +8,13 @@ export function globalSearch(query: string, sources: {
   auditEvents?: Array<{ id: string; type: string; action: string }>;
   kpis?: Array<{ kpiId: string; label: string }>;
   assets?: Array<{ id: string; label: string }>;
+  twins?: Array<{ id: string; label: string; twinType?: string }>;
+  recommendations?: Array<{ id: string; title: string }>;
 }): GlobalSearchResponseDto {
   const q = query.trim().toLowerCase();
+  if (!q) {
+    return { query, results: [], generatedAt: now(), mock: false };
+  }
   const results: GlobalSearchResultDto[] = [];
 
   for (const horse of sources.horses ?? []) {
@@ -35,6 +40,31 @@ export function globalSearch(query: string, sources: {
   for (const asset of sources.assets ?? []) {
     if (asset.label.toLowerCase().includes(q) || asset.id.toLowerCase().includes(q)) {
       results.push({ id: asset.id, kind: 'asset', title: asset.label, path: `/assets/${asset.id}`, score: 0.65, mock: false });
+    }
+  }
+  for (const twin of sources.twins ?? []) {
+    if (twin.label.toLowerCase().includes(q) || twin.id.toLowerCase().includes(q) || (twin.twinType ?? '').toLowerCase().includes(q)) {
+      results.push({
+        id: twin.id,
+        kind: 'asset',
+        title: twin.label,
+        subtitle: twin.twinType,
+        path: `/digital-twin/${twin.id}`,
+        score: 0.8,
+        mock: false,
+      });
+    }
+  }
+  for (const recommendation of sources.recommendations ?? []) {
+    if (recommendation.title.toLowerCase().includes(q) || recommendation.id.toLowerCase().includes(q)) {
+      results.push({
+        id: recommendation.id,
+        kind: 'recommendation',
+        title: recommendation.title,
+        path: `/ai-governance/recommendations/${recommendation.id}`,
+        score: 0.72,
+        mock: false,
+      });
     }
   }
 

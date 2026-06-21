@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FacilitiesMaintenanceService, createMockFacilitiesMaintenanceWorkspace } from '../dist/index.js';
+import { FacilitiesMaintenanceService, createMockFacilitiesMaintenanceWorkspace, createSeededFacilitiesMaintenanceService } from '../dist/index.js';
+import { registerFacilitiesKpiPack } from '@trackmind/shared';
 
 const principal = { id: 'facilities-supervisor', tenantId: 'track-1', scopes: ['assets:read', 'assets:write', 'assets:approve'] };
 
@@ -74,6 +75,66 @@ test('facilities maintenance uses RACR assets, twins, approvals, workflows, audi
   assert.equal(service.auditLog.verify().valid, true);
 });
 
+test('facilities maintenance schedule POST is approval-gated with audit hooks', async () => {
+  const service = new FacilitiesMaintenanceService();
+  await service.seedFacilityAssets(principal, '2026-06-13T12:00:00.000Z');
+
+  const pending = service.scheduleMaintenance({
+    assetId: 'BACKUP_GENERATOR_A',
+    title: 'Generator load test window',
+    priority: 'high',
+    scheduledFor: '2026-06-14T18:00:00.000Z',
+    dueAt: '2026-06-14T20:00:00.000Z',
+    tasks: ['isolate transfer switch', 'run load test', 'capture evidence'],
+    evidence: ['load-test-plan'],
+    operationalImpact: 'operational-impact',
+    requestedBy: 'facilities-supervisor',
+  }, principal);
+  assert.equal(pending.approvalRequired, true);
+  assert.ok(pending.approvalRequestId);
+  assert.ok(pending.auditId);
+
+  const approvalId = pending.approvalRequestId;
+  assert.ok(approvalId);
+  service.approvals.decide(approvalId, { id: 'facilities-lead', roles: ['track-superintendent'], human: true }, 'approved', 'Approve generator maintenance window', ['human-approval-record']);
+  service.approvals.decide(approvalId, { id: 'ops-command', roles: ['admin'], human: true }, 'approved', 'Approve operational impact', ['human-approval-record']);
+  const token = service.approvals.authorizeExecution({
+    requestId: approvalId,
+    action: 'facility-maintenance-execution',
+    target: 'BACKUP_GENERATOR_A',
+    tenantId: 'track-1',
+    racetrackId: 'track-1',
+    actor: { id: 'ops-command', roles: ['admin'], human: true },
+  });
+
+  const scheduled = service.scheduleMaintenance({
+    assetId: 'BACKUP_GENERATOR_A',
+    title: 'Generator load test window',
+    priority: 'high',
+    scheduledFor: '2026-06-14T18:00:00.000Z',
+    dueAt: '2026-06-14T20:00:00.000Z',
+    tasks: ['isolate transfer switch', 'run load test', 'capture evidence'],
+    evidence: ['load-test-plan', 'human-approval-record'],
+    operationalImpact: 'operational-impact',
+    requestedBy: 'facilities-supervisor',
+  }, principal, { approvalToken: token });
+  assert.equal(scheduled.approvalRequired, false);
+  assert.equal(scheduled.workOrder.status, 'scheduled');
+  assert.ok(service.eventBus.events().some((event) => event.type === 'facilities.maintenance-schedule.approved'));
+});
+
+test('facilities workspace exposes inventory, utilities adapters, incidents, map, and KPI pack', async () => {
+  const service = createSeededFacilitiesMaintenanceService('2026-06-13T12:00:00.000Z');
+  const workspace = service.workspace(principal);
+  assert.ok(workspace.inventory.length >= 3);
+  assert.ok(workspace.utilities.adapters.length >= 2);
+  assert.ok(workspace.incidents.length >= 1);
+  assert.ok(workspace.map.features.length >= 1);
+  assert.equal(workspace.kpiPackId, 'facilities-kpi-pack-v1');
+  assert.equal(workspace.integrations.utilitiesAdapters, true);
+  assert.equal(workspace.integrations.geospatialMap, true);
+});
+
 test('facilities mock workspace labels asset health, inspections, work orders, and approval gates', () => {
   const workspace = createMockFacilitiesMaintenanceWorkspace('2026-06-13T12:00:00.000Z');
 
@@ -88,4 +149,12 @@ test('facilities mock workspace labels asset health, inspections, work orders, a
   assert.equal(workspace.integrations.approvals, true);
   assert.equal(workspace.integrations.workflows, true);
   assert.equal(workspace.integrations.digitalTwinRuntime, true);
+});
+
+test('facilities KPI pack registers readiness, backlog, utilities, inventory, and incident KPIs', () => {
+  const pack = registerFacilitiesKpiPack({ generatedAt: '2026-06-13T12:00:00.000Z' });
+  assert.equal(pack.length, 5);
+  assert.ok(pack.some((kpi) => kpi.kpiId === 'kpi-facilities-readiness'));
+  assert.ok(pack.some((kpi) => kpi.kpiId === 'kpi-facilities-maintenance-backlog'));
+  assert.ok(pack.every((kpi) => kpi.domain === 'facilities'));
 });

@@ -1,5 +1,6 @@
 import { nexusEventContracts, validateNexusEventEnvelope, type NexusActor, type NexusSubjectReference, type NexusEventContract } from '@trackmind/shared';
 import type { RaceDayEventType } from '@trackmind/shared';
+import type { AuditRecordInput } from './auditLog.js';
 
 export type EventName = RaceDayEventType | (string & {});
 export type ComplianceClassification = 'public' | 'internal' | 'confidential' | 'regulated' | 'restricted';
@@ -640,11 +641,18 @@ export class EventConsumer {
   subscribe(type: EventName | '*', handler: Handler, retry?: Partial<RetryPolicy>): () => void { return this.bus.subscribe(type, handler, { name: this.name, retry }); }
 }
 
-export function bindAuditLogToEvents(bus: UniversalEventBus, auditLog: { append(record: any): unknown }, options: { consumerName?: string; includeTypes?: EventName[]; excludeTypes?: EventName[] } = {}): () => void {
+export function bindAuditLogToEvents(
+  bus: UniversalEventBus,
+  auditLog: { append(record: AuditRecordInput): unknown; appendAudit?: (record: AuditRecordInput) => unknown },
+  options: { consumerName?: string; includeTypes?: EventName[]; excludeTypes?: EventName[] } = {},
+): () => void {
+  const writeAudit = (record: AuditRecordInput) => (
+    typeof auditLog.appendAudit === 'function' ? auditLog.appendAudit(record) : auditLog.append(record)
+  );
   return bus.subscribe('*', (event) => {
     if (options.includeTypes && !options.includeTypes.includes(event.type)) return;
     if (options.excludeTypes?.includes(event.type)) return;
-    auditLog.append({ id: `audit:${event.eventId}`, type: 'system-event', actor: event.actorId, actorType: event.context.actor?.type ?? 'service', timestamp: event.timestamp, action: String(event.eventType), sourceService: event.source, payload: { eventId: event.eventId, eventType: event.eventType, tenantId: event.tenantId, racetrackId: event.racetrackId, actorId: event.actorId, source: event.source, timestamp: event.timestamp, version: event.version, schemaRef: event.schemaRef, trace: event.trace, lineage: event.lineage, context: event.context, metadata: event.metadata, payload: event.payload }, subjectId: event.context.subject?.id ?? event.lineage.aggregateId, tenantId: event.tenantId, racetrackId: event.racetrackId, workflowId: event.context.workflowRef, correlationId: event.correlationId, severity: event.compliance === 'restricted' ? 'critical' : event.compliance === 'regulated' ? 'warning' : 'info', regulations: arrayOfStrings(event.metadata.regulations), evidenceIds: event.context.evidence });
+    writeAudit({ id: `audit:${event.eventId}`, type: 'system-event', actor: event.actorId, actorType: event.context.actor?.type ?? 'service', timestamp: event.timestamp, action: String(event.eventType), sourceService: event.source, payload: { eventId: event.eventId, eventType: event.eventType, tenantId: event.tenantId, racetrackId: event.racetrackId, actorId: event.actorId, source: event.source, timestamp: event.timestamp, version: event.version, schemaRef: event.schemaRef, trace: event.trace, lineage: event.lineage, context: event.context, metadata: event.metadata, payload: event.payload }, subjectId: event.context.subject?.id ?? event.lineage.aggregateId, tenantId: event.tenantId, racetrackId: event.racetrackId, workflowId: event.context.workflowRef, correlationId: event.correlationId, severity: event.compliance === 'restricted' ? 'critical' : event.compliance === 'regulated' ? 'warning' : 'info', regulations: arrayOfStrings(event.metadata.regulations), evidenceIds: event.context.evidence });
   }, { name: options.consumerName ?? 'audit-log-event-sink', retry: { maxAttempts: 1 } });
 }
 

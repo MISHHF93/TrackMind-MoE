@@ -14,7 +14,7 @@ export class EquineEligibilityEngine {
     const hisa = this.verifyHisaCompliance(horse, at);
     if (!hisa.compliant) failedRules.push(...hisa.failedRules);
     for (const period of horse.eligibility.medicationWithdrawalPeriods) {
-      if (!period.cleared && period.withdrawalUntil > at) failedRules.push(`withdrawal:${period.medication}`);
+      if (!period.cleared) failedRules.push(`withdrawal:${period.medication}`);
     }
     if (horse.eligibility.scratchStatus === 'scratched') failedRules.push('scratch-status');
     if (horse.welfare.retirementStatus !== 'active') failedRules.push('retirement-status');

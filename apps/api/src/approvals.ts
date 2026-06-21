@@ -187,6 +187,7 @@ export function defaultApprovalPolicies(): ApprovalPolicy[] {
     { action: 'track-closure', chain: [{ id: 'surface-operations', roles: ['track-superintendent'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'security', roles: ['security'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 10, escalationRules: [{ afterMinutes: 5, escalateToRoles: ['admin'], reason: 'track closure approval pending' }] },
     { action: 'track-reopen', chain: [{ id: 'surface-operations', roles: ['track-superintendent'], minimumApprovals: 1, evidenceRequired: evidence }, { id: 'stewards', roles: ['steward'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 15, escalationRules: [{ afterMinutes: 8, escalateToRoles: ['admin'], reason: 'track reopen approval pending' }] },
     { action: 'compliance-filing-approval', chain: [{ id: 'compliance', roles: ['compliance-officer'], minimumApprovals: 1, evidenceRequired: ['human-approval-record','reason','audit-readiness-package'] }], expiresInMinutes: 240, escalationRules: [{ afterMinutes: 120, escalateToRoles: ['admin'], reason: 'compliance filing approval pending' }] },
+    { action: 'kpi-threshold-change', chain: [{ id: 'kpi-admin', roles: ['admin', 'operations-admin'], minimumApprovals: 1, evidenceRequired: evidence }], expiresInMinutes: 60, escalationRules: [{ afterMinutes: 30, escalateToRoles: ['compliance-officer'], reason: 'KPI threshold change approval pending' }] },
   ];
 }
 
@@ -242,14 +243,36 @@ export class CentralizedApprovalService {
   private policies = new Map<ControlledAction, ApprovalPolicy>();
   private requests = new Map<string, ControlledActionRequest>();
   private delegations = new Map<string, ApprovalDelegationRecord[]>();
-  constructor(private readonly deps: { auditLog?: ImmutableAuditLog; eventBus?: UniversalEventBus; workflow?: WorkflowOrchestrationEngine } = {}, policies = defaultApprovalPolicies()) { for (const policy of policies) this.policies.set(policy.action, policy); }
+  private persistHook?: (request: ControlledActionRequest) => void;
+  constructor(private readonly deps: { auditLog?: ImmutableAuditLog; eventBus?: UniversalEventBus; workflow?: WorkflowOrchestrationEngine; onPersist?: (request: ControlledActionRequest) => void } = {}, policies = defaultApprovalPolicies()) {
+    for (const policy of policies) this.policies.set(policy.action, policy);
+    this.persistHook = deps.onPersist;
+  }
+
+  setPersistenceHook(hook: (request: ControlledActionRequest) => void): void {
+    this.persistHook = hook;
+  }
+
+  loadRequest(record: ControlledActionRequest): void {
+    this.requests.set(record.id, clone(record));
+  }
+
+  loadRequests(records: ControlledActionRequest[]): number {
+    for (const record of records) this.loadRequest(record);
+    return records.length;
+  }
+
+  private persist(request: ControlledActionRequest): void {
+    this.persistHook?.(clone(request));
+  }
 
   createRequest(input: Omit<ControlledActionRequest, 'id'|'createdAt'|'expiresAt'|'status'|'decisions'|'escalatedToRoles'> & { id?: string; now?: string }): ControlledActionRequest {
     const policy = this.policy(input.action); const now = input.now ?? new Date().toISOString();
     if (!input.racetrackId) throw new Error('Controlled action approval requests require racetrackId');
     const request: ControlledActionRequest = { ...input, id: input.id ?? id('approval'), createdAt: now, expiresAt: addMinutes(now, policy.expiresInMinutes), status: 'pending', decisions: [], escalatedToRoles: [] };
     this.requests.set(request.id, request); const auditRef = this.audit('approval.requested', request.requestedBy, request, now); void this.publish('approval.requested', { ...request, auditRef }); this.notifyWorkflow('approval.requested', request, now);
-    notificationFramework.publishOperational({ category: 'approval', title: `Approval requested: ${request.action}`, message: request.reason, targetRoles: [...new Set(policy.chain.flatMap((step) => step.roles))], severity: 'warning', priority: approvalPriorityFromAction(request.action) });
+    notificationFramework.publishOperational({ category: 'approval', title: `Approval requested: ${request.action}`, message: request.reason, targetRoles: [...new Set(policy.chain.flatMap((step) => step.roles))], severity: 'warning', priority: approvalPriorityFromAction(request.action), correlationId: request.id });
+    this.persist(request);
     return clone(request);
   }
 
@@ -268,7 +291,8 @@ export class CentralizedApprovalService {
     request.decisions.push({ stepId: openStep.id, actorId: actor.id, roles: effectiveRoles, decision, reason, evidence, decidedAt: now, delegatedFor: delegatedFor?.principalId });
     if (decision === 'rejected') request.status = 'rejected'; else if (policy.chain.every((step) => this.stepSatisfied(request, step))) request.status = 'approved';
     const auditRef = this.audit(`approval.${decision}`, actor.id, request, now); void this.publish(`approval.${decision}`, { ...request, auditRef }); this.notifyWorkflow(`approval.${decision}`, request, now);
-    notificationFramework.publishOperational({ category: 'approval', title: `Approval ${decision}: ${request.action}`, message: reason, targetRoles: [...new Set(policy.chain.flatMap((step) => step.roles))], severity: decision === 'rejected' ? 'critical' : 'info', priority: approvalPriorityFromAction(request.action) });
+    notificationFramework.publishOperational({ category: 'approval', title: `Approval ${decision}: ${request.action}`, message: reason, targetRoles: [...new Set(policy.chain.flatMap((step) => step.roles))], severity: decision === 'rejected' ? 'critical' : 'info', priority: approvalPriorityFromAction(request.action), correlationId: request.id });
+    this.persist(request);
     return clone(request);
   }
 
@@ -292,8 +316,8 @@ export class CentralizedApprovalService {
     if (token.issuedTo && isNonHumanActorId(token.issuedTo)) throw new Error('Approval token was not issued to an authorized human actor');
   }
 
-  expire(requestId: string, now = new Date().toISOString()): ControlledActionRequest { const request = this.require(requestId); if (['pending', 'escalated'].includes(request.status) && request.expiresAt <= now) { request.status = 'expired'; const auditRef = this.audit('approval.expired', 'system', request, now); void this.publish('approval.expired', { ...request, auditRef }); this.notifyWorkflow('approval.expired', request, now); } return clone(request); }
-  evaluateEscalations(now = new Date().toISOString()): ControlledActionRequest[] { const changed: ControlledActionRequest[] = []; for (const request of this.requests.values()) { if (request.status !== 'pending') continue; this.expire(request.id, now); if (request.status !== 'pending') continue; const before = request.escalatedToRoles.length; const policy = this.policy(request.action); for (const rule of policy.escalationRules) if (addMinutes(request.createdAt, rule.afterMinutes) <= now) request.escalatedToRoles = [...new Set([...request.escalatedToRoles, ...rule.escalateToRoles])]; if (request.escalatedToRoles.length > before) { request.status = 'escalated'; const auditRef = this.audit('approval.escalated', 'system', request, now); void this.publish('approval.escalated', { ...request, auditRef }); this.notifyWorkflow('approval.escalated', request, now); notificationFramework.publishOperational({ category: 'approval', title: `Approval escalated: ${request.action}`, message: policy.escalationRules.map((item) => item.reason).join('; '), targetRoles: request.escalatedToRoles, severity: 'critical', priority: 'critical' }); changed.push(clone(request)); } } return changed; }
+  expire(requestId: string, now = new Date().toISOString()): ControlledActionRequest { const request = this.require(requestId); if (['pending', 'escalated'].includes(request.status) && request.expiresAt <= now) { request.status = 'expired'; const auditRef = this.audit('approval.expired', 'system', request, now); void this.publish('approval.expired', { ...request, auditRef }); this.notifyWorkflow('approval.expired', request, now); notificationFramework.publishOperational({ category: 'approval', title: `Approval expired: ${request.action}`, message: `Approval for ${request.target} expired without authorization.`, targetRoles: [...new Set(this.policy(request.action).chain.flatMap((step) => step.roles))], severity: 'critical', priority: 'critical', correlationId: request.id }); this.persist(request); } return clone(request); }
+  evaluateEscalations(now = new Date().toISOString()): ControlledActionRequest[] { const changed: ControlledActionRequest[] = []; for (const request of this.requests.values()) { if (request.status !== 'pending') continue; this.expire(request.id, now); if (request.status !== 'pending') continue; const before = request.escalatedToRoles.length; const policy = this.policy(request.action); for (const rule of policy.escalationRules) if (addMinutes(request.createdAt, rule.afterMinutes) <= now) request.escalatedToRoles = [...new Set([...request.escalatedToRoles, ...rule.escalateToRoles])]; if (request.escalatedToRoles.length > before) { request.status = 'escalated'; const auditRef = this.audit('approval.escalated', 'system', request, now); void this.publish('approval.escalated', { ...request, auditRef }); this.notifyWorkflow('approval.escalated', request, now); notificationFramework.publishOperational({ category: 'approval', title: `Approval escalated: ${request.action}`, message: policy.escalationRules.map((item) => item.reason).join('; '), targetRoles: request.escalatedToRoles, severity: 'critical', priority: 'critical', correlationId: request.id }); this.persist(request); changed.push(clone(request)); } } return changed; }
   getRequest(id: string): ControlledActionRequest { return clone(this.require(id)); }
   hasRequest(id: string): boolean { return this.requests.has(id); }
   allRequests(): ControlledActionRequest[] { return [...this.requests.values()].map(clone); }

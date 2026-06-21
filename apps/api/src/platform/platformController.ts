@@ -1,9 +1,8 @@
-import type { AuditEventDto } from '@trackmind/shared';
-import type { KPIArtifact } from '@trackmind/shared';
+import { hasPermission, isRole, type AuditEventDto, type FederationWorkspaceDto, type IncidentDto, type KPIArtifact, type Role } from '@trackmind/shared';
 import type { CentralizedApprovalService } from '../approvals.js';
 import type { ImmutableAuditLog } from '../auditLog.js';
 import type { RacingDataApiFacadeState } from '../racingDataApiHub.js';
-import { createAnalyticsWorkspace } from './analyticsService.js';
+import { buildKpiTrendsFromArtifacts, createAnalyticsWorkspace } from './analyticsService.js';
 import {
   buildDomainOwnershipRegistry,
   buildExecutiveScorecard,
@@ -13,41 +12,25 @@ import {
   buildWorkflowHealth,
   validateGovernanceLineage,
 } from './governancePlatformService.js';
-import { createAIModelCardRegistry, aiModelCardRegistryStore } from './aiRegistryService.js';
-import { createAuditPersistenceAdapter } from './auditAdapter.js';
+import { createAIModelCardRegistry, createAIModelCardList, createAIGovernanceKpiPack, createAIPromptCardList, aiModelCardRegistryStore } from './aiRegistryService.js';
+import { createAuditPersistenceAdapter } from '../auditAdapter.js';
 import { DurableApprovalStore } from './approvalStore.js';
+import { runApprovalEscalationCycle } from './approvalEscalationWorker.js';
 import { federationKpiAggregation, executeProviderAdapter } from './dataHubAdapter.js';
 import { globalSearch } from './globalSearchService.js';
 import { IdentityService } from './identityService.js';
 import { IncidentService } from './incidentService.js';
 import { kpiCalculationService } from './kpiCalculationService.js';
+import { KpiPlatformService } from './kpiPlatformService.js';
 import { createMockPlatformHealth } from '../platformObservability.js';
 import { notificationFramework } from './notificationFramework.js';
 import { createPaddockOperationsWorkspace } from './paddockOperations.js';
+import { createRaceScheduleWorkspace } from './raceScheduleService.js';
 import { createCommercializationServices, handleCommercializationRequest, type CommercializationServices } from './commercializationController.js';
 import { createCustomerManagementServices, handleCustomerManagementRequest, type CustomerManagementServices } from './customerManagementController.js';
 import { createNexusPlatformExpansionServices, handleNexusPlatformExpansionRequest, type NexusPlatformExpansionServices } from './nexusPlatformExpansionController.js';
-import { FeatureFlagService, TenantService } from './tenantService.js';
-
-function createRaceScheduleWorkspace(tenantId: string, racetrackId: string) {
-  const ts = new Date().toISOString();
-  return {
-    generatedAt: ts,
-    tenantId,
-    racetrackId,
-    raceDate: ts.slice(0, 10),
-    races: [
-      { raceId: 'race-7', raceNumber: 7, postTime: '2026-06-17T18:30:00.000Z', status: 'ready', surface: 'dirt' },
-      { raceId: 'race-8', raceNumber: 8, postTime: '2026-06-17T19:05:00.000Z', status: 'scheduled', surface: 'dirt' },
-    ],
-    timeline: [
-      { at: ts, label: 'First post', status: 'scheduled' },
-      { at: ts, label: 'Race 7 post', status: 'ready' },
-      { at: ts, label: 'Race 8 post', status: 'scheduled' },
-    ],
-    mock: false,
-  };
-}
+import { FeatureFlagService } from './featureFlags.js';
+import { TenantService } from './tenantService.js';
 
 type HttpMethod = 'GET' | 'POST';
 type HandlerResult = { status: number; body: unknown } | undefined;
@@ -73,21 +56,62 @@ export interface PlatformServices {
   commercialization: CommercializationServices;
   customerManagement: CustomerManagementServices;
   nexusExpansion: NexusPlatformExpansionServices;
+  kpiPlatform: KpiPlatformService;
+}
+
+function buildKpiCalculationInput(
+  kpis: KPIArtifact[],
+  platform: PlatformServices,
+  racingData: PlatformState['racingData'],
+): Parameters<typeof kpiCalculationService.calculateFromProjections>[1] {
+  const readiness = buildReadinessScorecards(kpis);
+  return {
+    eventCount: platform.incidents.list().length,
+    approvalPendingCount: platform.approvalStore.list().filter((a) => a.status === 'pending').length,
+    incidentOpenCount: platform.incidents.list().filter((i) => !['resolved', 'closed'].includes(i.status)).length,
+    readinessScore: readiness.operational.score,
+    domainScores: {
+      'race-day-operations': readiness.operational.score,
+      'equine-welfare': readiness.equine.score,
+      compliance: readiness.compliance.score,
+      facilities: readiness.facilities.score,
+      security: readiness.security.score,
+      'data-quality': kpis.find((kpi) => kpi.domain === 'data-quality')?.value,
+      'system-health': kpis.find((kpi) => kpi.domain === 'system-health')?.value,
+    },
+    dataQualityScore: racingData.dataQualityReports?.[0]?.score != null
+      ? Math.round(racingData.dataQualityReports[0].score * 100)
+      : undefined,
+  };
+}
+
+function recalculateAndPersistKpis(state: PlatformState, platform: PlatformServices): KPIArtifact[] {
+  const workspace = state.kpis as { kpis?: KPIArtifact[] };
+  const synced = platform.kpiPlatform.syncArtifacts(workspace.kpis ?? []);
+  const calculated = kpiCalculationService.calculateFromProjections(
+    synced,
+    buildKpiCalculationInput(synced, platform, state.racingData),
+  );
+  state.kpis = { kpis: calculated };
+  return calculated;
 }
 
 export function createPlatformServices(state: PlatformState): PlatformServices {
   const tenant = new TenantService();
   const featureFlags = new FeatureFlagService();
   const identity = new IdentityService();
-  const incidents = new IncidentService();
+  const incidents = new IncidentService({
+    audit: { ledger: state.auditLedger, adapter: createAuditPersistenceAdapter(state.auditLedger as any), mock: false },
+  });
   const approvalStore = new DurableApprovalStore(state.approvalService);
-  const auditAdapter = createAuditPersistenceAdapter(state.auditLedger as any);
-  auditAdapter.syncFromLedger(state.auditEvents as AuditEventDto[]);
+  const auditAdapter = createAuditPersistenceAdapter(state.auditLedger);
+  auditAdapter.syncFromLedger(state.auditEvents);
   const base = { tenant, featureFlags, identity, incidents, approvalStore, auditAdapter };
   const commercialization = createCommercializationServices(tenant);
   const customerManagement = createCustomerManagementServices(tenant, commercialization);
   const nexusExpansion = createNexusPlatformExpansionServices(tenant, featureFlags, incidents, commercialization, customerManagement, state);
-  return { ...base, commercialization, customerManagement, nexusExpansion };
+  const kpiPlatform = new KpiPlatformService((state.kpis as { kpis?: KPIArtifact[] }).kpis ?? []);
+  return { ...base, commercialization, customerManagement, nexusExpansion, kpiPlatform };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -101,6 +125,7 @@ export function handlePlatformRequest(
   state: PlatformState,
   platform: PlatformServices,
   searchParams: URLSearchParams,
+  actorRole?: Role,
 ): HandlerResult {
   const tenantId = searchParams.get('tenantId') ?? 'trackmind';
   const racetrackId = searchParams.get('racetrackId') ?? 'main-track';
@@ -123,25 +148,25 @@ export function handlePlatformRequest(
   if (method === 'GET' && path === '/platform/environment') {
     return { status: 200, body: platform.tenant.environmentConfig() };
   }
-  if (method === 'GET' && path === '/organizations') {
+  if (method === 'GET' && (path === '/organizations' || path === '/platform/organizations')) {
     return { status: 200, body: platform.tenant.organizations.list() };
   }
-  if (method === 'POST' && path === '/organizations') {
+  if (method === 'POST' && (path === '/organizations' || path === '/platform/organizations')) {
     const name = isRecord(body) ? String(body.name ?? 'New Organization') : 'New Organization';
     return { status: 201, body: platform.tenant.createOrganization({ name }) };
   }
-  if (method === 'GET' && path === '/tenants') {
+  if (method === 'GET' && (path === '/tenants' || path === '/platform/tenants')) {
     return { status: 200, body: platform.tenant.tenants.list() };
   }
-  if (method === 'POST' && path === '/tenants') {
+  if (method === 'POST' && (path === '/tenants' || path === '/platform/tenants')) {
     const orgId = isRecord(body) ? String(body.organizationId ?? 'org-trackmind-network') : 'org-trackmind-network';
     const name = isRecord(body) ? String(body.name ?? 'New Tenant') : 'New Tenant';
     return { status: 201, body: platform.tenant.createTenant({ organizationId: orgId, name }) };
   }
-  if (method === 'GET' && path === '/racetracks') {
+  if (method === 'GET' && (path === '/racetracks' || path === '/platform/racetracks')) {
     return { status: 200, body: platform.tenant.racetracks.list() };
   }
-  if (method === 'POST' && path === '/racetracks') {
+  if (method === 'POST' && (path === '/racetracks' || path === '/platform/racetracks')) {
     const input = isRecord(body) ? body : {};
     return {
       status: 201,
@@ -164,10 +189,88 @@ export function handlePlatformRequest(
   if (method === 'GET' && path === '/identity/workspace') {
     return { status: 200, body: platform.identity.workspace() };
   }
+  if (method === 'GET' && path === '/platform/users') {
+    return { status: 200, body: platform.identity.listUsers(tenantId) };
+  }
+  if (method === 'POST' && path === '/platform/users') {
+    const input = isRecord(body) ? body : {};
+    try {
+      return {
+        status: 201,
+        body: platform.identity.createUser({
+          tenantId: String(input.tenantId ?? tenantId),
+          organizationId: String(input.organizationId ?? organizationId),
+          displayName: String(input.displayName ?? 'New User'),
+          email: String(input.email ?? 'user@trackmind.local'),
+          roles: Array.isArray(input.roles) ? input.roles.map(String).filter(isRole) as Role[] : undefined,
+          status: (input.status === 'active' || input.status === 'pending' || input.status === 'suspended')
+            ? input.status
+            : undefined,
+        }),
+      };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: (error as Error).message } } };
+    }
+  }
+  if (method === 'GET' && path === '/platform/roles') {
+    return { status: 200, body: platform.identity.listRoles() };
+  }
+  if (method === 'POST' && path === '/platform/roles') {
+    const input = isRecord(body) ? body : {};
+    try {
+      return {
+        status: 201,
+        body: platform.identity.assignRole(
+          String(input.userId ?? ''),
+          String(input.role ?? '') as Role,
+          String(input.tenantId ?? tenantId),
+          actorRole,
+        ),
+      };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: (error as Error).message } } };
+    }
+  }
+  if (method === 'GET' && path === '/platform/access-requests') {
+    return { status: 200, body: platform.identity.listAccessRequests(tenantId) };
+  }
+  if (method === 'POST' && path === '/platform/access-requests') {
+    const input = isRecord(body) ? body : {};
+    if (input.requestId && input.decision) {
+      if (!actorRole || !hasPermission(actorRole, 'access:approve')) {
+        return {
+          status: 403,
+          body: { ok: false, error: { code: 'forbidden', message: 'Reviewer role requires access:approve permission' } },
+        };
+      }
+      try {
+        return {
+          status: 200,
+          body: platform.identity.reviewAccessRequest(
+            String(input.requestId),
+            input.decision === 'approved' ? 'approved' : 'rejected',
+            String(input.reviewedBy ?? actorRole),
+          ),
+        };
+      } catch (error) {
+        return { status: 404, body: { ok: false, error: { code: 'not_found', message: (error as Error).message } } };
+      }
+    }
+    const userId = String(input.userId ?? 'user-steward-1');
+    const requestedRole = String(input.requestedRole ?? 'read-only-auditor');
+    try {
+      return {
+        status: 201,
+        body: platform.identity.requestAccess(userId, requestedRole, String(input.tenantId ?? tenantId)),
+      };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: (error as Error).message } } };
+    }
+  }
   if (method === 'POST' && path === '/identity/access-requests') {
     const userId = isRecord(body) ? String(body.userId ?? 'user-admin-1') : 'user-admin-1';
     const requestedRole = isRecord(body) ? String(body.requestedRole ?? 'read-only-auditor') : 'read-only-auditor';
-    return { status: 201, body: platform.identity.requestAccess(userId, requestedRole) };
+    return { status: 201, body: platform.identity.requestAccess(userId, requestedRole, tenantId) };
   }
   if (method === 'GET' && path === '/audit/search') {
     return {
@@ -190,29 +293,101 @@ export function handlePlatformRequest(
     platform.approvalStore.processExpirations();
     return { status: 200, body: platform.approvalStore.list() };
   }
-  if (method === 'POST' && path === '/kpis/recalculate') {
-    const workspace = state.kpis as { kpis?: KPIArtifact[] };
-    const readiness = buildReadinessScorecards(workspace.kpis ?? []);
-    const domainScores = {
-      'race-day-operations': readiness.operational.score,
-      'equine-welfare': readiness.equine.score,
-      compliance: readiness.compliance.score,
-      facilities: readiness.facilities.score,
-      security: readiness.security.score,
-      'data-quality': workspace.kpis?.find((kpi) => kpi.domain === 'data-quality')?.value,
-      'system-health': workspace.kpis?.find((kpi) => kpi.domain === 'system-health')?.value,
-    };
-    const calculated = kpiCalculationService.calculateFromProjections(workspace.kpis ?? [], {
-      eventCount: platform.incidents.list().length,
-      approvalPendingCount: platform.approvalStore.list().filter((a) => a.status === 'pending').length,
-      incidentOpenCount: platform.incidents.list().filter((i) => !['resolved', 'closed'].includes(i.status)).length,
-      readinessScore: readiness.operational.score,
-      domainScores,
-      dataQualityScore: state.racingData.dataQualityReports?.[0]?.score != null
-        ? Math.round(state.racingData.dataQualityReports[0].score * 100)
-        : undefined,
+  if (method === 'POST' && path === '/approvals/escalation/simulate') {
+    const input = isRecord(body) ? body : {};
+    const simulatedAt = typeof input.now === 'string' ? input.now : new Date().toISOString();
+    const result = runApprovalEscalationCycle({
+      approvalService: state.approvalService,
+      durableStore: platform.approvalStore,
+      now: simulatedAt,
+      reminderLeadMinutes: typeof input.reminderLeadMinutes === 'number' ? input.reminderLeadMinutes : undefined,
     });
+    return {
+      status: 200,
+      body: {
+        ...result,
+        approvals: platform.approvalStore.list(),
+        mock: false,
+      },
+    };
+  }
+  if (method === 'POST' && path === '/kpis/recalculate') {
+    const calculated = recalculateAndPersistKpis(state, platform);
     return { status: 200, body: { generatedAt: new Date().toISOString(), kpis: calculated, mock: false } };
+  }
+  if (method === 'GET' && path === '/kpis/registry') {
+    const workspace = state.kpis as { kpis?: KPIArtifact[] };
+    return {
+      status: 200,
+      body: platform.kpiPlatform.registry({ tenantId, organizationId, racetrackId }, workspace.kpis ?? []),
+    };
+  }
+  if (method === 'GET' && path === '/kpis/definitions') {
+    return { status: 200, body: platform.kpiPlatform.listDefinitions({ tenantId, organizationId, racetrackId }) };
+  }
+  const kpiDefinitionMatch = path.match(/^\/kpis\/definitions\/([^/]+)$/);
+  if (method === 'GET' && kpiDefinitionMatch) {
+    const definition = platform.kpiPlatform.getDefinition(decodeURIComponent(kpiDefinitionMatch[1]));
+    return definition
+      ? { status: 200, body: definition }
+      : { status: 404, body: { ok: false, error: { code: 'not_found', message: 'KPI definition not found' } } };
+  }
+  if (method === 'POST' && path === '/kpis/definitions/draft-requests') {
+    const input = isRecord(body) ? body : {};
+    try {
+      return {
+        status: 202,
+        body: platform.kpiPlatform.createDefinitionDraft({
+          kpiId: String(input.kpiId ?? `kpi-custom-${Date.now().toString(36)}`),
+          domain: String(input.domain ?? 'system-health') as KPIArtifact['domain'],
+          name: String(input.name ?? 'Custom KPI'),
+          description: String(input.description ?? 'Draft KPI definition'),
+          metricType: String(input.metricType ?? 'score') as KPIArtifact['metricType'],
+          unit: String(input.unit ?? 'score'),
+          target: Number(input.target ?? 90),
+          ownerRole: String(input.ownerRole ?? actorRole ?? 'admin') as Role,
+          visibility: String(input.visibility ?? 'tenant-internal') as KPIArtifact['visibility'],
+          approvalSensitivity: String(input.approvalSensitivity ?? 'approval-visible') as KPIArtifact['approvalSensitivity'],
+          calculationMethod: String(input.calculationMethod ?? 'Draft KPI calculation from event projections.'),
+          refreshCadence: String(input.refreshCadence ?? '5m'),
+          sourceEvents: Array.isArray(input.sourceEvents) ? input.sourceEvents.map(String) : ['platform.health.checked'],
+          sourceEntities: Array.isArray(input.sourceEntities)
+            ? input.sourceEntities.filter(isRecord).map((entity) => ({ entityType: String(entity.entityType), entityId: String(entity.entityId) }))
+            : [{ entityType: 'platform-health', entityId: 'trackmind-api' }],
+          requestedBy: String(input.requestedBy ?? 'admin'),
+          reason: String(input.reason ?? 'KPI definition draft request'),
+          evidence: Array.isArray(input.evidence) ? input.evidence.map(String) : ['kpi-definition-draft'],
+        }, { tenantId, organizationId, racetrackId }),
+      };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: (error as Error).message } } };
+    }
+  }
+  if (method === 'GET' && path === '/kpis/thresholds') {
+    return { status: 200, body: platform.kpiPlatform.listThresholds({ tenantId, organizationId, racetrackId }) };
+  }
+  if (method === 'POST' && path === '/kpis/thresholds/draft-requests') {
+    const input = isRecord(body) ? body : {};
+    try {
+      const result = platform.kpiPlatform.createThresholdDraft({
+        kpiId: String(input.kpiId),
+        warning: input.warning != null ? Number(input.warning) : undefined,
+        critical: input.critical != null ? Number(input.critical) : undefined,
+        targetDirection: String(input.targetDirection ?? 'above') as KPIArtifact['threshold']['targetDirection'],
+        description: String(input.description ?? 'Threshold change draft'),
+        requestedBy: String(input.requestedBy ?? 'admin'),
+        reason: String(input.reason ?? 'KPI threshold change request'),
+        evidence: Array.isArray(input.evidence) ? input.evidence.map(String) : ['kpi-threshold-draft'],
+      }, { tenantId, organizationId, racetrackId }, state.approvalService);
+      recalculateAndPersistKpis(state, platform);
+      return { status: 202, body: result };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: (error as Error).message } } };
+    }
+  }
+  if (method === 'GET' && path === '/kpis/sources') {
+    const workspace = state.kpis as { kpis?: KPIArtifact[] };
+    return { status: 200, body: platform.kpiPlatform.consolidatedSources(workspace.kpis ?? []) };
   }
   if (method === 'GET' && path === '/platform/domain-ownership') {
     return { status: 200, body: buildDomainOwnershipRegistry((state.kpis as { kpis?: KPIArtifact[] }).kpis ?? []) };
@@ -270,31 +445,61 @@ export function handlePlatformRequest(
     };
   }
   if (method === 'GET' && path === '/analytics/workspace') {
-    const kpis = (state.kpis as { kpis?: KPIArtifact[] }).kpis ?? [];
-    const executive = buildExecutiveScorecard(kpis);
-    return { status: 200, body: createAnalyticsWorkspace([], executive, kpis) };
+    const calculated = recalculateAndPersistKpis(state, platform);
+    const executive = buildExecutiveScorecard(calculated);
+    const kpiTrends = buildKpiTrendsFromArtifacts(calculated);
+    const federationAggregation = federationKpiAggregation(state.federation as unknown as FederationWorkspaceDto);
+    return { status: 200, body: createAnalyticsWorkspace(kpiTrends, executive, calculated, federationAggregation) };
   }
   if (method === 'GET' && path === '/race-operations/paddock') {
     return { status: 200, body: createPaddockOperationsWorkspace(tenantId, racetrackId) };
   }
   if (method === 'GET' && path === '/race-operations/schedule') {
-    return { status: 200, body: createRaceScheduleWorkspace(tenantId, racetrackId) };
-  }
-  if (method === 'GET' && path === '/security-operations/zones/live') {
-    return {
-      status: 200,
-      body: {
-        generatedAt: new Date().toISOString(),
-        zones: [
-          { zoneId: 'zone-paddock', name: 'Paddock', occupancy: 42, status: 'nominal', lastEventAt: new Date().toISOString() },
-          { zoneId: 'zone-backstretch', name: 'Backstretch', occupancy: 18, status: 'watch', lastEventAt: new Date().toISOString() },
-        ],
-        mock: false,
-      },
-    };
+    return { status: 200, body: createRaceScheduleWorkspace({ tenantId, racetrackId }) };
   }
   if (method === 'GET' && path === '/incidents') {
     return { status: 200, body: platform.incidents.list() };
+  }
+  if (method === 'GET' && path === '/incidents/kpi-pack') {
+    return { status: 200, body: platform.incidents.computeSafetyKpiPack() };
+  }
+  const incidentTriageMatch = path.match(/^\/incidents\/([^/]+)\/triage$/);
+  if (method === 'POST' && incidentTriageMatch) {
+    const input = isRecord(body) ? body : {};
+    try {
+      const updated = platform.incidents.triage(decodeURIComponent(incidentTriageMatch[1]), {
+        severity: (input.severity as IncidentDto['severity']) ?? 'medium',
+        assignedTo: String(input.assignedTo ?? 'incident-commander'),
+        actor: String(input.actor ?? actorRole ?? 'security'),
+        note: input.note ? String(input.note) : undefined,
+      });
+      recalculateAndPersistKpis(state, platform);
+      return { status: 200, body: updated };
+    } catch {
+      return { status: 404, body: { ok: false, error: { code: 'not_found', message: 'Incident not found' } } };
+    }
+  }
+  const incidentReviewMatch = path.match(/^\/incidents\/([^/]+)\/post-incident-review$/);
+  if (method === 'POST' && incidentReviewMatch) {
+    const input = isRecord(body) ? body : {};
+    try {
+      const findings = Array.isArray(input.findings)
+        ? input.findings.filter(isRecord).map((finding) => ({
+            finding: String(finding.finding ?? ''),
+            severity: (finding.severity as IncidentDto['severity']) ?? 'medium',
+            owner: String(finding.owner ?? 'safety-officer'),
+          }))
+        : [{ finding: String(input.finding ?? 'Review completed'), severity: 'medium' as const, owner: String(input.owner ?? 'safety-officer') }];
+      const result = platform.incidents.submitPostIncidentReview(decodeURIComponent(incidentReviewMatch[1]), {
+        findings,
+        submittedBy: String(input.submittedBy ?? actorRole ?? 'safety-officer'),
+        evidence: Array.isArray(input.evidence) ? input.evidence.map(String) : undefined,
+      });
+      recalculateAndPersistKpis(state, platform);
+      return { status: 201, body: result };
+    } catch {
+      return { status: 404, body: { ok: false, error: { code: 'not_found', message: 'Incident not found' } } };
+    }
   }
   const incidentMatch = path.match(/^\/incidents\/([^/]+)$/);
   if (method === 'GET' && incidentMatch) {
@@ -303,30 +508,30 @@ export function handlePlatformRequest(
   }
   if (method === 'POST' && path === '/incidents') {
     const input = isRecord(body) ? body : {};
-    return {
-      status: 201,
-      body: platform.incidents.create({
-        tenantId: String(input.tenantId ?? tenantId),
-        racetrackId: String(input.racetrackId ?? racetrackId),
-        title: String(input.title ?? 'New incident'),
-        description: String(input.description ?? ''),
-        severity: (input.severity as 'low' | 'medium' | 'high' | 'critical') ?? 'medium',
-        status: 'reported',
-        category: (input.category as 'safety' | 'security' | 'facility' | 'equine' | 'operational') ?? 'operational',
-        reportedBy: String(input.reportedBy ?? 'operator'),
-      }),
-    };
+    const created = platform.incidents.create({
+      tenantId: String(input.tenantId ?? tenantId),
+      racetrackId: String(input.racetrackId ?? racetrackId),
+      title: String(input.title ?? 'New incident'),
+      description: String(input.description ?? ''),
+      severity: (input.severity as IncidentDto['severity']) ?? 'medium',
+      status: 'reported',
+      category: (input.category as IncidentDto['category']) ?? 'operational',
+      reportedBy: String(input.reportedBy ?? 'operator'),
+    });
+    recalculateAndPersistKpis(state, platform);
+    return { status: 201, body: created };
   }
   if (method === 'POST' && incidentMatch) {
     const input = isRecord(body) ? body : {};
     try {
       const updated = platform.incidents.update(decodeURIComponent(incidentMatch[1]), {
-        status: input.status as 'reported' | 'triaged' | 'responding' | 'resolved' | 'closed' | undefined,
-        severity: input.severity as 'low' | 'medium' | 'high' | 'critical' | undefined,
+        status: input.status as IncidentDto['status'] | undefined,
+        severity: input.severity as IncidentDto['severity'] | undefined,
         assignedTo: input.assignedTo ? String(input.assignedTo) : undefined,
         note: input.note ? String(input.note) : undefined,
         actor: input.actor ? String(input.actor) : undefined,
       });
+      recalculateAndPersistKpis(state, platform);
       return { status: 200, body: updated };
     } catch {
       return { status: 404, body: { ok: false, error: { code: 'not_found', message: 'Incident not found' } } };
@@ -334,6 +539,17 @@ export function handlePlatformRequest(
   }
   if (method === 'GET' && path === '/ai-governance/model-registry') {
     return { status: 200, body: createAIModelCardRegistry() };
+  }
+  if (method === 'GET' && path === '/ai-governance/model-cards') {
+    return { status: 200, body: createAIModelCardList() };
+  }
+  if (method === 'GET' && path === '/ai-governance/prompt-cards') {
+    return { status: 200, body: createAIPromptCardList() };
+  }
+  if (method === 'GET' && path === '/ai-governance/kpi-pack') {
+    const recommendations = state.aiControlPlane?.recommendations;
+    const recommendationCount = Array.isArray(recommendations) ? recommendations.length : 0;
+    return { status: 200, body: createAIGovernanceKpiPack(recommendationCount) };
   }
   if (method === 'POST' && path === '/ai-governance/model-registry/models') {
     const input = isRecord(body) ? body : {};
@@ -371,11 +587,14 @@ export function handlePlatformRequest(
     return result ? { status: 202, body: result } : { status: 404, body: { ok: false, error: { code: 'not_found', message: 'Provider not found' } } };
   }
   if (method === 'GET' && path === '/federation/kpi-aggregation') {
-    return { status: 200, body: federationKpiAggregation(state.federation as any) };
+    return { status: 200, body: federationKpiAggregation(state.federation as unknown as FederationWorkspaceDto) };
   }
   if (method === 'GET' && path === '/search/global') {
     const q = searchParams.get('q') ?? '';
     const equine = state.equine as { horse?: { horseId: string; name?: string } };
+    const recommendations = Array.isArray(state.aiControlPlane?.recommendations)
+      ? state.aiControlPlane.recommendations.filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      : [];
     return {
       status: 200,
       body: globalSearch(q, {
@@ -383,12 +602,28 @@ export function handlePlatformRequest(
         incidents: platform.incidents.list().map((i) => ({ id: i.id, title: i.title })),
         auditEvents: (state.auditEvents as AuditEventDto[]).map((e) => ({ id: e.id, type: e.type, action: e.action })),
         kpis: ((state.kpis as { kpis?: KPIArtifact[] }).kpis ?? []).map((k) => ({ kpiId: k.kpiId, label: k.name })),
+        twins: [{ id: 'twin:horse:horse-1', label: equine?.horse?.name ?? 'Horse Twin', twinType: 'horse' }],
+        recommendations: recommendations.map((item, index) => ({
+          id: String(item.id ?? `rec-${index + 1}`),
+          title: String(item.title ?? item.summary ?? 'AI recommendation'),
+        })),
       }),
     };
   }
   if (method === 'GET' && path === '/notifications/inbox') {
     const role = searchParams.get('role') ?? undefined;
     return { status: 200, body: notificationFramework.inbox(role ?? undefined) };
+  }
+  if (method === 'GET' && path === '/notifications/delivery-adapters') {
+    return {
+      status: 200,
+      body: {
+        generatedAt: new Date().toISOString(),
+        adapters: notificationFramework.deliveryAdapters(),
+        stats: notificationFramework.deliveryStats(),
+        mock: false,
+      },
+    };
   }
   if (method === 'POST' && path === '/notifications/acknowledge') {
     const id = isRecord(body) ? String(body.id ?? '') : '';

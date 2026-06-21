@@ -34,8 +34,11 @@ Platform wave handlers live in `apps/api/src/platform/` and are routed through `
 
 | Wave | Current Code | Runtime Routes | Tests | Remaining Gap |
 | --- | --- | --- | --- | --- |
-| 01 Foundation | `tenantService.ts`, `repository/index.ts` | `/platform/foundation`, `/organizations`, `/tenants`, `/racetracks`, `/platform/feature-flags/*` | `wave-implementation.test.mjs` | Production Postgres repository wiring |
+| 01 Foundation | `tenantService.ts`, `featureFlags.ts`, `repository/repositoryAdapter.ts`, `platformController.ts` | `GET/POST /platform/foundation`, `/platform/organizations`, `/platform/tenants`, `/platform/racetracks`, `/platform/feature-flags/evaluate`, `/platform/environment` (+ canonical `/organizations`, `/tenants`, `/racetracks`) | `wave-implementation.test.mjs` (wave 01 CRUD + evaluate + environment) | Production Postgres repository wiring; user management APIs (Wave 04) |
+| 02 Design System | `AppShell.tsx`, `CommandBar.tsx`, `NotificationCenter.tsx`, `DegradedStateBanner.tsx`, `SupportStatusBadge.tsx`, `kpi-strip.tsx`, `states.tsx` | Frontend shell only (no new API routes) | `wave-02-design-system.test.mjs`, `frontend-contracts.test.mjs` | Promote facade routes to live-api as backends mature |
 | 03 Routes | `routes.ts`, `paths.ts` | `/analytics`, `/fan-experience`, `/notifications` | `frontend-contracts.test.mjs` | Route coverage report for all GET contracts |
+| 07 KPI Platform | `kpiCalculationService.ts`, `kpiArtifacts.ts` | `/kpis`, `/kpis/recalculate`, `/kpis/{kpiId}/snapshots` | `governance-lineage.test.mjs` | Threshold-change approval workflow UI |
+| 08 Dashboards | `analyticsService.ts`, `platformController.ts` | `/analytics/workspace`, `/federation/kpi-aggregation`, `/kpis` | `wave-implementation.test.mjs`, `governance-lineage.test.mjs`, `frontend-contracts.test.mjs` | Predictive forecast charts; real-time dashboard SSE |
 | 05 Audit | `auditAdapter.ts` | `/audit/search` | `wave-implementation.test.mjs` | External WORM vault |
 | 09 Race Day | `paddockOperations.ts` | `/race-operations/paddock`, `/race-operations/schedule` | `wave-implementation.test.mjs` | Approval-gated race command UI flows |
 | 11 Incidents | `incidentService.ts` | `/incidents`, `/incidents/{id}` | `wave-implementation.test.mjs` | Real-time incident SSE timeline |
@@ -43,4 +46,5 @@ Platform wave handlers live in `apps/api/src/platform/` and are routed through `
 | 17 Finance | `financePlatform.ts` | `/finance/workspace` | `wave-implementation.test.mjs` | GL/settlement connectors |
 | 18 AI Governance | `aiRegistryService.ts` | `/ai-governance/model-registry` | `wave-implementation.test.mjs` | Prompt lineage API mutations |
 | 19 Data Hub | `dataHubAdapter.ts` | `/racing-data/providers/{id}/execute`, `/federation/kpi-aggregation` | `wave-implementation.test.mjs` | Live licensed provider pulls |
+| 15 Facilities | `facilitiesMaintenance.ts`, `facilitiesUtilitiesAdapter.ts`, `FacilitiesGeospatialMap.tsx`, `facilitiesKpiPack.ts` | `/facilities-maintenance/workspace`, `/map`, `/utilities`, `POST /maintenance-schedules`, `POST /incidents` | `facilities-maintenance.test.mjs`, `runtime-server.test.mjs` | Live SCADA/BMS integrations; durable incident store |
 | 20 Convergence | `globalSearchService.ts`, `notificationFramework.ts` | `/search/global`, `/notifications/inbox` | `wave-implementation.test.mjs` | Azure telemetry dashboards |

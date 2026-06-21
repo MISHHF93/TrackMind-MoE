@@ -6,68 +6,200 @@ import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { feedData, formatCents } from '../feedUtils';
 
-function financeFeed(results: WorkspaceDataResult[]) {
-  return feedData<Record<string, unknown>>(results, '/services/finance/ticketing');
+function formatUsd(amount: unknown): string {
+  if (typeof amount !== 'number') return '—';
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(amount);
 }
 
 export function TicketingPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
-  return <FinancePanels results={results} />;
-}
-
-export function FinancePanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
-  const platformFinance = feedData<Record<string, unknown>>(results, '/finance/workspace');
-  const data = financeFeed(results);
-  const tickets = extractArray<Record<string, unknown>>(data, 'tickets');
-  const payouts = extractArray<Record<string, unknown>>(data, 'payouts');
-  const platformPayouts = extractArray<Record<string, unknown>>(platformFinance, 'payouts');
-  const summary = data && typeof data.summary === 'object' ? data.summary as Record<string, unknown> : undefined;
-  const revenue = platformFinance?.revenue as Record<string, unknown> | undefined;
-  const budget = platformFinance?.budget as Record<string, unknown> | undefined;
+  const workspace = feedData<Record<string, unknown>>(results, '/fan-experience/workspace');
+  const capacity = feedData<Record<string, unknown>>(results, '/fan-experience/capacity');
+  const ticketInventory = (workspace?.ticketInventory ?? capacity?.ticketInventory ?? {}) as Record<string, unknown>;
+  const attendance = (workspace?.attendance ?? {}) as Record<string, unknown>;
+  const revenueLinkage = extractArray<Record<string, unknown>>(workspace, 'revenueLinkage');
+  const ticketingRevenue = revenueLinkage.find((link) => link.source === 'ticketing');
 
   return (
     <div className="space-y-4">
       <KpiStrip
         items={[
-          { id: 'revenue', label: 'Revenue (MTD)', value: revenue?.mtd != null ? `$${revenue.mtd}` : formatCents(summary?.grossTicketRevenueCents) },
-          { id: 'budget', label: 'Budget remaining', value: budget?.remaining != null ? `$${budget.remaining}` : '—' },
-          { id: 'active', label: 'Active tickets', value: String(summary?.activeTickets ?? tickets.length) },
-          { id: 'payouts', label: 'Protected payouts', value: String(platformPayouts.length || summary?.protectedPayouts || payouts.length) },
+          { id: 'sold', label: 'Tickets sold', value: String(ticketInventory.sold ?? '—') },
+          { id: 'available', label: 'Available', value: String(ticketInventory.available ?? '—') },
+          { id: 'held', label: 'Held', value: String(ticketInventory.held ?? '—') },
+          { id: 'attendance', label: 'Gate attendance', value: String(attendance.current ?? capacity?.current ?? '—') },
+          { id: 'revenue', label: 'Ticketing revenue today', value: ticketingRevenue?.amountToday != null ? formatUsd(ticketingRevenue.amountToday) : '—' },
         ]}
       />
       <div className="grid gap-4 xl:grid-cols-2">
-        <SectionPanel title="Ticket ledger">
+        <SectionPanel title="Ticket inventory" description="Inventory counts owned by fan experience operations, not finance workspace.">
           <RecordTable
             columns={[
-              { key: 'ticket', label: 'Ticket' },
-              { key: 'raceDay', label: 'Race day' },
-              { key: 'status', label: 'Status' },
-              { key: 'price', label: 'Price' },
+              { key: 'metric', label: 'Metric' },
+              { key: 'count', label: 'Count' },
             ]}
-            rows={mapRecords(tickets, (t) => ({
-              ticket: String(t.ticketId ?? t.id ?? '—'),
-              raceDay: String(t.raceDayId ?? '—'),
-              status: String(t.status ?? '—'),
-              price: formatCents(t.priceCents),
-            }))}
+            rows={[
+              { metric: 'Available', count: String(ticketInventory.available ?? '—') },
+              { metric: 'Sold', count: String(ticketInventory.sold ?? '—') },
+              { metric: 'Held', count: String(ticketInventory.held ?? '—') },
+            ]}
           />
         </SectionPanel>
-        <SectionPanel title="Payout review" description="Dual-control payout queue.">
+        <SectionPanel title="Venue capacity" description="Capacity utilization from attendance snapshots.">
           <RecordTable
             columns={[
-              { key: 'payout', label: 'Payout' },
-              { key: 'recipient', label: 'Recipient' },
-              { key: 'amount', label: 'Amount' },
-              { key: 'status', label: 'Status' },
+              { key: 'metric', label: 'Metric' },
+              { key: 'value', label: 'Value' },
             ]}
-            rows={mapRecords(payouts, (p) => ({
-              payout: String(p.payoutId ?? p.id ?? '—'),
-              recipient: String(p.recipientId ?? '—'),
-              amount: formatCents(p.amountCents),
-              status: String(p.status ?? '—'),
-            }))}
+            rows={[
+              { metric: 'Venue capacity', value: String(attendance.capacity ?? capacity?.capacity ?? '—') },
+              { metric: 'Current attendance', value: String(attendance.current ?? capacity?.current ?? '—') },
+              { metric: 'Utilization', value: attendance.utilizationPercent != null ? `${attendance.utilizationPercent}%` : capacity?.utilizationPercent != null ? `${capacity.utilizationPercent}%` : '—' },
+            ]}
           />
         </SectionPanel>
       </div>
+    </div>
+  );
+}
+
+export function FinancePanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+  const workspace = feedData<Record<string, unknown>>(results, '/finance/workspace');
+  const dashboard = workspace?.dashboard as Record<string, unknown> | undefined;
+  const kpiPanels = extractArray<Record<string, unknown>>(dashboard, 'panels');
+  const revenue = workspace?.revenue as Record<string, unknown> | undefined;
+  const expenses = workspace?.expenses as Record<string, unknown> | undefined;
+  const budget = workspace?.budget as Record<string, unknown> | undefined;
+  const reconciliation = workspace?.reconciliation as Record<string, unknown> | undefined;
+  const guardrails = workspace?.guardrails as Record<string, unknown> | undefined;
+  const purses = extractArray<Record<string, unknown>>(workspace, 'purses');
+  const raceDayExpenses = extractArray<Record<string, unknown>>(workspace, 'raceDayExpenses');
+  const operationalCosts = extractArray<Record<string, unknown>>(workspace, 'operationalCosts');
+  const facilityCosts = extractArray<Record<string, unknown>>(workspace, 'facilityCosts');
+  const ticketRevenue = extractArray<Record<string, unknown>>(workspace, 'ticketRevenue');
+  const hospitalityRevenue = extractArray<Record<string, unknown>>(workspace, 'hospitalityRevenue');
+  const payouts = extractArray<Record<string, unknown>>(workspace, 'payouts');
+  const auditTrail = extractArray<Record<string, unknown>>(workspace, 'auditTrail');
+
+  return (
+    <div className="space-y-4">
+      <KpiStrip
+        items={[
+          { id: 'revenue-today', label: 'Revenue today', value: formatUsd(revenue?.today), detail: `MTD ${formatUsd(revenue?.mtd)}` },
+          { id: 'expenses-today', label: 'Expenses today', value: formatUsd(expenses?.today), detail: `MTD ${formatUsd(expenses?.mtd)}` },
+          { id: 'budget', label: 'Budget remaining', value: formatUsd(budget?.remaining), detail: `${formatUsd(budget?.spent)} spent of ${formatUsd(budget?.allocated)}` },
+          { id: 'readiness', label: 'Finance readiness', value: dashboard?.readinessScore != null ? String(dashboard.readinessScore) : '—', status: Number(dashboard?.readinessScore ?? 100) >= 85 ? 'nominal' : 'warning' },
+        ]}
+      />
+      <SectionPanel title="Financial KPI pack" description="Revenue, expense, budget, purse, and reconciliation metrics with audit linkage.">
+        <RecordTable
+          columns={[
+            { key: 'kpi', label: 'KPI' },
+            { key: 'value', label: 'Value' },
+            { key: 'target', label: 'Target' },
+            { key: 'status', label: 'Status' },
+            { key: 'trend', label: 'Trend' },
+          ]}
+          rows={mapRecords(kpiPanels, (panel) => ({
+            kpi: String(panel.name ?? panel.kpiId ?? '—'),
+            value: `${panel.value ?? '—'} ${panel.unit ?? ''}`.trim(),
+            target: String(panel.target ?? '—'),
+            status: String(panel.status ?? '—'),
+            trend: String(panel.trend ?? '—'),
+          }))}
+        />
+      </SectionPanel>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionPanel title="Revenue & settlement" description="Ticket and hospitality revenue read models linked to fan experience.">
+          <RecordTable
+            columns={[
+              { key: 'source', label: 'Source' },
+              { key: 'label', label: 'Label' },
+              { key: 'net', label: 'Net' },
+              { key: 'status', label: 'Linked' },
+            ]}
+            rows={mapRecords([...ticketRevenue, ...hospitalityRevenue], (entry) => ({
+              source: String(entry.source ?? entry.packageName ?? 'hospitality'),
+              label: String(entry.label ?? entry.packageName ?? '—'),
+              net: formatUsd(entry.netAmount),
+              status: entry.fanExperienceReference ? 'fan-experience' : '—',
+            }))}
+          />
+        </SectionPanel>
+        <SectionPanel title="Budget tracking" description="Allocated budget vs month-to-date spend.">
+          <RecordTable
+            columns={[
+              { key: 'metric', label: 'Metric' },
+              { key: 'amount', label: 'Amount' },
+            ]}
+            rows={[
+              { metric: 'Allocated', amount: formatUsd(budget?.allocated) },
+              { metric: 'Spent (MTD)', amount: formatUsd(budget?.spent) },
+              { metric: 'Remaining', amount: formatUsd(budget?.remaining) },
+              { metric: 'Utilization', amount: dashboard?.budgetUtilizationPercent != null ? `${dashboard.budgetUtilizationPercent}%` : '—' },
+              { metric: 'Reconciliation matched', amount: String(reconciliation?.matched ?? '—') },
+              { metric: 'Reconciliation exceptions', amount: String(reconciliation?.exceptions ?? '—') },
+            ]}
+          />
+        </SectionPanel>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionPanel title="Race-day & operational expenses">
+          <RecordTable
+            columns={[
+              { key: 'category', label: 'Category' },
+              { key: 'label', label: 'Label' },
+              { key: 'amount', label: 'Amount' },
+              { key: 'status', label: 'Status' },
+            ]}
+            rows={mapRecords([...raceDayExpenses, ...operationalCosts, ...facilityCosts], (entry) => ({
+              category: String(entry.category ?? entry.costCenter ?? entry.facilityName ?? 'facility'),
+              label: String(entry.label ?? '—'),
+              amount: formatUsd(entry.amount),
+              status: String(entry.status ?? '—'),
+            }))}
+          />
+        </SectionPanel>
+        <SectionPanel title="Payout governance" description={String(guardrails?.guardrailStatement ?? 'Approval-governed purse releases and payouts.')}>
+          <RecordTable
+            columns={[
+              { key: 'type', label: 'Type' },
+              { key: 'reference', label: 'Reference' },
+              { key: 'amount', label: 'Amount' },
+              { key: 'status', label: 'Status' },
+            ]}
+            rows={mapRecords(
+              [
+                ...purses.map((purse) => ({ type: 'purse', reference: purse.raceId, amount: purse.allocatedAmount, status: purse.status })),
+                ...payouts.map((payout) => ({ type: 'payout', reference: payout.id, amount: payout.amount, status: payout.status })),
+              ],
+              (entry) => ({
+                type: String(entry.type ?? '—'),
+                reference: String(entry.reference ?? '—'),
+                amount: formatUsd(entry.amount),
+                status: String(entry.status ?? '—'),
+              }),
+            )}
+          />
+        </SectionPanel>
+      </div>
+      <SectionPanel title="Finance audit trail" description="Hash-chained financial mutations with approval evidence.">
+        <RecordTable
+          columns={[
+            { key: 'time', label: 'Time' },
+            { key: 'action', label: 'Action' },
+            { key: 'actor', label: 'Actor' },
+            { key: 'summary', label: 'Summary' },
+            { key: 'hash', label: 'Hash' },
+          ]}
+          rows={mapRecords(auditTrail, (record) => ({
+            time: String(record.timestamp ?? '—'),
+            action: String(record.action ?? '—'),
+            actor: String(record.actor ?? '—'),
+            summary: String(record.changeSummary ?? '—'),
+            hash: String(record.hash ?? '—').slice(0, 12),
+          }), 12)}
+        />
+      </SectionPanel>
     </div>
   );
 }
@@ -168,10 +300,12 @@ export function FederationPanels({ results }: { results: WorkspaceDataResult[] }
 
 export function DataHubPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
   const data = feedData<Record<string, unknown>>(results, '/racing-data');
+  const entityResolution = feedData<Record<string, unknown>>(results, '/racing-data/entity-resolution');
   const providers = extractArray<Record<string, unknown>>(data, 'providers');
   const jobs = extractArray<Record<string, unknown>>(data, 'ingestionJobs');
   const quality = extractArray<Record<string, unknown>>(data, 'qualityReports');
   const resolution = extractArray<Record<string, unknown>>(data, 'entityResolutionQueue');
+  const clusters = resolution.length > 0 ? resolution : extractArray<Record<string, unknown>>(entityResolution, 'clusters');
 
   return (
     <div className="space-y-4">
@@ -180,7 +314,7 @@ export function DataHubPanels({ results }: { results: WorkspaceDataResult[] }): 
           { id: 'providers', label: 'Providers', value: String(providers.length) },
           { id: 'jobs', label: 'Ingestion jobs', value: String(jobs.length) },
           { id: 'quality', label: 'Quality reports', value: String(quality.length) },
-          { id: 'resolution', label: 'Resolution queue', value: String(resolution.length) },
+          { id: 'resolution', label: 'Resolution queue', value: String(clusters.length) },
         ]}
       />
       <div className="grid gap-4 xl:grid-cols-2">
@@ -213,18 +347,42 @@ export function DataHubPanels({ results }: { results: WorkspaceDataResult[] }): 
           />
         </SectionPanel>
       </div>
-      <SectionPanel title="Entity resolution & quality">
+      <SectionPanel title="Entity resolution queue" description="Canonical identity clusters with confidence and review posture. Direct merges remain approval-gated.">
         <RecordTable
           columns={[
-            { key: 'item', label: 'Item' },
+            { key: 'entity', label: 'Entity' },
             { key: 'type', label: 'Type' },
+            { key: 'confidence', label: 'Confidence' },
+            { key: 'decision', label: 'Decision' },
             { key: 'status', label: 'Status' },
           ]}
-          rows={mapRecords([...resolution, ...quality], (r) => ({
-            item: String(r.id ?? r.reportId ?? r.entityId ?? '—'),
-            type: String(r.type ?? (r.checks ? 'quality' : 'resolution')),
-            status: String(r.status ?? r.overallStatus ?? '—'),
+          rows={mapRecords(clusters, (cluster) => ({
+            entity: String(cluster.canonicalId ?? cluster.resolutionId ?? cluster.entityId ?? '—'),
+            type: String(cluster.entityType ?? '—'),
+            confidence: cluster.confidence != null || cluster.matchConfidence != null
+              ? `${Math.round(Number(cluster.confidence ?? cluster.matchConfidence) * 100)}%`
+              : '—',
+            decision: String(cluster.decision ?? (cluster.reviewRequired ? 'review-required' : '—')),
+            status: String(cluster.status ?? '—'),
           }))}
+          emptyLabel="No entity resolution candidates in queue."
+        />
+      </SectionPanel>
+      <SectionPanel title="Data quality reports">
+        <RecordTable
+          columns={[
+            { key: 'report', label: 'Report' },
+            { key: 'provider', label: 'Provider' },
+            { key: 'score', label: 'Score' },
+            { key: 'status', label: 'Status' },
+          ]}
+          rows={mapRecords(quality, (report) => ({
+            report: String(report.reportId ?? report.id ?? '—'),
+            provider: String(report.providerId ?? '—'),
+            score: report.score != null ? String(report.score) : '—',
+            status: String(report.status ?? report.overallStatus ?? '—'),
+          }))}
+          emptyLabel="No quality reports returned."
         />
       </SectionPanel>
     </div>

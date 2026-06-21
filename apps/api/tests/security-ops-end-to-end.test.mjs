@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ImmutableAuditLog, RacetrackAssetRegistryService, SecurityOperationsService, UniversalEventBus } from '../dist/index.js';
+import { ImmutableAuditLog, RacetrackAssetRegistryService, SecurityOperationsService, UniversalEventBus, createSeededSecurityOperationsService } from '../dist/index.js';
 
 const fullActor = { id: 'sec-commander', roles: ['security'], tenantId: 'trackmind', human: true, permissions: ['security:read','security:sensitive-read','security:manage','security:investigate'] };
 
@@ -95,5 +95,57 @@ test('camera assets sync to registry with shared audit evidence', async () => {
   assert.ok(links.length >= 2);
   assert.ok(registry.query({ domain: 'security' }, { id: 'asset-reader', tenantId: 'trackmind', scopes: ['assets:read'] }).assets.some((asset) => asset.assetType === 'SecurityCamera'));
   assert.ok(auditLog.all().some((record) => record.type === 'security-event' && record.payload.action === 'security.asset.synced'));
+});
+
+test('wave 14 live zones, readiness endpoints, webhook adapter, and KPI pack', () => {
+  const service = createSeededSecurityOperationsService(() => '2026-06-14T12:00:00.000Z');
+  const actor = { id: 'sec-analyst', roles: ['security'], tenantId: 'trackmind', human: true, permissions: ['security:read', 'security:manage'] };
+
+  const zonesLive = service.getZonesLive(actor);
+  assert.equal(zonesLive.mock, false);
+  assert.ok(zonesLive.zones.some((zone) => zone.zoneId === 'zone-backstretch-medication' && zone.status === 'critical'));
+  assert.ok(zonesLive.zones.some((zone) => zone.zoneId === 'zone-paddock'));
+
+  const cameraReadiness = service.getCameraReadiness(actor);
+  assert.equal(cameraReadiness.items.length, 3);
+  assert.equal(cameraReadiness.blocked, 1);
+  assert.ok(cameraReadiness.score >= 0 && cameraReadiness.score <= 100);
+
+  const sensorReadiness = service.getSensorReadiness(actor);
+  assert.equal(sensorReadiness.items.length, 3);
+  assert.equal(sensorReadiness.watch, 1);
+
+  const webhook = service.ingestAccessWebhook(actor, {
+    adapterId: 'vendor-access-1',
+    zoneId: 'zone-paddock',
+    credentialId: 'cred-webhook-1',
+    personDisplayName: 'Vendor C',
+    decision: 'denied',
+    reason: 'after-hours access',
+    occurredAt: '2026-06-14T12:05:00.000Z',
+    signatureValid: true,
+  });
+  assert.equal(webhook.accepted, true);
+  assert.match(webhook.eventId, /evt-security-access/);
+
+  const kpiPack = service.computeSecurityKpiPack();
+  assert.equal(kpiPack.mock, false);
+  assert.ok(kpiPack.kpis.some((kpi) => kpi.kpiId === 'kpi-security'));
+  assert.ok(kpiPack.coveragePercent >= 0);
+});
+
+test('webhook adapter rejects invalid signatures', () => {
+  const service = createSeededSecurityOperationsService(() => '2026-06-14T12:00:00.000Z');
+  const actor = { id: 'sec-analyst', roles: ['security'], permissions: ['security:manage'] };
+  assert.throws(() => service.ingestAccessWebhook(actor, {
+    adapterId: 'vendor-access-1',
+    zoneId: 'zone-paddock',
+    credentialId: 'cred-webhook-2',
+    personDisplayName: 'Vendor D',
+    decision: 'granted',
+    reason: 'invalid signature test',
+    occurredAt: '2026-06-14T12:06:00.000Z',
+    signatureValid: false,
+  }), /invalid webhook signature/);
 });
 

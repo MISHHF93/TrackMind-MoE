@@ -75,6 +75,7 @@ export interface StewardAdvisoryRecommendationDto {
   confidence?: number;
   evidenceIds: string[];
   ruleIds: string[];
+  linkedEvidenceRefs?: string[];
   officialRuling: false;
   advisoryOnly: true;
   createdAt: string;
@@ -87,6 +88,12 @@ export interface StewardRecommendationSupportDto {
   mayModifyOfficialResults: false;
   guardrailStatement: string;
   recommendations: StewardAdvisoryRecommendationDto[];
+}
+
+export interface StewardEvidenceListDto {
+  inquiryId: string;
+  evidenceReferences: StewardEvidenceReferenceDto[];
+  mock: false;
 }
 
 export interface StewardIntegrationSnapshotDto {

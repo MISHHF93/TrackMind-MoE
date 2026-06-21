@@ -1,5 +1,6 @@
 import { routeApiPathGroups } from '@/api/paths';
 import type { DomainRouteId, NavigationGroup } from '@/domain/support';
+import { gatedRouteModules } from '@/routes/routeModules';
 import { routes, type AppRoute } from '@/routes/routes';
 
 export const navigationGroups = [
@@ -115,6 +116,15 @@ export function validateRouteInventory(source: {
 
   if (routes.length !== source.panelRouteIds.length) {
     errors.push(`route count mismatch: routes.ts=${routes.length} panels=${source.panelRouteIds.length}`);
+  }
+
+  for (const [routeId, moduleKey] of Object.entries(gatedRouteModules)) {
+    if (!routeIds.has(routeId)) {
+      errors.push(`gated module references unknown route: ${routeId}`);
+    }
+    if (moduleKey !== routeId) {
+      errors.push(`gated module key mismatch for ${routeId}: expected ${routeId}, got ${moduleKey}`);
+    }
   }
 
   return errors;

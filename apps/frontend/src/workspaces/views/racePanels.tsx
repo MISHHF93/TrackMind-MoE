@@ -9,6 +9,7 @@ import { Button } from '@/design/components/button';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { feedData, numericField } from '../feedUtils';
+import { isRecord } from '@/lib/utils';
 import { GovernedActionDialog } from '@/features/approvals/GovernedActionDialog';
 import type { WorkspaceAction } from '@/design/components/workspace';
 
@@ -26,6 +27,24 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
   const startingGateOps = feedData<Record<string, unknown>>(results, '/starting-gate-operations/workspace');
   const schedule = feedData<Record<string, unknown>>(results, '/race-operations/schedule');
 
+  const paddockAssignments = extractArray<Record<string, unknown>>(paddock, 'assignments');
+  const paddockOpsAssignments = paddockAssignments.length
+    ? []
+    : extractArray<Record<string, unknown>>(paddockOps, 'assignments');
+  const gateReadiness = isRecord(paddock?.gateReadiness) ? paddock.gateReadiness as Record<string, unknown> : undefined;
+  const paddockTimeline = extractArray<Record<string, unknown>>(paddock, 'timeline');
+  const scheduleTimeline = extractArray<Record<string, unknown>>(schedule, 'timeline');
+  const raceTimeline = [...paddockTimeline, ...scheduleTimeline];
+  const gateIndicators = extractArray<Record<string, unknown>>(startingGate, 'raceReadinessIndicators');
+  const gateOpsIndicators = gateIndicators.length
+    ? []
+    : extractArray<Record<string, unknown>>(startingGateOps, 'raceReadinessIndicators');
+  const starterControls = extractArray<Record<string, unknown>>(startingGate, 'approvalControls');
+  const gateGuardrails = isRecord(startingGate?.guardrails) ? startingGate.guardrails as Record<string, unknown> : undefined;
+  const weatherObservation = isRecord(surface?.weatherObservation) ? surface.weatherObservation as Record<string, unknown> : undefined;
+  const surfaceStatusCards = extractArray<Record<string, unknown>>(surface, 'statusCards');
+  const primarySurfaceStatus = surfaceStatusCards[0];
+
   const cards = extractArray<Record<string, unknown>>(raceOffice, 'cards');
   const calendarMeets = extractArray<Record<string, unknown>>(calendar, 'meets');
   const raceCards = extractArray<Record<string, unknown>>(raceCardsWorkspace, 'raceCards');
@@ -36,6 +55,20 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
 
   const avgScore = numericField(readiness, 'averageScore') ?? numericField(readiness, 'readinessScore');
   const surfaceScore = numericField(surface, 'overallScore');
+  const raceCommandControls: WorkspaceAction[] = [
+    ...approvalControls,
+    ...starterControls.map((control) => ({
+      id: String(control.action ?? control.workflowId ?? 'starter-control'),
+      label: String(control.action ?? 'Starter workflow'),
+      detail: gateGuardrails?.guardrailStatement
+        ? String(gateGuardrails.guardrailStatement)
+        : 'Approval-governed starter workflow; automated race starts remain blocked.',
+      protectedAction: String(control.action ?? 'race-start'),
+      target: lifecycle[0]?.raceId ? String(lifecycle[0].raceId) : 'race-7',
+      approvalApi: 'controlled-actions' as const,
+      requiredRoles: ['admin', 'steward', 'starter'],
+    })),
+  ];
 
   return (
     <div className="space-y-4">
@@ -43,10 +76,53 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
         items={[
           { id: 'avg', label: 'Readiness score', value: avgScore != null ? `${avgScore}%` : '—', status: avgScore != null && avgScore >= 80 ? 'nominal' : 'warning' },
           { id: 'surface', label: 'Surface score', value: surfaceScore != null ? String(surfaceScore) : '—' },
+          { id: 'gate', label: 'Gate readiness', value: gateReadiness ? String(gateReadiness.status ?? '—') : '—', status: gateReadiness?.status === 'ready' ? 'nominal' : 'warning' },
+          { id: 'weather', label: 'Forecast rain', value: weatherObservation?.forecastRainMm != null ? `${weatherObservation.forecastRainMm}mm` : '—' },
           { id: 'races', label: 'Race cards', value: String(cards.length || raceCards.length) },
           { id: 'warnings', label: 'Warnings', value: String(warnings.length), status: warnings.length > 0 ? 'warning' : 'nominal' },
         ]}
       />
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionPanel title="Gate readiness" description="Paddock gate checks and starter race readiness indicators from live API feeds.">
+          <RecordTable
+            columns={[
+              { key: 'source', label: 'Source' },
+              { key: 'status', label: 'Status' },
+              { key: 'detail', label: 'Detail' },
+            ]}
+            rows={[
+              ...(gateReadiness
+                ? [{
+                    source: 'Paddock gate',
+                    status: String(gateReadiness.status ?? '—'),
+                    detail: gateReadiness.lastCheckAt ? `Last check ${String(gateReadiness.lastCheckAt)}` : '—',
+                  }]
+                : []),
+              ...mapRecords([...gateIndicators, ...gateOpsIndicators], (indicator) => ({
+                source: String(indicator.indicator ?? indicator.raceId ?? 'Gate'),
+                status: String(indicator.status ?? '—'),
+                detail: String(indicator.detail ?? indicator.value ?? '—'),
+              })),
+            ]}
+            emptyLabel="No gate readiness data returned from /race-operations/paddock or /race-operations/starting-gate."
+          />
+        </SectionPanel>
+        <SectionPanel title="Surface and weather" description="Track surface posture and weather awareness from /surface-intelligence/workspace.">
+          <RecordTable
+            columns={[
+              { key: 'metric', label: 'Metric' },
+              { key: 'value', label: 'Value' },
+              { key: 'status', label: 'Status' },
+            ]}
+            rows={[
+              { metric: 'Surface score', value: surfaceScore != null ? String(surfaceScore) : '—', status: surfaceScore != null && surfaceScore >= 80 ? 'nominal' : 'watch' },
+              { metric: 'Track status', value: String(primarySurfaceStatus?.label ?? primarySurfaceStatus?.status ?? '—'), status: String(primarySurfaceStatus?.status ?? '—') },
+              { metric: 'Forecast rain', value: weatherObservation?.forecastRainMm != null ? `${weatherObservation.forecastRainMm}mm` : '—', status: Number(weatherObservation?.forecastRainMm ?? 0) > 10 ? 'watch' : 'nominal' },
+              { metric: 'Wind', value: weatherObservation?.windMph != null ? `${weatherObservation.windMph} mph` : '—', status: 'nominal' },
+            ]}
+          />
+        </SectionPanel>
+      </div>
       <div className="grid gap-4 xl:grid-cols-2">
         <SectionPanel title="Racing calendar" description="Season meets and scheduling conflicts.">
           <RecordTable
@@ -112,12 +188,12 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
           />
         </SectionPanel>
       </div>
-      <SectionPanel title="Race command approvals" description="Backend-governed approval controls from the race office workspace.">
-        {approvalControls.length === 0 ? (
-          <p className="text-sm text-[var(--muted-foreground)]">No approval controls returned from race office.</p>
+      <SectionPanel title="Race command approvals" description="Backend-governed approval controls from race office and starter workflows.">
+        {raceCommandControls.length === 0 ? (
+          <p className="text-sm text-[var(--muted-foreground)]">No approval controls returned from race office or starting gate.</p>
         ) : (
           <ul className="space-y-2">
-            {approvalControls.map((control) => {
+            {raceCommandControls.map((control) => {
               const disabled = !roleCanUseAction(control, session.role);
               return (
                 <li key={control.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2">
@@ -174,10 +250,7 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
               { key: 'status', label: 'Status' },
             ]}
             rows={mapRecords(
-              [
-                ...extractArray<Record<string, unknown>>(paddock, 'assignments'),
-                ...extractArray<Record<string, unknown>>(paddockOps, 'assignments'),
-              ],
+              [...paddockAssignments, ...paddockOpsAssignments],
               (a) => ({
                 horse: String(a.horseName ?? a.horseId ?? '—'),
                 slot: String(a.paddockSlot ?? a.slot ?? '—'),
@@ -208,20 +281,37 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
           />
         </SectionPanel>
       </div>
-      <SectionPanel title="Race schedule" description="Post times and race-day timeline.">
-        <RecordTable
-          columns={[
-            { key: 'race', label: 'Race' },
-            { key: 'post', label: 'Post time' },
-            { key: 'status', label: 'Status' },
-          ]}
-          rows={mapRecords(extractArray(schedule, 'races'), (r) => ({
-            race: String(r.raceNumber ?? r.raceId ?? '—'),
-            post: String(r.postTime ?? '—'),
-            status: String(r.status ?? '—'),
-          }))}
-        />
-      </SectionPanel>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionPanel title="Race schedule" description="Post times from /race-operations/schedule.">
+          <RecordTable
+            columns={[
+              { key: 'race', label: 'Race' },
+              { key: 'post', label: 'Post time' },
+              { key: 'status', label: 'Status' },
+            ]}
+            rows={mapRecords(extractArray(schedule, 'races'), (r) => ({
+              race: String(r.raceNumber ?? r.raceId ?? '—'),
+              post: String(r.postTime ?? '—'),
+              status: String(r.status ?? '—'),
+            }))}
+          />
+        </SectionPanel>
+        <SectionPanel title="Race-day timeline" description="Merged paddock and schedule timeline from live race-day APIs.">
+          <RecordTable
+            columns={[
+              { key: 'time', label: 'Time' },
+              { key: 'event', label: 'Event' },
+              { key: 'status', label: 'Status' },
+            ]}
+            rows={mapRecords(raceTimeline, (entry) => ({
+              time: String(entry.at ?? '—'),
+              event: String(entry.label ?? '—'),
+              status: String(entry.status ?? '—'),
+            }))}
+            emptyLabel="No timeline events returned from schedule or paddock feeds."
+          />
+        </SectionPanel>
+      </div>
     </div>
   );
 }

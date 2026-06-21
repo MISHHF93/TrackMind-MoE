@@ -1,6 +1,8 @@
 import {
   createModelReadableKPIContext,
   hasPermission,
+  registerFacilitiesKpiPack,
+  registerSafetyKpiPack,
   type KPIDomain,
   type KPIArtifact,
   type KPIApprovalSensitivity,
@@ -30,6 +32,7 @@ export interface KPIVisibilityPrincipal {
 
 type KPIDefinitionSeed = {
   domain: KPIDomain;
+  metricSlug?: string;
   name: string;
   description: string;
   metricType: KPIMetricType;
@@ -62,11 +65,17 @@ const seeds: KPIDefinitionSeed[] = [
   seed('starting-gate-operations', 'Starting gate race readiness', 'Percentage of races with gate assignments, readiness checks, and approval-governed start workflows on file; no automated race starts.', 'percentage', 90, '%', 95, 'watch', 'insufficient-history', 'steward', 'approval-visible', 'race:request-start', ['starting-gate-operations.readiness.recorded', 'starting-gate-operations.race-start.approval-requested'], [{ entityType: 'starting-gate-operations', entityId: 'main-track' }]),
   seed('surface-intelligence', 'Track surface readiness score', 'Composite surface intelligence readiness from observations, condition history, inspections, maintenance events, and approval-governed operational workflows.', 'score', 78, 'score', 90, 'watch', 'insufficient-history', 'track-superintendent', 'approval-visible', 'track:readings', ['surface-intelligence.observation.recorded', 'surface-intelligence.inspection.recorded'], [{ entityType: 'surface-intelligence', entityId: 'main-track' }]),
   seed('equine-welfare', 'Equine welfare intelligence score', 'Composite welfare score from indicators, observations, alert pressure, retirement readiness, digital twin coverage, and advisory-only AI recommendation posture.', 'score', 86, 'score', 90, 'watch', 'insufficient-history', 'veterinarian', 'regulated-advisory-only', 'vet:review', ['equine-welfare.observation.recorded', 'equine-welfare.alert.raised', 'equine.profile.viewed'], [{ entityType: 'equine-welfare-intelligence', entityId: 'main-track' }], 'veterinary-restricted'),
+  seed('equine-intelligence', 'Equine eligibility readiness', 'Percentage of active horses passing eligibility rules without open compliance flags or unresolved withdrawal periods.', 'percentage', 82, '%', 95, 'watch', 'insufficient-history', 'racing-secretary', 'approval-visible', 'horse:scratch', ['equine.eligibility.viewed', 'equine.eligibility.updated', 'equine.profile.viewed'], [{ entityType: 'equine-intelligence', entityId: 'main-track' }]),
+  seed('equine-intelligence', 'Veterinary privacy audit coverage', 'Percentage of equine profile and veterinary mutations with hash-chained audit events and privacy scope metadata.', 'percentage', 94, '%', 100, 'watch', 'flat', 'veterinarian', 'regulated-advisory-only', 'vet:review', ['equine.veterinary.recorded', 'equine.profile.viewed'], [{ entityType: 'equine-intelligence', entityId: 'main-track' }], 'veterinary-restricted', 'privacy-audit-coverage'),
+  seed('equine-intelligence', 'Horse digital twin sync coverage', 'Percentage of equine profiles with primary digital twin references synced to the twin runtime.', 'percentage', 100, '%', 95, 'nominal', 'flat', 'compliance-officer', 'approval-visible', 'read:any', ['equine.profile.created', 'equine.digital-twin.synced'], [{ entityType: 'equine-intelligence', entityId: 'main-track' }], 'tenant-internal', 'twin-sync-coverage'),
   seed('safety-incidents', 'Open safety incident pressure', 'Count-style pressure score from security/emergency incident facade rows.', 'score', 42, 'pressure', 25, 'warning', 'up', 'security', 'approval-visible', 'incident:manage', ['incident.created', 'emergency.alert.raised'], [{ entityType: 'incident', entityId: 'incident:surface-review' }]),
   seed('stewarding', 'Steward evidence readiness', 'Readiness of steward inquiry evidence bundles before any human-only ruling.', 'score', 71, 'score', 90, 'watch', 'flat', 'steward', 'regulated-advisory-only', 'discipline:issue', ['steward.inquiry.opened', 'steward.approval.requested'], [{ entityType: 'inquiry', entityId: 'inq-race-7' }]),
   seed('compliance', 'Compliance control mapping readiness', 'Readiness score from mapped control library evidence, not a certification claim.', 'score', 68, 'score', 85, 'watch', 'flat', 'compliance-officer', 'approval-visible', 'compliance:audit', ['compliance.control.mapped'], [{ entityType: 'control-library', entityId: 'trackmind-control-library' }]),
+  seed('compliance', 'Open compliance findings', 'Count of open findings requiring corrective action across mapped controls.', 'count', 1, 'findings', 0, 'watch', 'flat', 'compliance-officer', 'approval-visible', 'compliance:audit', ['compliance.finding.opened'], [{ entityType: 'control-library', entityId: 'trackmind-control-library' }], 'tenant-internal', 'open-findings'),
+  seed('compliance', 'Overdue corrective actions', 'Corrective actions past due date in the compliance register.', 'count', 0, 'actions', 0, 'nominal', 'flat', 'compliance-officer', 'approval-visible', 'compliance:audit', ['compliance.corrective-action.created'], [{ entityType: 'control-library', entityId: 'trackmind-control-library' }], 'tenant-internal', 'overdue-actions'),
+  seed('compliance', 'Sealed evidence package coverage', 'Percentage of evidence packages sealed for internal review.', 'percentage', 100, '%', 90, 'nominal', 'flat', 'compliance-officer', 'approval-visible', 'compliance:audit', ['compliance.evidence.collected'], [{ entityType: 'evidence-package', entityId: 'pkg-accreditation-2026-q2' }], 'tenant-internal', 'evidence-package-coverage'),
+  seed('compliance', 'Accreditation readiness score', 'Internal accreditation readiness score; not external certification.', 'score', 72, 'score', 85, 'watch', 'flat', 'compliance-officer', 'approval-visible', 'compliance:audit', ['compliance.accreditation.readiness.updated'], [{ entityType: 'accreditation-program', entityId: 'program-integrated-accreditation-2026' }], 'tenant-internal', 'accreditation-readiness'),
   seed('security', 'Security operations coverage', 'Operational coverage from restricted zones, cameras, sensors, and incident facade records.', 'percentage', 74, '%', 95, 'watch', 'down', 'security', 'approval-visible', 'security:manage', ['security.zone.observed', 'camera.health.updated'], [{ entityType: 'security-zone', entityId: 'paddock-restricted-zone' }]),
-  seed('facilities', 'Facilities readiness metadata', 'Mock/facade readiness KPI for facilities maintenance; no durable work-order DB is claimed.', 'readiness', 63, 'score', 85, 'readiness-only', 'insufficient-history', 'track-superintendent', 'approval-visible', 'track:readings', ['facility.readiness.facade.generated'], [{ entityType: 'facility', entityId: 'facilities-workspace' }]),
   seed('ticketing', 'Ticketing contract readiness', 'Readiness-only KPI because no dedicated ticketing DB or shared DTO exists.', 'readiness', 18, 'score', 80, 'readiness-only', 'insufficient-history', 'ticketing-manager', 'none', 'ticketing:manage', ['ticketing.readiness.documented'], [{ entityType: 'workspace', entityId: 'ticketing' }]),
   seed('finance', 'Racing finance readiness score', 'Composite finance score from revenue, race-day and operational expenses, facility costs, purse obligations, reconciliation exceptions, and approval-governed payout posture.', 'score', 84, 'score', 90, 'watch', 'insufficient-history', 'finance', 'regulated-advisory-only', 'finance:payout', ['racing-finance.ticket-revenue.recorded', 'racing-finance.payout.requested', 'racing-finance.purse.allocated'], [{ entityType: 'racing-finance', entityId: 'main-track' }]),
   seed('fan-experience', 'Fan experience readiness score', 'Composite fan experience score from attendance utilization, guest service resolution, hospitality readiness, premium seating occupancy, event satisfaction, and revenue linkage.', 'score', 82, 'score', 88, 'watch', 'insufficient-history', 'ticketing-manager', 'approval-visible', 'ticketing:manage', ['fan-experience.attendance.recorded', 'fan-experience.satisfaction.recorded', 'fan-experience.guest-service.created'], [{ entityType: 'fan-experience', entityId: 'main-track' }]),
@@ -98,9 +107,11 @@ function seed(
   sourceEvents: string[],
   sourceEntities: Array<{ entityType: string; entityId: string }>,
   visibility: KPIVisibility = 'tenant-internal',
+  metricSlug?: string,
 ): KPIDefinitionSeed {
   return {
     domain,
+    metricSlug,
     name,
     description,
     metricType,
@@ -130,7 +141,10 @@ export function createKPIWorkspace(input: KPIWorkspaceInput): KPIWorkspaceDto {
   const tenantId = input.tenantId ?? 'trackmind';
   const organizationId = input.organizationId ?? 'org-trackmind-network';
   const racetrackId = input.racetrackId ?? 'main-track';
-  const kpis = seeds.map((definition, index) => toArtifact(definition, generatedAt, tenantId, organizationId, racetrackId, index + 1));
+  const baseKpis = seeds.map((definition, index) => toArtifact(definition, generatedAt, tenantId, organizationId, racetrackId, index + 1));
+  const facilitiesPack = registerFacilitiesKpiPack({ generatedAt, tenantId, organizationId, racetrackId });
+  const safetyPack = registerSafetyKpiPack({ generatedAt, tenantId, organizationId, racetrackId });
+  const kpis = [...baseKpis, ...facilitiesPack, ...safetyPack];
   return {
     generatedAt,
     tenantId,
@@ -167,7 +181,7 @@ export function filterKPIWorkspace(workspace: KPIWorkspaceDto, principal: KPIVis
 }
 
 function toArtifact(definition: KPIDefinitionSeed, generatedAt: string, tenantId: string, organizationId: string, racetrackId: string, ordinal: number): KPIArtifact {
-  const kpiId = `kpi-${definition.domain}`;
+  const kpiId = definition.metricSlug ? `kpi-${definition.domain}-${definition.metricSlug}` : `kpi-${definition.domain}`;
   const calculationRunId = `calc-${kpiId}-v1`;
   const auditReference = {
     auditEventIds: [`audit-${kpiId}-definition`, `audit-${kpiId}-calculation`],

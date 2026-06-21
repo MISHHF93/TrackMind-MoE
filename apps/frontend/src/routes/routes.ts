@@ -1,5 +1,6 @@
 import { backendContractPathsForRoute } from '@/api/paths';
 import type { RouteSupportMetadata } from '@/domain/support';
+import { routeModuleKey } from '@/routes/routeModules';
 
 const routePermissions = {
   dashboard: 'read:any',
@@ -193,7 +194,7 @@ export const routes = [
     requiredPermission: routePermissions.ticketing,
     requiredRoles: ['admin', 'ticketing-manager', 'finance'],
     supportStatus: 'live-api',
-    dataSource: 'Ticket state and payment-control boundaries.',
+    dataSource: 'Ticket inventory, venue capacity, and attendance from fan experience APIs.',
     backendPaths: backendContractPathsForRoute('ticketing'),
   },
   {
@@ -205,7 +206,7 @@ export const routes = [
     requiredPermission: routePermissions.finance,
     requiredRoles: ['admin', 'finance'],
     supportStatus: 'live-api',
-    dataSource: 'Payout records and finance controls.',
+    dataSource: 'Revenue, expense, budget, and approval-governed payout controls.',
     backendPaths: backendContractPathsForRoute('finance'),
   },
   {
@@ -317,4 +318,8 @@ export { backendContractPathsForRoute } from '@/api/paths';
 export function routeForPathname(pathname: string): AppRoute | undefined {
   const normalized = pathname === '/' ? '/dashboard' : pathname.replace(/\/+$/, '') || '/dashboard';
   return routes.find((route) => route.path === normalized);
+}
+
+export function moduleKeyForRoute(routeId: AppRoute['id']): string | undefined {
+  return routeModuleKey(routeId);
 }

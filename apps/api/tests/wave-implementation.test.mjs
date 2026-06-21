@@ -22,6 +22,38 @@ test('wave 01 foundation platform endpoints', async () => {
   const env = await handleApiRequest('GET', '/api/v1/platform/environment', undefined, state, adminHeaders);
   assert.equal(env.status, 200);
   assert.equal(env.body.persistenceMode, 'in-memory');
+
+  const orgList = await handleApiRequest('GET', '/api/v1/platform/organizations', undefined, state, adminHeaders);
+  assert.equal(orgList.status, 200);
+  assert.ok(orgList.body.length >= 1);
+
+  const orgCreate = await handleApiRequest('POST', '/api/v1/platform/organizations', { name: 'Wave 01 Org' }, state, adminHeaders);
+  assert.equal(orgCreate.status, 201);
+  assert.equal(orgCreate.body.name, 'Wave 01 Org');
+
+  const tenantCreate = await handleApiRequest('POST', '/api/v1/platform/tenants', {
+    organizationId: orgCreate.body.id,
+    name: 'Wave 01 Tenant',
+  }, state, adminHeaders);
+  assert.equal(tenantCreate.status, 201);
+  assert.equal(tenantCreate.body.organizationId, orgCreate.body.id);
+
+  const trackCreate = await handleApiRequest('POST', '/api/v1/platform/racetracks', {
+    tenantId: tenantCreate.body.id,
+    organizationId: orgCreate.body.id,
+    name: 'Wave 01 Track',
+    jurisdiction: 'US-CA',
+  }, state, adminHeaders);
+  assert.equal(trackCreate.status, 201);
+  assert.equal(trackCreate.body.tenantId, tenantCreate.body.id);
+
+  const tenants = await handleApiRequest('GET', '/api/v1/platform/tenants', undefined, state, adminHeaders);
+  assert.equal(tenants.status, 200);
+  assert.ok(tenants.body.some((t) => t.id === tenantCreate.body.id));
+
+  const tracks = await handleApiRequest('GET', '/api/v1/platform/racetracks', undefined, state, adminHeaders);
+  assert.equal(tracks.status, 200);
+  assert.ok(tracks.body.some((t) => t.id === trackCreate.body.id));
 });
 
 test('wave 04 identity and wave 05 audit search', async () => {
@@ -29,6 +61,14 @@ test('wave 04 identity and wave 05 audit search', async () => {
   const identity = await handleApiRequest('GET', '/api/v1/identity/workspace', undefined, state, adminHeaders);
   assert.equal(identity.status, 200);
   assert.ok(identity.body.users.length > 0);
+
+  const users = await handleApiRequest('GET', '/api/v1/platform/users', undefined, state, adminHeaders);
+  assert.equal(users.status, 200);
+  assert.ok(users.body.length > 0);
+
+  const roles = await handleApiRequest('GET', '/api/v1/platform/roles', undefined, state, adminHeaders);
+  assert.equal(roles.status, 200);
+  assert.ok(roles.body.length > 0);
 
   const search = await handleApiRequest('GET', '/api/v1/audit/search?domain=api', undefined, state, adminHeaders);
   assert.equal(search.status, 200);
@@ -48,6 +88,49 @@ test('wave 09 paddock and schedule plus wave 11 incidents', async () => {
   const incidents = await handleApiRequest('GET', '/api/v1/incidents', undefined, state, adminHeaders);
   assert.equal(incidents.status, 200);
   assert.ok(incidents.body.length > 0);
+
+  const incident = await handleApiRequest('GET', '/api/v1/incidents/inc-1', undefined, state, adminHeaders);
+  assert.equal(incident.status, 200);
+  assert.ok(incident.body.timeline.length > 0);
+  assert.ok(incident.body.auditIds.length > 0);
+
+  const created = await handleApiRequest('POST', '/api/v1/incidents', {
+    title: 'Surface washout near rail',
+    description: 'Standing water reported on backstretch.',
+    severity: 'high',
+    category: 'safety',
+    reportedBy: 'track-superintendent',
+  }, state, adminHeaders);
+  assert.equal(created.status, 201);
+  assert.equal(created.body.status, 'reported');
+  assert.ok(created.body.auditIds.length > 0);
+
+  const triaged = await handleApiRequest('POST', `/api/v1/incidents/${created.body.id}/triage`, {
+    severity: 'high',
+    assignedTo: 'incident-commander',
+    actor: 'security-officer',
+  }, state, adminHeaders);
+  assert.equal(triaged.status, 200);
+  assert.equal(triaged.body.status, 'triaged');
+
+  const resolved = await handleApiRequest('POST', `/api/v1/incidents/${created.body.id}`, {
+    status: 'resolved',
+    actor: 'incident-commander',
+  }, state, adminHeaders);
+  assert.equal(resolved.status, 200);
+  assert.equal(resolved.body.status, 'resolved');
+
+  const review = await handleApiRequest('POST', `/api/v1/incidents/${created.body.id}/post-incident-review`, {
+    submittedBy: 'safety-officer',
+    findings: [{ finding: 'Drainage response delayed', severity: 'medium', owner: 'facilities' }],
+  }, state, adminHeaders);
+  assert.equal(review.status, 201);
+  assert.ok(review.body.review.correctiveActions.length > 0);
+
+  const kpiPack = await handleApiRequest('GET', '/api/v1/incidents/kpi-pack', undefined, state, adminHeaders);
+  assert.equal(kpiPack.status, 200);
+  assert.equal(kpiPack.body.kpiPackId, 'safety-kpi-pack-v1');
+  assert.ok(kpiPack.body.kpis.length >= 5);
 });
 
 test('wave 16 fan experience and wave 17 finance workspace', async () => {
@@ -63,6 +146,20 @@ test('wave 16 fan experience and wave 17 finance workspace', async () => {
   assert.equal(finance.body.schemaVersion, 'trackmind.racing-finance-operations.v1');
   assert.ok(finance.body.revenue);
   assert.ok(finance.body.dashboard.panels.length >= 6);
+});
+
+test('wave 08 analytics workspace and dashboard KPI trends', async () => {
+  const state = createApiFacadeState();
+  const analytics = await handleApiRequest('GET', '/api/v1/analytics/workspace', undefined, state, adminHeaders);
+  assert.equal(analytics.status, 200);
+  assert.equal(analytics.body.mock, false);
+  assert.ok(analytics.body.kpiTrends.length >= 1);
+  assert.ok(analytics.body.kpiTrends.every((trend) => trend.kpiId && trend.points.length >= 1));
+  assert.ok(analytics.body.forecastingReadiness.modelsAvailable.length >= 1);
+
+  const kpis = await handleApiRequest('GET', '/api/v1/kpis', undefined, state, adminHeaders);
+  assert.equal(kpis.status, 200);
+  assert.ok(kpis.body.kpis.some((kpi) => (kpi.historicalSnapshots ?? []).length >= 1));
 });
 
 test('wave 18 model registry and wave 19 federation KPIs', async () => {
@@ -82,8 +179,22 @@ test('wave 18 model registry and wave 19 federation KPIs', async () => {
   assert.equal(promptRegistration.body.eventType, 'ai.prompt-card.registered');
   assert.ok(promptRegistration.body.registry.promptCards.some((card) => card.id === 'surface-intervention-v5'));
 
+  const connector = await handleApiRequest('POST', '/api/v1/racing-data/providers/provider-official-feed/invoke', undefined, state, adminHeaders);
+  assert.equal(connector.status, 202);
+  assert.equal(connector.body.providerId, 'provider-official-feed');
+  assert.equal(connector.body.status, 'simulated');
+  assert.ok(connector.body.recordsProcessed >= 1);
+
   const federation = await handleApiRequest('GET', '/api/v1/federation/kpi-aggregation', undefined, state, adminHeaders);
   assert.equal(federation.status, 200);
+  assert.ok(Array.isArray(federation.body));
+  assert.ok(federation.body.length >= 1);
+  assert.ok(federation.body.every((row) => row.metric && typeof row.aggregatedValue === 'number' && row.trackCount >= 1));
+
+  const analytics = await handleApiRequest('GET', '/api/v1/analytics/workspace', undefined, state, adminHeaders);
+  assert.equal(analytics.status, 200);
+  assert.ok(analytics.body.federationBenchmarks.length >= federation.body.length);
+  assert.ok(analytics.body.federationBenchmarks.every((benchmark) => benchmark.anonymized === true));
 });
 
 test('wave 09 emergency workflow activation mutation', async () => {
@@ -108,13 +219,99 @@ test('wave 09 emergency workflow activation mutation', async () => {
   assert.notEqual(after.body.activeEmergencyStatus, before.body.activeEmergencyStatus);
 });
 
+test('wave 14 security operations endpoints', async () => {
+  const state = createApiFacadeState();
+  const headers = { 'x-trackmind-role': 'security', 'x-trackmind-tenant-id': 'trackmind', 'x-trackmind-racetrack-id': 'main-track' };
+
+  const zonesLive = await handleApiRequest('GET', '/api/v1/security-operations/zones/live', undefined, state, headers);
+  assert.equal(zonesLive.status, 200);
+  assert.equal(zonesLive.body.mock, false);
+  assert.ok(zonesLive.body.zones.length >= 2);
+
+  const cameraReadiness = await handleApiRequest('GET', '/api/v1/security-operations/cameras/readiness', undefined, state, headers);
+  assert.equal(cameraReadiness.status, 200);
+  assert.ok(cameraReadiness.body.items.length >= 3);
+
+  const sensorReadiness = await handleApiRequest('GET', '/api/v1/security-operations/sensors/readiness', undefined, state, headers);
+  assert.equal(sensorReadiness.status, 200);
+  assert.ok(sensorReadiness.body.items.length >= 3);
+
+  const kpiPack = await handleApiRequest('GET', '/api/v1/security-operations/kpis', undefined, state, headers);
+  assert.equal(kpiPack.status, 200);
+  assert.ok(kpiPack.body.kpis.some((kpi) => kpi.kpiId === 'kpi-security'));
+
+  const webhook = await handleApiRequest('POST', '/api/v1/security-operations/webhooks/access-events', {
+    adapterId: 'vendor-access-runtime',
+    zoneId: 'zone-paddock',
+    credentialId: 'cred-runtime-1',
+    personDisplayName: 'Runtime Vendor',
+    decision: 'granted',
+    reason: 'scheduled maintenance',
+    occurredAt: '2026-06-14T12:00:00.000Z',
+    signatureValid: true,
+  }, state, headers);
+  assert.equal(webhook.status, 202);
+  assert.equal(webhook.body.accepted, true);
+});
+
 test('wave 20 global search and notifications', async () => {
   const state = createApiFacadeState();
   const search = await handleApiRequest('GET', '/api/v1/search/global?q=horse', undefined, state, adminHeaders);
   assert.equal(search.status, 200);
   assert.ok(Array.isArray(search.body.results));
+  assert.equal(search.body.mock, false);
 
   const inbox = await handleApiRequest('GET', '/api/v1/notifications/inbox?role=admin', undefined, state, adminHeaders);
   assert.equal(inbox.status, 200);
   assert.ok(inbox.body.notifications.length > 0);
+
+  const adapters = await handleApiRequest('GET', '/api/v1/notifications/delivery-adapters', undefined, state, adminHeaders);
+  assert.equal(adapters.status, 200);
+  assert.ok(adapters.body.adapters.includes('in-app'));
+  assert.ok(adapters.body.adapters.includes('sse'));
+  assert.ok(adapters.body.stats.length >= 1);
+
+  const coverage = await handleApiRequest('GET', '/api/v1/platform/contract-coverage', undefined, state, adminHeaders);
+  assert.equal(coverage.status, 200);
+  assert.equal(coverage.body.schemaVersion, 'trackmind.contract-coverage.v1');
+  assert.ok(coverage.body.totalContracts >= 100);
+  assert.ok(coverage.body.schemaCoveragePercent >= 90);
+});
+
+test('wave 06 durable approvals, escalation simulation, and audit-backed mutations', async () => {
+  const state = createApiFacadeState();
+
+  const created = await handleApiRequest('POST', '/api/v1/approvals/controlled-actions', {
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+    action: 'emergency-action',
+    target: 'gate-wave-06',
+    actorId: 'incident-commander',
+    actorType: 'human',
+    roles: ['security'],
+    reason: 'Gate fault requires controlled approval',
+    evidence: ['alarm-feed'],
+  }, state, { ...adminHeaders, 'x-trackmind-role': 'security' });
+  assert.equal(created.status, 202);
+  assert.equal(created.body.audited, true);
+  const approvalId = created.body.approvalId;
+
+  const durableBefore = await handleApiRequest('GET', '/api/v1/approvals/durable', undefined, state, adminHeaders);
+  assert.equal(durableBefore.status, 200);
+  const durableRecord = durableBefore.body.find((item) => item.id === approvalId);
+  assert.ok(durableRecord);
+  assert.ok(durableRecord.approvalSteps.length >= 1);
+
+  const escalateAt = new Date(Date.parse(durableRecord.createdAt) + 3 * 60_000).toISOString();
+  const escalation = await handleApiRequest('POST', '/api/v1/approvals/escalation/simulate', {
+    now: escalateAt,
+    reminderLeadMinutes: 10,
+  }, state, adminHeaders);
+  assert.equal(escalation.status, 200);
+  assert.ok(escalation.body.escalated.includes(approvalId));
+
+  const listed = await handleApiRequest('GET', '/api/v1/approvals/requests', undefined, state, adminHeaders);
+  assert.equal(listed.status, 200);
+  const live = listed.body.find((item) => item.id === approvalId || item.approvalRequestId === approvalId);
+  assert.ok(live);
 });

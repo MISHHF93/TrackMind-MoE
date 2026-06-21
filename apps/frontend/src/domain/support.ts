@@ -65,6 +65,26 @@ export function canViewRoute(route: RouteSupportMetadata, role: Role): boolean {
   return roleAllowed && hasPermission(role, route.requiredPermission);
 }
 
+export function isRouteModuleEnabled(
+  routeId: DomainRouteId,
+  enabledModules: ReadonlyMap<string, boolean> | undefined,
+  moduleKey?: string,
+): boolean {
+  if (!moduleKey) return true;
+  if (!enabledModules) return true;
+  if (!enabledModules.has(moduleKey)) return true;
+  return enabledModules.get(moduleKey) === true;
+}
+
+export function canAccessRoute(
+  route: RouteSupportMetadata,
+  role: Role,
+  enabledModules?: ReadonlyMap<string, boolean>,
+  moduleKey?: string,
+): boolean {
+  return canViewRoute(route, role) && isRouteModuleEnabled(route.id, enabledModules, moduleKey);
+}
+
 export const regulatedActionNames = [
   'race starts',
   'race stops',

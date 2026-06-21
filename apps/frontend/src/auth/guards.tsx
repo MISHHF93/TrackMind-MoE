@@ -2,8 +2,9 @@ import type { ReactElement, ReactNode } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { hasPermission, type Permission } from '@trackmind/shared';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
-import { canViewRoute, roleDisplayName, type RouteSupportMetadata } from '@/domain/support';
-import { routeById } from '@/routes/routes';
+import { canAccessRoute, canViewRoute, roleDisplayName, type RouteSupportMetadata } from '@/domain/support';
+import { useModuleEnablement } from '@/hooks/useModuleEnablement';
+import { moduleKeyForRoute, routeById } from '@/routes/routes';
 import { Button } from '@/design/components/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/design/components/card';
 
@@ -44,10 +45,12 @@ export function RequirePermission({ permission, children }: { permission: Permis
 
 export function RequireRouteAccess({ route, children }: { route: RouteSupportMetadata; children: ReactNode }): ReactElement {
   const { session } = useTenantSession();
+  const { enabledModules } = useModuleEnablement();
   const location = useLocation();
+  const moduleKey = moduleKeyForRoute(route.id);
 
-  if (!canViewRoute(route, session.role)) {
-    if (route.path === '/dashboard' || !canViewRoute(routeById.dashboard, session.role)) {
+  if (!canAccessRoute(route, session.role, enabledModules, moduleKey)) {
+    if (route.path === '/dashboard' || !canAccessRoute(routeById.dashboard, session.role, enabledModules, moduleKeyForRoute('dashboard'))) {
       return <AccessDenied route={route} />;
     }
     return <Navigate to="/dashboard" replace state={{ from: location.pathname }} />;
