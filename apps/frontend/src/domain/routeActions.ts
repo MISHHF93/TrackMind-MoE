@@ -96,7 +96,13 @@ function routeSpecificActions(routeId: DomainRouteId, results: WorkspaceDataResu
     ],
     admin: [
       { id: 'admin-identity', label: 'Identity workspace', detail: 'Review users, roles, and access requests.', href: '/admin?focus=identity' },
+      { id: 'admin-iot', label: 'IoT & CCTV monitoring', detail: 'Review integration connectors, camera fleet, and sensor readiness.', href: '/iot-monitoring' },
       { id: 'admin-access', label: 'Request access elevation', detail: 'Request privileged access elevation.', protectedAction: 'kpi-threshold-change', target: 'access-request', approvalApi: 'controlled-actions', variant: 'governance' },
+    ],
+    iotMonitoring: [
+      { id: 'iot-admin', label: 'Platform administration', detail: 'Open platform health, tenants, and feature flags.', href: '/admin' },
+      { id: 'iot-security', label: 'Security console', detail: 'Open operational security incidents and escalations.', href: '/security' },
+      { id: 'iot-facilities', label: 'Facilities utilities', detail: 'Review facilities IoT utility adapters.', href: '/facilities?focus=utilities' },
     ],
     analytics: [
       { id: 'analytics-kpi', label: 'KPI threshold draft', detail: 'Request governed KPI threshold change.', protectedAction: 'kpi-threshold-change', target: 'kpi-readiness', approvalApi: 'controlled-actions', variant: 'governance' },

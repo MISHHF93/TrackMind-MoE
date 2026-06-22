@@ -561,6 +561,7 @@ export const frontendRoutePermissionRegistry = {
   dataHub: 'data-hub:read',
   audit: 'audit:read',
   admin: 'service:operate',
+  iotMonitoring: 'service:operate',
   settings: 'ai:read',
   stewarding: 'read:any',
   workforce: 'read:any',

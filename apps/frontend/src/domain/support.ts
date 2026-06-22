@@ -18,6 +18,7 @@ export type DomainRouteId =
   | 'dataHub'
   | 'audit'
   | 'admin'
+  | 'iotMonitoring'
   | 'settings'
   | 'stewarding'
   | 'workforce'

@@ -18,6 +18,7 @@ import {
   Ticket,
   TrendingUp,
   Users,
+  Video,
   Waypoints,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -49,6 +50,7 @@ const iconMap: Record<string, LucideIcon> = {
   'data-hub': Database,
   audit: Activity,
   admin: Activity,
+  cctv: Video,
   analytics: TrendingUp,
   fan: Sparkles,
   notifications: Bell,

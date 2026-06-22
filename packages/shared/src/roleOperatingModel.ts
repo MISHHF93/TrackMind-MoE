@@ -22,6 +22,7 @@ export type DomainRouteId =
   | 'dataHub'
   | 'audit'
   | 'admin'
+  | 'iotMonitoring'
   | 'settings'
   | 'stewarding'
   | 'workforce'
@@ -81,7 +82,7 @@ export interface RoleCapabilityBinding {
 
 const allRoutes: DomainRouteId[] = [
   'dashboard', 'raceDay', 'equine', 'approvals', 'incidents', 'compliance', 'security',
-  'facilities', 'ticketing', 'finance', 'federation', 'dataHub', 'audit', 'admin',
+  'facilities', 'ticketing', 'finance', 'federation', 'dataHub', 'audit', 'admin', 'iotMonitoring',
   'settings', 'stewarding', 'workforce', 'digitalTwin', 'surface', 'emergency',
   'analytics', 'fanExperience', 'notifications', 'account',
 ];
@@ -98,7 +99,7 @@ export const roleCapabilityBindings: Record<Role, RoleCapabilityBinding> = {
     viewerRoutes: allRoutes,
     editorRoutes: allRoutes,
     approverActions: [],
-    adminRoutes: ['admin', 'settings'],
+    adminRoutes: ['admin', 'iotMonitoring', 'settings'],
     exportRoutes: ['audit', 'compliance', 'dataHub', 'federation'],
     kpiDomains: ['system-health', 'tenant-operations', 'deployment-readiness', 'audit-integrity'],
     auditVisibility: 'export',
@@ -112,10 +113,10 @@ export const roleCapabilityBindings: Record<Role, RoleCapabilityBinding> = {
     category: 'system-admin',
     homeRouteId: 'analytics',
     navigationGroupOrder: ['Command', 'Governance', 'System Status', 'Race Operations', 'Business Controls', 'Data Governance'],
-    viewerRoutes: ['dashboard', 'admin', 'analytics', 'compliance', 'audit', 'approvals', 'finance', 'federation', 'dataHub', 'notifications'],
-    editorRoutes: ['admin', 'approvals'],
+    viewerRoutes: ['dashboard', 'admin', 'iotMonitoring', 'analytics', 'compliance', 'audit', 'approvals', 'finance', 'federation', 'dataHub', 'notifications'],
+    editorRoutes: ['admin', 'iotMonitoring', 'approvals'],
     approverActions: ['kpi-threshold-change', 'compliance-filing-approval'],
-    adminRoutes: ['admin'],
+    adminRoutes: ['admin', 'iotMonitoring'],
     exportRoutes: ['audit', 'compliance'],
     kpiDomains: ['tenant-operations', 'multi-track-federation', 'approval-workflows'],
     auditVisibility: 'export',
@@ -265,7 +266,7 @@ export const roleCapabilityBindings: Record<Role, RoleCapabilityBinding> = {
     category: 'operational',
     homeRouteId: 'security',
     navigationGroupOrder: ['Safety & Facilities', 'Governance', 'Command'],
-    viewerRoutes: ['security', 'incidents', 'emergency', 'audit', 'approvals', 'notifications'],
+    viewerRoutes: ['security', 'incidents', 'emergency', 'iotMonitoring', 'audit', 'approvals', 'notifications'],
     editorRoutes: ['security', 'incidents', 'emergency'],
     approverActions: ['emergency-action', 'safety-critical-control'],
     adminRoutes: [],
@@ -468,6 +469,7 @@ export function homePathForRole(role: Role): string {
     dataHub: '/data-hub',
     audit: '/audit',
     admin: '/admin',
+    iotMonitoring: '/iot-monitoring',
     settings: '/settings',
     stewarding: '/stewarding',
     workforce: '/workforce',

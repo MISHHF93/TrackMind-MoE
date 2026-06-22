@@ -26,6 +26,7 @@ export const navigationGroups = [
 export const workspacePanelRouteIds = [
   'dashboard',
   'admin',
+  'iotMonitoring',
   'raceDay',
   'surface',
   'equine',
@@ -70,6 +71,7 @@ export const sidebarIconKeys = [
   'data-hub',
   'audit',
   'admin',
+  'cctv',
   'analytics',
   'fan',
   'notifications',

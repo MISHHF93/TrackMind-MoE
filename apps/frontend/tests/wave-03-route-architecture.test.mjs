@@ -63,7 +63,7 @@ test('wave 03: route coverage inventory stays synchronized', async () => {
   const apiGroups = [...paths.matchAll(/^\s{2}([a-zA-Z]+): (?=\[|stewardingFeedPaths)/gm)].map((match) => match[1]);
   const panelCases = [...panels.matchAll(/case '([^']+)':/g)].map((match) => match[1]);
 
-  assert.equal(routeIds.length, 24);
+  assert.equal(routeIds.length, 25);
   for (const routeId of routeIds) {
     assert.ok(apiGroups.includes(routeId), `routeApiPathGroups missing ${routeId}`);
     assert.ok(panelCases.includes(routeId), `WorkspaceDomainPanels missing ${routeId}`);

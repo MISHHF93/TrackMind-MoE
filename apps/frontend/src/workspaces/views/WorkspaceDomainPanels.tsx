@@ -15,6 +15,7 @@ import { FacilitiesPanels, WorkforcePanels, DigitalTwinPanels } from './operatio
 import { FinancePanels, TicketingPanels, FederationPanels, DataHubPanels } from './businessPanels';
 import { SettingsPanels } from './settingsPanels';
 import { AnalyticsPanels, FanExperiencePanels, NotificationsPanels } from './platformPanels';
+import { IotMonitoringPanels } from './iotMonitoringPanels';
 import { AccountPanels } from './accountPanels';
 
 export function WorkspaceDomainPanels({
@@ -34,6 +35,8 @@ export function WorkspaceDomainPanels({
       return <CommandCenterPanels {...panelProps} />;
     case 'admin':
       return <AdminPanels {...panelProps} />;
+    case 'iotMonitoring':
+      return <IotMonitoringPanels {...panelProps} />;
     case 'raceDay':
       return <RaceDayPanels {...panelProps} />;
     case 'surface':

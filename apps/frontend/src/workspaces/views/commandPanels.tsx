@@ -195,6 +195,7 @@ export function AdminPanels({ results }: WorkspacePanelProps): ReactElement {
       <SectionPanel title="Administration actions" description="Platform identity, modules, and environment controls.">
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" asChild><Link to="/admin?focus=identity">Identity workspace</Link></Button>
+          <Button size="sm" variant="outline" asChild><Link to="/iot-monitoring">IoT &amp; CCTV monitoring</Link></Button>
           <Button size="sm" variant="outline" asChild><Link to="/settings">AI guardrails</Link></Button>
           <EntityFormAction
             entityKind="approval-request-composer"
