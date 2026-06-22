@@ -1,8 +1,9 @@
 import type { ReactElement } from 'react';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiPaths } from '@/api/paths';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
+import { raceDayCommandRoles } from '@trackmind/shared';
 import { actionDisabledReason, extractApprovalControls, resolveDefaultRaceTarget, roleCanUseAction } from '@/domain/approvalControls';
 import { KpiStrip } from '@/design/components/kpi-strip';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
@@ -19,13 +20,14 @@ import { RaceCardWorkflowWizard } from '@/features/race-card/RaceCardWorkflowWiz
 import { BulkDataEntryConsole } from '@/features/bulk-data-entry/BulkDataEntryConsole';
 import { EntityFormAction } from '@/features/data-entry/TrackMindFormDialog';
 import type { WorkspaceAction } from '@/design/components/workspace';
-import { authorizeApprovalExecution, requestRaceStart, type ApprovalTokenPayload } from '@/api/mutations';
+import { authorizeApprovalExecution, requestRaceStart, requestRaceStop, requestScratch, type ApprovalTokenPayload } from '@/api/mutations';
 
 export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
   const { session } = useTenantSession();
   const queryClient = useQueryClient();
   const [dialog, setDialog] = useState<{ open: boolean; action?: WorkspaceAction }>({ open: false });
   const [commandMessage, setCommandMessage] = useState<string | null>(null);
+  const [selectedRaceId, setSelectedRaceId] = useState('race-7');
   const feeds = useMemo(() => indexWorkspaceFeeds(results), [results]);
   const raceOffice = feedFromIndex<Record<string, unknown>>(feeds, '/race-operations/race-office');
   const calendar = feedFromIndex<Record<string, unknown>>(feeds, '/racing-calendar/workspace');
@@ -76,6 +78,10 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
   const domainScores = extractArray<Record<string, unknown>>(readiness, 'domainScores');
   const defaultRaceTarget = resolveDefaultRaceTarget(results);
 
+  useEffect(() => {
+    setSelectedRaceId(defaultRaceTarget);
+  }, [defaultRaceTarget]);
+
   const raceStartApprovalAction = (raceId: string): WorkspaceAction => ({
     id: `gate-race-start-approval-${raceId}`,
     label: 'Request gate race start approval',
@@ -83,7 +89,7 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
     protectedAction: 'race-start',
     target: raceId,
     approvalApi: 'starting-gate-operations/race-start-approval',
-    requiredRoles: ['admin', 'steward', 'racing-secretary', 'starter'],
+    requiredRoles: raceDayCommandRoles,
   });
 
   const raceStartCommandAction = (raceId: string): WorkspaceAction => ({
@@ -92,7 +98,7 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
     detail: 'Issue verified approval token and POST race start command metadata.',
     protectedAction: 'race-start',
     target: raceId,
-    requiredRoles: ['admin', 'steward', 'racing-secretary', 'starter'],
+    requiredRoles: raceDayCommandRoles,
   });
 
   function resolveRaceId(record: Record<string, unknown>): string {
@@ -138,6 +144,36 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
     onError: (error: Error) => setCommandMessage(error.message),
   });
 
+  const raceStopCommandMutation = useMutation({
+    mutationFn: async (raceId: string) => {
+      const approvalId = gateStartApprovalIds(raceId)[0];
+      if (!approvalId) throw new Error('Request race stop approval before submitting the stop command.');
+      const authorized = await authorizeApprovalExecution(approvalId);
+      if (!authorized.approvalToken) throw new Error('Approval token was not issued.');
+      return requestRaceStop(raceId, { approvalId, justification: 'Race stop from race-day console' });
+    },
+    onSuccess: () => {
+      setCommandMessage('Race stop command submitted.');
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+    onError: (error: Error) => setCommandMessage(error.message),
+  });
+
+  const raceScratchCommandMutation = useMutation({
+    mutationFn: async ({ raceId, horseId }: { raceId: string; horseId: string }) => {
+      const approvalId = gateStartApprovalIds(raceId)[0];
+      if (!approvalId) throw new Error('Request scratch approval before submitting scratch command.');
+      const authorized = await authorizeApprovalExecution(approvalId);
+      if (!authorized.approvalToken) throw new Error('Approval token was not issued.');
+      return requestScratch(raceId, { approvalId, horseId, justification: 'Scratch from race-day console' });
+    },
+    onSuccess: () => {
+      setCommandMessage('Scratch command submitted.');
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+    onError: (error: Error) => setCommandMessage(error.message),
+  });
+
   const avgScore = numericField(readiness, 'averageScore') ?? numericField(readiness, 'readinessScore');
   const surfaceScore = numericField(surface, 'overallScore');
   const officeReadyCount = officeReadiness.filter((row) => row.ready === true).length;
@@ -156,7 +192,7 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
       protectedAction: String(control.action ?? 'race-start'),
       target: defaultRaceTarget,
       approvalApi: 'controlled-actions' as const,
-      requiredRoles: ['admin', 'steward', 'starter'],
+      requiredRoles: raceDayCommandRoles,
     })),
   ];
 
@@ -228,6 +264,38 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
           { id: 'warnings', label: 'Warnings', value: String(warnings.length), status: warnings.length > 0 ? 'warning' : 'nominal' },
         ]}
       />
+      <SectionPanel title="Race command target" description="Select the active race for stop, scratch, and gate command actions.">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-sm text-[var(--muted-foreground)]" htmlFor="race-target-select">Race</label>
+          <select
+            id="race-target-select"
+            className="rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-sm"
+            value={selectedRaceId}
+            onChange={(event) => setSelectedRaceId(event.target.value)}
+          >
+            {gateStartApprovalRaceIds().map((raceId) => (
+              <option key={raceId} value={raceId}>{raceId}</option>
+            ))}
+          </select>
+          <Button
+            size="sm"
+            variant="governance"
+            disabled={raceStopCommandMutation.isPending}
+            onClick={() => raceStopCommandMutation.mutate(selectedRaceId)}
+          >
+            Submit race stop
+          </Button>
+          <Button
+            size="sm"
+            variant="governance"
+            disabled={raceScratchCommandMutation.isPending}
+            onClick={() => raceScratchCommandMutation.mutate({ raceId: selectedRaceId, horseId: 'horse-1' })}
+          >
+            Submit scratch
+          </Button>
+          {commandMessage ? <p className="text-xs text-[var(--muted-foreground)] w-full">{commandMessage}</p> : null}
+        </div>
+      </SectionPanel>
       <OperationalNotesConsole
         notes={operationalNotes}
         defaultSubjectKind="race-day-log"

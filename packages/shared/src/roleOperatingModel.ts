@@ -49,6 +49,7 @@ export type SensitivityLevel =
   | 'financial'
   | 'disciplinary'
   | 'security-sensitive'
+  | 'compliance'
   | 'support-governed';
 
 export type FunctionalCategory =

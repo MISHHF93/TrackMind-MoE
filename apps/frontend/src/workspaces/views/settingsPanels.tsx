@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Role } from '@trackmind/shared';
+import { governanceRegistrationRoles } from '@trackmind/shared';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { KpiStrip } from '@/design/components/kpi-strip';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
@@ -12,10 +13,9 @@ import { ApprovalDecisionButtons } from '@/features/approvals/GovernedActionDial
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { feedData } from '../feedUtils';
-import { draftPromptLineage, publishPromptLineage, registerModelCard, registerPromptCard } from '@/api/mutations';
+import { draftPromptLineage, publishPromptLineage, registerModelCard, registerPromptCard, createControlledAction } from '@/api/mutations';
 import { isRecord } from '@/lib/utils';
 
-const governanceRegistrationRoles: Role[] = ['admin', 'compliance-officer'];
 
 function canRegisterGovernanceArtifacts(role: Role): boolean {
   return governanceRegistrationRoles.includes(role);
@@ -144,6 +144,8 @@ export function SettingsPanels({ results }: { results: WorkspaceDataResult[] }):
   const [modelDialogOpen, setModelDialogOpen] = useState(false);
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
   const [lineageDraftId, setLineageDraftId] = useState<string | null>(null);
+  const [accessReason, setAccessReason] = useState('');
+  const [accessMessage, setAccessMessage] = useState<string | null>(null);
   const [lineageDraftDialogOpen, setLineageDraftDialogOpen] = useState(false);
 
   const policy = feedData<Record<string, unknown>>(results, '/ai-control-plane/policy');
@@ -235,6 +237,20 @@ export function SettingsPanels({ results }: { results: WorkspaceDataResult[] }):
     },
   });
 
+  const requestAccessMutation = useMutation({
+    mutationFn: () => createControlledAction({
+      action: 'kpi-threshold-change',
+      target: 'identity-access-request',
+      reason: accessReason.trim() || 'Operator requested privileged access elevation from settings console.',
+    }),
+    onSuccess: (response) => {
+      setAccessMessage(response.message ?? 'Access elevation request submitted for approval.');
+      setAccessReason('');
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+    onError: (error: Error) => setAccessMessage(error.message),
+  });
+
   return (
     <div className="space-y-4">
       <KpiStrip
@@ -295,6 +311,28 @@ export function SettingsPanels({ results }: { results: WorkspaceDataResult[] }):
           rows={protectedActions.slice(0, 12).map((action) => ({ action: String(action) }))}
           emptyLabel="No protected actions listed in policy."
         />
+      </SectionPanel>
+      <SectionPanel title="Identity access request" description="Submit a governed access elevation request for platform operators.">
+        <div className="space-y-2">
+          <textarea
+            className="min-h-20 w-full rounded-md border border-[var(--border)] bg-[var(--card)] p-2 text-sm"
+            placeholder="Describe why elevated access is required..."
+            value={accessReason}
+            onChange={(event) => setAccessReason(event.target.value)}
+          />
+          <Button
+            size="sm"
+            variant="governance"
+            disabled={requestAccessMutation.isPending}
+            onClick={() => {
+              setAccessMessage(null);
+              requestAccessMutation.mutate();
+            }}
+          >
+            Request access elevation
+          </Button>
+          {accessMessage ? <p className="text-xs text-[var(--muted-foreground)]">{accessMessage}</p> : null}
+        </div>
       </SectionPanel>
       <div className="grid gap-4 xl:grid-cols-2">
         <SectionPanel title="Model card registry" description="Governed model cards from GET /ai-governance/model-cards with responsibleAiGovernor workspace paths.">

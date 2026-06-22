@@ -1,4 +1,4 @@
-import { canRoleRequestApprovalAction, normalizeRole, type Role } from '@trackmind/shared';
+import { canRoleRequestApprovalAction, canRoleExportAudit, normalizeRole, type Role } from '@trackmind/shared';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import type { WorkspaceAction } from '@/design/components/workspace';
 import { isRecord } from '@/lib/utils';
@@ -7,6 +7,8 @@ function approvalApiKind(api: string | undefined): WorkspaceAction['approvalApi'
   if (!api) return 'controlled-actions';
   if (api.includes('track-configuration/draft-requests')) return 'track-configuration/draft-requests';
   if (api.includes('starting-gate-operations/race-start-approval')) return 'starting-gate-operations/race-start-approval';
+  if (api.includes('composer')) return 'composer';
+  if (api.includes('draft-requests')) return 'draft-requests';
   return 'controlled-actions';
 }
 
@@ -45,6 +47,9 @@ export function extractApprovalControls(results: WorkspaceDataResult[]): Workspa
 }
 
 export function roleCanUseAction(action: WorkspaceAction, role: Role): boolean {
+  if (action.id === 'audit-export' && !canRoleExportAudit(role)) {
+    return false;
+  }
   if (action.protectedAction && canRoleRequestApprovalAction(role, action.protectedAction)) {
     return true;
   }

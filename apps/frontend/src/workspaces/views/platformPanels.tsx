@@ -2,8 +2,11 @@ import type { ReactElement } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import type { KpiMutationDraftResultDto, Role } from '@trackmind/shared';
+import { kpiAdminRoles } from '@trackmind/shared';
 import {
+  acknowledgeNotification,
   authorizeApprovalExecution,
+  dispatchNotification,
   requestKpiThresholdDraft,
   type ApprovalTokenPayload,
 } from '@/api/mutations';
@@ -21,7 +24,7 @@ import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { feedData } from '../feedUtils';
 
-const kpiAdminRoles: Role[] = ['admin', 'operations-admin'];
+const kpiAdminRoleList: Role[] = kpiAdminRoles;
 
 function thresholdChangeRequiresApproval(sensitivity: unknown): boolean {
   const value = String(sensitivity ?? '');
@@ -59,14 +62,14 @@ function KpiAdminPanels({ results }: { results: WorkspaceDataResult[] }): ReactE
     label: 'Submit threshold draft',
     protectedAction: 'kpi-threshold-change',
     target: selectedKpiId,
-    requiredRoles: kpiAdminRoles,
+    requiredRoles: kpiAdminRoleList,
   };
   const thresholdReviewAction = {
     id: 'kpi-threshold-approval',
     label: 'Review threshold change',
     protectedAction: 'kpi-threshold-change',
     target: selectedKpiId,
-    requiredRoles: kpiAdminRoles,
+    requiredRoles: kpiAdminRoleList,
   };
   const canSubmitThreshold = roleCanUseAction(thresholdDraftAction, session.role);
   const submitDisabledReason = actionDisabledReason(thresholdDraftAction, session.role);
@@ -608,6 +611,8 @@ export function AnalyticsPanels({ results }: { results: WorkspaceDataResult[] })
 }
 
 export function FanExperiencePanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+  const queryClient = useQueryClient();
+  const [dispatchMessage, setDispatchMessage] = useState<string | null>(null);
   const workspace = feedData<Record<string, unknown>>(results, '/fan-experience/workspace');
   const guestServices = extractArray<Record<string, unknown>>(workspace, 'guestServices');
   const crowdDensity = extractArray<Record<string, unknown>>(workspace, 'crowdDensity');
@@ -621,6 +626,19 @@ export function FanExperiencePanels({ results }: { results: WorkspaceDataResult[
   const ticketingConnector = (workspace?.ticketingConnector ?? {}) as Record<string, unknown>;
   const connectorAdapters = extractArray<Record<string, unknown>>(ticketingConnector, 'adapters');
 
+  const dispatchAlertMutation = useMutation({
+    mutationFn: () => dispatchNotification({
+      title: 'Guest experience alert',
+      message: 'Operator dispatch from fan experience console',
+      category: 'fan-experience',
+    }),
+    onSuccess: () => {
+      setDispatchMessage('Guest alert dispatched.');
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+    onError: (error: Error) => setDispatchMessage(error.message),
+  });
+
   return (
     <div className="space-y-4">
       <KpiStrip
@@ -632,6 +650,14 @@ export function FanExperiencePanels({ results }: { results: WorkspaceDataResult[
           { id: 'connector', label: 'Ticketing connector', value: String(ticketingConnector.overallStatus ?? '—'), detail: ticketingConnector.degraded ? 'Degraded sync' : 'Live sync' },
         ]}
       />
+      <SectionPanel title="Guest communications" description="Dispatch operational alerts to fan experience channels.">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="governance" disabled={dispatchAlertMutation.isPending} onClick={() => dispatchAlertMutation.mutate()}>
+            Dispatch guest alert
+          </Button>
+          {dispatchMessage ? <p className="text-xs text-[var(--muted-foreground)]">{dispatchMessage}</p> : null}
+        </div>
+      </SectionPanel>
       <SectionPanel
         title="Ticketing connector status"
         description="External ticketing integrations for inventory and gate attendance sync."
@@ -756,10 +782,21 @@ export function FanExperiencePanels({ results }: { results: WorkspaceDataResult[
 }
 
 export function NotificationsPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+  const queryClient = useQueryClient();
+  const [ackMessage, setAckMessage] = useState<string | null>(null);
   const inbox = feedData<Record<string, unknown>>(results, '/notifications/inbox');
   const adapters = feedData<Record<string, unknown>>(results, '/notifications/delivery-adapters');
   const notifications = extractArray<Record<string, unknown>>(inbox, 'notifications');
   const adapterStats = extractArray<Record<string, unknown>>(adapters, 'stats');
+
+  const ackMutation = useMutation({
+    mutationFn: (notificationId: string) => acknowledgeNotification(notificationId),
+    onSuccess: () => {
+      setAckMessage('Notification acknowledged.');
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+    onError: (error: Error) => setAckMessage(error.message),
+  });
 
   return (
     <div className="space-y-4">
@@ -782,21 +819,33 @@ export function NotificationsPanels({ results }: { results: WorkspaceDataResult[
         />
       </SectionPanel>
       <SectionPanel title="Notification inbox" description="Alerts, approvals, incidents, and compliance notifications.">
-        <RecordTable
-          columns={[
-            { key: 'title', label: 'Title' },
-            { key: 'category', label: 'Category' },
-            { key: 'severity', label: 'Severity' },
-            { key: 'status', label: 'Status' },
-          ]}
-          rows={mapRecords(notifications, (n) => ({
-            title: String(n.title ?? '—'),
-            category: String(n.category ?? '—'),
-            severity: String(n.severity ?? '—'),
-            status: String(n.status ?? '—'),
-          }))}
-          emptyLabel="No notifications."
-        />
+        {ackMessage ? <p className="mb-2 text-xs text-[var(--muted-foreground)]">{ackMessage}</p> : null}
+        <div className="space-y-2">
+          {notifications.slice(0, 10).map((notification) => {
+            const notificationId = String(notification.id ?? notification.notificationId ?? '');
+            return (
+              <div key={notificationId || String(notification.title)} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--border)] p-2 text-sm">
+                <div>
+                  <p className="font-medium">{String(notification.title ?? 'Notification')}</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    {String(notification.category ?? '—')} · {String(notification.severity ?? '—')} · {String(notification.status ?? '—')}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!notificationId || ackMutation.isPending}
+                  onClick={() => ackMutation.mutate(notificationId)}
+                >
+                  Acknowledge
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+        {notifications.length === 0 ? (
+          <p className="text-sm text-[var(--muted-foreground)]">No notifications.</p>
+        ) : null}
       </SectionPanel>
     </div>
   );

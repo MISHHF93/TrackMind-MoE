@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import {
+  canRoleViewRoute,
   functionalCategoryForRole,
   homePathForRole,
   homeRouteForRole,
@@ -24,6 +25,6 @@ export function useRoleWorkspace() {
     kpiDomains: visibleKpiDomainsForRole(role),
     quickActions: quickActionsForRole(role),
     notificationChannels: notificationChannelsForRole(role),
-    canViewRoute: (routeId: DomainRouteId) => visibleKpiDomainsForRole(role).length >= 0, // re-exported via support
+    canViewRoute: (routeId: DomainRouteId) => canRoleViewRoute(role, routeId),
   }), [role]);
 }

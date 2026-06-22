@@ -1,3 +1,4 @@
+import { normalizeRole, veterinaryPrivacyScopesByRole } from '@trackmind/shared';
 import type { ApprovalToken } from '../approvals.js';
 import { ApexApprovalGateway, type ApexMutationContext, type ApprovalEvidencePackage, type ApprovalRequiredActionRecord } from './approvalGateway.js';
 
@@ -33,7 +34,11 @@ export class EquineIntelligenceService {
 
   horseProfile(horseId: string, roles: string[] = []) {
     const horse = this.requireHorse(horseId);
-    const canViewVetPrivate = roles.includes('veterinarian') || roles.includes('steward') || roles.includes('platform-super-admin');
+    const normalizedRoles = roles.map((role) => normalizeRole(role) ?? role);
+    const canViewVetPrivate = normalizedRoles.some((role) =>
+      typeof role === 'string'
+      && (veterinaryPrivacyScopesByRole[role as keyof typeof veterinaryPrivacyScopesByRole]?.includes('veterinary-confidential') ?? false),
+    );
     return {
       ...horse,
       veterinaryNotes: canViewVetPrivate ? horse.veterinaryNotes : 'redacted-veterinary-privacy',

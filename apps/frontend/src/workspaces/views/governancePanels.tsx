@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Role } from '@trackmind/shared';
+import { complianceMutationRoles } from '@trackmind/shared';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { KpiStrip } from '@/design/components/kpi-strip';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
@@ -15,13 +16,13 @@ import {
   closeComplianceCorrectiveAction,
   createComplianceCorrectiveAction,
   deleteComplianceCorrectiveAction,
+  generateComplianceEvidencePacket,
   updateComplianceCorrectiveAction,
 } from '@/api/mutations';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { feedData } from '../feedUtils';
 
-const complianceMutationRoles: Role[] = ['admin', 'compliance-officer'];
 
 function canMutateCompliance(role: Role): boolean {
   return complianceMutationRoles.includes(role);
@@ -171,6 +172,12 @@ export function CompliancePanels({ results }: { results: WorkspaceDataResult[] }
     onError: (error: Error) => setActionMessage(error.message),
   });
 
+  const generateEvidencePacket = useMutation({
+    mutationFn: () => generateComplianceEvidencePacket(),
+    onSuccess: (response) => onMutationMessage(response, 'Evidence packet generation requested.'),
+    onError: (error: Error) => setActionMessage(error.message),
+  });
+
   return (
     <div className="space-y-4">
       <ComplianceEvidenceEntryConsole
@@ -190,6 +197,23 @@ export function CompliancePanels({ results }: { results: WorkspaceDataResult[] }
           { id: 'evidence', label: 'Evidence packages', value: String(evidencePackageCount) },
         ]}
       />
+      <SectionPanel title="Evidence operations" description="Generate governed compliance evidence packages for audit readiness.">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="governance"
+            disabled={!canMutate || generateEvidencePacket.isPending}
+            title={canMutate ? 'POST /compliance/evidence-packets/generate' : 'Requires compliance-officer or admin role'}
+            onClick={() => {
+              setActionMessage(null);
+              generateEvidencePacket.mutate();
+            }}
+          >
+            Generate evidence packet
+          </Button>
+          {actionMessage ? <p className="text-xs text-[var(--muted-foreground)]">{actionMessage}</p> : null}
+        </div>
+      </SectionPanel>
       <SectionPanel title="Additional entry" description="Open the structured evidence form directly from the data-entry framework.">
         <EntityFormAction entityKind="compliance-evidence" label="Open evidence form" />
       </SectionPanel>

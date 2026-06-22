@@ -1,24 +1,19 @@
 import type { ReactElement } from 'react';
+import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { KpiStrip } from '@/design/components/kpi-strip';
+import { Button } from '@/design/components/button';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
 import { SectionPanel } from '@/design/components/section-panel';
 import { HorseDataEntryHub } from '@/features/horse-data-entry/HorseDataEntryHub';
 import { BulkDataEntryConsole } from '@/features/bulk-data-entry/BulkDataEntryConsole';
 import { EquineObservationConsole } from '@/features/equine-observations/EquineObservationConsole';
+import { updateHorseEligibility } from '@/api/mutations';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { isRecord } from '@/lib/utils';
 import { feedData } from '../feedUtils';
-
-function buildEligibilityRules(eligibilityFeed: Record<string, unknown> | undefined): Record<string, unknown>[] {
-  if (!eligibilityFeed) return [];
-  const failedRules = extractArray<unknown>(eligibilityFeed, 'failedRules').map((rule) => String(rule));
-  const warnings = extractArray<unknown>(eligibilityFeed, 'warnings').map((rule) => String(rule));
-  return [
-    ...failedRules.map((rule) => ({ rule, status: 'fail', detail: 'Failed eligibility check' })),
-    ...warnings.map((rule) => ({ rule, status: 'watch', detail: 'Advisory warning' })),
-  ];
-}
+import { flattenEligibilityRules } from '../feedPresenters';
 
 function profileVetStatus(profile: Record<string, unknown> | undefined): string {
   if (!profile) return '—';
@@ -37,6 +32,8 @@ function profilePrivacy(profile: Record<string, unknown> | undefined): Record<st
 }
 
 export function EquinePanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+  const queryClient = useQueryClient();
+  const [eligibilityMessage, setEligibilityMessage] = useState<string | null>(null);
   const profile = feedData<Record<string, unknown>>(results, '/horses/horse-1/profile');
   const eligibilityFeed = feedData<Record<string, unknown>>(results, '/horses/horse-1/eligibility');
   const auditFeed = feedData<Record<string, unknown>>(results, '/horses/horse-1/audit');
@@ -47,8 +44,6 @@ export function EquinePanels({ results }: { results: WorkspaceDataResult[] }): R
   const veterinary = feedData<Record<string, unknown>>(results, '/veterinary-operations/workspace');
   const welfare = feedData<Record<string, unknown>>(results, '/equine-welfare/workspace');
 
-  const eligibilityRules = buildEligibilityRules(eligibilityFeed);
-  const stalls = extractArray<Record<string, unknown>>(barn, 'stalls');
   const movements = extractArray<Record<string, unknown>>(barn, 'movements');
   const vetVisits = extractArray<Record<string, unknown>>(barn, 'vetVisits');
   const horses = extractArray<Record<string, unknown>>(registry, 'horses');
@@ -62,6 +57,7 @@ export function EquinePanels({ results }: { results: WorkspaceDataResult[] }): R
 
   const identity = profile?.identity && typeof profile.identity === 'object' ? profile.identity as Record<string, unknown> : undefined;
   const ownership = profile?.ownershipHistory ?? profile?.ownership;
+  const stalls = extractArray<Record<string, unknown>>(barn, 'stalls');
   const ownershipCount = Array.isArray(ownership) ? ownership.length : 0;
   const eligibilityStatus = eligibilityFeed?.status && typeof eligibilityFeed.status === 'object'
     ? eligibilityFeed.status as Record<string, unknown>
@@ -71,6 +67,22 @@ export function EquinePanels({ results }: { results: WorkspaceDataResult[] }): R
   const auditVerification = auditFeed?.verification && typeof auditFeed.verification === 'object'
     ? auditFeed.verification as Record<string, unknown>
     : undefined;
+
+  const eligibilityRules = flattenEligibilityRules(eligibilityFeed);
+  const horseId = String(identity?.horseId ?? profile?.horseId ?? 'horse-1');
+
+  const eligibilityUpdateMutation = useMutation({
+    mutationFn: () => updateHorseEligibility({
+      horseId,
+      status: eligibilityFeed?.eligible === true ? 'confirmed' : 'review-required',
+      reason: 'Operator eligibility review from equine console',
+    }),
+    onSuccess: () => {
+      setEligibilityMessage('Eligibility update submitted.');
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+    onError: (error: Error) => setEligibilityMessage(error.message),
+  });
 
   return (
     <div className="space-y-4">
@@ -153,16 +165,30 @@ export function EquinePanels({ results }: { results: WorkspaceDataResult[] }): R
         </SectionPanel>
       </div>
       <SectionPanel title="Eligibility rules" description="Pass/fail checklist for race-day eligibility.">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="governance"
+            disabled={eligibilityUpdateMutation.isPending}
+            onClick={() => {
+              setEligibilityMessage(null);
+              eligibilityUpdateMutation.mutate();
+            }}
+          >
+            Submit eligibility review
+          </Button>
+          {eligibilityMessage ? <p className="text-xs text-[var(--muted-foreground)]">{eligibilityMessage}</p> : null}
+        </div>
         <RecordTable
           columns={[
             { key: 'rule', label: 'Rule' },
             { key: 'status', label: 'Status' },
             { key: 'detail', label: 'Detail' },
           ]}
-          rows={mapRecords(eligibilityRules, (r) => ({
-            rule: String(r.rule ?? r.id ?? r.name ?? '—'),
-            status: String(r.status ?? (r.passed === true ? 'pass' : r.passed === false ? 'fail' : '—')),
-            detail: String(r.detail ?? r.reason ?? '—'),
+          rows={eligibilityRules.map((rule) => ({
+            rule: rule.rule,
+            status: rule.status,
+            detail: rule.detail ?? '—',
           }))}
           emptyLabel="No eligibility rules returned."
         />

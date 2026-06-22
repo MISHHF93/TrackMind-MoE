@@ -396,3 +396,123 @@ export async function deleteComplianceCorrectiveAction(
   );
   return assertMutationOk(result);
 }
+
+export async function simulateApprovalEscalation() {
+  const result = await postJson<{ simulated?: boolean; message?: string }>(
+    '/approvals/escalation/simulate',
+    { reason: 'Operator-triggered escalation review from TrackMind console' },
+  );
+  return assertMutationOk(result);
+}
+
+export async function generateComplianceEvidencePacket() {
+  const session = getTenantContext();
+  const result = await postJson('/compliance/evidence-packets/generate', {
+    tenantId: session.tenantId,
+    racetrackId: session.racetrackId,
+    packageType: 'audit-readiness',
+    actor: `${session.role}-operator`,
+    reason: 'Operator-requested evidence packet from compliance console',
+  });
+  return assertMutationOk(result);
+}
+
+export async function requestSurfaceOperationalAction(body: {
+  action: string;
+  sectorId: string;
+  reason: string;
+}) {
+  const session = getTenantContext();
+  const result = await postJson('/surface-intelligence/operational-actions', {
+    ...body,
+    tenantId: session.tenantId,
+    racetrackId: session.racetrackId,
+    requestedBy: `${session.role}-operator`,
+  });
+  return assertMutationOk(result);
+}
+
+export async function updateHorseEligibility(body: {
+  horseId: string;
+  status: string;
+  reason: string;
+}) {
+  const result = await postJson(`/horses/${encodeURIComponent(body.horseId)}/eligibility`, {
+    status: body.status,
+    reason: body.reason,
+    actor: getTenantContext().role,
+  });
+  return assertMutationOk(result);
+}
+
+export async function dispatchNotification(body: { title: string; message: string; category: string }) {
+  const session = getTenantContext();
+  const result = await postJson('/notifications/dispatch', {
+    ...body,
+    tenantId: session.tenantId,
+    racetrackId: session.racetrackId,
+    actor: `${session.role}-operator`,
+  });
+  return assertMutationOk(result);
+}
+
+export async function acknowledgeNotification(notificationId?: string) {
+  const result = await postJson('/notifications/acknowledge', {
+    notificationId: notificationId ?? 'latest',
+    actor: `${getTenantContext().role}-operator`,
+  });
+  return assertMutationOk(result);
+}
+
+export async function completeWorkforceTask(taskId?: string) {
+  const session = getTenantContext();
+  const result = await postJson('/collaboration/assignments', {
+    assignmentId: taskId ?? `task-${Date.now()}`,
+    assignee: `${session.role}-operator`,
+    status: 'completed',
+    actor: `${session.role}-operator`,
+    reason: 'Workforce task marked complete from console',
+  });
+  return assertMutationOk(result);
+}
+
+export async function syncDigitalTwinState(assetId = 'twin:main-track') {
+  const result = await postJson('/racing-data/sync/digital-twins', {
+    entityId: assetId,
+    rationale: 'Operator-triggered digital twin sync draft from console',
+  });
+  return assertMutationOk(result);
+}
+
+export async function completeEmergencyChecklistItem(body: {
+  itemId: string;
+  workflowId?: string;
+  actor?: string;
+}) {
+  const session = getTenantContext();
+  const workflowId = body.workflowId ?? 'wf-fire-1';
+  const result = await postJson(`/emergency-operations/workflows/${encodeURIComponent(workflowId)}/communications`, {
+    itemId: body.itemId,
+    actor: body.actor ?? `${session.role}-operator`,
+  });
+  return assertMutationOk(result);
+}
+
+export async function patchSecurityEscalation(body: {
+  escalationId: string;
+  assignee?: string;
+  status?: string;
+}) {
+  const session = getTenantContext();
+  const result = await postJson('/security-operations/events', {
+    eventType: 'escalation-request',
+    escalationId: body.escalationId,
+    assignee: body.assignee ?? `${session.role}-operator`,
+    status: body.status ?? 'acknowledged',
+    tenantId: session.tenantId,
+    racetrackId: session.racetrackId,
+    actor: `${session.role}-operator`,
+    summary: `Escalation ${body.escalationId} updated from console`,
+  });
+  return assertMutationOk(result);
+}

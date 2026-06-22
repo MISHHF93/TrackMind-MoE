@@ -78,13 +78,14 @@ test('frontend uses workspace pages wired to backend paths', async () => {
 
 test('frontend forbids protected execution controls in workspace actions', async () => {
   const workspace = await source('src/workspaces/WorkspacePage.tsx');
+  const routeActions = await source('src/domain/routeActions.ts');
   const actionDock = await source('src/shell/ActionDock.tsx');
   const forbidden = ['Start race', 'Stop race', 'Release payout', 'Execute maintenance', 'Dispatch emergency'];
   for (const label of forbidden) {
     assert.doesNotMatch(workspace, new RegExp(`label: '${label}'`));
     assert.doesNotMatch(actionDock, new RegExp(`>${label}<`));
   }
-  assert.match(workspace, /Request race start approval/);
+  assert.match(routeActions, /Request race start approval/);
   assert.match(workspace, /protectedAction/);
 });
 

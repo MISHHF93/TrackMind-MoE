@@ -1,12 +1,21 @@
 import type { ReactElement } from 'react';
+import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { KpiStrip } from '@/design/components/kpi-strip';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
 import { SectionPanel } from '@/design/components/section-panel';
+import { Button } from '@/design/components/button';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { feedData, numericField } from '../feedUtils';
+import { GovernedActionDialog } from '@/features/approvals/GovernedActionDialog';
+import { requestSurfaceOperationalAction } from '@/api/mutations';
+import type { WorkspaceAction } from '@/design/components/workspace';
 
 export function SurfacePanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+  const queryClient = useQueryClient();
+  const [message, setMessage] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<{ open: boolean; action?: WorkspaceAction }>({ open: false });
   const surface = feedData<Record<string, unknown>>(results, '/surface-intelligence/workspace');
   const measurements = extractArray<Record<string, unknown>>(feedData(results, '/track-surface/measurements'));
   const sectors = extractArray<Record<string, unknown>>(surface, 'sectors');
@@ -15,8 +24,57 @@ export function SurfacePanels({ results }: { results: WorkspaceDataResult[] }): 
   const weather = surface && typeof surface.weatherObservation === 'object' ? surface.weatherObservation as Record<string, unknown> : undefined;
   const score = numericField(surface, 'overallScore');
 
+  const surfaceActionMutation = useMutation({
+    mutationFn: (input: { action: string; sectorId: string; reason: string }) =>
+      requestSurfaceOperationalAction(input),
+    onSuccess: (response) => {
+      setMessage(typeof response === 'object' && response && 'message' in response
+        ? String((response as { message?: string }).message)
+        : 'Surface operational action requested.');
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+    onError: (error: Error) => setMessage(error.message),
+  });
+
   return (
     <div className="space-y-4">
+      <SectionPanel title="Surface actions" description="Approval-gated maintenance and configuration actions.">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="governance"
+            onClick={() => setDialog({
+              open: true,
+              action: {
+                id: 'surface-irrigation',
+                label: 'Request irrigation',
+                protectedAction: 'surface-irrigation',
+                target: 'far-turn',
+                approvalApi: 'controlled-actions',
+              },
+            })}
+          >
+            Request irrigation approval
+          </Button>
+          <Button
+            size="sm"
+            variant="governance"
+            onClick={() => setDialog({
+              open: true,
+              action: {
+                id: 'track-closure',
+                label: 'Track closure',
+                protectedAction: 'track-closure',
+                target: 'main-track',
+                approvalApi: 'controlled-actions',
+              },
+            })}
+          >
+            Request track closure
+          </Button>
+          {message ? <p className="text-xs text-[var(--muted-foreground)] w-full">{message}</p> : null}
+        </div>
+      </SectionPanel>
       <KpiStrip
         items={[
           { id: 'score', label: 'Overall surface score', value: score != null ? String(score) : '—' },
@@ -75,20 +133,56 @@ export function SurfacePanels({ results }: { results: WorkspaceDataResult[] }): 
           />
         </SectionPanel>
         <SectionPanel title="Maintenance recommendations" description="Approval-gated surface actions.">
-          <RecordTable
-            columns={[
-              { key: 'action', label: 'Action' },
-              { key: 'state', label: 'State' },
-              { key: 'detail', label: 'Detail' },
-            ]}
-            rows={mapRecords(recommendations, (r) => ({
-              action: String(r.action ?? r.title ?? '—'),
-              state: String(r.executionState ?? r.status ?? '—'),
-              detail: String(r.detail ?? r.rationale ?? '—'),
-            }))}
-          />
+          <div className="space-y-2">
+            {recommendations.slice(0, 6).map((rec) => {
+              const sectorId = String(rec.sectorId ?? 'far-turn');
+              const action = String(rec.action ?? rec.title ?? 'surface-rolling');
+              return (
+                <div key={String(rec.id ?? action)} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--border)] p-2">
+                  <div>
+                    <p className="text-sm font-medium">{action}</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">{String(rec.detail ?? rec.rationale ?? rec.executionState ?? '')}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="governance"
+                    disabled={surfaceActionMutation.isPending}
+                    onClick={() => surfaceActionMutation.mutate({
+                      action,
+                      sectorId,
+                      reason: `Operator requested ${action} from surface recommendations`,
+                    })}
+                  >
+                    Request action
+                  </Button>
+                </div>
+              );
+            })}
+            {recommendations.length === 0 ? (
+              <RecordTable
+                columns={[
+                  { key: 'action', label: 'Action' },
+                  { key: 'state', label: 'State' },
+                  { key: 'detail', label: 'Detail' },
+                ]}
+                rows={[]}
+                emptyLabel="No maintenance recommendations returned."
+              />
+            ) : null}
+          </div>
         </SectionPanel>
       </div>
+      {dialog.action?.protectedAction ? (
+        <GovernedActionDialog
+          open={dialog.open}
+          onOpenChange={(open) => setDialog({ open, action: open ? dialog.action : undefined })}
+          title={dialog.action.label}
+          description={dialog.action.detail ?? 'Request human approval for this surface action.'}
+          protectedAction={dialog.action.protectedAction}
+          target={dialog.action.target ?? 'far-turn'}
+          approvalApi={dialog.action.approvalApi}
+        />
+      ) : null}
     </div>
   );
 }

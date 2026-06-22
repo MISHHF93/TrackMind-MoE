@@ -1,7 +1,8 @@
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
+import { stewardRulingRoles } from '@trackmind/shared';
 import { actionDisabledReason, roleCanUseAction } from '@/domain/approvalControls';
 import { Badge } from '@/design/components/badge';
 import { Button } from '@/design/components/button';
@@ -25,36 +26,45 @@ export function StewardingPanels({ results }: { results: WorkspaceDataResult[] }
   const workspaceData = feedData<Record<string, unknown>>(results, '/steward-operations/workspace');
   const decisionSupportData = feedData<Record<string, unknown>>(results, '/decision-support');
   const inquiries = extractArray<Record<string, unknown>>(inquiriesData, 'inquiries');
-  const firstInquiry = inquiries[0] as Record<string, unknown> | undefined;
-  const inquiryId = String(firstInquiry?.id ?? '');
+  const [selectedInquiryId, setSelectedInquiryId] = useState('');
+  const defaultInquiryId = String(inquiries[0]?.id ?? '');
+
+  useEffect(() => {
+    if (!selectedInquiryId && defaultInquiryId) {
+      setSelectedInquiryId(defaultInquiryId);
+    }
+  }, [defaultInquiryId, selectedInquiryId]);
+
+  const activeInquiry = inquiries.find((inquiry) => String(inquiry.id) === selectedInquiryId) ?? inquiries[0];
+  const inquiryId = String(activeInquiry?.id ?? '');
   const recommendationSupport = (decisionSupportData ?? inquiriesData?.recommendationSupport ?? workspaceData?.recommendationSupport) as Record<string, unknown> | undefined;
   const recommendations = extractArray<Record<string, unknown>>(recommendationSupport ?? {}, 'recommendations');
-  const evidence = firstInquiry
-    ? extractArray<Record<string, unknown>>(firstInquiry, 'evidenceReferences')
+  const evidence = activeInquiry
+    ? extractArray<Record<string, unknown>>(activeInquiry, 'evidenceReferences')
     : extractArray<Record<string, unknown>>(inquiriesData, 'evidenceReferences');
-  const drafts = firstInquiry
-    ? extractArray<Record<string, unknown>>(firstInquiry, 'decisionDrafts')
+  const drafts = activeInquiry
+    ? extractArray<Record<string, unknown>>(activeInquiry, 'decisionDrafts')
     : extractArray<Record<string, unknown>>(inquiriesData, 'decisionDrafts');
-  const timeline = firstInquiry
-    ? extractArray<Record<string, unknown>>(firstInquiry, 'timeline')
+  const timeline = activeInquiry
+    ? extractArray<Record<string, unknown>>(activeInquiry, 'timeline')
     : extractArray<Record<string, unknown>>(inquiriesData, 'timeline');
-  const integrations = (firstInquiry?.integrations ?? {}) as { approvalRequestIds?: string[] };
+  const integrations = (activeInquiry?.integrations ?? {}) as { approvalRequestIds?: string[] };
   const approvalRequestId = integrations.approvalRequestIds?.[0];
-  const finalRuling = firstInquiry?.finalRuling as Record<string, unknown> | undefined;
+  const finalRuling = activeInquiry?.finalRuling as Record<string, unknown> | undefined;
   const humanDraft = drafts.find((draft) => !draft.aiGenerated);
   const evidenceIds = evidence.map((item) => String(item.id ?? '')).filter(Boolean);
   const ruleIds = (humanDraft && Array.isArray(humanDraft.ruleIds)
     ? humanDraft.ruleIds
-    : firstInquiry && Array.isArray(firstInquiry.ruleReferences)
-      ? (firstInquiry.ruleReferences as Array<{ id?: string }>).map((rule) => String(rule.id ?? ''))
+    : activeInquiry && Array.isArray(activeInquiry.ruleReferences)
+      ? (activeInquiry.ruleReferences as Array<{ id?: string }>).map((rule) => String(rule.id ?? ''))
       : []
   ).filter(Boolean);
   const canFinalize = roleCanUseAction(
-    { id: 'steward-final-ruling', label: 'Record final ruling', protectedAction: 'steward-decision', target: inquiryId, requiredRoles: ['steward', 'admin'] },
+    { id: 'steward-final-ruling', label: 'Record final ruling', protectedAction: 'steward-decision', target: inquiryId, requiredRoles: stewardRulingRoles },
     session.role,
   );
   const finalizeDisabledReason = actionDisabledReason(
-    { id: 'steward-final-ruling', label: 'Record final ruling', protectedAction: 'steward-decision', target: inquiryId, requiredRoles: ['steward', 'admin'] },
+    { id: 'steward-final-ruling', label: 'Record final ruling', protectedAction: 'steward-decision', target: inquiryId, requiredRoles: stewardRulingRoles },
     session.role,
   );
 
@@ -68,7 +78,7 @@ export function StewardingPanels({ results }: { results: WorkspaceDataResult[] }
       return issueStewardFinalRuling(inquiryId, {
         id: `final-${Date.now().toString(36)}`,
         issuedBy: session.role,
-        issuedByRole: session.role === 'admin' ? 'admin' : 'steward',
+        issuedByRole: session.role === 'platform-super-admin' ? 'platform-super-admin' : 'steward',
         issuedAt: new Date().toISOString(),
         decision: String(humanDraft?.recommendation ?? 'Official steward ruling recorded without official result mutation'),
         rationale: String(humanDraft?.rationale ?? 'Human steward panel reviewed evidence and rule references.'),
@@ -94,6 +104,22 @@ export function StewardingPanels({ results }: { results: WorkspaceDataResult[] }
   return (
     <div className="space-y-4">
       <SectionPanel title="Steward inquiries" description="Objections, incidents, and investigations under review.">
+        {inquiries.length > 1 ? (
+          <label className="mb-3 flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+            Active inquiry
+            <select
+              className="rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-sm text-[var(--foreground)]"
+              value={inquiryId}
+              onChange={(event) => setSelectedInquiryId(event.target.value)}
+            >
+              {inquiries.map((inquiry) => (
+                <option key={String(inquiry.id)} value={String(inquiry.id ?? '')}>
+                  {String(inquiry.title ?? inquiry.id ?? 'Inquiry')}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <RecordTable
           columns={[
             { key: 'inquiry', label: 'Inquiry' },

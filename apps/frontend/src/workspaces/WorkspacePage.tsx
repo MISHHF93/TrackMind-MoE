@@ -1,13 +1,9 @@
-import { useEffect, type ReactElement } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { Role } from '@trackmind/shared';
 import { backendSupportLabels } from '@/domain/support';
-import {
-  extractApprovalControls,
-  mergeWorkspaceActions,
-  resolveDefaultRaceTarget,
-  roleCanUseAction,
-} from '@/domain/approvalControls';
+import { extractApprovalControls, roleCanUseAction } from '@/domain/approvalControls';
+import { buildRouteActions, roleFilterActions } from '@/domain/routeActions';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { routeById, type DomainRouteId } from '@/routes/routes';
 import { useWorkspaceData, extractArray, stringField, type WorkspaceDataResult } from '@/hooks/useWorkspaceData';
@@ -15,6 +11,7 @@ import { useWorkspaceContext } from '@/hooks/useWorkspaceContext';
 import { LoadingState, ErrorState, EmptyState } from '@/design/components/states';
 import { SupportStatusBadge } from '@/shell/SupportStatusBadge';
 import { Badge } from '@/design/components/badge';
+import { Button } from '@/design/components/button';
 import { DegradedStateBanner } from '@/shell/DegradedStateBanner';
 import {
   AdvisoryCard,
@@ -24,13 +21,13 @@ import {
   MetricGrid,
   PriorityQueue,
   type OpsPosture,
-  type WorkspaceAction,
   type WorkspaceAdvisory,
   type WorkspaceMetric,
   type WorkspaceQueueItem,
 } from '@/design/components/workspace';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/design/components/tabs';
 import { isRecord as isObj } from '@/lib/utils';
+import { isDevJsonEnabled, toggleDevJsonEnabled } from '@/lib/devMode';
 import { extractAllRecommendations, extractAllWarnings, extractAllIncidents, numericField } from './feedUtils';
 import { WorkspaceDomainPanels } from './views/WorkspaceDomainPanels';
 
@@ -76,13 +73,30 @@ function buildQueue(routeId: DomainRouteId, results: WorkspaceDataResult[]): Wor
   for (const result of results) {
     const approvals = extractArray<Record<string, unknown>>(result.data, 'approvals');
     for (const approval of approvals) {
+      const approvalId = String(approval.id ?? approval.approvalRequestId ?? '');
+      const status = String(approval.status ?? approval.state ?? 'pending');
       items.push({
-        id: String(approval.id ?? approval.approvalRequestId ?? Math.random()),
+        id: approvalId || String(Math.random()),
         title: String(approval.action ?? approval.actionType ?? approval.title ?? 'Approval request'),
-        detail: String(approval.status ?? approval.state ?? 'pending'),
-        posture: String(approval.status).includes('reject') ? 'critical' : 'watch',
+        detail: status,
+        posture: status.includes('reject') ? 'critical' : 'watch',
         meta: String(approval.target ?? ''),
-        href: '/approvals',
+        href: approvalId ? undefined : '/approvals',
+        approvalId: approvalId || undefined,
+        itemKind: 'approval',
+        focusHref: approvalId ? `/approvals?approval=${encodeURIComponent(approvalId)}` : undefined,
+      });
+    }
+
+    const escalations = extractArray<Record<string, unknown>>(result.data, 'escalations');
+    for (const escalation of escalations) {
+      items.push({
+        id: String(escalation.id ?? Math.random()),
+        title: String(escalation.title ?? escalation.summary ?? 'Escalation'),
+        detail: String(escalation.status ?? escalation.state ?? 'open'),
+        posture: 'watch',
+        itemKind: 'escalation',
+        focusHref: `/security?focus=escalation-${String(escalation.id ?? '')}`,
       });
     }
 
@@ -93,6 +107,8 @@ function buildQueue(routeId: DomainRouteId, results: WorkspaceDataResult[]): Wor
         title: String(alert.title ?? alert.summary ?? 'Alert'),
         detail: String(alert.detail ?? alert.message ?? ''),
         posture: alert.severity === 'critical' ? 'critical' : 'advisory',
+        itemKind: 'alert',
+        focusHref: routeId === 'incidents' ? undefined : '/incidents',
       });
     }
 
@@ -104,6 +120,7 @@ function buildQueue(routeId: DomainRouteId, results: WorkspaceDataResult[]): Wor
           title: String(event.action ?? event.eventType ?? 'Audit event'),
           detail: String(event.target ?? event.summary ?? ''),
           meta: String(event.timestamp ?? ''),
+          focusHref: '/audit',
         });
       }
     }
@@ -115,16 +132,21 @@ function buildQueue(routeId: DomainRouteId, results: WorkspaceDataResult[]): Wor
       title: String(warning.title ?? warning.summary ?? 'Warning'),
       detail: String(warning.detail ?? warning.recommendedAction ?? ''),
       posture: 'watch',
+      itemKind: 'alert',
     });
   }
 
   for (const incident of extractAllIncidents(results)) {
+    const incidentId = String(incident.id ?? '');
     items.push({
-      id: String(incident.id ?? Math.random()),
+      id: incidentId || String(Math.random()),
       title: String(incident.title ?? incident.summary ?? 'Incident'),
       detail: String(incident.status ?? incident.severity ?? ''),
       posture: incident.severity === 'critical' ? 'critical' : 'advisory',
       href: '/incidents',
+      incidentId: incidentId || undefined,
+      itemKind: 'incident',
+      focusHref: incidentId ? `/incidents?event=${encodeURIComponent(incidentId)}` : '/incidents',
     });
   }
 
@@ -134,44 +156,23 @@ function buildQueue(routeId: DomainRouteId, results: WorkspaceDataResult[]): Wor
 function buildAdvisories(results: WorkspaceDataResult[]): WorkspaceAdvisory[] {
   const advisories: WorkspaceAdvisory[] = [];
   for (const rec of extractAllRecommendations(results)) {
+    const domain = typeof rec.domain === 'string' ? rec.domain : undefined;
     advisories.push({
       id: String(rec.id ?? Math.random()),
       title: String(rec.title ?? rec.summary ?? rec.action ?? 'AI recommendation'),
       detail: String(rec.detail ?? rec.rationale ?? rec.recommendation ?? rec.reason ?? ''),
       confidence: rec.confidence != null ? String(rec.confidence) : undefined,
-      domain: typeof rec.domain === 'string' ? rec.domain : undefined,
+      domain,
+      target: typeof rec.target === 'string' ? rec.target : undefined,
+      protectedAction: typeof rec.action === 'string' ? rec.action : undefined,
     });
   }
   return advisories.slice(0, 6);
 }
 
-function buildActions(routeId: DomainRouteId, results: WorkspaceDataResult[], role: Role): WorkspaceAction[] {
-  const raceTarget = resolveDefaultRaceTarget(results);
-  const common: WorkspaceAction[] = [
-    { id: 'nav-approvals', label: 'Open approvals', detail: 'Review the human approval queue.', href: '/approvals' },
-  ];
-
-  const byRoute: Partial<Record<DomainRouteId, WorkspaceAction[]>> = {
-    raceDay: [
-      { id: 'request-race-start', label: 'Request race start approval', detail: 'Create an approval-gated race start draft.', protectedAction: 'race-start', target: raceTarget, approvalApi: 'controlled-actions' },
-      { id: 'request-scratch', label: 'Request scratch approval', detail: 'Create an approval-gated scratch draft.', protectedAction: 'scratch-horse', target: raceTarget, approvalApi: 'controlled-actions' },
-    ],
-    finance: [
-      { id: 'request-payout', label: 'Request payout approval', detail: 'Dual-control payout request draft.', protectedAction: 'payout', target: 'payout-1', approvalApi: 'controlled-actions' },
-    ],
-    facilities: [
-      { id: 'request-maintenance', label: 'Request maintenance approval', detail: 'Safety-critical maintenance draft.', protectedAction: 'facility-maintenance-execution', target: 'GATE_MAIN_01', approvalApi: 'controlled-actions' },
-    ],
-    emergency: [
-      { id: 'request-emergency', label: 'Request emergency action approval', detail: 'Human-governed emergency workflow draft.', protectedAction: 'emergency-action', target: 'incident-1', approvalApi: 'controlled-actions' },
-    ],
-  };
-
-  return mergeWorkspaceActions(
-    extractApprovalControls(results),
-    byRoute[routeId] ?? [],
-    common,
-  ).filter((action) => roleCanUseAction(action, role));
+function buildActions(routeId: DomainRouteId, results: WorkspaceDataResult[], role: Role) {
+  const backendActions = extractApprovalControls(results);
+  return roleFilterActions(buildRouteActions(routeId, results, backendActions, role), role, roleCanUseAction);
 }
 
 export function WorkspacePage({ routeId }: { routeId: DomainRouteId }): ReactElement {
@@ -180,7 +181,8 @@ export function WorkspacePage({ routeId }: { routeId: DomainRouteId }): ReactEle
   const { data, isLoading, isError, error, refetch } = useWorkspaceData(routeId);
   const { setWorkspaceState } = useWorkspaceContext();
   const [searchParams] = useSearchParams();
-  const focus = searchParams.get('event') ?? searchParams.get('payout') ?? searchParams.get('approval');
+  const [devJson, setDevJson] = useState(isDevJsonEnabled);
+  const focus = searchParams.get('event') ?? searchParams.get('payout') ?? searchParams.get('approval') ?? searchParams.get('focus');
 
   useEffect(() => {
     if (!data) return;
@@ -247,7 +249,9 @@ export function WorkspacePage({ routeId }: { routeId: DomainRouteId }): ReactEle
       <Tabs defaultValue="summary">
         <TabsList>
           <TabsTrigger value="summary">Summary</TabsTrigger>
-          <TabsTrigger value="feeds">Backend feeds</TabsTrigger>
+          {import.meta.env.DEV ? (
+            <TabsTrigger value="feeds">{devJson ? 'Developer JSON' : 'Developer'}</TabsTrigger>
+          ) : null}
         </TabsList>
         <TabsContent value="summary">
           <EvidencePanel title="Workspace summary">
@@ -261,11 +265,23 @@ export function WorkspacePage({ routeId }: { routeId: DomainRouteId }): ReactEle
             />
           </EvidencePanel>
         </TabsContent>
-        <TabsContent value="feeds" className="space-y-4">
-          {results.map((item) => (
-            <JsonPanel key={item.path} title={item.path} data={item.status === 'ready' ? item.data : { error: item.message }} />
-          ))}
-        </TabsContent>
+        {import.meta.env.DEV ? (
+          <TabsContent value="feeds" className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setDevJson(toggleDevJsonEnabled())}
+              >
+                {devJson ? 'Hide raw JSON' : 'Show raw JSON'}
+              </Button>
+              <p className="text-xs text-[var(--muted-foreground)]">Developer-only backend feed inspector.</p>
+            </div>
+            {devJson ? results.map((item) => (
+              <JsonPanel key={item.path} title={item.path} data={item.status === 'ready' ? item.data : { error: item.message }} />
+            )) : null}
+          </TabsContent>
+        ) : null}
       </Tabs>
 
     </div>

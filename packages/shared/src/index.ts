@@ -2,6 +2,8 @@ export * from './accessControl.js';
 
 export * from './roleOperatingModel.js';
 
+export * from './roleAccessMatrix.js';
+
 export * from './identityGovernance.js';
 
 export * from './entityResolution.js';

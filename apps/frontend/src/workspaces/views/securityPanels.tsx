@@ -10,7 +10,7 @@ import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { useIncidentTimelineStream } from '@/hooks/useIncidentTimelineStream';
 import { feedData } from '../feedUtils';
-import { activateEmergencyWorkflow, completeEmergencyCommunication, scheduleEmergencyDrill, completeEmergencyDrill, createEmergencyAfterActionReport } from '@/api/mutations';
+import { activateEmergencyWorkflow, completeEmergencyCommunication, scheduleEmergencyDrill, completeEmergencyDrill, createEmergencyAfterActionReport, completeEmergencyChecklistItem, patchSecurityEscalation } from '@/api/mutations';
 import { getJson } from '@/api/client';
 import { apiPaths } from '@/api/paths';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
@@ -150,7 +150,50 @@ export function SecurityPanels({ results }: { results: WorkspaceDataResult[] }):
           }))}
         />
       </SectionPanel>
+      {escalations.length > 0 ? (
+        <EscalationActionsPanel escalations={escalations} />
+      ) : null}
     </div>
+  );
+}
+
+function EscalationActionsPanel({ escalations }: { escalations: Record<string, unknown>[] }): ReactElement {
+  const queryClient = useQueryClient();
+  const { session } = useTenantSession();
+  const [message, setMessage] = useState<string | null>(null);
+  const ackMutation = useMutation({
+    mutationFn: (escalationId: string) => patchSecurityEscalation({
+      escalationId,
+      assignee: `${session.role}-operator`,
+      status: 'acknowledged',
+    }),
+    onSuccess: () => {
+      setMessage('Escalation acknowledged.');
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+    onError: (error: Error) => setMessage(error.message),
+  });
+
+  return (
+    <SectionPanel title="Open escalations" description="Acknowledge and assign security escalations.">
+      <div className="space-y-2">
+        {escalations.slice(0, 6).map((flow) => {
+          const id = String(flow.id ?? '');
+          return (
+            <div key={id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--border)] p-2">
+              <div>
+                <p className="text-sm font-medium">{String(flow.title ?? flow.summary ?? id)}</p>
+                <p className="text-xs text-[var(--muted-foreground)]">{String(flow.status ?? flow.state ?? 'open')}</p>
+              </div>
+              <Button size="sm" variant="governance" disabled={!id || ackMutation.isPending} onClick={() => ackMutation.mutate(id)}>
+                Acknowledge
+              </Button>
+            </div>
+          );
+        })}
+        {message ? <p className="text-xs text-[var(--muted-foreground)]">{message}</p> : null}
+      </div>
+    </SectionPanel>
   );
 }
 
@@ -329,7 +372,7 @@ export function EmergencyPanels({ results }: { results: WorkspaceDataResult[] })
         severity: 'major',
         location: 'Grandstand shelter level',
         activatedBy: commanderAssignee,
-        roles: ['admin'],
+        roles: ['platform-super-admin', 'race-day-operations-manager'],
       }),
     onSuccess: (response) => onMutationMessage(response, 'Emergency workflow activated.'),
     onError: (error: Error) => setActionMessage(error.message),
@@ -376,6 +419,16 @@ export function EmergencyPanels({ results }: { results: WorkspaceDataResult[] })
         findings: [{ finding: 'Communications checklist reviewed under incident command', severity: 'major', owner: 'safety' }],
       }),
     onSuccess: (response) => onMutationMessage(response, 'After-action report created.'),
+    onError: (error: Error) => setActionMessage(error.message),
+  });
+
+  const completeChecklistMutation = useMutation({
+    mutationFn: (itemId: string) => completeEmergencyChecklistItem({
+      itemId,
+      workflowId: activeWorkflowId,
+      actor: commanderAssignee,
+    }),
+    onSuccess: (response) => onMutationMessage(response, 'Checklist item marked complete.'),
     onError: (error: Error) => setActionMessage(error.message),
   });
 
@@ -450,18 +503,32 @@ export function EmergencyPanels({ results }: { results: WorkspaceDataResult[] })
       </SectionPanel>
       <div className="grid gap-4 xl:grid-cols-2">
         <SectionPanel title="Emergency checklist">
-          <RecordTable
-            columns={[
-              { key: 'item', label: 'Item' },
-              { key: 'status', label: 'Status' },
-              { key: 'owner', label: 'Owner' },
-            ]}
-            rows={mapRecords(checklist, (c) => ({
-              item: String(c.title ?? c.item ?? c.id ?? '—'),
-              status: String(c.status ?? (c.completed ? 'done' : 'open')),
-              owner: String(c.owner ?? c.role ?? '—'),
-            }))}
-          />
+          <div className="space-y-2">
+            {checklist.slice(0, 8).map((c) => {
+              const itemId = String(c.id ?? c.item ?? '');
+              const completed = Boolean(c.completed) || String(c.status).toLowerCase() === 'done';
+              return (
+                <div key={itemId} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--border)] p-2">
+                  <div>
+                    <p className="text-sm font-medium">{String(c.title ?? c.item ?? itemId)}</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">{String(c.owner ?? c.role ?? '—')} · {String(c.status ?? (completed ? 'done' : 'open'))}</p>
+                  </div>
+                  {!completed ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={completeChecklistMutation.isPending}
+                      onClick={() => completeChecklistMutation.mutate(itemId)}
+                    >
+                      Mark complete
+                    </Button>
+                  ) : (
+                    <Badge variant="nominal">done</Badge>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </SectionPanel>
         <SectionPanel title="Command roles">
           <RecordTable

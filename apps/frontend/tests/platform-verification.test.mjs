@@ -222,7 +222,10 @@ test('platform verification: surface intelligence panels load live API feeds', a
   assert.match(paths, /\[apiPaths\.raceDay\.surfaceMeasurements\]: 'live-api'/);
   assert.match(paths, /surface:[\s\S]*workspace: '\/surface-intelligence\/workspace'/);
   assert.match(paths, /surface:[\s\S]*measurements: '\/track-surface\/measurements'/);
+  assert.match(paths, /operationalActions/);
+  assert.match(paths, /return pathSources\[url\.pathname\] \?\? 'documented-stub'/);
   assert.match(surfacePanels, /feedData<Record<string, unknown>>\(results, '\/surface-intelligence\/workspace'\)/);
   assert.match(surfacePanels, /feedData\(results, '\/track-surface\/measurements'\)/);
+  assert.match(surfacePanels, /requestSurfaceOperationalAction/);
   assert.match(routes, /backendContractPathsForRoute\('surface'\)/);
 });

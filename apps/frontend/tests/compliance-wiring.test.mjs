@@ -84,8 +84,9 @@ test('compliance wiring: governance panels consume dashboard, corrective actions
   assert.match(panels, /GovernedActionDialog/);
   assert.match(panels, /Register corrective action/);
   assert.match(panels, /Close selected action/);
+  assert.match(panels, /generateComplianceEvidencePacket/);
+  assert.match(panels, /Generate evidence packet/);
   assert.doesNotMatch(panels, /postJson/);
-  assert.doesNotMatch(panels, /generateComplianceEvidencePacket/);
 });
 
 test('compliance wiring: route manifest declares compliance backend paths', async () => {

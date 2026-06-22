@@ -6,11 +6,14 @@ import { actionDisabledReason, roleCanUseAction } from '@/domain/approvalControl
 import { Button } from '@/design/components/button';
 import type { WorkspaceAction } from '@/design/components/workspace';
 import { GovernedActionDialog } from '@/features/approvals/GovernedActionDialog';
+import { useWorkspaceActionMutation } from '@/hooks/useWorkspaceActionMutation';
 
 export function ActionDock({ actions }: { actions: WorkspaceAction[] }): ReactElement {
   const navigate = useNavigate();
   const { session } = useTenantSession();
   const [dialog, setDialog] = useState<{ open: boolean; action?: WorkspaceAction }>({ open: false });
+  const [message, setMessage] = useState<string | null>(null);
+  const actionMutation = useWorkspaceActionMutation();
 
   return (
     <footer className="action-dock px-4 py-3">
@@ -26,13 +29,22 @@ export function ActionDock({ actions }: { actions: WorkspaceAction[] }): ReactEl
               key={action.id}
               type="button"
               size="sm"
-              disabled={disabled}
-              variant={action.protectedAction ? 'governance' : action.variant === 'default' ? 'default' : 'outline'}
+              disabled={disabled || (action.actionKind ? actionMutation.isPending : false)}
+              variant={action.protectedAction || action.actionKind ? 'governance' : action.variant === 'default' ? 'default' : 'outline'}
               title={title}
               onClick={() => {
                 if (disabled) return;
                 if (action.protectedAction) {
                   setDialog({ open: true, action });
+                  return;
+                }
+                if (action.actionKind) {
+                  void actionMutation.mutateAsync(action).then((response) => {
+                    const msg = typeof response === 'object' && response && 'message' in response
+                      ? String((response as { message?: string }).message)
+                      : `${action.label} submitted.`;
+                    setMessage(msg);
+                  }).catch((error: Error) => setMessage(error.message));
                   return;
                 }
                 if (action.href) {
@@ -55,6 +67,8 @@ export function ActionDock({ actions }: { actions: WorkspaceAction[] }): ReactEl
           );
         })}
       </div>
+      {message ? <p className="mt-2 text-xs text-[var(--muted-foreground)]">{message}</p> : null}
+      {actionMutation.isError ? <p className="mt-1 text-xs text-[var(--status-critical)]">{(actionMutation.error as Error).message}</p> : null}
       {dialog.action?.protectedAction ? (
         <GovernedActionDialog
           open={dialog.open}

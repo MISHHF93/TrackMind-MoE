@@ -137,6 +137,7 @@ export const legacyRoleAliases: Record<string, Role> = {
   owner: 'staff-limited',
   jockey: 'staff-limited',
   official: 'starter-official',
+  starter: 'starter-official',
 };
 
 /**

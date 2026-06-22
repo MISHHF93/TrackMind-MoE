@@ -31,6 +31,11 @@ export const apiPaths = {
   },
   raceDay: {
     races: '/races',
+    raceStart: (raceId: string) => `/races/${encodeURIComponent(raceId)}/start`,
+    raceStop: (raceId: string) => `/races/${encodeURIComponent(raceId)}/stop`,
+    raceScratch: (raceId: string) => `/races/${encodeURIComponent(raceId)}/scratches`,
+    raceStartApproval: (raceId: string) =>
+      `/starting-gate-operations/races/${encodeURIComponent(raceId)}/race-start-approval`,
     raceOffice: '/race-operations/race-office',
     racingCalendar: '/racing-calendar/workspace',
     raceCards: '/race-cards/workspace',
@@ -69,7 +74,14 @@ export const apiPaths = {
     horseVeterinaryRecord: '/horses/horse-1/veterinary',
     horseEligibilityUpdate: '/horses/horse-1/eligibility',
   },
-  approvals: { list: '/approvals/requests', durable: '/approvals/durable', composer: '/approvals/composer' },
+  approvals: {
+    list: '/approvals/requests',
+    durable: '/approvals/durable',
+    composer: '/approvals/composer',
+    controlledActions: '/approvals/controlled-actions',
+    draftRequests: '/approvals/draft-requests',
+    escalationSimulate: '/approvals/escalation/simulate',
+  },
   incidents: {
     security: '/security-operations/workspace',
     emergency: '/emergency-operations/workspace',
@@ -121,7 +133,13 @@ export const apiPaths = {
     incidents: '/facilities-maintenance/incidents',
     workOrderMetadataPatch: '/facilities-maintenance/work-orders/metadata-patch',
   },
-  finance: { ticketing: '/services/finance/ticketing', workspace: '/finance/workspace', dashboard: '/finance/dashboard', auditTrail: '/finance/audit-trail' },
+  finance: {
+    ticketing: '/services/finance/ticketing',
+    payouts: '/services/finance/payouts',
+    workspace: '/finance/workspace',
+    dashboard: '/finance/dashboard',
+    auditTrail: '/finance/audit-trail',
+  },
   federation: { workspace: '/federation/workspace', kpiAggregation: '/federation/kpi-aggregation', industryIntelligence: '/industry-intelligence/workspace', industryDashboard: '/industry-intelligence/dashboard', industryBenchmarks: '/industry-intelligence/benchmarks', industryTrends: '/industry-intelligence/trends', federationIntelligence: '/federation-intelligence/workspace' },
   dataHub: {
     workspace: '/racing-data',
@@ -159,6 +177,8 @@ export const apiPaths = {
     inbox: '/notifications/inbox',
     deliveryAdapters: '/notifications/delivery-adapters',
     deliveryAuditTrail: '/notifications/delivery-audit-trail',
+    dispatch: '/notifications/dispatch',
+    acknowledge: '/notifications/acknowledge',
   },
   settings: {
     policy: '/ai-control-plane/policy',
@@ -184,10 +204,15 @@ export const apiPaths = {
     evidence: (inquiryId: string) => `/steward-operations/inquiries/${inquiryId}/evidence`,
   },
   workforce: { workspace: '/workforce-operations/workspace' },
-  digitalTwin: { state: '/digital-twin/state', assets: '/assets' },
+  digitalTwin: {
+    state: '/digital-twin/state',
+    assets: '/assets',
+    sync: '/racing-data/sync/digital-twins',
+  },
   surface: {
     workspace: '/surface-intelligence/workspace',
     measurements: '/track-surface/measurements',
+    operationalActions: '/surface-intelligence/operational-actions',
   },
   emergency: {
     workspace: '/emergency-operations/workspace',
@@ -201,6 +226,7 @@ export const apiPaths = {
   collaboration: {
     threads: '/collaboration/threads',
     activity: '/collaboration/activity',
+    assignments: '/collaboration/assignments',
   },
   entityPicker: {
     kinds: '/entity-picker/kinds',
@@ -358,19 +384,41 @@ export const routeApiPathGroups = {
   emergency: [apiPaths.emergency.workspace, ...commonContextApiPaths],
 } as const satisfies Record<DomainRouteId, readonly string[]>;
 
+const defaultRaceId = 'race-7';
+
 /** POST/mutation contract paths declared on routes but not fetched by workspace GET loaders. */
 export const routeMutationPathGroups = {
-  analytics: [apiPaths.kpis.thresholdDraftRequests],
-  compliance: [apiPaths.compliance.correctiveActions, apiPaths.compliance.evidencePacketGenerate],
+  dashboard: [apiPaths.approvals.draftRequests],
+  raceDay: [
+    apiPaths.raceDay.raceStart(defaultRaceId),
+    apiPaths.raceDay.raceStop(defaultRaceId),
+    apiPaths.raceDay.raceScratch(defaultRaceId),
+    apiPaths.raceDay.raceStartApproval(defaultRaceId),
+  ],
+  equine: [apiPaths.equine.horseEligibilityUpdate],
+  stewarding: [apiPaths.stewarding.finalRuling(stewardingSeededInquiryId)],
+  surface: [apiPaths.surface.operationalActions],
+  approvals: [apiPaths.approvals.escalationSimulate, apiPaths.approvals.composer],
+  incidents: [apiPaths.security.events],
   emergency: [
     apiPaths.emergency.workflows,
     apiPaths.emergency.drills,
     apiPaths.emergency.afterActionReports,
   ],
+  compliance: [apiPaths.compliance.correctiveActions, apiPaths.compliance.evidencePacketGenerate],
+  security: [apiPaths.security.events],
   facilities: [apiPaths.facilities.maintenanceSchedules, apiPaths.facilities.incidents],
-  stewarding: [apiPaths.stewarding.finalRuling(stewardingSeededInquiryId)],
+  workforce: [apiPaths.collaboration.assignments],
+  digitalTwin: [apiPaths.digitalTwin.sync],
+  ticketing: [apiPaths.notifications.dispatch],
+  finance: [apiPaths.finance.payouts],
+  dataHub: [apiPaths.dataHub.providerInvoke('default-provider')],
+  audit: [apiPaths.approvals.controlledActions],
+  admin: [apiPaths.approvals.controlledActions],
+  analytics: [apiPaths.kpis.thresholdDraftRequests],
+  fanExperience: [apiPaths.notifications.dispatch],
+  notifications: [apiPaths.notifications.dispatch, apiPaths.notifications.acknowledge],
   settings: [apiPaths.settings.promptLineageDrafts],
-  equine: [apiPaths.equine.horseVeterinaryRecord, apiPaths.equine.horseEligibilityUpdate],
 } as const satisfies Partial<Record<DomainRouteId, readonly string[]>>;
 
 const pathSources: Record<string, ApiAdapterSource> = {
@@ -389,7 +437,7 @@ const pathSources: Record<string, ApiAdapterSource> = {
   [apiPaths.facilities.maintenanceSchedules]: 'live-api',
   [apiPaths.facilities.incidents]: 'live-api',
   [apiPaths.audit.events]: 'live-api',
-  [apiPaths.audit.search]: 'live-api',
+  [apiPaths.audit.search]: 'facade-api',
   [apiPaths.admin.featureFlags]: 'live-api',
   [apiPaths.admin.modules]: 'live-api',
   [apiPaths.admin.tenants]: 'live-api',
@@ -437,7 +485,8 @@ const pathSources: Record<string, ApiAdapterSource> = {
   [apiPaths.settings.modelCards]: 'live-api',
   [apiPaths.settings.promptCards]: 'live-api',
   [apiPaths.settings.aiGovernanceKpiPack]: 'live-api',
-  [apiPaths.federation.kpiAggregation]: 'live-api',
+  [apiPaths.federation.kpiAggregation]: 'facade-api',
+  [apiPaths.federation.workspace]: 'facade-api',
   [apiPaths.federation.industryIntelligence]: 'live-api',
   [apiPaths.federation.industryDashboard]: 'live-api',
   [apiPaths.federation.industryBenchmarks]: 'live-api',
@@ -474,11 +523,26 @@ const pathSources: Record<string, ApiAdapterSource> = {
   [apiPaths.operationalNotes.workspace]: 'live-api',
   [apiPaths.operationalNotes.intake]: 'live-api',
   [apiPaths.operationalNotes.revisions]: 'live-api',
+  [apiPaths.approvals.escalationSimulate]: 'live-api',
+  [apiPaths.approvals.controlledActions]: 'live-api',
+  [apiPaths.approvals.draftRequests]: 'live-api',
+  [apiPaths.surface.operationalActions]: 'live-api',
+  [apiPaths.notifications.dispatch]: 'live-api',
+  [apiPaths.notifications.acknowledge]: 'live-api',
+  [apiPaths.collaboration.assignments]: 'live-api',
+  [apiPaths.digitalTwin.sync]: 'facade-api',
+  [apiPaths.digitalTwin.state]: 'facade-api',
+  [apiPaths.digitalTwin.assets]: 'facade-api',
+  [apiPaths.finance.payouts]: 'live-api',
+  [apiPaths.raceDay.raceStart(defaultRaceId)]: 'live-api',
+  [apiPaths.raceDay.raceStop(defaultRaceId)]: 'live-api',
+  [apiPaths.raceDay.raceScratch(defaultRaceId)]: 'live-api',
+  [apiPaths.raceDay.raceStartApproval(defaultRaceId)]: 'live-api',
 };
 
 export function adapterSourceForPath(path: string): ApiAdapterSource {
   const url = new URL(path, 'https://trackmind.local');
-  return pathSources[url.pathname] ?? 'live-api';
+  return pathSources[url.pathname] ?? 'documented-stub';
 }
 
 export function backendContractPathsForRoute(routeId: DomainRouteId): string[] {

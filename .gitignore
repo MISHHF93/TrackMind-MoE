@@ -12,4 +12,4 @@ tree.txt
 coverage/
 playwright-report/
 test-results/
-*.tsbuildinfo
+api-test-*.txt

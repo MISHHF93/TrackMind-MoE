@@ -1,6 +1,8 @@
 import type { ReactElement } from 'react';
 import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
+import { facilitiesActionRoles } from '@trackmind/shared';
 import { actionDisabledReason, roleCanUseAction } from '@/domain/approvalControls';
 import { Button } from '@/design/components/button';
 import { KpiStrip } from '@/design/components/kpi-strip';
@@ -14,6 +16,7 @@ import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { feedData } from '../feedUtils';
 import { FacilitiesGeospatialMap } from './FacilitiesGeospatialMap';
+import { completeWorkforceTask, syncDigitalTwinState } from '@/api/mutations';
 
 function defaultAssetId(assets: Record<string, unknown>[], selectedAssetId?: string): string {
   if (selectedAssetId) return selectedAssetId;
@@ -43,7 +46,7 @@ export function FacilitiesPanels({ results }: { results: WorkspaceDataResult[] }
   const selectedAsset = assets.find((asset) => String(asset.assetId) === selectedAssetId);
   const scheduleTargetAssetId = defaultAssetId(assets, selectedAssetId);
   const canRequestMaintenanceApproval = roleCanUseAction(
-    { id: 'facility-maintenance-execution', protectedAction: 'facility-maintenance-execution', label: '', target: scheduleTargetAssetId, requiredRoles: ['admin', 'track-superintendent'] },
+    { id: 'facility-maintenance-execution', protectedAction: 'facility-maintenance-execution', label: '', target: scheduleTargetAssetId, requiredRoles: facilitiesActionRoles },
     session.role,
   );
 
@@ -113,7 +116,7 @@ export function FacilitiesPanels({ results }: { results: WorkspaceDataResult[] }
               size="sm"
               variant="outline"
               disabled={!canRequestMaintenanceApproval}
-              title={canRequestMaintenanceApproval ? 'Request approval before schedule execution' : actionDisabledReason({ id: 'facility-maintenance-execution', protectedAction: 'facility-maintenance-execution', label: '', target: scheduleTargetAssetId, requiredRoles: ['admin', 'track-superintendent'] }, session.role)}
+              title={canRequestMaintenanceApproval ? 'Request approval before schedule execution' : actionDisabledReason({ id: 'facility-maintenance-execution', protectedAction: 'facility-maintenance-execution', label: '', target: scheduleTargetAssetId, requiredRoles: facilitiesActionRoles }, session.role)}
               onClick={() => setApprovalDialogOpen(true)}
             >
               Request maintenance approval
@@ -268,10 +271,21 @@ export function FacilitiesPanels({ results }: { results: WorkspaceDataResult[] }
 }
 
 export function WorkforcePanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+  const queryClient = useQueryClient();
+  const [taskMessage, setTaskMessage] = useState<string | null>(null);
   const data = feedData<Record<string, unknown>>(results, '/workforce-operations/workspace');
   const readiness = data && typeof data.readiness === 'object' ? data.readiness as Record<string, unknown> : undefined;
   const assignments = extractArray<Record<string, unknown>>(data, 'assignments');
   const certifications = extractArray<Record<string, unknown>>(data, 'certifications');
+
+  const completeTaskMutation = useMutation({
+    mutationFn: (taskId: string) => completeWorkforceTask(taskId),
+    onSuccess: () => {
+      setTaskMessage('Assignment marked complete.');
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+    onError: (error: Error) => setTaskMessage(error.message),
+  });
 
   return (
     <div className="space-y-4">
@@ -282,22 +296,32 @@ export function WorkforcePanels({ results }: { results: WorkspaceDataResult[] })
           { id: 'assignments', label: 'Assignments', value: String(assignments.length) },
         ]}
       />
+      {taskMessage ? <p className="text-xs text-[var(--muted-foreground)]">{taskMessage}</p> : null}
       <div className="grid gap-4 xl:grid-cols-2">
         <SectionPanel title="Shift assignments">
-          <RecordTable
-            columns={[
-              { key: 'employee', label: 'Employee' },
-              { key: 'role', label: 'Role' },
-              { key: 'zone', label: 'Zone' },
-              { key: 'status', label: 'Status' },
-            ]}
-            rows={mapRecords(assignments, (a) => ({
-              employee: String(a.employeeId ?? a.name ?? '—'),
-              role: String(a.role ?? '—'),
-              zone: String(a.zoneId ?? a.zone ?? '—'),
-              status: String(a.status ?? a.checkInStatus ?? '—'),
-            }))}
-          />
+          <div className="space-y-2">
+            {assignments.slice(0, 8).map((assignment) => {
+              const taskId = String(assignment.assignmentId ?? assignment.id ?? assignment.employeeId ?? '');
+              return (
+                <div key={taskId} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--border)] p-2 text-sm">
+                  <div>
+                    <p className="font-medium">{String(assignment.employeeId ?? assignment.name ?? '—')}</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">
+                      {String(assignment.role ?? '—')} · {String(assignment.zoneId ?? assignment.zone ?? '—')} · {String(assignment.status ?? assignment.checkInStatus ?? '—')}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="governance"
+                    disabled={!taskId || completeTaskMutation.isPending}
+                    onClick={() => completeTaskMutation.mutate(taskId)}
+                  >
+                    Mark complete
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
         </SectionPanel>
         <SectionPanel title="Certifications">
           <RecordTable
@@ -319,10 +343,22 @@ export function WorkforcePanels({ results }: { results: WorkspaceDataResult[] })
 }
 
 export function DigitalTwinPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+  const queryClient = useQueryClient();
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const twin = feedData<Record<string, unknown>>(results, '/digital-twin/state');
   const assets = feedData<Record<string, unknown>>(results, '/assets');
   const twinList = Array.isArray(twin) ? twin : extractArray<Record<string, unknown>>(twin, 'twins');
   const assetList = Array.isArray(assets) ? assets : extractArray<Record<string, unknown>>(assets, 'assets');
+  const primaryTwinId = String(twinList[0]?.twinId ?? twinList[0]?.id ?? 'twin:main-track');
+
+  const syncMutation = useMutation({
+    mutationFn: () => syncDigitalTwinState(primaryTwinId),
+    onSuccess: () => {
+      setSyncMessage('Digital twin sync requested.');
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+    onError: (error: Error) => setSyncMessage(error.message),
+  });
 
   return (
     <div className="space-y-4">
@@ -332,6 +368,14 @@ export function DigitalTwinPanels({ results }: { results: WorkspaceDataResult[] 
           { id: 'assets', label: 'Registered assets', value: String(assetList.length) },
         ]}
       />
+      <SectionPanel title="Twin synchronization" description="Trigger governed digital twin state refresh from racing data hub.">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="governance" disabled={syncMutation.isPending} onClick={() => syncMutation.mutate()}>
+            Trigger twin sync
+          </Button>
+          {syncMessage ? <p className="text-xs text-[var(--muted-foreground)]">{syncMessage}</p> : null}
+        </div>
+      </SectionPanel>
       <div className="grid gap-4 xl:grid-cols-2">
         <SectionPanel title="Twin state">
           <RecordTable

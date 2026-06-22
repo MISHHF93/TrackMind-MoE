@@ -43,7 +43,35 @@ test('frontend guards redirect denied users to role home', async () => {
 test('steward and security personas have distinct workspace homes', () => {
   assert.equal(homeRouteForRole('steward'), 'stewarding');
   assert.equal(homeRouteForRole('security-manager'), 'security');
+  assert.equal(homeRouteForRole('facilities-manager'), 'facilities');
+  assert.equal(homeRouteForRole('compliance-officer'), 'compliance');
   assert.equal(canRoleViewRoute('steward', 'stewarding'), true);
   assert.equal(canRoleViewRoute('security-manager', 'security'), true);
   assert.equal(canRoleViewRoute('steward', 'security'), false);
+});
+
+test('executive can access compliance and finance via operating model', () => {
+  assert.equal(canRoleViewRoute('executive', 'compliance'), true);
+  assert.equal(canRoleViewRoute('executive', 'finance'), true);
+  assert.equal(canRoleViewRoute('executive', 'analytics'), true);
+});
+
+test('data analytics user can access data hub', () => {
+  assert.equal(canRoleViewRoute('data-analytics-user', 'dataHub'), true);
+  assert.equal(canRoleViewRoute('data-analytics-user', 'stewarding'), false);
+});
+
+test('racetrack admin cannot access platform admin workspace', () => {
+  assert.equal(canRoleViewRoute('racetrack-admin', 'admin'), false);
+  assert.equal(canRoleViewRoute('organization-admin', 'admin'), true);
+});
+
+test('every workspace route has buildRouteActions entries', async () => {
+  const routes = await readFile(resolve(root, 'src/routes/routes.ts'), 'utf8');
+  const routeActions = await readFile(resolve(root, 'src/domain/routeActions.ts'), 'utf8');
+  const routeIds = [...routes.matchAll(/id: '([^']+)'/g)].map((match) => match[1]);
+  assert.ok(routeIds.length >= 23, 'expected at least 23 routes');
+  for (const routeId of routeIds) {
+    assert.match(routeActions, new RegExp(`${routeId}:\\s*\\[`), `buildRouteActions missing ${routeId}`);
+  }
 });

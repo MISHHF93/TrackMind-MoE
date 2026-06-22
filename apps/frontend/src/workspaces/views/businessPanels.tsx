@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
+import { financeActionRoles, dataHubInvokeRoles, dataHubReviewRoles } from '@trackmind/shared';
 import { actionDisabledReason, extractApprovalControls, roleCanUseAction } from '@/domain/approvalControls';
 import { Badge } from '@/design/components/badge';
 import { Button } from '@/design/components/button';
@@ -12,6 +13,7 @@ import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import {
   authorizeApprovalExecution,
+  dispatchNotification,
   draftEntityResolutionReview,
   invokeRacingDataProvider,
   releaseFinancePayout,
@@ -30,6 +32,8 @@ function formatUsd(amount: unknown): string {
 }
 
 export function TicketingPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+  const queryClient = useQueryClient();
+  const [dispatchMessage, setDispatchMessage] = useState<string | null>(null);
   const workspace = feedData<Record<string, unknown>>(results, '/fan-experience/workspace');
   const capacity = feedData<Record<string, unknown>>(results, '/fan-experience/capacity');
   const ticketInventory = (workspace?.ticketInventory ?? capacity?.ticketInventory ?? {}) as Record<string, unknown>;
@@ -38,6 +42,19 @@ export function TicketingPanels({ results }: { results: WorkspaceDataResult[] })
   const ticketingRevenue = revenueLinkage.find((link) => link.source === 'ticketing');
   const ticketingConnector = (workspace?.ticketingConnector ?? capacity?.ticketingConnector ?? {}) as Record<string, unknown>;
   const connectorAdapters = extractArray<Record<string, unknown>>(ticketingConnector, 'adapters');
+
+  const dispatchAlertMutation = useMutation({
+    mutationFn: () => dispatchNotification({
+      title: 'Ticketing operations alert',
+      message: 'Operator dispatch from ticketing console',
+      category: 'ticketing',
+    }),
+    onSuccess: () => {
+      setDispatchMessage('Fan alert dispatched.');
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+    onError: (error: Error) => setDispatchMessage(error.message),
+  });
 
   return (
     <div className="space-y-4">
@@ -51,6 +68,14 @@ export function TicketingPanels({ results }: { results: WorkspaceDataResult[] })
           { id: 'revenue', label: 'Ticketing revenue today', value: ticketingRevenue?.amountToday != null ? formatUsd(ticketingRevenue.amountToday) : '—' },
         ]}
       />
+      <SectionPanel title="Ticketing actions" description="Dispatch operational alerts to fan experience channels.">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="governance" disabled={dispatchAlertMutation.isPending} onClick={() => dispatchAlertMutation.mutate()}>
+            Dispatch fan alert
+          </Button>
+          {dispatchMessage ? <p className="text-xs text-[var(--muted-foreground)]">{dispatchMessage}</p> : null}
+        </div>
+      </SectionPanel>
       <SectionPanel title="Ticketing connector status" description="External ticketing provider sync for inventory and attendance.">
         <RecordTable
           columns={[
@@ -134,7 +159,7 @@ export function FinancePanels({ results }: { results: WorkspaceDataResult[] }): 
       protectedAction: String(control.action ?? 'payout'),
       target: String(control.target ?? 'new-payout'),
       approvalApi: 'controlled-actions' as const,
-      requiredRoles: Array.isArray(control.requiredRoles) ? control.requiredRoles.filter((role): role is string => typeof role === 'string') : ['admin', 'finance'],
+      requiredRoles: Array.isArray(control.requiredRoles) ? control.requiredRoles.filter((role): role is string => typeof role === 'string') : financeActionRoles,
     })),
   ];
 
@@ -365,7 +390,7 @@ export function FinancePanels({ results }: { results: WorkspaceDataResult[] }): 
               <Button
                 size="sm"
                 variant="governance"
-                disabled={requestPayoutMutation.isPending || !roleCanUseAction({ id: 'finance-new-payout', label: 'Request new payout', requiredRoles: ['admin', 'finance'] }, session.role)}
+                disabled={requestPayoutMutation.isPending || !roleCanUseAction({ id: 'finance-new-payout', label: 'Request new payout', requiredRoles: financeActionRoles }, session.role)}
                 onClick={() => void requestPayoutMutation.mutate()}
               >
                 Request new payout
@@ -378,7 +403,7 @@ export function FinancePanels({ results }: { results: WorkspaceDataResult[] }): 
                     key={`request-${String(item.id ?? item.reference)}`}
                     size="sm"
                     variant="governance"
-                    disabled={requestPurseReleaseMutation.isPending || !roleCanUseAction({ id: 'finance-purse-release', label: 'Request purse release', requiredRoles: ['admin', 'finance'] }, session.role)}
+                    disabled={requestPurseReleaseMutation.isPending || !roleCanUseAction({ id: 'finance-purse-release', label: 'Request purse release', requiredRoles: financeActionRoles }, session.role)}
                     onClick={() => requestPurseReleaseMutation.mutate(String(item.id ?? item.reference))}
                   >
                     Request purse release ({String(item.reference ?? item.id)})
@@ -392,7 +417,7 @@ export function FinancePanels({ results }: { results: WorkspaceDataResult[] }): 
                     key={String(item.id ?? item.reference)}
                     size="sm"
                     variant="governance"
-                    disabled={releaseMutation.isPending || !roleCanUseAction({ id: 'finance-release', label: 'Submit authorized release', requiredRoles: ['admin', 'finance'] }, session.role)}
+                    disabled={releaseMutation.isPending || !roleCanUseAction({ id: 'finance-release', label: 'Submit authorized release', requiredRoles: financeActionRoles }, session.role)}
                     onClick={() => releaseMutation.mutate(item)}
                   >
                     Submit authorized release ({String(item.kind ?? 'payout')})
@@ -581,8 +606,8 @@ export function DataHubPanels({ results }: { results: WorkspaceDataResult[] }): 
   const clusters = resolution.length > 0 ? resolution : extractArray<Record<string, unknown>>(entityResolution, 'clusters');
   const defaultProviderId = String(providers[0]?.providerId ?? 'provider-official-feed');
   const directMutationAllowed = entityResolution?.directMutationAllowed === true;
-  const canDraftReview = session.role === 'admin' || session.role === 'compliance-officer' || session.role === 'racing-secretary';
-  const canInvokeProvider = session.role === 'admin' || session.role === 'compliance-officer';
+  const canDraftReview = dataHubReviewRoles.includes(session.role);
+  const canInvokeProvider = dataHubInvokeRoles.includes(session.role);
 
   const draftReview = useMutation({
     mutationFn: (input: { providerId: string; entityId: string; resolutionId?: string; rationale?: string }) =>

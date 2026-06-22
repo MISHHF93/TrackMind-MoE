@@ -1,20 +1,47 @@
 import type { ReactElement } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
 import { SectionPanel } from '@/design/components/section-panel';
+import { Button } from '@/design/components/button';
 import { ApprovalDecisionButtons } from '@/features/approvals/GovernedActionDialog';
 import { ApprovalRequestComposer } from '@/features/approval-composer/ApprovalRequestComposer';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
+import { simulateApprovalEscalation } from '@/api/mutations';
 
 export function ApprovalsWorkspacePanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+  const queryClient = useQueryClient();
   const approvals = results.flatMap((item) => {
     if (item.status !== 'ready') return [];
     if (Array.isArray(item.data)) return item.data as Record<string, unknown>[];
     return extractArray<Record<string, unknown>>(item.data, 'items');
   });
 
+  const escalationMutation = useMutation({
+    mutationFn: () => simulateApprovalEscalation(),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['workspace'] }),
+  });
+
   return (
     <div className="space-y-4">
+      <SectionPanel title="Approval operations" description="Compose requests, run escalation review, and decide pending items.">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="governance"
+            disabled={escalationMutation.isPending}
+            onClick={() => escalationMutation.mutate()}
+          >
+            Run escalation review
+          </Button>
+          {escalationMutation.isSuccess ? (
+            <p className="text-xs text-[var(--muted-foreground)]">Escalation cycle simulated.</p>
+          ) : null}
+          {escalationMutation.isError ? (
+            <p className="text-xs text-[var(--status-critical)]">{(escalationMutation.error as Error).message}</p>
+          ) : null}
+        </div>
+      </SectionPanel>
       <ApprovalRequestComposer approvals={approvals} />
 
       {approvals.length === 0 ? null : (

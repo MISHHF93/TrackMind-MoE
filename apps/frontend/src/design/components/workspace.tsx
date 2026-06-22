@@ -2,9 +2,30 @@ import type { ReactElement, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './card';
 import { Badge } from './badge';
+import { Button } from './button';
 import { cn } from '@/lib/utils';
+import { ApprovalDecisionButtons } from '@/features/approvals/GovernedActionDialog';
+import { GovernedActionDialog } from '@/features/approvals/GovernedActionDialog';
+import { advisoryProtectedAction, advisoryTarget } from '@/domain/routeActions';
+import { useState } from 'react';
 
 export type OpsPosture = 'ready' | 'watch' | 'blocked' | 'critical' | 'advisory';
+
+export type WorkspaceApprovalApi =
+  | 'controlled-actions'
+  | 'track-configuration/draft-requests'
+  | 'starting-gate-operations/race-start-approval'
+  | 'composer'
+  | 'draft-requests';
+
+export type WorkspaceActionKind =
+  | 'escalation-simulate'
+  | 'compliance-evidence-packet'
+  | 'facilities-incident-report'
+  | 'workforce-task-complete'
+  | 'digital-twin-sync'
+  | 'notification-dispatch'
+  | 'notification-acknowledge';
 
 export interface WorkspaceMetric {
   id: string;
@@ -21,6 +42,10 @@ export interface WorkspaceQueueItem {
   posture?: OpsPosture;
   href?: string;
   meta?: string;
+  approvalId?: string;
+  incidentId?: string;
+  itemKind?: 'approval' | 'incident' | 'alert' | 'escalation';
+  focusHref?: string;
 }
 
 export interface WorkspaceAction {
@@ -29,10 +54,11 @@ export interface WorkspaceAction {
   detail?: string;
   protectedAction?: string;
   target?: string;
-  approvalApi?: 'controlled-actions' | 'track-configuration/draft-requests' | 'starting-gate-operations/race-start-approval';
+  approvalApi?: WorkspaceApprovalApi;
   requiredRoles?: string[];
   href?: string;
   variant?: 'default' | 'secondary' | 'outline' | 'governance';
+  actionKind?: WorkspaceActionKind;
 }
 
 export interface WorkspaceAdvisory {
@@ -41,6 +67,8 @@ export interface WorkspaceAdvisory {
   detail: string;
   confidence?: string;
   domain?: string;
+  protectedAction?: string;
+  target?: string;
 }
 
 export function MetricGrid({ metrics }: { metrics: WorkspaceMetric[] }): ReactElement {
@@ -73,6 +101,23 @@ export function MetricGrid({ metrics }: { metrics: WorkspaceMetric[] }): ReactEl
   );
 }
 
+function QueueItemActions({ item }: { item: WorkspaceQueueItem }): ReactElement | null {
+  if (item.approvalId && item.itemKind === 'approval') {
+    const status = String(item.detail ?? '').toLowerCase();
+    if (status.includes('pending') || status.includes('review')) {
+      return <ApprovalDecisionButtons approvalId={item.approvalId} />;
+    }
+  }
+  if (item.focusHref) {
+    return (
+      <Button size="sm" variant="outline" asChild>
+        <Link to={item.focusHref}>Open</Link>
+      </Button>
+    );
+  }
+  return null;
+}
+
 export function PriorityQueue({ title, items, emptyLabel = 'No items in queue.' }: { title: string; items: WorkspaceQueueItem[]; emptyLabel?: string }): ReactElement {
   return (
     <Card>
@@ -83,14 +128,18 @@ export function PriorityQueue({ title, items, emptyLabel = 'No items in queue.' 
       <CardContent className="space-y-2">
         {items.length === 0 ? <p className="text-sm text-[var(--muted-foreground)]">{emptyLabel}</p> : null}
         {items.map((item) => {
+          const actions = <QueueItemActions item={item} />;
           const content = (
             <>
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className="font-medium text-sm">{item.title}</p>
                 {item.detail ? <p className="text-xs text-[var(--muted-foreground)] mt-0.5">{item.detail}</p> : null}
                 {item.meta ? <p className="text-xs text-[var(--muted-foreground)] mt-1">{item.meta}</p> : null}
               </div>
-              {item.posture ? <span className={`posture-badge posture-badge--${item.posture}`}>{item.posture}</span> : null}
+              <div className="flex shrink-0 flex-col items-end gap-2">
+                {item.posture ? <span className={`posture-badge posture-badge--${item.posture}`}>{item.posture}</span> : null}
+                {actions}
+              </div>
             </>
           );
           const className = cn(
@@ -98,7 +147,7 @@ export function PriorityQueue({ title, items, emptyLabel = 'No items in queue.' 
             item.posture === 'critical' && 'queue-item-critical',
             item.href && 'hover:bg-[var(--surface-chrome-raised)] transition-colors',
           );
-          return item.href ? (
+          return item.href && !item.approvalId ? (
             <Link key={item.id} to={item.href} className={className}>
               {content}
             </Link>
@@ -125,6 +174,8 @@ export function EvidencePanel({ title, children }: { title: string; children: Re
 }
 
 export function AdvisoryCard({ advisories }: { advisories: WorkspaceAdvisory[] }): ReactElement {
+  const [dialog, setDialog] = useState<{ open: boolean; advisory?: WorkspaceAdvisory }>({ open: false });
+
   return (
     <Card>
       <CardHeader>
@@ -134,16 +185,34 @@ export function AdvisoryCard({ advisories }: { advisories: WorkspaceAdvisory[] }
       <CardContent className="space-y-3">
         {advisories.length === 0 ? <p className="text-sm text-[var(--muted-foreground)]">No active advisories.</p> : null}
         {advisories.map((item) => (
-          <div key={item.id} className="rounded-md border border-[color-mix(in_srgb,var(--brand-maroon)_15%,var(--border))] p-3">
+          <div key={item.id} className="rounded-md border border-[color-mix(in_srgb,var(--brand-maroon)_15%,var(--border))] p-3 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <p className="font-medium text-sm">{item.title}</p>
               {item.confidence ? <Badge variant="maroon">{item.confidence}</Badge> : null}
             </div>
-            <p className="text-sm text-[var(--muted-foreground)] mt-1">{item.detail}</p>
-            {item.domain ? <p className="text-xs mt-2 text-[var(--muted-foreground)]">Expert: {item.domain}</p> : null}
+            <p className="text-sm text-[var(--muted-foreground)]">{item.detail}</p>
+            {item.domain ? <p className="text-xs text-[var(--muted-foreground)]">Expert: {item.domain}</p> : null}
+            <Button
+              size="sm"
+              variant="governance"
+              onClick={() => setDialog({ open: true, advisory: item })}
+            >
+              Request approval
+            </Button>
           </div>
         ))}
       </CardContent>
+      {dialog.advisory ? (
+        <GovernedActionDialog
+          open={dialog.open}
+          onOpenChange={(open) => setDialog({ open, advisory: open ? dialog.advisory : undefined })}
+          title={`Approval for ${dialog.advisory.title}`}
+          description={dialog.advisory.detail}
+          protectedAction={dialog.advisory.protectedAction ?? advisoryProtectedAction(dialog.advisory.domain) ?? 'safety-critical-control'}
+          target={dialog.advisory.target ?? advisoryTarget(dialog.advisory.domain)}
+          approvalApi="controlled-actions"
+        />
+      ) : null}
     </Card>
   );
 }
