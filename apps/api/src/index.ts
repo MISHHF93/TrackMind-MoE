@@ -102,6 +102,7 @@ export * from './trackmindNexus.js';
 
 export * from './commandCenterV1.js';
 export * from './collaborationService.js';
+export * from './operationalNotesService.js';
 export * from './platform/approvalStore.js';
 export * from './platform/approvalEscalationWorker.js';
 export * from './platform/approvalEscalationScheduler.js';

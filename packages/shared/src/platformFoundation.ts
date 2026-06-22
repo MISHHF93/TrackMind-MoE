@@ -151,6 +151,18 @@ export interface IncidentDto {
   category: 'safety' | 'security' | 'facility' | 'equine' | 'operational';
   reportedBy: string;
   assignedTo?: string;
+  /** Unified intake: domain incident type */
+  incidentType?: string;
+  intakeMode?: 'triage' | 'full';
+  location?: string;
+  summary?: string;
+  detailedNotes?: string;
+  involvedEntities?: Array<{ kind: string; id: string; label?: string }>;
+  evidenceRefs?: string[];
+  recommendedNextAction?: string;
+  approvalRequired?: boolean;
+  subjectKind?: string;
+  subjectId?: string;
   timeline: Array<{ at: string; action: string; actor: string; note?: string }>;
   auditIds: string[];
   eventIds: string[];

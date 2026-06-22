@@ -31,6 +31,49 @@ test('evidence collection links compliance evidence to immutable audit records a
   assert.ok(lib.control('ctrl-1').workflowInstanceIds.includes(workflow.id));
 });
 
+test('structured evidence intake links targets, retention, audit, and evidence package', () => {
+  const lib = new ComplianceControlLibrary('track-1');
+  lib.addOwner({ id: 'owner-compliance', displayName: 'Compliance Officer', role: 'compliance-officer', permissions: ['read', 'collect-evidence', 'assess'] });
+  lib.createControl({ id: 'ctrl-1', frameworkIds: ['ISO-27001'], title: 'Audit logging', description: 'Preserve security audit evidence', status: 'implemented', ownerId: 'owner-compliance', obligationIds: [], digitalTwinRefs: ['workflow:audit'] }, 'owner-compliance', '2026-06-13T00:00:00.000Z');
+  const result = lib.recordComplianceEvidenceIntake('compliance-officer-operator', {
+    title: 'Immutable audit export',
+    controlId: 'ctrl-1',
+    frameworkIds: ['ISO-27001', 'SOC-2'],
+    policyCitation: 'Information security monitoring and logging',
+    domain: 'security',
+    evidenceType: 'audit-trail',
+    source: 'immutable-audit-log',
+    notes: 'Hash-chain verification export for quarterly review.',
+    reviewStatus: 'pending-review',
+    approvalRequestId: 'approval-race-start',
+    auditRecordId: 'audit-incident-1',
+    linkTargets: [
+      { targetKind: 'incident', targetId: 'inc-1' },
+      { targetKind: 'approval', targetId: 'approval-race-start' },
+      { targetKind: 'audit', targetId: 'audit-incident-1' },
+      { targetKind: 'kpi-definition', targetId: 'kpi-compliance' },
+      { targetKind: 'regulatory-workflow', targetId: 'compliance-evidence-review' },
+    ],
+    retentionPolicy: 'regulated-records-7y',
+    retainedUntil: '2033-06-22',
+    legalHold: false,
+    reason: 'Quarterly evidence refresh',
+    entryMode: 'full',
+    startReviewWorkflow: true,
+  }, '2026-06-13T00:05:00.000Z');
+  assert.equal(result.accepted, true);
+  assert.ok(result.evidenceId);
+  assert.ok(result.auditRecordId);
+  assert.ok(result.evidencePackageId);
+  assert.ok(result.workflowInstanceId);
+  assert.equal(result.linkTargets.length, 6);
+  const records = lib.listEvidenceRecords();
+  assert.equal(records.length, 1);
+  assert.equal(records[0].title, 'Immutable audit export');
+  assert.equal(records[0].retention.retentionPolicy, 'regulated-records-7y');
+  assert.ok(lib.dashboard().evidenceRecords.length === 1);
+});
+
 test('seeded accreditation dashboard covers mappings, packages, programs, integrations, and approval references', () => {
   const dashboard = seededComplianceLibrary('track-1').dashboard();
   assert.equal(dashboard.frameworks.length, 12);

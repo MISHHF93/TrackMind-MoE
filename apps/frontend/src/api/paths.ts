@@ -69,7 +69,7 @@ export const apiPaths = {
     horseVeterinaryRecord: '/horses/horse-1/veterinary',
     horseEligibilityUpdate: '/horses/horse-1/eligibility',
   },
-  approvals: { list: '/approvals/requests', durable: '/approvals/durable' },
+  approvals: { list: '/approvals/requests', durable: '/approvals/durable', composer: '/approvals/composer' },
   incidents: {
     security: '/security-operations/workspace',
     emergency: '/emergency-operations/workspace',
@@ -93,6 +93,15 @@ export const apiPaths = {
     correctiveActionDelete: (correctiveActionId: string) =>
       `/compliance/corrective-actions/${correctiveActionId}/delete`,
     evidencePacketGenerate: '/compliance/evidence-packets/generate',
+    evidenceIntake: '/compliance/evidence/intake',
+    evidenceMetadataPatch: '/compliance/evidence/metadata-patch',
+  },
+  operationalNotes: {
+    journal: '/operational-notes/journal',
+    workspace: '/operational-notes/workspace',
+    intake: '/operational-notes/intake',
+    revisions: '/operational-notes/revisions',
+    metadataPatch: '/operational-notes/metadata-patch',
   },
   security: {
     workspace: '/security-operations/workspace',
@@ -100,13 +109,17 @@ export const apiPaths = {
     camerasReadiness: '/security-operations/cameras/readiness',
     sensorsReadiness: '/security-operations/sensors/readiness',
     kpis: '/security-operations/kpis',
+    events: '/security-operations/events',
+    incidentMetadataPatch: '/security-operations/incidents/metadata-patch',
   },
   facilities: {
     workspace: '/facilities-maintenance/workspace',
     map: '/facilities-maintenance/map',
     utilities: '/facilities-maintenance/utilities',
     maintenanceSchedules: '/facilities-maintenance/maintenance-schedules',
+    inspections: '/facilities-maintenance/inspections',
     incidents: '/facilities-maintenance/incidents',
+    workOrderMetadataPatch: '/facilities-maintenance/work-orders/metadata-patch',
   },
   finance: { ticketing: '/services/finance/ticketing', workspace: '/finance/workspace', dashboard: '/finance/dashboard', auditTrail: '/finance/audit-trail' },
   federation: { workspace: '/federation/workspace', kpiAggregation: '/federation/kpi-aggregation', industryIntelligence: '/industry-intelligence/workspace', industryDashboard: '/industry-intelligence/dashboard', industryBenchmarks: '/industry-intelligence/benchmarks', industryTrends: '/industry-intelligence/trends', federationIntelligence: '/federation-intelligence/workspace' },
@@ -189,6 +202,15 @@ export const apiPaths = {
     threads: '/collaboration/threads',
     activity: '/collaboration/activity',
   },
+  entityPicker: {
+    kinds: '/entity-picker/kinds',
+    search: (kind: string, query = '', limit?: number) => {
+      const params = new URLSearchParams({ kind });
+      if (query) params.set('q', query);
+      if (limit != null) params.set('limit', String(limit));
+      return `/entity-picker/search?${params.toString()}`;
+    },
+  },
   search: { global: '/search/global', globalSample: '/search/global?q=horse' },
 } as const;
 
@@ -229,6 +251,7 @@ export const routeApiPathGroups = {
     apiPaths.raceDay.startingGate,
     apiPaths.raceDay.startingGateOperations,
     apiPaths.raceDay.schedule,
+    apiPaths.operationalNotes.journal,
     ...commonContextApiPaths,
   ],
   equine: [
@@ -251,6 +274,7 @@ export const routeApiPathGroups = {
     apiPaths.compliance.dashboard,
     apiPaths.compliance.correctiveActions,
     apiPaths.compliance.library,
+    apiPaths.operationalNotes.journal,
     ...commonContextApiPaths,
   ],
   security: [apiPaths.security.workspace, apiPaths.security.zonesLive, apiPaths.security.camerasReadiness, apiPaths.security.sensorsReadiness, apiPaths.security.kpis, ...commonContextApiPaths],
@@ -264,7 +288,7 @@ export const routeApiPathGroups = {
   finance: [apiPaths.finance.workspace, apiPaths.finance.dashboard, apiPaths.finance.auditTrail, ...commonContextApiPaths],
   federation: [apiPaths.federation.workspace, apiPaths.federation.kpiAggregation, apiPaths.federation.industryIntelligence, apiPaths.federation.industryDashboard, apiPaths.federation.industryBenchmarks, apiPaths.federation.industryTrends, apiPaths.federation.federationIntelligence, ...commonContextApiPaths],
   dataHub: [apiPaths.dataHub.workspace, apiPaths.dataHub.entityResolution, ...commonContextApiPaths],
-  audit: [apiPaths.audit.events, apiPaths.audit.search, ...commonContextApiPaths],
+  audit: [apiPaths.audit.events, apiPaths.audit.search, apiPaths.operationalNotes.journal, ...commonContextApiPaths],
   admin: [
     apiPaths.admin.platformHealth,
     apiPaths.admin.foundation,
@@ -445,6 +469,11 @@ const pathSources: Record<string, ApiAdapterSource> = {
   [apiPaths.compliance.correctiveActions]: 'live-api',
   [apiPaths.compliance.library]: 'live-api',
   [apiPaths.compliance.evidencePacketGenerate]: 'live-api',
+  [apiPaths.compliance.evidenceIntake]: 'live-api',
+  [apiPaths.operationalNotes.journal]: 'live-api',
+  [apiPaths.operationalNotes.workspace]: 'live-api',
+  [apiPaths.operationalNotes.intake]: 'live-api',
+  [apiPaths.operationalNotes.revisions]: 'live-api',
 };
 
 export function adapterSourceForPath(path: string): ApiAdapterSource {

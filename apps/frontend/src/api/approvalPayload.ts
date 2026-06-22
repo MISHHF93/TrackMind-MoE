@@ -1,4 +1,5 @@
 import type { Role } from '@trackmind/shared';
+import { buildApprovalControlledActionPayload } from '@trackmind/shared';
 import type { AdapterResult } from './client';
 import { getTenantContext } from '@/auth/session';
 
@@ -32,18 +33,20 @@ export interface ControlledActionInput {
 
 export function buildControlledActionBody(input: ControlledActionInput): ControlledActionBody {
   const session = getTenantContext();
-  const evidence = input.evidence?.length ? [...new Set(['human-approval-record', ...input.evidence])] : ['human-approval-record'];
-  return {
-    tenantId: session.tenantId,
-    racetrackId: session.racetrackId,
-    action: input.action,
-    target: input.target,
-    reason: input.reason,
-    evidence,
-    actor: `${session.role}-operator`,
-    actorType: 'human',
-    roles: [session.role],
-  };
+  return buildApprovalControlledActionPayload(
+    {
+      tenantId: session.tenantId,
+      racetrackId: session.racetrackId,
+      actorId: `${session.role}-operator`,
+      role: session.role,
+    },
+    {
+      protectedAction: input.action,
+      target: input.target,
+      reason: input.reason,
+      evidence: input.evidence,
+    },
+  );
 }
 
 export function buildApprovalDecisionBody(reason?: string): ApprovalDecisionBody {

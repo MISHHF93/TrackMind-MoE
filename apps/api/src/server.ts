@@ -28,7 +28,7 @@ import { seededRacingDataLicensePolicyService } from './racingDataLicensePolicy.
 import { RaceDayReadinessService } from './raceDayReadiness.js';
 import { createSeededRacingCalendarPlatform, RacingCalendarPlatform } from './racingCalendarPlatform.js';
 import { createSeededRaceCardManagement, RaceCardManagementPlatform } from './raceCardManagement.js';
-import { EquineIntelligencePlatform } from './equineIntelligencePlatform.js';
+import { EquineIntelligencePlatform, type EquineActor } from './equineIntelligencePlatform.js';
 import { createSeededHorseRegistry, HorseRegistryPlatform } from './horseRegistryPlatform.js';
 import { createSeededTrainerManagement, TrainerManagementPlatform } from './trainerManagementPlatform.js';
 import { createSeededJockeyManagement, JockeyManagementPlatform } from './jockeyManagementPlatform.js';
@@ -40,6 +40,7 @@ import { RaceOperationsPlatform } from './raceOperationsPlatform.js';
 import { createServiceBackedRaceOperations, type RaceOperationsService } from './raceOperationsService.js';
 import { ResponsibleAIGovernancePlatform } from './responsibleAiGovernor.js';
 import { createSafetyIntelligenceController, type SafetyIntelligenceController } from './safetyIntelligence/index.js';
+import { createOperationalNotesService, OperationalNotesService } from './operationalNotesService.js';
 import { SecurityOperationsService, createSeededSecurityOperationsService, type SecurityActor, type SecurityOpsPermission } from './securityOps.js';
 import { createApexDomainControllers, type ApexDomainControllers } from './services/controllers.js';
 import { createEquineIntelligenceController, type EquineIntelligenceController } from './services/equine/index.js';
@@ -58,11 +59,18 @@ import { createTUSStandardizationWorkspace, legacyAssetToTUSAsset } from './tusS
 import { workflowTemplateRegistry } from './workflowEngine.js';
 import { seedWorkforceOperations } from './workforceOperations.js';
 import { createPlatformServices, handlePlatformRequest, type PlatformServices } from './platform/platformController.js';
+import { IncidentIntakeService } from './incidentIntakeService.js';
+import { ApprovalRequestComposerService } from './approvalRequestComposerService.js';
 import { startApprovalEscalationScheduler } from './platform/approvalEscalationScheduler.js';
 import { getRepositoryEnvironment, resolvePersistenceMode, wireRepositoryAdaptersOnBoot } from './repository/repositoryAdapter.js';
 import { buildContractCoverageReport } from './platform/contractCoverageReport.js';
 import { createRaceScheduleWorkspace } from './platform/raceScheduleService.js';
 import { notificationFramework } from './platform/notificationFramework.js';
+import { createDataEntryService, type DataEntryService } from './dataEntry/dataEntryService.js';
+import { createBulkDataEntryService, type BulkDataEntryService } from './dataEntry/bulkDataEntryService.js';
+import { createEntityPickerService, type EntityPickerService } from './entityPicker/entityPickerService.js';
+import { dataEntryScopeFromHeaders, handleDataEntryRoute } from './dataEntry/dataEntryRoutes.js';
+import { entityPickerScopeFromHeaders, handleEntityPickerRoute } from './entityPicker/entityPickerRoutes.js';
 
 type HttpMethod = 'GET' | 'POST' | 'OPTIONS';
 type JsonBody = unknown;
@@ -795,6 +803,7 @@ export interface ApiFacadeState {
   ros: RosFacadeStateDto;
   artifacts: UniversalArtifactFrameworkState;
   collaboration: CollaborationService;
+  operationalNotesService: OperationalNotesService;
   apex: ApexDomainControllers;
   approvalService: CentralizedApprovalService;
   cqrs: CqrsCommandHandler;
@@ -805,6 +814,9 @@ export interface ApiFacadeState {
   platformServices: PlatformServices;
   platformEventBus: UniversalEventBus;
   commandCenterContract: CommandCenterContractSnapshot;
+  dataEntryService: DataEntryService;
+  bulkDataEntryService: BulkDataEntryService;
+  entityPickerService: EntityPickerService;
 }
 
 function refreshComplianceFacadeState(state: ApiFacadeState) {
@@ -1111,6 +1123,21 @@ export function createApiFacadeState(): ApiFacadeState {
   });
   notificationFramework.publish({ category: 'platform', severity: 'info', title: 'Platform services online', message: 'Foundation platform wave services are active.', targetRoles: ['*'] });
   notificationFramework.publish({ category: 'approval', severity: 'warning', title: 'Pending approvals', message: 'Review approval queue before race-day mutations.', targetRoles: ['admin', 'steward'] });
+  const dataEntryService = createDataEntryService(sharedAuditTarget, {
+    approvals: approvalService,
+    eventBus: platformEventBus,
+  });
+  const bulkDataEntryService = createBulkDataEntryService(dataEntryService, sharedAuditTarget);
+  const entityPickerService = createEntityPickerService({
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+    knowledgeGraph: racingKnowledgeGraphService,
+    racingCalendar: racingCalendarService,
+    identity: platformServices.identity,
+    compliancePlatform,
+    racingDataPolicies: racingDataPolicies as unknown as Record<string, unknown>,
+    auditEvents: auditEventsForState as unknown as Array<Record<string, unknown>>,
+  });
   return {
     approvals: contract.approvals,
     auditEvents: auditEventsForState,
@@ -1285,6 +1312,7 @@ export function createApiFacadeState(): ApiFacadeState {
     ros,
     artifacts,
     collaboration: new CollaborationService(),
+    operationalNotesService: createOperationalNotesService(() => timestamp),
     apex,
     approvalService,
     cqrs,
@@ -1295,6 +1323,9 @@ export function createApiFacadeState(): ApiFacadeState {
     platformServices,
     platformEventBus,
     commandCenterContract: contract,
+    dataEntryService,
+    bulkDataEntryService,
+    entityPickerService,
   };
 }
 
@@ -2015,6 +2046,39 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   const authHeaders = authHeadersFromQuery(method, path, requestUrl.searchParams, headers);
   const authorization = authorizeApiRequest(method, path, authHeaders, requestId);
   if (authorization) return authorization;
+  if (path.startsWith('/data-entry/')) {
+    const dataEntryResponse = handleDataEntryRoute(
+      state.dataEntryService,
+      state.bulkDataEntryService,
+      method,
+      path,
+      body,
+      dataEntryScopeFromHeaders({
+        'x-trackmind-tenant-id': headerValue(headers, 'x-trackmind-tenant-id'),
+        'x-trackmind-racetrack-id': headerValue(headers, 'x-trackmind-racetrack-id'),
+        'x-trackmind-organization-id': headerValue(headers, 'x-trackmind-organization-id'),
+        'x-trackmind-actor-id': headerValue(headers, 'x-trackmind-actor-id'),
+        'x-trackmind-role': headerValue(headers, 'x-trackmind-role'),
+      }, requestId),
+      requestUrl.searchParams,
+    );
+    if (dataEntryResponse) return dataEntryResponse;
+  }
+  if (path.startsWith('/entity-picker/')) {
+    const entityPickerResponse = handleEntityPickerRoute(
+      state.entityPickerService,
+      method,
+      path,
+      entityPickerScopeFromHeaders({
+        'x-trackmind-tenant-id': headerValue(headers, 'x-trackmind-tenant-id'),
+        'x-trackmind-racetrack-id': headerValue(headers, 'x-trackmind-racetrack-id'),
+        'x-trackmind-actor-id': headerValue(headers, 'x-trackmind-actor-id'),
+        'x-trackmind-role': headerValue(headers, 'x-trackmind-role'),
+      }, requestId),
+      requestUrl.searchParams,
+    );
+    if (entityPickerResponse) return entityPickerResponse;
+  }
   if (method === 'GET' && path === '/race-operations/paddock') {
     return { status: 200, body: state.paddockOperationsService.workspace(now()) };
   }
@@ -2125,7 +2189,25 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   }
   if (method === 'POST' && path === '/equine-welfare/observations') {
     const input = isRecord(body) ? body : {};
-    return { status: 201, body: state.equineWelfareIntelligenceService.recordObservation({ horseId: String(input.horseId ?? 'horse-1'), observedAt: String(input.observedAt ?? now()), observerId: String(input.observerId ?? input.actor ?? 'veterinarian'), role: (input.role as 'veterinarian' | undefined) ?? 'veterinarian', score: Number(input.score ?? 80), category: String(input.category ?? 'observation'), notes: String(input.notes ?? 'Welfare observation recorded'), interventions: Array.isArray(input.interventions) ? input.interventions : [], evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'veterinarian')) };
+    return { status: 201, body: state.equineWelfareIntelligenceService.recordObservation({
+      horseId: String(input.horseId ?? 'horse-1'),
+      observedAt: String(input.observedAt ?? now()),
+      observerId: String(input.observerId ?? input.observedBy ?? input.actor ?? 'veterinarian'),
+      role: (input.role as 'veterinarian' | 'welfare-officer' | 'trainer' | 'groom' | 'steward' | undefined) ?? 'veterinarian',
+      observationType: input.observationType ? String(input.observationType) : undefined,
+      score: Number(input.score ?? 80),
+      category: String(input.category ?? input.observationType ?? 'observation'),
+      severity: input.severity as 'low' | 'medium' | 'high' | 'critical' | undefined,
+      notes: String(input.notes ?? 'Welfare observation recorded'),
+      followUpNeeded: input.followUpNeeded === true,
+      clearanceState: input.clearanceState as 'none' | 'pending-review' | 'cleared' | 'restricted' | 'vet-hold' | 'denied' | undefined,
+      restrictions: Array.isArray(input.restrictions) ? input.restrictions.map(String) : [],
+      privacyScope: input.privacyScope as 'public' | 'racing-officials' | 'care-team' | 'regulator' | 'veterinary-confidential' | undefined,
+      raceDayImpact: input.raceDayImpact as 'none' | 'monitor-only' | 'paddock-hold' | 'gate-delay' | 'scratch-recommended' | 'eligibility-hold' | undefined,
+      interventions: Array.isArray(input.interventions) ? input.interventions.map(String) : [],
+      evidence: Array.isArray(input.evidence) ? input.evidence.map(String) : [],
+      immutable: true,
+    }, String(input.actor ?? input.observedBy ?? 'veterinarian')) };
   }
   const equineWelfareAlertAckMatch = path.match(/^\/equine-welfare\/alerts\/([^/]+)\/acknowledge$/);
   if (method === 'POST' && equineWelfareAlertAckMatch) {
@@ -2193,6 +2275,61 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'GET' && path === '/security-operations/kpis') {
     return { status: 200, body: state.securityOperationsService.computeSecurityKpiPack() };
   }
+  if (method === 'POST' && path === '/security-operations/events') {
+    const input = isRecord(body) ? body : {};
+    try {
+      const actor = securityActorFromHeaders(authHeaders);
+      const result = state.securityOperationsService.recordSecurityEventIntake(actor, {
+        eventType: (input.eventType ?? 'access-issue') as 'restricted-zone' | 'access-issue' | 'suspicious-activity' | 'security-incident' | 'personnel-event' | 'escalation-request',
+        entryMode: (input.entryMode ?? 'quick') as 'quick' | 'full',
+        severity: (input.severity ?? 'medium') as 'low' | 'medium' | 'high' | 'critical',
+        zoneId: input.zoneId ? String(input.zoneId) : undefined,
+        summary: String(input.summary ?? ''),
+        detailedNotes: input.detailedNotes ? String(input.detailedNotes) : undefined,
+        personDisplayName: input.personDisplayName ? String(input.personDisplayName) : undefined,
+        personLegalName: input.personLegalName ? String(input.personLegalName) : undefined,
+        credentialId: input.credentialId ? String(input.credentialId) : undefined,
+        accessDecision: input.accessDecision ? String(input.accessDecision) as 'granted' | 'denied' | 'review' : undefined,
+        accessReason: input.accessReason ? String(input.accessReason) : undefined,
+        cameraId: input.cameraId ? String(input.cameraId) : undefined,
+        host: input.host ? String(input.host) : undefined,
+        credentialStatus: input.credentialStatus ? String(input.credentialStatus) as 'valid' | 'expired' | 'revoked' | 'unknown' : undefined,
+        evidenceRefs: Array.isArray(input.evidenceRefs) ? input.evidenceRefs.map(String) : [],
+        relatedIncidentId: input.relatedIncidentId ? String(input.relatedIncidentId) : undefined,
+        escalationRoute: Array.isArray(input.escalationRoute) ? input.escalationRoute.map(String) : undefined,
+        requestInvestigation: input.requestInvestigation === true,
+        followUpOwner: input.followUpOwner ? String(input.followUpOwner) : undefined,
+        sensitiveDetails: input.sensitiveDetails ? String(input.sensitiveDetails) : undefined,
+        occurredAt: input.occurredAt ? String(input.occurredAt) : undefined,
+        reportedBy: String(input.reportedBy ?? input.actorId ?? actor.id),
+        reason: String(input.reason ?? 'Security event recorded'),
+      });
+      return { status: 201, body: { ...result, mock: false } };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'security_event_denied', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
+  if (method === 'POST' && path === '/security-operations/incidents/metadata-patch') {
+    const input = isRecord(body) ? body : {};
+    try {
+      const actor = securityActorFromHeaders(authHeaders);
+      const result = state.securityOperationsService.patchIncidentMetadata(
+        actor,
+        String(input.incidentId ?? input.entityId ?? ''),
+        {
+          assignedTo: input.assignedTo !== undefined ? String(input.assignedTo) : undefined,
+          status: input.status ? String(input.status) as 'open' | 'triaged' | 'escalated' | 'resolved' : undefined,
+        },
+        {
+          reason: input.reason ? String(input.reason) : undefined,
+          confirmedDestructive: input.confirmedDestructive === true,
+        },
+      );
+      return { status: 200, body: { ...result, mock: false } };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'security_incident_patch_denied', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
   if (method === 'POST' && path === '/security-operations/webhooks/access-events') {
     const input = isRecord(body) ? body : {};
     try {
@@ -2209,6 +2346,70 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
       return { status: response.status };
     });
     return { status: 200, body: coverage };
+  }
+  if (method === 'POST' && path === '/incidents/intake') {
+    const input = isRecord(body) ? body : {};
+    const actor = String(input.actor ?? input.actorId ?? input.reportedBy ?? 'operator');
+    const scope = {
+      tenantId: String(input.tenantId ?? 'trackmind'),
+      racetrackId: String(input.racetrackId ?? 'main-track'),
+      actorId: actor,
+    };
+    const intakeService = new IncidentIntakeService(state.platformServices.incidents, {
+      reportFacilitiesIncident: (payload, reportedBy) => state.facilitiesMaintenanceService.reportFacilityIncident({
+        assetId: payload.assetId ? String(payload.assetId) : undefined,
+        title: String(payload.title ?? 'Facility incident reported'),
+        severity: String(payload.severity ?? 'medium') as 'low' | 'medium' | 'high' | 'critical',
+        description: String(payload.description ?? 'Facility incident recorded for triage.'),
+        evidence: Array.isArray(payload.evidence) ? payload.evidence.map(String) : [],
+        reportedBy,
+      }, facilitiesPrincipal),
+      reportPaddockIncident: (payload, reportedBy) => state.paddockOperationsService.reportIncident({
+        raceId: payload.raceId ? String(payload.raceId) : undefined,
+        horseId: payload.horseId ? String(payload.horseId) : undefined,
+        reportedAt: now(),
+        reportedBy,
+        severity: String(payload.severity ?? 'medium') as 'low' | 'medium' | 'high' | 'critical',
+        status: 'open',
+        title: String(payload.title ?? 'Operational incident'),
+        summary: String(payload.summary ?? 'Incident reported'),
+        zoneId: payload.zoneId ? String(payload.zoneId) : undefined,
+        evidence: Array.isArray(payload.evidence) ? payload.evidence.map(String) : [],
+      }, reportedBy),
+      recordWelfareObservation: (payload, observer) => state.equineWelfareIntelligenceService.recordObservation({
+        horseId: String(payload.horseId ?? 'horse-1'),
+        observedAt: now(),
+        observerId: String(payload.observerId ?? observer),
+        role: (payload.role as 'welfare-officer') ?? 'welfare-officer',
+        score: Number(payload.score ?? 70),
+        category: String(payload.category ?? 'welfare-incident'),
+        notes: String(payload.notes ?? 'Welfare incident intake'),
+        interventions: [],
+        evidence: Array.isArray(payload.evidence) ? payload.evidence.map(String) : [],
+      }, observer),
+      openStewardInquiry: (payload, openedBy) => state.stewardOperationsService.openInquiry({
+        id: `inq-${Date.now().toString(36)}`,
+        raceId: String(payload.raceId ?? 'race-7'),
+        openedAt: now(),
+        openedBy,
+        involvedHorses: (Array.isArray(payload.involvedHorses) ? payload.involvedHorses.map(String) : []) as never[],
+        involvedJockeys: (Array.isArray(payload.involvedJockeys) ? payload.involvedJockeys.map(String) : []) as never[],
+        evidenceReferences: (Array.isArray(payload.evidenceReferences) ? payload.evidenceReferences.map(String) : []) as never[],
+        incidentsUnderReview: (Array.isArray(payload.incidentsUnderReview) ? payload.incidentsUnderReview.map(String) : []) as never[],
+      }, openedBy),
+    });
+    const result = intakeService.intake(scope, input);
+    return {
+      status: 201,
+      body: {
+        accepted: true,
+        incidentId: result.incident.id,
+        auditId: result.incident.auditIds[0],
+        domainRecordId: result.domainRecordId,
+        message: result.message,
+        incident: result.incident,
+      },
+    };
   }
   const platformResponse = handlePlatformRequest(method, path, body, {
     auditEvents: state.auditEvents as AuditEventDto[],
@@ -2452,7 +2653,32 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   const horseOwnershipMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/ownership$/);
   if (method === 'POST' && horseOwnershipMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.horseRegistryService.recordOwnership(decodeURIComponent(horseOwnershipMatch[1]), Array.isArray(input.ownershipHistory) ? input.ownershipHistory : input.ownership ?? [], String(input.actor ?? 'racing-secretary')) };
+    const horseId = decodeURIComponent(horseOwnershipMatch[1]);
+    if (input.ownerId && !Array.isArray(input.ownershipHistory)) {
+      const horse = state.horseRegistryService.getHorse(horseId);
+      const existing = Array.isArray(horse?.ownershipHistory)
+        ? horse!.ownershipHistory.map((entry) => ({
+          ownerId: String(entry.ownerId),
+          ownerName: String(entry.ownerName),
+          effectiveFrom: String(entry.effectiveFrom),
+          effectiveTo: entry.effectiveTo ? String(entry.effectiveTo) : undefined,
+          percentage: Number(entry.percentage),
+          evidence: Array.isArray(entry.evidence) ? entry.evidence.map(String) : [],
+        }))
+        : [];
+      const entry = {
+        ownerId: String(input.ownerId),
+        ownerName: String(input.ownerName ?? input.ownerId),
+        effectiveFrom: String(input.effectiveFrom ?? now().slice(0, 10)),
+        percentage: Number(input.percentage ?? 100),
+        evidence: [
+          ...(Array.isArray(input.evidence) ? input.evidence.map(String) : []),
+          String(input.dataSource ?? 'manual-entry'),
+        ],
+      };
+      return { status: 202, body: state.horseRegistryService.recordOwnership(horseId, [...existing, entry], String(input.actor ?? 'racing-secretary')) };
+    }
+    return { status: 202, body: state.horseRegistryService.recordOwnership(horseId, Array.isArray(input.ownershipHistory) ? input.ownershipHistory : input.ownership ?? [], String(input.actor ?? 'racing-secretary')) };
   }
   const horseTrainerMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/trainer$/);
   if (method === 'POST' && horseTrainerMatch) {
@@ -2605,7 +2831,23 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'POST' && vetObsMatch) {
     try {
       const input = (body ?? {}) as Record<string, any>;
-      return { status: 201, body: state.veterinaryOperationsService.addObservation(decodeURIComponent(vetObsMatch[1]), { observedAt: String(input.observedAt ?? now()), observerId: String(input.observerId ?? vetAccess.actorId), observerRole: String(input.observerRole ?? vetAccess.role), category: input.category ?? 'other', summary: String(input.summary ?? 'Observation recorded'), severity: input.severity ?? 'low', privacyScope: input.privacyScope ?? 'care-team', evidence: Array.isArray(input.evidence) ? input.evidence : [] }, vetAccess) };
+      return { status: 201, body: state.veterinaryOperationsService.addObservation(decodeURIComponent(vetObsMatch[1]), {
+        observedAt: String(input.observedAt ?? now()),
+        observerId: String(input.observerId ?? input.observedBy ?? vetAccess.actorId),
+        observerRole: String(input.observerRole ?? vetAccess.role),
+        observationType: input.observationType ? String(input.observationType) : undefined,
+        category: (input.category ?? 'other') as 'gait' | 'appetite' | 'behavior' | 'hydration' | 'injury-sign' | 'other',
+        summary: String(input.summary ?? input.notes ?? 'Observation recorded'),
+        notes: input.notes ? String(input.notes) : undefined,
+        severity: (input.severity ?? 'low') as 'low' | 'medium' | 'high' | 'critical',
+        followUpNeeded: input.followUpNeeded === true,
+        clearanceState: input.clearanceState as 'none' | 'pending-review' | 'cleared' | 'restricted' | 'vet-hold' | 'denied' | undefined,
+        restrictions: Array.isArray(input.restrictions) ? input.restrictions.map(String) : [],
+        raceDayImpact: input.raceDayImpact as 'none' | 'monitor-only' | 'paddock-hold' | 'gate-delay' | 'scratch-recommended' | 'eligibility-hold' | undefined,
+        privacyScope: (input.privacyScope ?? 'care-team') as import('@trackmind/shared').VeterinaryPrivacyScope,
+        evidence: Array.isArray(input.evidence) ? input.evidence.map(String) : [],
+        immutable: true,
+      }, vetAccess) };
     } catch (error) { return veterinaryDenied(error); }
   }
   const vetTreatmentMatch = path.match(/^\/veterinary-operations\/horses\/([^/]+)\/treatments$/);
@@ -2726,27 +2968,136 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     const horseId = decodeURIComponent(equineIntelligenceMatch[1]);
     return horseId === (state.equine as any).horse?.horseId ? { status: 200, body: state.equine } : apiNotFound(`No equine intelligence profile for ${horseId}`, path, requestId);
   }
+  const equineWorkoutMatch = path.match(/^\/equine-intelligence\/horses\/([^/]+)\/workouts$/);
+  if (method === 'POST' && equineWorkoutMatch) {
+    const input = isRecord(body) ? body : {};
+    const horseId = decodeURIComponent(equineWorkoutMatch[1]);
+    try {
+      const actor: EquineActor = { id: String(input.actor ?? input.actorId ?? 'racing-secretary'), roles: ['racing-secretary'], tenantId: String(input.tenantId ?? 'tenant-1') };
+      state.equinePlatform.recordWorkout(horseId, {
+        workoutId: String(input.workoutId ?? `workout-${Date.now().toString(36)}`),
+        date: String(input.date ?? now().slice(0, 10)),
+        trackId: String(input.trackId ?? 'main-track'),
+        distanceFurlongs: Number(input.distanceFurlongs ?? 4),
+        timeSeconds: Number(input.timeSeconds ?? 48),
+        surface: String(input.surface ?? 'dirt'),
+        source: String(input.dataSource ?? input.source ?? 'manual-entry'),
+      }, actor);
+      return { status: 201, body: { accepted: true, horseId, message: 'Workout recorded.', mock: false } };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'equine_workout_denied', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
+  const equineTransportMatch = path.match(/^\/equine-intelligence\/horses\/([^/]+)\/transport$/);
+  if (method === 'POST' && equineTransportMatch) {
+    const input = isRecord(body) ? body : {};
+    const horseId = decodeURIComponent(equineTransportMatch[1]);
+    try {
+      const actor: EquineActor = { id: String(input.actor ?? input.actorId ?? 'transport-coordinator'), roles: ['transport-coordinator'], tenantId: String(input.tenantId ?? 'tenant-1') };
+      state.equinePlatform.recordTransportation(horseId, {
+        tripId: String(input.tripId ?? `trip-${Date.now().toString(36)}`),
+        from: String(input.from ?? 'barn'),
+        to: String(input.to ?? 'paddock'),
+        departedAt: String(input.departedAt ?? now()),
+        arrivedAt: input.arrivedAt ? String(input.arrivedAt) : undefined,
+        transporter: String(input.transporter ?? 'licensed-equine-van'),
+        welfareChecks: Array.isArray(input.welfareChecks) ? input.welfareChecks.map(String) : [],
+      }, actor);
+      return { status: 201, body: { accepted: true, horseId, message: 'Transport record logged.', mock: false } };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'equine_transport_denied', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
   if (method === 'GET' && path === '/barn-operations/workspace') return { status: 200, body: state.barn };
   if (method === 'GET' && path === '/facilities-maintenance/workspace') return { status: 200, body: state.facilitiesMaintenanceService.workspace(facilitiesPrincipal) };
   if (method === 'GET' && path === '/facilities-maintenance/map') return { status: 200, body: state.facilitiesMaintenanceService.mapState(facilitiesPrincipal) };
   if (method === 'GET' && path === '/facilities-maintenance/utilities') return { status: 200, body: state.facilitiesMaintenanceService.utilities.snapshot(now()) };
+  if (method === 'POST' && path === '/facilities-maintenance/inspections') {
+    const input = isRecord(body) ? body : {};
+    try {
+      const actor = String(input.inspectedBy ?? input.actorId ?? input.actor ?? facilitiesPrincipal.id);
+      const result = state.facilitiesMaintenanceService.recordFacilitiesInspectionIntake({
+        assetId: String(input.assetId ?? 'GRANDSTAND_HVAC_01'),
+        inspectedBy: actor,
+        inspectionType: input.inspectionType ? String(input.inspectionType) : undefined,
+        facilityCategory: input.facilityCategory ? String(input.facilityCategory) : undefined,
+        notes: input.notes ? String(input.notes) : undefined,
+        issuesFound: Array.isArray(input.issuesFound) ? input.issuesFound.map(String) : [],
+        urgency: (input.urgency ?? 'normal') as 'low' | 'normal' | 'high' | 'critical',
+        triggerWorkOrder: input.triggerWorkOrder === true || input.workOrderTrigger === true,
+        attachmentRefs: Array.isArray(input.attachmentRefs) ? input.attachmentRefs.map(String) : [],
+        nextInspectionDueAt: input.nextInspectionDueAt ? String(input.nextInspectionDueAt) : input.nextInspectionAt ? String(input.nextInspectionAt) : undefined,
+        maintenanceOwner: input.maintenanceOwner ? String(input.maintenanceOwner) : undefined,
+        checklist: Array.isArray(input.checklist) ? input.checklist.map(String) : ['visual-walkthrough'],
+        findings: Array.isArray(input.findings) ? input.findings.map(String) : [String(input.notes ?? 'Inspection recorded')],
+        score: Number(input.score ?? input.conditionRating ?? 80),
+      }, facilitiesPrincipal);
+      return {
+        status: 201,
+        body: {
+          accepted: true,
+          inspectionId: result.inspection.id,
+          assetId: result.inspection.assetId,
+          status: result.inspection.status,
+          score: result.inspection.score,
+          workOrderTriggered: result.workOrderTriggered,
+          workOrderId: result.workOrder?.id,
+          approvalRequired: result.workOrder?.status === 'approval-required',
+          approvalRequestId: result.workOrder?.approvalRequestId,
+          auditId: result.inspection.auditId,
+          message: result.workOrderTriggered
+            ? `Inspection recorded and work order ${result.workOrder?.id ?? ''} queued for approval.`
+            : 'Facilities inspection recorded with audit linkage.',
+          mock: false,
+        },
+      };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'facilities_inspection_denied', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
   if (method === 'POST' && path === '/facilities-maintenance/maintenance-schedules') {
     const input = (body ?? {}) as Record<string, any>;
     try {
       const result = state.facilitiesMaintenanceService.scheduleMaintenance({
         assetId: String(input.assetId ?? 'GRANDSTAND_HVAC_01'),
         title: String(input.title ?? 'Scheduled facility maintenance'),
-        priority: input.priority ?? 'normal',
+        priority: input.priority ?? input.urgency ?? 'normal',
         scheduledFor: String(input.scheduledFor ?? now()),
         dueAt: String(input.dueAt ?? now()),
         tasks: Array.isArray(input.tasks) ? input.tasks : ['verify lockout', 'perform maintenance', 'capture evidence'],
         evidence: Array.isArray(input.evidence) ? input.evidence : [],
         operationalImpact: input.operationalImpact ?? 'operational-impact',
-        requestedBy: String(input.requestedBy ?? input.actor ?? 'facilities-supervisor'),
+        requestedBy: String(input.requestedBy ?? input.maintenanceOwner ?? input.actor ?? 'facilities-supervisor'),
+        maintenanceOwner: input.maintenanceOwner ? String(input.maintenanceOwner) : undefined,
+        notes: input.notes ? String(input.notes) : undefined,
+        issuesFound: Array.isArray(input.issuesFound) ? input.issuesFound.map(String) : undefined,
+        attachmentRefs: Array.isArray(input.attachmentRefs) ? input.attachmentRefs.map(String) : undefined,
+        facilityCategory: input.facilityCategory ? String(input.facilityCategory) : undefined,
       }, facilitiesPrincipal, { approvalToken: input.approvalToken });
       return { status: result.approvalRequired ? 202 : 201, body: result };
     } catch (error) {
       return { status: 400, body: { ok: false, error: { code: 'facilities_schedule_denied', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
+  if (method === 'POST' && path === '/facilities-maintenance/work-orders/metadata-patch') {
+    const input = (body ?? {}) as Record<string, unknown>;
+    try {
+      const result = state.facilitiesMaintenanceService.patchWorkOrderMetadata(
+        String(input.workOrderId ?? input.entityId ?? ''),
+        {
+          priority: input.priority ? String(input.priority) as import('./facilitiesMaintenance.js').MaintenancePriority : undefined,
+          scheduledFor: input.scheduledFor ? String(input.scheduledFor) : undefined,
+          status: input.status ? String(input.status) as import('./facilitiesMaintenance.js').WorkOrderStatus : undefined,
+        },
+        String(input.actorId ?? input.requestedBy ?? 'facilities-supervisor'),
+        {
+          reason: input.reason ? String(input.reason) : undefined,
+          confirmedDestructive: input.confirmedDestructive === true,
+        },
+      );
+      return { status: 200, body: { ...result, mock: false } };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'facilities_work_order_patch_denied', message: error instanceof Error ? error.message : String(error) } } };
     }
   }
   if (method === 'POST' && path === '/facilities-maintenance/incidents') {
@@ -3119,6 +3470,93 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     return { status: 200, body };
   }
   if (method === 'GET' && path === '/platform/nexus-upgrade') return { status: 200, body: state.nexusUpgrade };
+  if (method === 'GET' && path === '/operational-notes/journal') {
+    const subjectKind = requestUrl.searchParams.get('subjectKind') ?? undefined;
+    const entityId = requestUrl.searchParams.get('entityId') ?? undefined;
+    const author = requestUrl.searchParams.get('author') ?? undefined;
+    const tag = requestUrl.searchParams.get('tag') ?? undefined;
+    const followUpRequired = requestUrl.searchParams.get('followUpRequired') === 'true';
+    const limit = requestUrl.searchParams.get('limit') ? Number(requestUrl.searchParams.get('limit')) : undefined;
+    return {
+      status: 200,
+      body: {
+        ...state.operationalNotesService.queryJournal({
+          subjectKind: subjectKind as import('./operationalNotesService.js').OperationalNoteSubjectKind | undefined,
+          entityId,
+          author,
+          tag: tag ?? undefined,
+          followUpRequired: followUpRequired || undefined,
+          limit,
+        }),
+        mock: false,
+      },
+    };
+  }
+  if (method === 'GET' && path === '/operational-notes/workspace') {
+    return { status: 200, body: { ...state.operationalNotesService.workspace(), mock: false } };
+  }
+  if (method === 'POST' && path === '/operational-notes/intake') {
+    const input = isRecord(body) ? body : {};
+    try {
+      const result = state.operationalNotesService.recordIntake({
+        subjectKind: String(input.subjectKind ?? 'race-day-log') as import('./operationalNotesService.js').OperationalNoteSubjectKind,
+        entityId: String(input.entityId ?? 'race-day-log-today'),
+        entityLabel: input.entityLabel ? String(input.entityLabel) : undefined,
+        body: String(input.body ?? ''),
+        author: String(input.author ?? input.actorId ?? input.reportedBy ?? 'operator'),
+        authoredAt: input.authoredAt ? String(input.authoredAt) : undefined,
+        tags: Array.isArray(input.tags) ? input.tags.map(String) : undefined,
+        visibilityScope: String(input.visibilityScope ?? 'team') as import('./operationalNotesService.js').OperationalNoteVisibilityScope,
+        visibleToRoles: Array.isArray(input.visibleToRoles) ? input.visibleToRoles as Role[] : undefined,
+        followUpRequired: input.followUpRequired === true,
+        auditAware: input.auditAware !== false,
+        allowsEdit: input.allowsEdit === false ? false : undefined,
+        reason: String(input.reason ?? 'Operational note recorded'),
+        entryMode: (input.entryMode ?? 'flash') as 'flash' | 'full',
+        tenantId: input.tenantId ? String(input.tenantId) : undefined,
+        racetrackId: input.racetrackId ? String(input.racetrackId) : undefined,
+      });
+      return { status: 201, body: { ...result, mock: false } };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'operational_note_denied', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
+  if (method === 'POST' && path === '/operational-notes/revisions') {
+    const input = isRecord(body) ? body : {};
+    try {
+      const noteId = String(input.noteId ?? '');
+      const result = state.operationalNotesService.editNote(noteId, {
+        body: String(input.body ?? ''),
+        editedBy: String(input.editedBy ?? input.author ?? input.actorId ?? 'operator'),
+        editReason: input.editReason ? String(input.editReason) : input.reason ? String(input.reason) : undefined,
+        tags: Array.isArray(input.tags) ? input.tags.map(String) : undefined,
+        followUpRequired: input.followUpRequired === true ? true : input.followUpRequired === false ? false : undefined,
+      });
+      return { status: 200, body: { ...result, mock: false } };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'operational_note_edit_denied', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
+  if (method === 'POST' && path === '/operational-notes/metadata-patch') {
+    const input = isRecord(body) ? body : {};
+    try {
+      const noteId = String(input.noteId ?? input.entityId ?? '');
+      const tags = Array.isArray(input.tags)
+        ? input.tags.map(String)
+        : typeof input.tags === 'string'
+          ? input.tags.split(/[,\n]/).map((tag) => tag.trim()).filter(Boolean)
+          : undefined;
+      const result = state.operationalNotesService.patchNoteMetadata(noteId, {
+        tags,
+        followUpRequired: input.followUpRequired === true ? true : input.followUpRequired === false ? false : undefined,
+        editedBy: String(input.editedBy ?? input.actorId ?? 'operator'),
+        reason: input.reason ? String(input.reason) : undefined,
+      });
+      return { status: 200, body: { ...result, mock: false } };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'operational_note_patch_denied', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
   if (method === 'GET' && path === '/collaboration/threads') {
     const query = collaborationQuery(requestUrl.searchParams);
     try { return { status: 200, body: state.collaboration.queryThreads(query, collaborationPrincipal(query as Record<string, unknown>, 'collaboration:read')) }; }
@@ -3215,6 +3653,39 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   }
   if (method === 'POST' && path === '/artifacts/registry/draft-registrations') return { status: 202, body: createUniversalArtifactDraftRegistrationResult(body) };
   if (method === 'POST' && path === '/assets/safety-critical-changes') return validateProtectedApprovalBoundary(body, state.approvalService, { requireHumanActor: true, fallbackEventType: 'racetrack.asset.approval-requested', message: 'Safety-critical asset change accepted for approval review. Execution remains locked until authorized.', headers });
+  if (method === 'POST' && path === '/approvals/composer') {
+    if (!isRecord(body)) return badRequest('JSON object body is required');
+    const actor = stringValue(body.actorId) ?? stringValue(body.actor);
+    if (!actor) return badRequest('Approval composer context missing: actorId');
+    const actorType = actorTypeFrom(body);
+    if (!actorType) return badRequest('Approval composer context missing: actorType');
+    if (actorType !== 'human') return forbidden('Approval composer requires an authenticated human actor.');
+    const roles = actorRoles(body);
+    if (roles.length === 0) return forbidden('Approval composer requires actor roles for RBAC enforcement.');
+    const headerRole = headerValue(headers, 'x-trackmind-role');
+    if (headerRole && isRole(headerRole) && !roles.includes(headerRole)) {
+      return forbidden(`Actor roles must include authenticated role ${headerRole}.`);
+    }
+    const tenantId = stringValue(body.tenantId) ?? 'trackmind';
+    const racetrackId = stringValue(body.racetrackId) ?? 'main-track';
+    const composerService = new ApprovalRequestComposerService(state.approvalService);
+    try {
+      const result = composerService.compose(
+        { tenantId, racetrackId, actorId: actor, actorType, roles },
+        body,
+      );
+      return {
+        status: 202,
+        body: {
+          ...result,
+          eventType: 'approval.requested',
+          audited: true,
+        },
+      };
+    } catch (error) {
+      return badRequest(error instanceof Error ? error.message : 'Approval request could not be composed');
+    }
+  }
   if (method === 'POST' && path === '/approvals/draft-requests') {
     const eventType = 'approval.requested';
     const message = 'Approval draft request accepted. Execution remains locked until authorized.';

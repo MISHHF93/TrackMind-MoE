@@ -20,6 +20,7 @@ import {
   type ApprovalTokenPayload,
 } from '@/api/mutations';
 import { GovernedActionDialog } from '@/features/approvals/GovernedActionDialog';
+import { EntityFormAction } from '@/features/data-entry/TrackMindFormDialog';
 import type { WorkspaceAction } from '@/design/components/workspace';
 import { feedData, formatCents } from '../feedUtils';
 
@@ -483,6 +484,12 @@ export function FederationPanels({ results }: { results: WorkspaceDataResult[] }
 
   return (
     <div className="space-y-4">
+      <SectionPanel title="Federation metadata data entry" description="Governed federation sharing scope and policy changes — approval required before activation.">
+        <div className="flex flex-wrap gap-2">
+          <EntityFormAction entityKind="federation-metadata" label="Request federation metadata change" />
+          <EntityFormAction entityKind="federation-metadata" mode="edit" label="Revise federation metadata" variant="outline" />
+        </div>
+      </SectionPanel>
       <KpiStrip
         items={[
           { id: 'cert', label: 'Certification', value: String(tenant?.certificationStatus ?? '—') },

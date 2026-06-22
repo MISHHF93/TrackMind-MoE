@@ -8,10 +8,14 @@ import {
 } from '@/api/mutations';
 import type { ControlledActionInput } from '@/api/approvalPayload';
 import type { ReactElement, ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/design/components/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/design/components/dialog';
+import { FormMessage } from '@/design/components/form-field';
 import type { WorkspaceAction } from '@/design/components/workspace';
+import { TrackMindForm } from '@/features/data-entry/TrackMindForm';
+import { UnsavedChangesGuard } from '@/features/data-entry/UnsavedChangesGuard';
+import { useTrackMindForm } from '@/features/data-entry/useTrackMindForm';
 
 async function submitApprovalRequest(
   input: ControlledActionInput,
@@ -77,71 +81,81 @@ export function GovernedActionDialog({
   approvalApi?: WorkspaceAction['approvalApi'];
   onSubmitted?: (approvalId?: string) => void;
 }): ReactElement {
-  const [justification, setJustification] = useState('');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const { controlled } = useApprovalMutations();
+  const form = useTrackMindForm({
+    entityKind: 'approval',
+    seed: { protectedAction, target },
+  });
+
+  useEffect(() => {
+    form.setFieldValue('protectedAction', protectedAction);
+    form.setFieldValue('target', target);
+  }, [protectedAction, target, form.setFieldValue]);
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) {
-          setSuccessMessage(null);
-          controlled.reset();
-        }
-        onOpenChange(next);
-      }}
-    >
-      <DialogContent governance>
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <label className="grid gap-2 text-sm">
-          <span>Justification</span>
-          <textarea
-            className="min-h-[96px] rounded-md border border-[var(--border)] bg-[var(--card)] p-2"
-            value={justification}
-            onChange={(e) => setJustification(e.target.value)}
-            placeholder="Document why this approval is required…"
-          />
-        </label>
-        {controlled.isError ? (
-          <p className="text-sm text-[var(--status-critical)]">{(controlled.error as Error).message}</p>
-        ) : null}
-        {successMessage ? (
-          <p className="text-sm text-[var(--status-nominal)]">{successMessage}</p>
-        ) : null}
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button
-            variant="governance"
-            disabled={!justification.trim() || controlled.isPending}
-            onClick={async () => {
-              try {
-                const response = await controlled.mutateAsync({
-                  input: { action: protectedAction, target, reason: justification },
-                  approvalApi,
-                });
-                const approvalId = response.approvalId;
-                setSuccessMessage(
-                  approvalId
-                    ? `Approval request ${approvalId} submitted. Execution remains locked until authorized.`
-                    : 'Approval request submitted. Execution remains locked until authorized.',
-                );
-                setJustification('');
-                onSubmitted?.(approvalId);
-                setTimeout(() => onOpenChange(false), 1200);
-              } catch {
-                // Error surfaced via controlled.isError
-              }
-            }}
-          >
-            Request approval
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <>
+      <UnsavedChangesGuard when={open && form.dirtyState.isDirty} />
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next) {
+            setSuccessMessage(null);
+            controlled.reset();
+            form.resetForm({ protectedAction, target });
+          }
+          onOpenChange(next);
+        }}
+      >
+        <DialogContent governance>
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>{description}</DialogDescription>
+          </DialogHeader>
+          <TrackMindForm form={form} className="grid gap-3 text-sm" />
+          <FormMessage message={controlled.isError ? (controlled.error as Error).message : successMessage ?? undefined} tone={controlled.isError ? 'error' : 'muted'} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button
+              variant="governance"
+              disabled={!String(form.values.reason ?? '').trim() || controlled.isPending}
+              onClick={async () => {
+                const validation = form.validate();
+                if (!validation.valid) return;
+                try {
+                  const evidenceText = validation.normalizedValues.evidence;
+                  const evidence = typeof evidenceText === 'string' && evidenceText.trim()
+                    ? evidenceText.split('\n').map((line) => line.trim()).filter(Boolean)
+                    : undefined;
+                  const response = await controlled.mutateAsync({
+                    input: {
+                      action: protectedAction,
+                      target,
+                      reason: String(validation.normalizedValues.reason ?? ''),
+                      evidence,
+                    },
+                    approvalApi,
+                  });
+                  const approvalId = response.approvalId;
+                  setSuccessMessage(
+                    approvalId
+                      ? `Approval request ${approvalId} submitted. Execution remains locked until authorized.`
+                      : 'Approval request submitted. Execution remains locked until authorized.',
+                  );
+                  form.resetForm({ protectedAction, target });
+                  onSubmitted?.(approvalId);
+                  setTimeout(() => onOpenChange(false), 1200);
+                } catch {
+                  // Error surfaced via controlled.isError
+                }
+              }}
+            >
+              Request approval
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

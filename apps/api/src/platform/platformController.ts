@@ -681,8 +681,20 @@ export function handlePlatformRequest(
         status: input.status as IncidentDto['status'] | undefined,
         severity: input.severity as IncidentDto['severity'] | undefined,
         assignedTo: input.assignedTo ? String(input.assignedTo) : undefined,
-        note: input.note ? String(input.note) : undefined,
+        description: input.detailedNotes ? String(input.detailedNotes) : input.description ? String(input.description) : undefined,
+        note: input.note ? String(input.note) : input.reason ? String(input.reason) : undefined,
         actor: input.actor ? String(input.actor) : undefined,
+        incidentType: input.incidentType ? String(input.incidentType) : undefined,
+        intakeMode: input.intakeMode as IncidentDto['intakeMode'] | undefined,
+        location: input.location ? String(input.location) : undefined,
+        summary: input.summary ? String(input.summary) : undefined,
+        detailedNotes: input.detailedNotes ? String(input.detailedNotes) : undefined,
+        involvedEntities: Array.isArray(input.involvedEntities) ? input.involvedEntities as IncidentDto['involvedEntities'] : undefined,
+        evidenceRefs: Array.isArray(input.evidenceRefs) ? input.evidenceRefs.map(String) : undefined,
+        recommendedNextAction: input.recommendedNextAction ? String(input.recommendedNextAction) : undefined,
+        approvalRequired: input.approvalRequired === true ? true : input.approvalRequired === false ? false : undefined,
+        subjectKind: input.subjectKind ? String(input.subjectKind) : undefined,
+        subjectId: input.subjectId ? String(input.subjectId) : undefined,
       });
       recalculateAndPersistKpis(state, platform);
       return { status: 200, body: updated };

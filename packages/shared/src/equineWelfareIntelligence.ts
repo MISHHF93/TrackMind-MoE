@@ -37,12 +37,21 @@ export interface WelfareObservationDto {
   observedAt: string;
   observerId: string;
   role: WelfareObservationRole;
+  observationType?: string;
   score: number;
   category: string;
+  severity?: WelfareAlertSeverity;
   notes: string;
+  followUpNeeded?: boolean;
+  clearanceState?: 'none' | 'pending-review' | 'cleared' | 'restricted' | 'vet-hold' | 'denied';
+  restrictions?: string[];
+  privacyScope?: 'public' | 'racing-officials' | 'care-team' | 'regulator' | 'veterinary-confidential';
+  raceDayImpact?: 'none' | 'monitor-only' | 'paddock-hold' | 'gate-delay' | 'scratch-recommended' | 'eligibility-hold';
   interventions: string[];
   evidence: string[];
   auditId: string;
+  immutable?: true;
+  redacted?: boolean;
 }
 
 export interface WelfareTrendPointDto {

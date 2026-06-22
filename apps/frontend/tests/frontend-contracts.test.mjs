@@ -241,3 +241,30 @@ test('frontend includes realtime and assistant integrations', async () => {
   assert.match(mutations, /approveRequest/);
   assert.match(mutations, /createControlledAction/);
 });
+
+test('operational form component library exports canonical controls', async () => {
+  const index = await source('src/design/components/operational-form/index.ts');
+  const renderer = await source('src/design/components/operational-form/OperationalFormFieldRenderer.tsx');
+  const trackMindForm = await source('src/features/data-entry/TrackMindForm.tsx');
+  for (const exportName of [
+    'TextInput',
+    'TextAreaInput',
+    'SearchableSelect',
+    'MultiSelect',
+    'DateTimeInput',
+    'StatusPicker',
+    'SeverityPicker',
+    'ApprovalRequirementPicker',
+    'TenantRacetrackPicker',
+    'NotesEditor',
+    'AttachmentPlaceholder',
+    'EvidenceLinkSelector',
+    'AuditReferenceViewer',
+    'EntityRelationshipPicker',
+    'OperationalFormFieldRenderer',
+  ]) {
+    assert.match(index, new RegExp(`export \\{ ${exportName}`), `${exportName} export missing`);
+  }
+  assert.match(renderer, /resolveOperationalFormComponentKind/);
+  assert.match(trackMindForm, /OperationalFormFieldRenderer/);
+});

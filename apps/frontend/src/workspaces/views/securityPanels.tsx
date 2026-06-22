@@ -14,6 +14,9 @@ import { activateEmergencyWorkflow, completeEmergencyCommunication, scheduleEmer
 import { getJson } from '@/api/client';
 import { apiPaths } from '@/api/paths';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
+import { EntityFormAction } from '@/features/data-entry/TrackMindFormDialog';
+import { IncidentIntakeConsole } from '@/features/incident-intake/IncidentIntakeConsole';
+import { SecurityEventEntryConsole } from '@/features/security-events/SecurityEventEntryConsole';
 
 function securityData(results: WorkspaceDataResult[]) {
   return feedData<Record<string, unknown>>(results, '/security-operations/workspace');
@@ -28,6 +31,7 @@ export function SecurityPanels({ results }: { results: WorkspaceDataResult[] }):
   const incidents = extractArray<Record<string, unknown>>(data, 'incidents');
   const cameras = extractArray<Record<string, unknown>>(data, 'cameras');
   const access = extractArray<Record<string, unknown>>(data, 'accessEvents');
+  const escalations = extractArray<Record<string, unknown>>(data, 'escalations');
   const liveZones = extractArray<Record<string, unknown>>(zonesLive, 'zones');
   const cameraItems = extractArray<Record<string, unknown>>(cameraReadiness, 'items');
   const sensorItems = extractArray<Record<string, unknown>>(sensorReadiness, 'items');
@@ -36,6 +40,11 @@ export function SecurityPanels({ results }: { results: WorkspaceDataResult[] }):
 
   return (
     <div className="space-y-4">
+      <SecurityEventEntryConsole
+        accessEvents={access}
+        incidents={incidents}
+        escalations={escalations}
+      />
       <KpiStrip
         items={[
           { id: 'coverage', label: 'Security coverage', value: `${String(securityKpis?.coveragePercent ?? '—')}%`, status: Number(securityKpis?.coveragePercent ?? 100) < 90 ? 'warning' : 'nominal' },
@@ -205,6 +214,17 @@ export function IncidentPanels({ results }: { results: WorkspaceDataResult[] }):
           { id: 'status', label: 'Focused status', value: String(focusedIncident?.status ?? '—') },
         ]}
       />
+      <IncidentIntakeConsole
+        incidents={uniqueIncidents}
+        timelineEntries={liveTimeline}
+        focusedIncidentId={focusedIncidentId}
+        onFocusIncident={setSelectedIncidentId}
+      />
+      <SectionPanel title="Legacy data entry" description="Domain-specific incident forms retained for backward compatibility.">
+        <div className="flex flex-wrap gap-2">
+          <EntityFormAction entityKind="facilities-incident" label="Facilities incident (legacy)" variant="outline" />
+        </div>
+      </SectionPanel>
       <SectionPanel title="Incident command board" description="Lifecycle incidents from /incidents with SSE timeline subscription.">
         {uniqueIncidents.length > 1 ? (
           <label className="mb-3 flex items-center gap-2 text-xs text-[var(--muted-foreground)]">

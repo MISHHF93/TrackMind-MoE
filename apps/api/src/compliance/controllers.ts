@@ -124,6 +124,68 @@ export class CompliancePlatformController {
         return { status: 400, body: { ok: false, error: { message: (error as Error).message } } };
       }
     }
+    if (method === 'POST' && path === '/compliance/evidence/intake') {
+      const input = (body ?? {}) as Record<string, unknown>;
+      try {
+        const linkTargets = Array.isArray(input.linkTargets)
+          ? input.linkTargets.map((entry) => {
+              if (typeof entry !== 'object' || !entry) return null;
+              const targetKind = String((entry as { targetKind?: string }).targetKind ?? '') as import('../complianceControlLibrary.js').ComplianceEvidenceLinkTargetKind;
+              const targetId = String((entry as { targetId?: string }).targetId ?? '');
+              if (!targetKind || !targetId) return null;
+              return {
+                targetKind,
+                targetId,
+                label: (entry as { label?: string }).label ? String((entry as { label?: string }).label) : undefined,
+              };
+            }).filter(Boolean) as import('../complianceControlLibrary.js').ComplianceEvidenceLinkTarget[]
+          : undefined;
+        const result = this.service.recordEvidenceIntake({
+          title: String(input.title ?? ''),
+          controlId: String(input.controlId ?? ''),
+          frameworkIds: Array.isArray(input.frameworkIds) ? input.frameworkIds as ComplianceFrameworkId[] : input.frameworkIds ? [String(input.frameworkIds)] as ComplianceFrameworkId[] : undefined,
+          policyCitation: input.policyCitation ? String(input.policyCitation) : undefined,
+          domain: String(input.domain ?? 'governance') as import('../complianceControlLibrary.js').ComplianceEvidenceDomain,
+          evidenceType: String(input.evidenceType ?? 'document') as import('../complianceControlLibrary.js').ComplianceEvidenceType,
+          source: String(input.source ?? ''),
+          notes: String(input.notes ?? ''),
+          reviewStatus: String(input.reviewStatus ?? 'submitted') as import('../complianceControlLibrary.js').ComplianceEvidenceReviewStatus,
+          approvalRequestId: input.approvalRequestId ? String(input.approvalRequestId) : undefined,
+          auditRecordId: input.auditRecordId ? String(input.auditRecordId) : undefined,
+          linkTargets,
+          retentionPolicy: String(input.retentionPolicy ?? 'regulated-records-7y'),
+          retainedUntil: input.retainedUntil ? String(input.retainedUntil) : undefined,
+          legalHold: input.legalHold === true,
+          uri: input.uri ? String(input.uri) : undefined,
+          evidenceRefs: Array.isArray(input.evidenceRefs) ? input.evidenceRefs.map(String) : undefined,
+          startReviewWorkflow: input.startReviewWorkflow === true,
+          reason: String(input.reason ?? 'Compliance evidence recorded'),
+          entryMode: (input.entryMode ?? 'quick') as 'quick' | 'full',
+          reportedBy: String(input.reportedBy ?? input.actorId ?? 'compliance-officer'),
+        });
+        return { status: 201, body: { ...result, mock: false } };
+      } catch (error) {
+        return { status: 400, body: { ok: false, error: { code: 'compliance_evidence_denied', message: (error as Error).message } } };
+      }
+    }
+    if (method === 'POST' && path === '/compliance/evidence/metadata-patch') {
+      const input = (body ?? {}) as Record<string, unknown>;
+      try {
+        const evidenceId = String(input.evidenceId ?? input.entityId ?? '');
+        const result = this.service.patchEvidenceMetadata(
+          evidenceId,
+          {
+            reviewStatus: input.reviewStatus ? String(input.reviewStatus) as import('../complianceControlLibrary.js').ComplianceEvidenceReviewStatus : undefined,
+            notes: input.notes !== undefined ? String(input.notes) : undefined,
+          },
+          String(input.actorId ?? input.reportedBy ?? 'compliance-officer'),
+          input.reason ? String(input.reason) : undefined,
+        );
+        return { status: 200, body: { ...result, mock: false } };
+      } catch (error) {
+        return { status: 400, body: { ok: false, error: { code: 'compliance_evidence_patch_denied', message: (error as Error).message } } };
+      }
+    }
     return undefined;
   }
 }

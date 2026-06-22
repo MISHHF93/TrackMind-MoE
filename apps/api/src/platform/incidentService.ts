@@ -166,7 +166,11 @@ export class IncidentService {
     return record;
   }
 
-  update(id: string, patch: Partial<Pick<IncidentDto, 'status' | 'severity' | 'assignedTo' | 'description'>> & { note?: string; actor?: string }): IncidentDto {
+  update(id: string, patch: Partial<Pick<IncidentDto,
+    'status' | 'severity' | 'assignedTo' | 'description' | 'incidentType' | 'intakeMode' | 'location'
+    | 'summary' | 'detailedNotes' | 'involvedEntities' | 'evidenceRefs' | 'recommendedNextAction'
+    | 'approvalRequired' | 'subjectKind' | 'subjectId'
+  >> & { note?: string; actor?: string }): IncidentDto {
     const existing = this.incidents.get(id);
     if (!existing) throw new Error(`Incident not found: ${id}`);
     const actor = patch.actor ?? 'system';

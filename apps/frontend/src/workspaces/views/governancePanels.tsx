@@ -8,6 +8,9 @@ import { mapRecords, RecordTable } from '@/design/components/record-table';
 import { SectionPanel } from '@/design/components/section-panel';
 import { Button } from '@/design/components/button';
 import { GovernedActionDialog } from '@/features/approvals/GovernedActionDialog';
+import { EntityFormAction } from '@/features/data-entry/TrackMindFormDialog';
+import { ComplianceEvidenceEntryConsole } from '@/features/compliance-evidence/ComplianceEvidenceEntryConsole';
+import { OperationalNotesConsole } from '@/features/operational-notes/OperationalNotesConsole';
 import {
   closeComplianceCorrectiveAction,
   createComplianceCorrectiveAction,
@@ -25,6 +28,8 @@ function canMutateCompliance(role: Role): boolean {
 }
 
 export function AuditPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+  const notesJournal = feedData<Record<string, unknown>>(results, '/operational-notes/journal');
+  const operationalNotes = extractArray<Record<string, unknown>>(notesJournal, 'notes');
   const events = results.flatMap((item) => {
     if (item.status !== 'ready') return [];
     if (Array.isArray(item.data)) return item.data as Record<string, unknown>[];
@@ -35,12 +40,16 @@ export function AuditPanels({ results }: { results: WorkspaceDataResult[] }): Re
 
   return (
     <div className="space-y-4">
+      <OperationalNotesConsole notes={operationalNotes} defaultSubjectKind="compliance" />
       <KpiStrip
         items={[
           { id: 'events', label: 'Audit events', value: String(events.length) },
           { id: 'critical', label: 'Critical', value: String(critical), status: critical > 0 ? 'critical' : 'nominal' },
         ]}
       />
+      <SectionPanel title="Legacy audit note" description="Simple audit note form — prefer unified operational notes above.">
+        <EntityFormAction entityKind="audit-note" label="Record audit note" />
+      </SectionPanel>
       <SectionPanel title="Forensic event log" description="Immutable audit trail with hash linkage and severity.">
         <RecordTable
           columns={[
@@ -91,11 +100,16 @@ export function CompliancePanels({ results }: { results: WorkspaceDataResult[] }
   const controls = extractArray<Record<string, unknown>>(library, 'controls');
   const findings = extractArray<Record<string, unknown>>(library, 'findings');
   const evidencePackages = extractArray<Record<string, unknown>>(library, 'evidencePackages');
+  const evidenceRecords = extractArray<Record<string, unknown>>(library, 'evidenceRecords');
+  const notesJournal = feedData<Record<string, unknown>>(results, '/operational-notes/journal');
+  const operationalNotes = extractArray<Record<string, unknown>>(notesJournal, 'notes');
   const kpiPack = extractArray<Record<string, unknown>>(dashboard, 'kpiPack');
   const regulatoryWorkflows = extractArray<Record<string, unknown>>(dashboard, 'regulatoryWorkflows');
   const correctiveActions = extractArray<Record<string, unknown>>(correctiveFeed, 'correctiveActions');
   const libraryActions = extractArray<Record<string, unknown>>(library, 'correctiveActions');
   const actions = correctiveActions.length > 0 ? correctiveActions : libraryActions;
+
+  const [selectedControlId, setSelectedControlId] = useState<string | undefined>();
 
   const evidencePackageCount = typeof dashboard?.evidencePackages === 'number'
     ? dashboard.evidencePackages
@@ -159,6 +173,14 @@ export function CompliancePanels({ results }: { results: WorkspaceDataResult[] }
 
   return (
     <div className="space-y-4">
+      <ComplianceEvidenceEntryConsole
+        controls={controls}
+        evidenceRecords={evidenceRecords}
+        evidencePackages={evidencePackages}
+        selectedControlId={selectedControlId ?? String(controls[0]?.id ?? controls[0]?.controlId ?? '')}
+        onSelectControl={setSelectedControlId}
+      />
+      <OperationalNotesConsole notes={operationalNotes} defaultSubjectKind="compliance" />
       <KpiStrip
         items={[
           { id: 'score', label: 'Readiness score', value: readiness?.score != null ? String(readiness.score) : '—' },
@@ -168,6 +190,9 @@ export function CompliancePanels({ results }: { results: WorkspaceDataResult[] }
           { id: 'evidence', label: 'Evidence packages', value: String(evidencePackageCount) },
         ]}
       />
+      <SectionPanel title="Additional entry" description="Open the structured evidence form directly from the data-entry framework.">
+        <EntityFormAction entityKind="compliance-evidence" label="Open evidence form" />
+      </SectionPanel>
       {kpiPack.length > 0 ? (
         <SectionPanel title="Compliance KPI pack" description="Dashboard KPIs from /compliance/dashboard.">
           <RecordTable

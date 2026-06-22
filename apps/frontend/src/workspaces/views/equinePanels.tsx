@@ -2,6 +2,9 @@ import type { ReactElement } from 'react';
 import { KpiStrip } from '@/design/components/kpi-strip';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
 import { SectionPanel } from '@/design/components/section-panel';
+import { HorseDataEntryHub } from '@/features/horse-data-entry/HorseDataEntryHub';
+import { BulkDataEntryConsole } from '@/features/bulk-data-entry/BulkDataEntryConsole';
+import { EquineObservationConsole } from '@/features/equine-observations/EquineObservationConsole';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { isRecord } from '@/lib/utils';
@@ -53,6 +56,8 @@ export function EquinePanels({ results }: { results: WorkspaceDataResult[] }): R
   const jockeyProfiles = extractArray<Record<string, unknown>>(jockeys, 'jockeys');
   const vetCases = extractArray<Record<string, unknown>>(veterinary, 'cases');
   const welfareIndicators = extractArray<Record<string, unknown>>(welfare, 'indicators');
+  const welfareObservations = extractArray<Record<string, unknown>>(welfare, 'observations');
+  const veterinaryObservations = vetCases.flatMap((vetCase) => extractArray<Record<string, unknown>>(vetCase, 'observations'));
   const equineAuditRecords = extractArray<Record<string, unknown>>(auditFeed, 'events');
 
   const identity = profile?.identity && typeof profile.identity === 'object' ? profile.identity as Record<string, unknown> : undefined;
@@ -78,6 +83,23 @@ export function EquinePanels({ results }: { results: WorkspaceDataResult[] }): R
           { id: 'registry', label: 'Registry horses', value: String(horses.length) },
           { id: 'welfare', label: 'Welfare score', value: welfare?.overallScore != null ? String(welfare.overallScore) : '—' },
         ]}
+      />
+      <HorseDataEntryHub
+        profile={profile}
+        registry={registry}
+        eligibilityFeed={eligibilityFeed}
+        auditFeed={auditFeed}
+        welfareFeed={welfare}
+      />
+      <BulkDataEntryConsole
+        title="Equine bulk entry"
+        description="Bulk horse imports, trainer assignments, and paddock/eligibility status updates with preview and partial commit."
+        operationIds={['horse-import', 'trainer-assignments', 'status-updates']}
+      />
+      <EquineObservationConsole
+        horseId={String(identity?.horseId ?? profile?.horseId ?? 'horse-1')}
+        veterinaryObservations={veterinaryObservations}
+        welfareObservations={welfareObservations}
       />
       <SectionPanel title="Privacy scope" description="Role-based veterinary and eligibility visibility enforced server-side.">
         <RecordTable

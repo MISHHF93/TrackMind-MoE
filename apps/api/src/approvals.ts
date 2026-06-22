@@ -267,10 +267,10 @@ export class CentralizedApprovalService {
     this.persistHook?.(clone(request));
   }
 
-  createRequest(input: Omit<ControlledActionRequest, 'id'|'createdAt'|'expiresAt'|'status'|'decisions'|'escalatedToRoles'> & { id?: string; now?: string }): ControlledActionRequest {
+  createRequest(input: Omit<ControlledActionRequest, 'id'|'createdAt'|'expiresAt'|'status'|'decisions'|'escalatedToRoles'> & { id?: string; now?: string; expiresAt?: string }): ControlledActionRequest {
     const policy = this.policy(input.action); const now = input.now ?? new Date().toISOString();
     if (!input.racetrackId) throw new Error('Controlled action approval requests require racetrackId');
-    const request: ControlledActionRequest = { ...input, id: input.id ?? id('approval'), createdAt: now, expiresAt: addMinutes(now, policy.expiresInMinutes), status: 'pending', decisions: [], escalatedToRoles: [] };
+    const request: ControlledActionRequest = { ...input, id: input.id ?? id('approval'), createdAt: now, expiresAt: input.expiresAt ?? addMinutes(now, policy.expiresInMinutes), status: 'pending', decisions: [], escalatedToRoles: [] };
     this.requests.set(request.id, request); const auditRef = this.audit('approval.requested', request.requestedBy, request, now); void this.publish('approval.requested', { ...request, auditRef }); this.notifyWorkflow('approval.requested', request, now);
     notificationFramework.publishOperational({ category: 'approval', title: `Approval requested: ${request.action}`, message: request.reason, targetRoles: [...new Set(policy.chain.flatMap((step) => step.roles))], severity: 'warning', priority: approvalPriorityFromAction(request.action), correlationId: request.id });
     this.persist(request);

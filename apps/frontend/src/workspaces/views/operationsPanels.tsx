@@ -1,15 +1,14 @@
 import type { ReactElement } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { createFacilitiesMaintenanceSchedule, reportFacilitiesIncident } from '@/api/mutations';
-import { assertMutationOk } from '@/api/approvalPayload';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { actionDisabledReason, roleCanUseAction } from '@/domain/approvalControls';
 import { Button } from '@/design/components/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/design/components/dialog';
 import { KpiStrip } from '@/design/components/kpi-strip';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
 import { SectionPanel } from '@/design/components/section-panel';
+import { TrackMindFormDialog } from '@/features/data-entry/TrackMindFormDialog';
+import { FacilitiesEntryConsole } from '@/features/facilities-entry/FacilitiesEntryConsole';
+import { BulkDataEntryConsole } from '@/features/bulk-data-entry/BulkDataEntryConsole';
 import { GovernedActionDialog } from '@/features/approvals/GovernedActionDialog';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
@@ -23,7 +22,6 @@ function defaultAssetId(assets: Record<string, unknown>[], selectedAssetId?: str
 }
 
 export function FacilitiesPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
-  const queryClient = useQueryClient();
   const { session } = useTenantSession();
   const data = feedData<Record<string, unknown>>(results, '/facilities-maintenance/workspace');
   const readiness = data && typeof data.readiness === 'object' ? data.readiness as Record<string, unknown> : undefined;
@@ -42,73 +40,12 @@ export function FacilitiesPanels({ results }: { results: WorkspaceDataResult[] }
   const [scheduleMessage, setScheduleMessage] = useState<string | null>(null);
   const [incidentMessage, setIncidentMessage] = useState<string | null>(null);
 
-  const [scheduleForm, setScheduleForm] = useState({
-    assetId: '',
-    title: 'Scheduled facility maintenance',
-    priority: 'normal',
-    scheduledFor: '',
-    dueAt: '',
-  });
-  const [incidentForm, setIncidentForm] = useState({
-    assetId: '',
-    title: '',
-    severity: 'medium',
-    description: '',
-  });
-
   const selectedAsset = assets.find((asset) => String(asset.assetId) === selectedAssetId);
-  const scheduleTargetAssetId = scheduleForm.assetId || defaultAssetId(assets, selectedAssetId);
+  const scheduleTargetAssetId = defaultAssetId(assets, selectedAssetId);
   const canRequestMaintenanceApproval = roleCanUseAction(
     { id: 'facility-maintenance-execution', protectedAction: 'facility-maintenance-execution', label: '', target: scheduleTargetAssetId, requiredRoles: ['admin', 'track-superintendent'] },
     session.role,
   );
-
-  const scheduleMaintenance = useMutation({
-    mutationFn: () =>
-      createFacilitiesMaintenanceSchedule({
-        assetId: scheduleTargetAssetId,
-        title: scheduleForm.title.trim() || 'Scheduled facility maintenance',
-        priority: scheduleForm.priority,
-        scheduledFor: scheduleForm.scheduledFor || new Date().toISOString(),
-        dueAt: scheduleForm.dueAt || new Date(Date.now() + 86_400_000).toISOString(),
-        tasks: ['verify lockout', 'perform maintenance', 'capture evidence'],
-        evidence: ['facilities-console'],
-        operationalImpact: 'operational-impact',
-        requestedBy: `${session.role}-operator`,
-      }).then(assertMutationOk),
-    onSuccess: (response) => {
-      const body = response as Record<string, unknown>;
-      const approvalRequired = Boolean(body.approvalRequired);
-      const approvalRequestId = body.approvalRequestId ? String(body.approvalRequestId) : undefined;
-      setScheduleMessage(
-        approvalRequired
-          ? `Maintenance schedule submitted for approval${approvalRequestId ? ` (${approvalRequestId})` : ''}. Execution remains locked until authorized.`
-          : 'Maintenance schedule confirmed.',
-      );
-      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
-      setScheduleDialogOpen(false);
-    },
-    onError: (error: Error) => setScheduleMessage(error.message),
-  });
-
-  const reportIncident = useMutation({
-    mutationFn: () =>
-      reportFacilitiesIncident({
-        assetId: incidentForm.assetId || selectedAssetId || undefined,
-        title: incidentForm.title.trim() || 'Facility incident reported',
-        severity: incidentForm.severity,
-        description: incidentForm.description.trim() || 'Facility incident recorded for triage.',
-        evidence: ['facilities-console'],
-        reportedBy: `${session.role}-operator`,
-      }).then(assertMutationOk),
-    onSuccess: () => {
-      setIncidentMessage('Facility incident reported and linked to audit trail.');
-      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
-      setIncidentDialogOpen(false);
-      setIncidentForm({ assetId: '', title: '', severity: 'medium', description: '' });
-    },
-    onError: (error: Error) => setIncidentMessage(error.message),
-  });
 
   return (
     <div className="space-y-4">
@@ -126,6 +63,18 @@ export function FacilitiesPanels({ results }: { results: WorkspaceDataResult[] }
         map={map}
         selectedAssetId={selectedAssetId}
         onAssetSelect={setSelectedAssetId}
+      />
+      <FacilitiesEntryConsole
+        assets={assets}
+        inspections={inspections}
+        workOrders={workOrders}
+        selectedAssetId={selectedAssetId}
+        onSelectAsset={setSelectedAssetId}
+      />
+      <BulkDataEntryConsole
+        title="Facilities bulk scheduling"
+        description="Bulk schedule inspections with preview, tenant scoping, and row-level audit on commit."
+        operationIds={['inspection-scheduling']}
       />
       {selectedAsset ? (
         <SectionPanel title="Asset detail" description="Selected from geospatial map click-through.">
@@ -155,10 +104,6 @@ export function FacilitiesPanels({ results }: { results: WorkspaceDataResult[] }
               variant="governance"
               onClick={() => {
                 setScheduleMessage(null);
-                setScheduleForm((current) => ({
-                  ...current,
-                  assetId: defaultAssetId(assets, selectedAssetId),
-                }));
                 setScheduleDialogOpen(true);
               }}
             >
@@ -183,10 +128,6 @@ export function FacilitiesPanels({ results }: { results: WorkspaceDataResult[] }
               variant="governance"
               onClick={() => {
                 setIncidentMessage(null);
-                setIncidentForm((current) => ({
-                  ...current,
-                  assetId: selectedAssetId ?? '',
-                }));
                 setIncidentDialogOpen(true);
               }}
             >
@@ -285,135 +226,33 @@ export function FacilitiesPanels({ results }: { results: WorkspaceDataResult[] }
         </SectionPanel>
       </div>
 
-      <Dialog open={scheduleDialogOpen} onOpenChange={setScheduleDialogOpen}>
-        <DialogContent governance>
-          <DialogHeader>
-            <DialogTitle>Schedule maintenance</DialogTitle>
-            <DialogDescription>
-              Submit an approval-gated maintenance schedule for {scheduleTargetAssetId}. Execution remains locked until authorized.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3 text-sm">
-            <label className="grid gap-1">
-              <span>Asset</span>
-              <select
-                className="rounded-md border border-[var(--border)] bg-[var(--card)] p-2"
-                value={scheduleTargetAssetId}
-                onChange={(event) => setScheduleForm((current) => ({ ...current, assetId: event.target.value }))}
-              >
-                {assets.map((asset) => (
-                  <option key={String(asset.assetId)} value={String(asset.assetId)}>
-                    {String(asset.name ?? asset.assetId)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="grid gap-1">
-              <span>Title</span>
-              <input
-                className="rounded-md border border-[var(--border)] bg-[var(--card)] p-2"
-                value={scheduleForm.title}
-                onChange={(event) => setScheduleForm((current) => ({ ...current, title: event.target.value }))}
-              />
-            </label>
-            <label className="grid gap-1">
-              <span>Priority</span>
-              <select
-                className="rounded-md border border-[var(--border)] bg-[var(--card)] p-2"
-                value={scheduleForm.priority}
-                onChange={(event) => setScheduleForm((current) => ({ ...current, priority: event.target.value }))}
-              >
-                <option value="normal">Normal</option>
-                <option value="high">High</option>
-                <option value="critical">Critical</option>
-              </select>
-            </label>
-          </div>
-          {scheduleMaintenance.isError ? (
-            <p className="text-sm text-[var(--status-critical)]">{(scheduleMaintenance.error as Error).message}</p>
-          ) : null}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setScheduleDialogOpen(false)}>Cancel</Button>
-            <Button
-              variant="governance"
-              disabled={scheduleMaintenance.isPending}
-              onClick={() => scheduleMaintenance.mutate()}
-            >
-              Submit schedule request
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <TrackMindFormDialog
+        entityKind="facilities-maintenance"
+        open={scheduleDialogOpen}
+        onOpenChange={setScheduleDialogOpen}
+        seed={{ assetId: scheduleTargetAssetId }}
+        title="Schedule maintenance"
+        description={`Submit an approval-gated maintenance schedule for ${scheduleTargetAssetId}. Execution remains locked until authorized.`}
+        submitLabel="Submit schedule request"
+        onSubmitted={(result) => {
+          setScheduleMessage(
+            result.approvalRequired
+              ? `Maintenance schedule submitted for approval${result.approvalRequestId ? ` (${result.approvalRequestId})` : ''}. Execution remains locked until authorized.`
+              : result.message ?? 'Maintenance schedule confirmed.',
+          );
+        }}
+      />
 
-      <Dialog open={incidentDialogOpen} onOpenChange={setIncidentDialogOpen}>
-        <DialogContent governance>
-          <DialogHeader>
-            <DialogTitle>Report facility incident</DialogTitle>
-            <DialogDescription>Record a facility incident for triage, audit linkage, and map overlay updates.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3 text-sm">
-            <label className="grid gap-1">
-              <span>Asset (optional)</span>
-              <select
-                className="rounded-md border border-[var(--border)] bg-[var(--card)] p-2"
-                value={incidentForm.assetId || selectedAssetId || ''}
-                onChange={(event) => setIncidentForm((current) => ({ ...current, assetId: event.target.value }))}
-              >
-                <option value="">Unassigned</option>
-                {assets.map((asset) => (
-                  <option key={String(asset.assetId)} value={String(asset.assetId)}>
-                    {String(asset.name ?? asset.assetId)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="grid gap-1">
-              <span>Title</span>
-              <input
-                className="rounded-md border border-[var(--border)] bg-[var(--card)] p-2"
-                value={incidentForm.title}
-                placeholder="Elevator door fault"
-                onChange={(event) => setIncidentForm((current) => ({ ...current, title: event.target.value }))}
-              />
-            </label>
-            <label className="grid gap-1">
-              <span>Severity</span>
-              <select
-                className="rounded-md border border-[var(--border)] bg-[var(--card)] p-2"
-                value={incidentForm.severity}
-                onChange={(event) => setIncidentForm((current) => ({ ...current, severity: event.target.value }))}
-              >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="critical">Critical</option>
-              </select>
-            </label>
-            <label className="grid gap-1">
-              <span>Description</span>
-              <textarea
-                className="min-h-[96px] rounded-md border border-[var(--border)] bg-[var(--card)] p-2"
-                value={incidentForm.description}
-                placeholder="Describe the incident and immediate safety posture…"
-                onChange={(event) => setIncidentForm((current) => ({ ...current, description: event.target.value }))}
-              />
-            </label>
-          </div>
-          {reportIncident.isError ? (
-            <p className="text-sm text-[var(--status-critical)]">{(reportIncident.error as Error).message}</p>
-          ) : null}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIncidentDialogOpen(false)}>Cancel</Button>
-            <Button
-              variant="governance"
-              disabled={reportIncident.isPending || !incidentForm.title.trim()}
-              onClick={() => reportIncident.mutate()}
-            >
-              Submit incident report
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <TrackMindFormDialog
+        entityKind="facilities-incident"
+        open={incidentDialogOpen}
+        onOpenChange={setIncidentDialogOpen}
+        seed={{ assetId: selectedAssetId ?? '' }}
+        title="Report facility incident"
+        description="Record a facility incident for triage, audit linkage, and map overlay updates."
+        submitLabel="Submit incident report"
+        onSubmitted={(result) => setIncidentMessage(result.message ?? 'Facility incident reported and linked to audit trail.')}
+      />
 
       <GovernedActionDialog
         open={approvalDialogOpen}

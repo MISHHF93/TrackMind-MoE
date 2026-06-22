@@ -71,12 +71,19 @@ export interface VeterinaryObservationDto {
   observedAt: string;
   observerId: string;
   observerRole: string;
+  observationType?: string;
   category: 'gait' | 'appetite' | 'behavior' | 'hydration' | 'injury-sign' | 'other';
   summary: string;
-  severity: 'low' | 'medium' | 'high';
+  notes?: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  followUpNeeded?: boolean;
+  clearanceState?: 'none' | 'pending-review' | 'cleared' | 'restricted' | 'vet-hold' | 'denied';
+  restrictions?: string[];
+  raceDayImpact?: 'none' | 'monitor-only' | 'paddock-hold' | 'gate-delay' | 'scratch-recommended' | 'eligibility-hold';
   privacyScope: VeterinaryPrivacyScope;
   evidence: string[];
   auditId: string;
+  immutable?: true;
   redacted?: boolean;
 }
 

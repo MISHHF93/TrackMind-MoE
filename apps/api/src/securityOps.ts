@@ -218,6 +218,7 @@ export type SecurityAction =
   | 'access.checked'
   | 'security.event.created'
   | 'incident.created'
+  | 'incident.metadata-patched'
   | 'incident.escalated'
   | 'investigation.opened'
   | 'visitor.logged'
@@ -439,6 +440,47 @@ export class SecurityOperationsService {
     return clone(incident);
   }
 
+  patchIncidentMetadata(
+    actor: SecurityActor,
+    incidentId: string,
+    patch: Partial<Pick<SecurityIncident, 'assignedTo' | 'status'>>,
+    options: { reason?: string; confirmedDestructive?: boolean } = {},
+  ): { incidentId: string; auditId: string; patchedFields: string[]; message: string } {
+    this.require(actor, 'security:manage');
+    const incident = this.incidents.get(incidentId);
+    if (!incident) throw new Error('incident not found');
+
+    const patchedFields: string[] = [];
+    const previous: Record<string, unknown> = {};
+
+    if (patch.assignedTo !== undefined) {
+      previous.assignedTo = incident.assignedTo;
+      incident.assignedTo = patch.assignedTo;
+      patchedFields.push('assignedTo');
+    }
+    if (patch.status !== undefined) {
+      if (patch.status === 'escalated') {
+        throw new Error('Escalating an incident requires approval workflow');
+      }
+      if (patch.status === 'resolved' && !options.confirmedDestructive) {
+        throw new Error('Resolving an incident requires destructive confirmation');
+      }
+      previous.status = incident.status;
+      incident.status = patch.status;
+      patchedFields.push('status');
+    }
+    if (patchedFields.length === 0) throw new Error('No metadata fields to patch');
+
+    const auditId = this.audit('incident.metadata-patched', actor.id, incidentId, []);
+
+    return {
+      incidentId,
+      auditId,
+      patchedFields,
+      message: `Incident ${incidentId} metadata updated (${patchedFields.join(', ')}).`,
+    };
+  }
+
   openInvestigation(actor: SecurityActor, incidentId: string, lead = actor.id, evidence: string[] = []): SecurityInvestigation {
     this.require(actor, 'security:investigate');
     if (!this.incidents.has(incidentId)) throw new Error('incident not found');
@@ -589,6 +631,212 @@ export class SecurityOperationsService {
       auditId: access.auditId,
       webhookAdapterId: payload.adapterId,
       incidentCreated,
+    };
+  }
+
+  recordSecurityEventIntake(
+    actor: SecurityActor,
+    input: {
+      eventType: 'restricted-zone' | 'access-issue' | 'suspicious-activity' | 'security-incident' | 'personnel-event' | 'escalation-request';
+      entryMode: 'quick' | 'full';
+      severity: RiskLevel;
+      zoneId?: string;
+      summary: string;
+      detailedNotes?: string;
+      personDisplayName?: string;
+      personLegalName?: string;
+      credentialId?: string;
+      accessDecision?: 'granted' | 'denied' | 'review';
+      accessReason?: string;
+      cameraId?: string;
+      host?: string;
+      credentialStatus?: CredentialCheck['status'];
+      evidenceRefs?: string[];
+      relatedIncidentId?: string;
+      escalationRoute?: string[];
+      requestInvestigation?: boolean;
+      followUpOwner?: string;
+      sensitiveDetails?: string;
+      occurredAt?: string;
+      reportedBy: string;
+      reason: string;
+    },
+  ): {
+    accepted: boolean;
+    eventType: typeof input.eventType;
+    entryMode: typeof input.entryMode;
+    auditId: string;
+    eventId?: string;
+    accessEventId?: string;
+    incidentId?: string;
+    escalationId?: string;
+    visitorLogId?: string;
+    investigationId?: string;
+    approvalRequired?: boolean;
+    approvalRequestId?: string;
+    message: string;
+  } {
+    this.require(actor, 'security:manage');
+    const occurredAt = input.occurredAt ?? this.clock();
+    const zoneId = input.zoneId ?? 'zone-paddock';
+    const title = input.summary.trim().length > 80
+      ? `${input.eventType}: ${input.summary.trim().slice(0, 77)}…`
+      : `${input.eventType}: ${input.summary.trim()}`;
+    const evidence = input.evidenceRefs ?? [];
+    const notesSuffix = input.detailedNotes ? ` — ${input.detailedNotes}` : '';
+
+    if (input.eventType === 'restricted-zone' || input.eventType === 'access-issue') {
+      const rawDecision = input.accessDecision ?? (input.eventType === 'restricted-zone' ? 'denied' : 'review');
+      const decision: AccessControlEvent['decision'] = rawDecision === 'granted' ? 'granted' : 'denied';
+      const reasonParts = [`[${input.eventType}]`, input.summary];
+      if (input.accessReason) reasonParts.push(input.accessReason);
+      if (rawDecision === 'review') reasonParts.push('[review-needed]');
+      if (notesSuffix) reasonParts.push(notesSuffix);
+      const access = this.recordAccessEvent(actor, {
+        zoneId,
+        credentialId: input.credentialId ?? `manual-${this.accessEvents.length + 1}`,
+        personDisplayName: input.personDisplayName ?? 'Unknown subject',
+        personLegalName: input.personLegalName,
+        decision,
+        reason: reasonParts.join(' — '),
+        occurredAt,
+      });
+      return {
+        accepted: true,
+        eventType: input.eventType,
+        entryMode: input.entryMode,
+        auditId: access.auditId,
+        eventId: access.eventId,
+        accessEventId: access.id,
+        message: input.eventType === 'restricted-zone'
+          ? 'Restricted zone event logged with access audit linkage.'
+          : 'Access issue logged with credential and zone metadata.',
+      };
+    }
+
+    if (input.eventType === 'suspicious-activity') {
+      const auditId = this.audit('incident.created', actor.id, zoneId, input.sensitiveDetails ? ['sensitiveDetails'] : []);
+      const domainEvent = this.emitDomainEvent('security.access.checked', `suspicious-${this.events.length + 1}`, input.severity, auditId, {
+        eventType: input.eventType,
+        summary: input.summary,
+        zoneId,
+        cameraId: input.cameraId,
+        personDisplayName: input.personDisplayName,
+        evidence,
+        reportedBy: input.reportedBy,
+        reason: input.reason,
+      });
+      let incidentId: string | undefined;
+      let investigationId: string | undefined;
+      if (input.severity === 'high' || input.severity === 'critical') {
+        const incident = this.createIncident(actor, { title, severity: input.severity, zoneId, eventIds: [domainEvent.eventId] });
+        incidentId = incident.id;
+        if (input.requestInvestigation) {
+          const investigation = this.openInvestigation(actor, incident.id, input.followUpOwner ?? actor.id, evidence);
+          investigationId = investigation.id;
+        }
+      }
+      return {
+        accepted: true,
+        eventType: input.eventType,
+        entryMode: input.entryMode,
+        auditId,
+        eventId: domainEvent.eventId,
+        incidentId,
+        investigationId,
+        message: incidentId
+          ? `Suspicious activity recorded and incident ${incidentId} opened.`
+          : 'Suspicious activity recorded for security review.',
+      };
+    }
+
+    if (input.eventType === 'security-incident') {
+      const manualEventId = `evt-security-manual-${this.events.length + 1}`;
+      const incident = this.createIncident(actor, { title, severity: input.severity, zoneId, eventIds: [manualEventId, ...evidence] });
+      let investigationId: string | undefined;
+      if (input.requestInvestigation) {
+        const investigation = this.openInvestigation(actor, incident.id, input.followUpOwner ?? actor.id, evidence);
+        investigationId = investigation.id;
+      }
+      return {
+        accepted: true,
+        eventType: input.eventType,
+        entryMode: input.entryMode,
+        auditId: incident.auditId,
+        eventId: manualEventId,
+        incidentId: incident.id,
+        investigationId,
+        approvalRequired: incident.severity === 'critical',
+        approvalRequestId: incident.approvalRequestId,
+        message: investigationId
+          ? `Security incident ${incident.id} created with investigation ${investigationId}.`
+          : `Security incident ${incident.id} recorded with audit linkage.`,
+      };
+    }
+
+    if (input.eventType === 'personnel-event') {
+      if (input.zoneId && input.credentialId && input.host && input.personDisplayName) {
+        const visitor = this.logVisitor(actor, {
+          visitorDisplayName: input.personDisplayName,
+          visitorLegalName: input.personLegalName,
+          host: input.host,
+          zoneId,
+          credentialId: input.credentialId,
+          credentialStatus: input.credentialStatus ?? 'unknown',
+        });
+        return {
+          accepted: true,
+          eventType: input.eventType,
+          entryMode: input.entryMode,
+          auditId: visitor.auditId,
+          visitorLogId: visitor.id,
+          message: `Personnel event logged — visitor check-in ${visitor.id} with audit linkage.`,
+        };
+      }
+      const auditId = this.audit('visitor.logged', actor.id, zoneId, input.personLegalName ? ['personLegalName'] : []);
+      const domainEvent = this.emitDomainEvent('security.visitor.logged', `personnel-${this.events.length + 1}`, input.severity, auditId, {
+        eventType: input.eventType,
+        summary: input.summary,
+        zoneId,
+        personDisplayName: input.personDisplayName,
+        host: input.host,
+        evidence,
+        reportedBy: input.reportedBy,
+        reason: input.reason,
+      });
+      return {
+        accepted: true,
+        eventType: input.eventType,
+        entryMode: input.entryMode,
+        auditId,
+        eventId: domainEvent.eventId,
+        message: 'Personnel-related security event recorded.',
+      };
+    }
+
+    let incidentId = input.relatedIncidentId;
+    if (!incidentId || !this.incidents.has(incidentId)) {
+      const incident = this.createIncident(actor, {
+        title: title || `Escalation: ${input.summary}`,
+        severity: input.severity,
+        zoneId,
+        eventIds: evidence,
+      });
+      incidentId = incident.id;
+    }
+    const routeTo = input.escalationRoute?.length ? input.escalationRoute : ['security-supervisor', 'incident-command'];
+    const flow = this.escalateIncident(actor, incidentId, routeTo);
+    const incident = this.incidents.get(incidentId);
+    return {
+      accepted: true,
+      eventType: input.eventType,
+      entryMode: input.entryMode,
+      auditId: flow.auditId,
+      incidentId,
+      escalationId: flow.id,
+      approvalRequired: Boolean(incident?.approvalRequestId),
+      approvalRequestId: incident?.approvalRequestId,
+      message: `Escalation ${flow.id} sent for incident ${incidentId}.`,
     };
   }
 

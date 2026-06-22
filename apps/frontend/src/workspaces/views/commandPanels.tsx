@@ -7,6 +7,7 @@ import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { feedFromIndex, indexWorkspaceFeeds } from '../feedUtils';
 import { AdminFoundationPanels } from './platformPanels';
+import { EntityFormAction } from '@/features/data-entry/TrackMindFormDialog';
 
 export function CommandCenterPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
   const feeds = useMemo(() => indexWorkspaceFeeds(results), [results]);
@@ -105,6 +106,12 @@ export function AdminPanels({ results }: { results: WorkspaceDataResult[] }): Re
   return (
     <div className="space-y-4">
       <AdminFoundationPanels results={results} />
+      <SectionPanel title="Administrative data entry" description="Platform administrative records via the shared form framework.">
+        <div className="flex flex-wrap gap-2">
+          <EntityFormAction entityKind="administrative-record" label="Create administrative record" />
+          <EntityFormAction entityKind="administrative-record" mode="edit" label="Edit administrative record" variant="outline" />
+        </div>
+      </SectionPanel>
       <SectionPanel title="Governance & maturity" description="Domain ownership, lineage validation, readiness scorecards, and platform maturity review.">
         <RecordTable
           columns={[

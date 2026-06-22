@@ -22,6 +22,15 @@ export interface FacilityInspectionRecord {
   assetId: string;
   inspectedBy: string;
   inspectedAt: string;
+  inspectionType?: string;
+  facilityCategory?: string;
+  notes?: string;
+  issuesFound?: string[];
+  urgency?: MaintenancePriority;
+  workOrderTriggered?: boolean;
+  workOrderId?: string;
+  attachmentRefs?: string[];
+  maintenanceOwner?: string;
   checklist: string[];
   findings: string[];
   status: FacilityInspectionStatus;
@@ -102,6 +111,11 @@ export interface MaintenanceScheduleRequest {
   evidence: string[];
   operationalImpact: WorkOrderOperationalImpact;
   requestedBy: string;
+  maintenanceOwner?: string;
+  notes?: string;
+  issuesFound?: string[];
+  attachmentRefs?: string[];
+  facilityCategory?: string;
 }
 
 export interface MaintenanceScheduleResult {
@@ -276,7 +290,21 @@ export class FacilitiesMaintenanceService {
     return seeded.map(clone);
   }
 
-  recordInspectionSync(input: { assetId: string; inspectedBy: string; checklist: string[]; findings: string[]; score: number; nextInspectionDueAt?: string }, principal: AssetPrincipal, now = new Date().toISOString()): FacilityInspectionRecord {
+  recordInspectionSync(input: {
+    assetId: string;
+    inspectedBy: string;
+    checklist: string[];
+    findings: string[];
+    score: number;
+    nextInspectionDueAt?: string;
+    inspectionType?: string;
+    facilityCategory?: string;
+    notes?: string;
+    issuesFound?: string[];
+    urgency?: MaintenancePriority;
+    attachmentRefs?: string[];
+    maintenanceOwner?: string;
+  }, principal: AssetPrincipal, now = new Date().toISOString()): FacilityInspectionRecord {
     const asset = this.assetRegistry.get(input.assetId, this.readPrincipal(principal));
     const status = this.inspectionStatus(input.score);
     const maintenanceStatus: MaintenanceStatus = status === 'failed' ? 'out-of-service' : status === 'watch' ? 'due' : 'ok';
@@ -285,6 +313,13 @@ export class FacilitiesMaintenanceService {
       assetId: asset.assetId,
       inspectedBy: input.inspectedBy,
       inspectedAt: now,
+      inspectionType: input.inspectionType,
+      facilityCategory: input.facilityCategory,
+      notes: input.notes,
+      issuesFound: input.issuesFound ? [...input.issuesFound] : undefined,
+      urgency: input.urgency,
+      attachmentRefs: input.attachmentRefs ? [...input.attachmentRefs] : undefined,
+      maintenanceOwner: input.maintenanceOwner,
       checklist: [...input.checklist],
       findings: [...input.findings],
       status,
@@ -305,6 +340,80 @@ export class FacilitiesMaintenanceService {
     this.twins.registerAsset(updated, input.inspectedBy, record.eventId);
     this.auditLog.append({ id: record.auditId, type: 'workflow-action', actor: input.inspectedBy, timestamp: now, payload: record, subjectId: asset.assetId, tenantId: asset.tenantId, racetrackId: assetRacetrackId(asset), severity: status === 'failed' ? 'critical' : status === 'watch' ? 'warning' : 'info', regulations: asset.regulations.map((item) => item.authority), evidenceIds: record.findings });
     return clone(record);
+  }
+
+  recordFacilitiesInspectionIntake(
+    input: {
+      assetId: string;
+      inspectedBy: string;
+      inspectionType?: string;
+      facilityCategory?: string;
+      notes?: string;
+      issuesFound?: string[];
+      urgency?: MaintenancePriority;
+      triggerWorkOrder?: boolean;
+      attachmentRefs?: string[];
+      nextInspectionDueAt?: string;
+      maintenanceOwner?: string;
+      checklist: string[];
+      findings: string[];
+      score: number;
+    },
+    principal: AssetPrincipal,
+    now = new Date().toISOString(),
+  ): { inspection: FacilityInspectionRecord; workOrder?: FacilityWorkOrder; workOrderTriggered: boolean } {
+    const inspection = this.recordInspectionSync({
+      assetId: input.assetId,
+      inspectedBy: input.inspectedBy,
+      inspectionType: input.inspectionType,
+      facilityCategory: input.facilityCategory,
+      notes: input.notes,
+      issuesFound: input.issuesFound,
+      urgency: input.urgency,
+      attachmentRefs: input.attachmentRefs,
+      maintenanceOwner: input.maintenanceOwner,
+      checklist: input.checklist,
+      findings: input.findings,
+      score: input.score,
+      nextInspectionDueAt: input.nextInspectionDueAt,
+    }, principal, now);
+
+    const shouldTrigger = input.triggerWorkOrder === true
+      && (input.issuesFound?.length ?? 0) > 0;
+    if (!shouldTrigger) {
+      return { inspection, workOrderTriggered: false };
+    }
+
+    const priority = input.urgency ?? (inspection.status === 'failed' ? 'critical' : inspection.status === 'watch' ? 'high' : 'normal');
+    const workOrder = this.createWorkOrder({
+      assetId: input.assetId,
+      title: `Inspection follow-up: ${input.inspectionType ?? 'facility'} — ${input.assetId}`,
+      priority,
+      requestedBy: input.inspectedBy,
+      dueAt: addDays(now, priority === 'critical' ? 1 : priority === 'high' ? 2 : 7),
+      tasks: [
+        'Review inspection findings',
+        ...(input.issuesFound ?? []).slice(0, 5).map((issue) => `Resolve: ${issue}`),
+        'Capture return-to-service evidence',
+      ],
+      evidence: [
+        'facilities-inspection-work-order',
+        inspection.id,
+        ...(input.attachmentRefs ?? []),
+      ],
+      operationalImpact: priority === 'critical' || priority === 'high' ? 'race-day-critical' : 'operational-impact',
+      scheduledFor: now,
+    }, principal);
+
+    inspection.workOrderTriggered = true;
+    inspection.workOrderId = workOrder.id;
+    const stored = this.inspections.find((entry) => entry.id === inspection.id);
+    if (stored) {
+      stored.workOrderTriggered = true;
+      stored.workOrderId = workOrder.id;
+    }
+
+    return { inspection, workOrder, workOrderTriggered: true };
   }
 
   async recordInspection(input: { assetId: string; inspectedBy: string; checklist: string[]; findings: string[]; score: number; nextInspectionDueAt?: string; approvalToken?: ApprovalToken }, principal: AssetPrincipal): Promise<FacilityInspectionRecord> {
@@ -577,6 +686,68 @@ export class FacilitiesMaintenanceService {
 
   private readPrincipal(principal: AssetPrincipal): AssetPrincipal { return { ...principal, scopes: [...new Set([...principal.scopes, 'assets:read'])] }; }
   private requireWorkOrder(workOrderId: string): FacilityWorkOrder { const order = this.workOrders.get(workOrderId); if (!order) throw new Error(`Unknown facility work order ${workOrderId}`); return order; }
+
+  patchWorkOrderMetadata(
+    workOrderId: string,
+    patch: Partial<Pick<FacilityWorkOrder, 'priority' | 'scheduledFor' | 'status'>>,
+    actor: string,
+    options: { reason?: string; confirmedDestructive?: boolean } = {},
+  ): { workOrderId: string; auditId: string; patchedFields: string[]; message: string } {
+    const order = this.requireWorkOrder(workOrderId);
+    const patchedFields: string[] = [];
+    const previous: Record<string, unknown> = {};
+
+    if (patch.priority !== undefined) {
+      previous.priority = order.priority;
+      order.priority = patch.priority;
+      patchedFields.push('priority');
+    }
+    if (patch.scheduledFor !== undefined) {
+      previous.scheduledFor = order.scheduledFor;
+      order.scheduledFor = patch.scheduledFor;
+      patchedFields.push('scheduledFor');
+    }
+    if (patch.status !== undefined) {
+      if (patch.status === 'completed' || patch.status === 'approval-required') {
+        throw new Error(`Work order status "${patch.status}" requires governed workflow`);
+      }
+      if (patch.status === 'cancelled' && !options.confirmedDestructive) {
+        throw new Error('Cancelling a work order requires destructive confirmation');
+      }
+      previous.status = order.status;
+      order.status = patch.status;
+      patchedFields.push('status');
+    }
+    if (patchedFields.length === 0) throw new Error('No metadata fields to patch');
+
+    const now = new Date().toISOString();
+    const auditId = `audit-wo-patch-${this.auditLog.all().length + 1}`;
+    this.auditLog.append({
+      id: auditId,
+      type: 'user-action',
+      actor,
+      timestamp: now,
+      action: 'facilities.work-order.metadata-patched',
+      reason: options.reason ?? 'Work order metadata patched',
+      actionClass: 'api',
+      subjectId: order.assetId,
+      tenantId: 'trackmind',
+      racetrackId: 'main-track',
+      severity: 'info',
+      payload: { workOrderId, patchedFields, previous },
+      regulations: ['TrackPolicy'],
+      evidenceIds: [workOrderId],
+    });
+    order.auditId = auditId;
+
+    return {
+      workOrderId,
+      auditId,
+      patchedFields,
+      message: `Work order ${workOrderId} metadata updated (${patchedFields.join(', ')}).`,
+    };
+  }
+
   private displayName(assetType: string, assetId: string): string { return assetType.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\b\w/g, (char) => char.toUpperCase()) + ` ${assetId.split('_').at(-1)}`; }
   private maintenanceFromState(state: Record<string, unknown>): MaintenanceStatus { const raw = String(state.maintenanceStatus ?? 'OK').toLowerCase().replace(/_/g, '-'); return raw === 'due' || raw === 'overdue' || raw === 'out-of-service' ? raw : 'ok'; }
   private defaultPlan(asset: RegistryAsset, now: string): PreventiveMaintenancePlan { return { id: `pm-${asset.assetId.toLowerCase()}`, assetId: asset.assetId, cadenceDays: asset.riskLevel === 'high' || asset.riskLevel === 'critical' ? 7 : 14, checklist: ['verify required telemetry', 'inspect safety controls', 'document lockout readiness', 'confirm return-to-service approval path'], nextDueAt: asset.maintenance.nextInspectionDueAt ?? addDays(now, 14), approvalRequiredForExecution: true, predictiveHooks: ['runtime-hours', 'fault-count-30d', 'risk-level', 'required-telemetry'] }; }
@@ -652,6 +823,7 @@ export function facilitiesMaintenanceApiDefinition(): ApiServiceDefinition {
     { method: 'GET', path: '/workspace', summary: 'Read facilities maintenance command workspace', scopes: ['assets:read'] },
     { method: 'GET', path: '/map', summary: 'Read facilities geospatial map overlays', scopes: ['assets:read'] },
     { method: 'GET', path: '/utilities', summary: 'Read utilities adapter snapshot', scopes: ['assets:read'] },
+    { method: 'POST', path: '/inspections', summary: 'Record facility inspection with optional work-order trigger', scopes: ['assets:write'] },
     { method: 'POST', path: '/maintenance-schedules', summary: 'Create approval-gated maintenance schedule', scopes: ['assets:write', 'assets:approve'] },
     { method: 'POST', path: '/incidents', summary: 'Report facility incident with audit linkage', scopes: ['assets:write'] },
   ] };

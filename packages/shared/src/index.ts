@@ -8,6 +8,39 @@ export * from './foundation.js';
 
 export * from './domainKernel.js';
 
+export * from './incidentIntake.js';
+
+export * from './approvalRequestComposer.js';
+
+export * from './equineObservationForms.js';
+
+export * from './facilitiesEntryWorkflows.js';
+export * from './securityEventEntry.js';
+export * from './complianceEvidenceEntry.js';
+export * from './operationalNotesEntry.js';
+export * from './inlineEditPolicy.js';
+export * from './dataEntryDraftRecovery.js';
+export * from './bulkDataEntry.js';
+export * from './dataQualityValidation.js';
+export * from './entityPicker.js';
+export * from './dataEntryArtifactPipeline.js';
+export * from './operationalFormComponents.js';
+
+export * from './federationMetadataEntry.js';
+export * from './administrativeRecordEntry.js';
+export * from './dataEntryCoverageMatrix.js';
+
+export * from './dataEntryDomainPayloads.js';
+export * from './dataEntrySubmitContracts.js';
+
+export * from './raceCardEntry.js';
+
+export * from './horseDataEntry.js';
+
+export * from './dataEntryFramework.js';
+
+export * from './raceDayQuickEntry.js';
+
 export * from './apiContracts.js';
 
 export * from './streamingContracts.js';

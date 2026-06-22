@@ -13,6 +13,11 @@ import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { feedFromIndex, indexWorkspaceFeeds, numericField } from '../feedUtils';
 import { isRecord } from '@/lib/utils';
 import { GovernedActionDialog } from '@/features/approvals/GovernedActionDialog';
+import { RaceDayQuickEntryConsole, type RaceDayHorseOption } from '@/features/race-day/RaceDayQuickEntryConsole';
+import { OperationalNotesConsole } from '@/features/operational-notes/OperationalNotesConsole';
+import { RaceCardWorkflowWizard } from '@/features/race-card/RaceCardWorkflowWizard';
+import { BulkDataEntryConsole } from '@/features/bulk-data-entry/BulkDataEntryConsole';
+import { EntityFormAction } from '@/features/data-entry/TrackMindFormDialog';
 import type { WorkspaceAction } from '@/design/components/workspace';
 import { authorizeApprovalExecution, requestRaceStart, type ApprovalTokenPayload } from '@/api/mutations';
 
@@ -34,6 +39,8 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
   const startingGate = feedFromIndex<Record<string, unknown>>(feeds, '/race-operations/starting-gate');
   const startingGateOps = feedFromIndex<Record<string, unknown>>(feeds, '/starting-gate-operations/workspace');
   const schedule = feedFromIndex<Record<string, unknown>>(feeds, '/race-operations/schedule');
+  const notesJournal = feedFromIndex<Record<string, unknown>>(feeds, apiPaths.operationalNotes.journal);
+  const operationalNotes = extractArray<Record<string, unknown>>(notesJournal, 'notes');
 
   const paddockAssignments = extractArray<Record<string, unknown>>(paddock, 'assignments');
   const gateReadiness = isRecord(paddock?.gateReadiness) ? paddock.gateReadiness as Record<string, unknown> : undefined;
@@ -58,6 +65,10 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
   const cards = extractArray<Record<string, unknown>>(raceOffice, 'cards');
   const calendarMeets = extractArray<Record<string, unknown>>(calendar, 'meets');
   const raceCards = extractArray<Record<string, unknown>>(raceCardsWorkspace, 'raceCards');
+  const raceCardAuditTrail = extractArray<Record<string, unknown>>(raceCardsWorkspace, 'auditTrail');
+  const lifecycleSummary = isRecord(raceCardsWorkspace?.lifecycleSummary)
+    ? raceCardsWorkspace.lifecycleSummary as Record<string, unknown>
+    : undefined;
   const officeReadiness = extractArray<Record<string, unknown>>(raceOffice, 'readiness');
   const lifecycle = extractArray<Record<string, unknown>>(raceOffice, 'lifecycle');
   const approvalControls = extractApprovalControls(results);
@@ -174,6 +185,31 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
     return stewards.length ? stewards.map(String).join(', ') : '—';
   }
 
+  const raceHorseOptions = useMemo((): RaceDayHorseOption[] => {
+    const fromPaddock = paddockAssignments.map((assignment) => ({
+      horseId: String(assignment.horseId ?? ''),
+      horseName: String(assignment.horseName ?? assignment.horseId ?? 'Horse'),
+      raceId: String(assignment.raceId ?? defaultRaceTarget),
+      raceCardId: assignment.raceCardId ? String(assignment.raceCardId) : undefined,
+      entryId: assignment.entryId ? String(assignment.entryId) : undefined,
+      saddleCloth: typeof assignment.saddleCloth === 'number' ? assignment.saddleCloth : Number(assignment.saddleCloth) || undefined,
+      postPosition: typeof assignment.postPosition === 'number' ? assignment.postPosition : Number(assignment.postPosition) || undefined,
+      status: assignment.status ? String(assignment.status) : undefined,
+    })).filter((horse) => horse.horseId);
+
+    if (fromPaddock.length > 0) return fromPaddock;
+
+    return startingGateAssignments.slice(0, 12).map((assignment) => ({
+      horseId: String(assignment.horseId ?? assignment.entryId ?? ''),
+      horseName: String(assignment.horseName ?? assignment.horseId ?? 'Horse'),
+      raceId: String(assignment.raceId ?? defaultRaceTarget),
+      entryId: assignment.entryId ? String(assignment.entryId) : undefined,
+      postPosition: typeof assignment.postPosition === 'number' ? assignment.postPosition : Number(assignment.postPosition ?? assignment.stallNumber) || undefined,
+      saddleCloth: typeof assignment.stallNumber === 'number' ? assignment.stallNumber : undefined,
+      status: assignment.status ? String(assignment.status) : undefined,
+    })).filter((horse) => horse.horseId);
+  }, [paddockAssignments, startingGateAssignments, defaultRaceTarget]);
+
   return (
     <div className="space-y-4">
       <KpiStrip
@@ -186,10 +222,34 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
           { id: 'meets', label: 'Active meets', value: String(officeMeets.length || calendarMeets.length) },
           { id: 'race-days', label: 'Race days', value: String(officeRaceDays.length) },
           { id: 'races', label: 'Race cards', value: String(cards.length || raceCards.length) },
+          { id: 'draft-cards', label: 'Draft cards', value: lifecycleSummary?.draft != null ? String(lifecycleSummary.draft) : '—' },
+          { id: 'published-cards', label: 'Published', value: lifecycleSummary?.published != null ? String(lifecycleSummary.published) : '—' },
           { id: 'office-ready', label: 'Office ready', value: officeReadiness.length ? `${officeReadyCount}/${officeReadiness.length}` : '—', status: officeReadiness.length && officeReadyCount === officeReadiness.length ? 'nominal' : 'warning' },
           { id: 'warnings', label: 'Warnings', value: String(warnings.length), status: warnings.length > 0 ? 'warning' : 'nominal' },
         ]}
       />
+      <OperationalNotesConsole
+        notes={operationalNotes}
+        defaultSubjectKind="race-day-log"
+        defaultEntityId={defaultRaceTarget}
+      />
+      <SectionPanel title="Race schedule data entry" description="Governed race schedule draft requests via the shared form framework.">
+        <div className="flex flex-wrap gap-2">
+          <EntityFormAction entityKind="race" label="Add race to schedule" />
+          <EntityFormAction entityKind="race" mode="edit" label="Revise race schedule" variant="outline" />
+        </div>
+      </SectionPanel>
+      <RaceCardWorkflowWizard
+        raceCards={raceCards}
+        auditTrail={raceCardAuditTrail}
+        defaultRaceDayId={officeRaceDays[0]?.id ? String(officeRaceDays[0].id) : undefined}
+      />
+      <BulkDataEntryConsole
+        title="Race-day bulk entry"
+        description="Bulk race entries, jockey assignments, and status updates with validation preview and partial commit."
+        operationIds={['race-entries', 'jockey-assignments', 'status-updates']}
+      />
+      <RaceDayQuickEntryConsole horses={raceHorseOptions} defaultRaceId={defaultRaceTarget} />
       <div className="grid gap-4 xl:grid-cols-2">
         <SectionPanel title="Gate readiness" description="Paddock gate checks and starter race readiness indicators from live API feeds.">
           {commandMessage ? (
@@ -350,7 +410,7 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
                 classification: formatCardConditions(c),
                 entries: entries.length ? `${activeEntries.length}/${entries.length}` : String(c.entryCount ?? '—'),
                 approvals: formatApprovalSummary(c.approvals),
-                status: String(c.status ?? '—'),
+                status: String(c.lifecycleStatus ?? c.status ?? '—'),
               };
             })}
             emptyLabel="No race cards returned from race office or card management."

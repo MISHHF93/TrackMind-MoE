@@ -2,6 +2,11 @@ import type { KPIArtifact, KPIStatus } from '@trackmind/shared';
 import {
   ComplianceControlLibrary,
   seededComplianceLibrary,
+  type ComplianceEvidenceDomain,
+  type ComplianceEvidenceLinkTarget,
+  type ComplianceEvidenceRecord,
+  type ComplianceEvidenceReviewStatus,
+  type ComplianceEvidenceType,
   type ComplianceFrameworkId,
   type CorrectiveAction,
   type EvidencePackage,
@@ -126,6 +131,62 @@ export class CompliancePlatformService {
 
   generateEvidencePacket(input: ComplianceEvidencePacketRequest): EvidencePackage {
     return this.library.generateEvidencePacket(input);
+  }
+
+  recordEvidenceIntake(input: {
+    title: string;
+    controlId: string;
+    frameworkIds?: ComplianceFrameworkId[];
+    policyCitation?: string;
+    domain: ComplianceEvidenceDomain;
+    evidenceType: ComplianceEvidenceType;
+    source: string;
+    notes: string;
+    reviewStatus: ComplianceEvidenceReviewStatus;
+    approvalRequestId?: string;
+    auditRecordId?: string;
+    linkTargets?: ComplianceEvidenceLinkTarget[];
+    retentionPolicy: string;
+    retainedUntil?: string;
+    legalHold?: boolean;
+    uri?: string;
+    evidenceRefs?: string[];
+    startReviewWorkflow?: boolean;
+    reason: string;
+    entryMode: 'quick' | 'full';
+    reportedBy: string;
+  }) {
+    return this.library.recordComplianceEvidenceIntake(input.reportedBy, {
+      title: input.title,
+      controlId: input.controlId,
+      frameworkIds: input.frameworkIds,
+      policyCitation: input.policyCitation,
+      domain: input.domain,
+      evidenceType: input.evidenceType,
+      source: input.source,
+      notes: input.notes,
+      reviewStatus: input.reviewStatus,
+      approvalRequestId: input.approvalRequestId,
+      auditRecordId: input.auditRecordId,
+      linkTargets: input.linkTargets,
+      retentionPolicy: input.retentionPolicy,
+      retainedUntil: input.retainedUntil,
+      legalHold: input.legalHold,
+      uri: input.uri,
+      evidenceRefs: input.evidenceRefs,
+      startReviewWorkflow: input.startReviewWorkflow,
+      reason: input.reason,
+      entryMode: input.entryMode,
+    });
+  }
+
+  patchEvidenceMetadata(
+    evidenceId: string,
+    patch: Partial<Pick<ComplianceEvidenceRecord, 'reviewStatus' | 'notes'>>,
+    actor: string,
+    reason?: string,
+  ) {
+    return this.library.patchEvidenceMetadata(evidenceId, patch, actor, reason);
   }
 
   syncKpiArtifacts(kpis: KPIArtifact[], generatedAt = new Date().toISOString()): KPIArtifact[] {

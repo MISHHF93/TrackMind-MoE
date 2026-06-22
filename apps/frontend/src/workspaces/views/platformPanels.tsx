@@ -14,6 +14,8 @@ import { KpiStrip } from '@/design/components/kpi-strip';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
 import { SectionPanel } from '@/design/components/section-panel';
 import { ApprovalDecisionButtons } from '@/features/approvals/GovernedActionDialog';
+import { BulkDataEntryConsole } from '@/features/bulk-data-entry/BulkDataEntryConsole';
+import { EntityFormAction } from '@/features/data-entry/TrackMindFormDialog';
 import { useAnalyticsStream } from '@/hooks/useAnalyticsStream';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
@@ -147,6 +149,15 @@ function KpiAdminPanels({ results }: { results: WorkspaceDataResult[] }): ReactE
           },
         ]}
       />
+      <SectionPanel
+        title="KPI definition data entry"
+        description="Create and revise governed KPI definitions via the shared TrackMind form framework."
+      >
+        <div className="flex flex-wrap gap-2">
+          <EntityFormAction entityKind="kpi-definition" label="Create KPI definition" />
+          <EntityFormAction entityKind="kpi-definition" mode="edit" label="Edit KPI definition" variant="outline" />
+        </div>
+      </SectionPanel>
       <div className="grid gap-4 xl:grid-cols-2">
         <SectionPanel
           title="KPI registry"
@@ -412,6 +423,11 @@ function KpiAdminPanels({ results }: { results: WorkspaceDataResult[] }): ReactE
           ) : null}
         </div>
       </SectionPanel>
+      <BulkDataEntryConsole
+        title="KPI threshold bulk entry"
+        description="Bulk submit KPI threshold draft requests — approval-governed with per-row validation."
+        operationIds={['kpi-thresholds']}
+      />
     </div>
   );
 }
@@ -747,6 +763,11 @@ export function NotificationsPanels({ results }: { results: WorkspaceDataResult[
 
   return (
     <div className="space-y-4">
+      <BulkDataEntryConsole
+        title="Notification target bulk entry"
+        description="Bulk configure notification routing targets by role, zone, or user."
+        operationIds={['notification-targets']}
+      />
       <SectionPanel title="Delivery adapters" description="In-app, email stub, and webhook stub delivery statistics.">
         <RecordTable
           columns={[

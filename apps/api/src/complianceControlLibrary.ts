@@ -10,7 +10,35 @@ export type AssessmentRating = 'effective'|'partially-effective'|'ineffective'|'
 export type FindingSeverity = 'low'|'medium'|'high'|'critical';
 export type ReviewCadence = 'continuous'|'race-day'|'quarterly'|'annual'|'incident-driven';
 export type HisaOperationalOversightCategory = 'racetrack-management'|'racing-office-operations'|'maintenance-facilities'|'safety'|'accreditation';
-export type EvidenceSourceObjectType = 'control'|'workflow'|'audit-record'|'event'|'digital-twin'|'ai-recommendation'|'approval'|'racetrack-operation';
+export type EvidenceSourceObjectType = 'control'|'workflow'|'audit-record'|'event'|'digital-twin'|'ai-recommendation'|'approval'|'racetrack-operation'|'kpi-definition';
+export type ComplianceEvidenceReviewStatus = 'draft'|'submitted'|'pending-review'|'approved'|'rejected'|'archived';
+export type ComplianceEvidenceType = 'document'|'screenshot'|'log-export'|'approval-record'|'audit-trail'|'sensor-capture'|'policy-attestation'|'workflow-artifact'|'other';
+export type ComplianceEvidenceDomain = 'security'|'operations'|'equine-welfare'|'facilities'|'finance'|'governance'|'racing-integrity'|'ai-governance'|'regulatory';
+export type ComplianceEvidenceLinkTargetKind = 'incident'|'approval'|'control'|'audit'|'kpi-definition'|'regulatory-workflow';
+export interface ComplianceEvidenceLinkTarget { targetKind: ComplianceEvidenceLinkTargetKind; targetId: string; label?: string }
+export interface ComplianceEvidenceRetention { retentionPolicy: string; retainedUntil?: string; legalHold?: boolean }
+export interface ComplianceEvidenceRecord {
+  id: string;
+  title: string;
+  controlId: string;
+  frameworkIds: ComplianceFrameworkId[];
+  policyCitation?: string;
+  domain: ComplianceEvidenceDomain;
+  evidenceType: ComplianceEvidenceType;
+  source: string;
+  notes: string;
+  reviewStatus: ComplianceEvidenceReviewStatus;
+  approvalRequestId?: string;
+  auditRecordId: string;
+  evidenceVaultId: string;
+  uri: string;
+  linkTargets: ComplianceEvidenceLinkTarget[];
+  retention: ComplianceEvidenceRetention;
+  collectedBy: string;
+  collectedAt: string;
+  workflowInstanceId?: string;
+  evidencePackageId?: string;
+}
 
 export interface EvidenceSourceReference { objectType: EvidenceSourceObjectType; objectId: string; workflowInstanceId?: string; controlId?: string }
 export interface EvidenceFrameworkMapping { frameworkId: ComplianceFrameworkId; citation: string; controlIds: string[]; relationship: 'primary'|'equivalent'|'supports'|'overlaps'|'localizes'; evidenceUse: 'reusable'|'supplemental' }
@@ -78,6 +106,7 @@ export class ComplianceControlLibrary {
   private cycles = new Map<string, ReviewCycle>();
   private mappings = new Map<string, FrameworkMapping>();
   private evidencePackages = new Map<string, EvidencePackage>();
+  private evidenceRecords = new Map<string, ComplianceEvidenceRecord>();
   private accreditationPrograms = new Map<string, AccreditationProgram>();
   private auditReadinessEvents: ComplianceAuditEvent[] = [];
 
@@ -135,6 +164,238 @@ export class ComplianceControlLibrary {
     this.recordReadinessEvent('compliance.evidence.collected', now, c.frameworkIds, record.id, controlId);
     void this.publish('compliance.evidence.collected', { controlId, evidenceIds: [evidence.id], auditRecordId: record.id }, c, record, now);
     return { evidence, auditRecord: record };
+  }
+
+  recordComplianceEvidenceIntake(
+    ownerId: string,
+    input: {
+      title: string;
+      controlId: string;
+      frameworkIds?: ComplianceFrameworkId[];
+      policyCitation?: string;
+      domain: ComplianceEvidenceDomain;
+      evidenceType: ComplianceEvidenceType;
+      source: string;
+      notes: string;
+      reviewStatus: ComplianceEvidenceReviewStatus;
+      approvalRequestId?: string;
+      auditRecordId?: string;
+      linkTargets?: ComplianceEvidenceLinkTarget[];
+      retentionPolicy: string;
+      retainedUntil?: string;
+      legalHold?: boolean;
+      uri?: string;
+      evidenceRefs?: string[];
+      startReviewWorkflow?: boolean;
+      reason: string;
+      entryMode: 'quick' | 'full';
+    },
+    now = new Date().toISOString(),
+  ) {
+    const resolvedOwnerId = this.resolveOwnerId(ownerId);
+    if (!this.can(resolvedOwnerId, 'collect-evidence')) throw new Error(`Owner ${resolvedOwnerId} cannot collect evidence`);
+    const control = this.mutableControl(input.controlId);
+    const frameworkIds = uniqueStrings([...(input.frameworkIds ?? []), ...control.frameworkIds]) as ComplianceFrameworkId[];
+    const evidenceId = `evidence-${this.evidenceRecords.size + 1}`;
+    const uri = input.uri ?? input.evidenceRefs?.[0] ?? `evidence://compliance/${evidenceId}`;
+    const linkTargets = [...(input.linkTargets ?? [])];
+    if (!linkTargets.some((target) => target.targetKind === 'control' && target.targetId === input.controlId)) {
+      linkTargets.unshift({ targetKind: 'control', targetId: input.controlId, label: control.title });
+    }
+
+    const collected = this.collectEvidence(input.controlId, resolvedOwnerId, {
+      id: evidenceId,
+      uri,
+      description: input.title,
+      content: {
+        title: input.title,
+        domain: input.domain,
+        evidenceType: input.evidenceType,
+        source: input.source,
+        notes: input.notes,
+        reviewStatus: input.reviewStatus,
+        policyCitation: input.policyCitation,
+        linkTargets,
+        retentionPolicy: input.retentionPolicy,
+        retainedUntil: input.retainedUntil,
+        legalHold: input.legalHold ?? false,
+        evidenceRefs: input.evidenceRefs ?? [],
+        reason: input.reason,
+        entryMode: input.entryMode,
+      },
+    }, now);
+
+    let auditRecordId = collected.auditRecord.id;
+    if (input.auditRecordId) {
+      auditRecordId = input.auditRecordId;
+      if (!control.auditRecordIds.includes(auditRecordId)) control.auditRecordIds.push(auditRecordId);
+    }
+
+    if (input.approvalRequestId && !control.approvalRequestIds.includes(input.approvalRequestId)) {
+      control.approvalRequestIds.push(input.approvalRequestId);
+    }
+
+    const mappedSource = this.mapLinkTargetToSource(linkTargets[0] ?? { targetKind: 'control', targetId: input.controlId });
+    const workflowInstanceIds: string[] = [];
+    const approvalRequestIds = input.approvalRequestId ? [input.approvalRequestId] : [];
+    const auditRecordIds = uniqueStrings([auditRecordId, ...linkTargets.filter((target) => target.targetKind === 'audit').map((target) => target.targetId)]);
+    const eventIds = linkTargets.filter((target) => target.targetKind === 'incident').map((target) => target.targetId);
+
+    let workflowInstanceId: string | undefined;
+    if (input.startReviewWorkflow || input.reviewStatus === 'pending-review' || input.reviewStatus === 'submitted') {
+      const workflow = this.startEvidenceWorkflow(input.controlId, resolvedOwnerId, now);
+      workflowInstanceId = workflow.id;
+      workflowInstanceIds.push(workflow.id);
+    }
+
+    for (const target of linkTargets) {
+      if (target.targetKind === 'approval' && !approvalRequestIds.includes(target.targetId)) approvalRequestIds.push(target.targetId);
+      if (target.targetKind === 'regulatory-workflow') workflowInstanceIds.push(target.targetId);
+      if (target.targetKind === 'control' && target.targetId !== input.controlId && this.controls.has(target.targetId)) {
+        const linkedControl = this.mutableControl(target.targetId);
+        linkedControl.evidenceIds.push(evidenceId);
+        linkedControl.auditRecordIds.push(auditRecordId);
+      }
+    }
+
+    const evidencePackage = this.createEvidencePackage({
+      id: `pkg-${evidenceId}`,
+      title: input.title,
+      source: mappedSource,
+      controlIds: uniqueStrings([input.controlId, ...linkTargets.filter((target) => target.targetKind === 'control').map((target) => target.targetId)]),
+      evidenceIds: [evidenceId],
+      auditRecordIds,
+      workflowInstanceIds,
+      approvalRequestIds,
+      digitalTwinRefs: linkTargets.filter((target) => target.targetKind === 'kpi-definition').map((target) => `kpi:${target.targetId}`),
+      eventIds,
+      frameworkIds,
+      readiness: input.reviewStatus === 'approved' ? 'evidence-package-ready' : 'review',
+      sealed: input.reviewStatus === 'approved',
+    });
+
+    const record: ComplianceEvidenceRecord = {
+      id: evidenceId,
+      title: input.title,
+      controlId: input.controlId,
+      frameworkIds,
+      policyCitation: input.policyCitation,
+      domain: input.domain,
+      evidenceType: input.evidenceType,
+      source: input.source,
+      notes: input.notes,
+      reviewStatus: input.reviewStatus,
+      approvalRequestId: input.approvalRequestId,
+      auditRecordId,
+      evidenceVaultId: collected.evidence.id,
+      uri,
+      linkTargets,
+      retention: {
+        retentionPolicy: input.retentionPolicy,
+        retainedUntil: input.retainedUntil,
+        legalHold: input.legalHold ?? false,
+      },
+      collectedBy: resolvedOwnerId,
+      collectedAt: now,
+      workflowInstanceId,
+      evidencePackageId: evidencePackage.id,
+    };
+    this.evidenceRecords.set(record.id, record);
+
+    if (input.legalHold) {
+      this.evidenceVault.placeLegalHold([collected.evidence.id], resolvedOwnerId, input.reason);
+    }
+
+    return {
+      accepted: true,
+      evidenceId: record.id,
+      evidenceVaultId: collected.evidence.id,
+      auditId: auditRecordId,
+      auditRecordId,
+      evidencePackageId: evidencePackage.id,
+      workflowInstanceId,
+      approvalRequestId: input.approvalRequestId,
+      reviewStatus: input.reviewStatus,
+      linkTargets,
+      message: `Compliance evidence "${input.title}" recorded with ${linkTargets.length} link target(s) and audit linkage.`,
+    };
+  }
+
+  listEvidenceRecords(): ComplianceEvidenceRecord[] {
+    return [...this.evidenceRecords.values()].map((record) => structuredClone(record));
+  }
+
+  patchEvidenceMetadata(
+    evidenceId: string,
+    patch: Partial<Pick<ComplianceEvidenceRecord, 'reviewStatus' | 'notes'>>,
+    actor: string,
+    reason = 'Compliance evidence metadata patched',
+    now = new Date().toISOString(),
+  ): { evidenceId: string; auditId: string; patchedFields: string[]; message: string } {
+    const record = this.evidenceRecords.get(evidenceId);
+    if (!record) throw new Error(`Unknown evidence record ${evidenceId}`);
+
+    const patchedFields: string[] = [];
+    const previous: Record<string, unknown> = {};
+
+    if (patch.reviewStatus !== undefined) {
+      if (patch.reviewStatus === 'approved' || patch.reviewStatus === 'rejected') {
+        throw new Error(`Review status "${patch.reviewStatus}" requires approval workflow`);
+      }
+      previous.reviewStatus = record.reviewStatus;
+      record.reviewStatus = patch.reviewStatus;
+      patchedFields.push('reviewStatus');
+    }
+    if (patch.notes !== undefined) {
+      previous.notes = record.notes;
+      record.notes = patch.notes;
+      patchedFields.push('notes');
+    }
+    if (patchedFields.length === 0) throw new Error('No metadata fields to patch');
+
+    const auditId = `audit-evidence-patch-${this.audit.all().length + 1}`;
+    this.appendComplianceAudit({
+      id: auditId,
+      type: 'user-action',
+      actor,
+      timestamp: now,
+      action: 'compliance.evidence.metadata-patched',
+      reason,
+      actionClass: 'api',
+      subjectId: evidenceId,
+      tenantId: this.tenantId,
+      racetrackId: 'main-track',
+      severity: 'info',
+      payload: { evidenceId, patchedFields, previous },
+      regulations: ['TrackPolicy'],
+      evidenceIds: [evidenceId],
+    });
+    record.auditRecordId = auditId;
+
+    return {
+      evidenceId,
+      auditId,
+      patchedFields,
+      message: `Evidence ${evidenceId} metadata updated (${patchedFields.join(', ')}).`,
+    };
+  }
+
+  private mapLinkTargetToSource(target: ComplianceEvidenceLinkTarget): EvidenceSourceReference {
+    switch (target.targetKind) {
+      case 'approval':
+        return { objectType: 'approval', objectId: target.targetId };
+      case 'audit':
+        return { objectType: 'audit-record', objectId: target.targetId };
+      case 'incident':
+        return { objectType: 'event', objectId: target.targetId };
+      case 'kpi-definition':
+        return { objectType: 'kpi-definition', objectId: target.targetId };
+      case 'regulatory-workflow':
+        return { objectType: 'workflow', objectId: target.targetId, workflowInstanceId: target.targetId };
+      case 'control':
+      default:
+        return { objectType: 'control', objectId: target.targetId, controlId: target.targetId };
+    }
   }
 
   startEvidenceWorkflow(controlId: string, actor: string, now = new Date().toISOString()): WorkflowInstance {
@@ -418,6 +679,7 @@ export class ComplianceControlLibrary {
       reviewCycles: [...this.cycles.values()].map((item) => structuredClone(item)),
       frameworkMappings: [...this.mappings.values()].map((item) => structuredClone(item)),
       evidencePackages: [...this.evidencePackages.values()].map((item) => structuredClone(item)),
+      evidenceRecords: this.listEvidenceRecords(),
       accreditationPrograms: [...this.accreditationPrograms.values()].map((item) => structuredClone(item)),
       auditReadinessEvents: this.auditReadinessEvents.map((item) => structuredClone(item)),
       integrations: { audit: true, workflow: true, approvals: true, events: Boolean(this.deps.eventBus) || this.auditReadinessEvents.length > 0, apiFacade: true, commandCenter: true, digitalTwin: true },
@@ -431,6 +693,12 @@ export class ComplianceControlLibrary {
   }
 
   private mutableControl(id: string) { const c = this.controls.get(id); if (!c) throw new Error(`Unknown control ${id}`); return c; }
+  private resolveOwnerId(actorId: string): string {
+    if (this.owners.has(actorId) && this.can(actorId, 'collect-evidence')) return actorId;
+    const fallback = [...this.owners.values()].find((owner) => owner.permissions.includes('collect-evidence'));
+    if (fallback) return fallback.id;
+    throw new Error(`Unknown owner ${actorId}`);
+  }
   private syncOverdueCorrectiveActions(now = new Date().toISOString()) {
     const dueMs = Date.parse(now);
     for (const action of this.actions.values()) {

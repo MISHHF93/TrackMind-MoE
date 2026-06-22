@@ -186,3 +186,7 @@ export async function patchJson<T>(path: string, body: unknown, init?: RequestIn
   });
 }
 
+export async function deleteJson<T>(path: string, init?: RequestInit): Promise<AdapterResult<T>> {
+  return requestJson<T>(path, { ...init, method: 'DELETE' });
+}
+
