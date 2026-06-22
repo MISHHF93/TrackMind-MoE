@@ -196,8 +196,8 @@ test('frontend brand design language is defined', async () => {
   const sidebar = await source('src/shell/Sidebar.tsx');
   const button = await source('src/design/components/button.tsx');
   assert.match(tokens, /--accent-governance: var\(--brand-maroon\)/);
-  assert.match(tokens, /\.brand-mark/);
-  assert.match(tokens, /brand-logo-float/);
+  assert.match(tokens, /\.brand-logo/);
+  assert.match(tokens, /object-fit: contain/);
   assert.match(globals, /--color-navy: #142A45/);
   assert.match(globals, /--color-parchment: #FBF8F4/);
   assert.match(tokens, /--brand-turf:/);

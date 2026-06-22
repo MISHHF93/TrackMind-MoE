@@ -231,68 +231,49 @@ h1, h2, h3 {
   border-color: var(--border-chrome);
 }
 
-.brand-mark {
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: 0.65rem;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  flex-shrink: 0;
-  background: transparent;
-  box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.28),
-    0 0 20px color-mix(in srgb, var(--brand-maroon) 22%, transparent);
-}
-
-.brand-mark img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.brand-logo {
   display: block;
+  flex-shrink: 0;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
-.brand-mark--sm {
-  width: 2.25rem;
-  height: 2.25rem;
+.brand-logo--sm {
+  height: 2rem;
+  width: auto;
 }
 
-.brand-mark--md {
-  width: 3rem;
-  height: 3rem;
+.brand-logo--md {
+  height: 2.75rem;
+  width: auto;
 }
 
-.brand-mark--lg {
-  width: 4.75rem;
-  height: 4.75rem;
-  border-radius: 1rem;
+.brand-logo--lg {
+  height: 4rem;
+  width: auto;
 }
 
-.brand-mark--xl {
-  width: 7rem;
-  height: 7rem;
-  border-radius: 1.25rem;
+.brand-logo--xl {
+  height: 5.5rem;
+  width: auto;
 }
 
-.brand-mark--floating {
-  animation: brand-logo-float 4s ease-in-out infinite;
-}
-
-@keyframes brand-logo-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-
-  50% {
-    transform: translateY(-10px);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .brand-mark--floating {
-    animation: none;
-  }
+/* Legacy alias — components should use .brand-logo */
+.brand-mark {
+  display: block;
+  flex-shrink: 0;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .nav-item-active {
