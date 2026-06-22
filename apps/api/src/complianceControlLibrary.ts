@@ -13,7 +13,7 @@ export type HisaOperationalOversightCategory = 'racetrack-management'|'racing-of
 export type EvidenceSourceObjectType = 'control'|'workflow'|'audit-record'|'event'|'digital-twin'|'ai-recommendation'|'approval'|'racetrack-operation'|'kpi-definition';
 export type ComplianceEvidenceReviewStatus = 'draft'|'submitted'|'pending-review'|'approved'|'rejected'|'archived';
 export type ComplianceEvidenceType = 'document'|'screenshot'|'log-export'|'approval-record'|'audit-trail'|'sensor-capture'|'policy-attestation'|'workflow-artifact'|'other';
-export type ComplianceEvidenceDomain = 'security'|'operations'|'equine-welfare'|'facilities'|'finance'|'governance'|'racing-integrity'|'ai-governance'|'regulatory';
+export type ComplianceEvidenceDomain = 'security-manager'|'operations'|'equine-welfare'|'facilities'|'finance-manager'|'governance'|'racing-integrity'|'ai-governance'|'regulatory';
 export type ComplianceEvidenceLinkTargetKind = 'incident'|'approval'|'control'|'audit'|'kpi-definition'|'regulatory-workflow';
 export interface ComplianceEvidenceLinkTarget { targetKind: ComplianceEvidenceLinkTargetKind; targetId: string; label?: string }
 export interface ComplianceEvidenceRetention { retentionPolicy: string; retainedUntil?: string; legalHold?: boolean }
@@ -53,7 +53,7 @@ function uniqueStrings<T extends string>(values: readonly T[]): T[] {
 
 export interface ComplianceFramework { id: ComplianceFrameworkId; name: string; placeholder: boolean; domains: string[]; authority: string; accreditationArtifact: string; }
 export interface ComplianceObligation { id: string; frameworkId: ComplianceFrameworkId; citation: string; summary: string; applicability: string; controlIds: string[]; dueCadence: ReviewCadence; jurisdiction?: string; }
-export interface ControlOwner { id: string; displayName: string; role: Role; permissions: Array<'read'|'collect-evidence'|'assess'|'approve-action'|'admin'>; }
+export interface ControlOwner { id: string; displayName: string; role: Role; permissions: Array<'read'|'collect-evidence'|'assess'|'approve-action'|'platform-super-admin'>; }
 export interface ComplianceControl { id: string; frameworkIds: ComplianceFrameworkId[]; title: string; description: string; status: ControlStatus; ownerId: string; obligationIds: string[]; evidenceIds: string[]; assessmentIds: string[]; workflowInstanceIds: string[]; auditRecordIds: string[]; digitalTwinRefs: string[]; approvalRequestIds: string[]; eventIds: string[]; reviewCadence: ReviewCadence; hisaOperationalOversightCategories: HisaOperationalOversightCategory[]; }
 export interface ControlAssessment { id: string; controlId: string; assessedBy: string; assessedAt: string; rating: AssessmentRating; notes: string; evidenceIds: string[]; findingIds: string[]; }
 export interface ComplianceFinding { id: string; controlId: string; severity: FindingSeverity; summary: string; status: 'open'|'accepted-risk'|'remediated'|'closed'; correctiveActionIds: string[]; evidenceIds: string[]; auditRecordIds: string[]; }
@@ -69,7 +69,7 @@ export interface AuditReadinessScore { score: number; totalControls: number; eff
 export const complianceFrameworkPlaceholders: ComplianceFramework[] = [
   ['ISO-42001','ISO 42001 AI management system','AI governance','AI management system statement of applicability'],
   ['NIST-AI-RMF','NIST AI Risk Management Framework','AI risk management','AI RMF govern-map-measure-manage evidence index'],
-  ['ISO-27001','ISO 27001 information security','security','information security statement of applicability'],
+  ['ISO-27001','ISO 27001 information security','security-manager','information security statement of applicability'],
   ['ISO-27701','ISO 27701 privacy information management','privacy','privacy control implementation statement'],
   ['ISO-25010','ISO 25010 software product quality','software quality','quality model assessment dossier'],
   ['ISO-31000','ISO 31000 risk management','risk','enterprise risk treatment register'],
@@ -132,7 +132,7 @@ export class ComplianceControlLibrary {
   listFrameworks() { return [...this.frameworks.values()].map((v) => ({ ...v, domains: [...v.domains] })); }
   addOwner(owner: ControlOwner) { this.owners.set(owner.id, { ...owner, permissions: [...owner.permissions] }); return this.owner(owner.id); }
   owner(id: string) { const owner = this.owners.get(id); if (!owner) throw new Error(`Unknown owner ${id}`); return { ...owner, permissions: [...owner.permissions] }; }
-  can(ownerId: string, permission: ControlOwner['permissions'][number]) { const o = this.owner(ownerId); return o.permissions.includes('admin') || o.permissions.includes(permission); }
+  can(ownerId: string, permission: ControlOwner['permissions'][number]) { const o = this.owner(ownerId); return o.permissions.includes('platform-super-admin') || o.permissions.includes(permission); }
   addObligation(obligation: ComplianceObligation) { this.obligations.set(obligation.id, { ...obligation, controlIds: [...obligation.controlIds] }); return { ...obligation, controlIds: [...obligation.controlIds] }; }
   addFrameworkMapping(mapping: FrameworkMapping) { this.mappings.set(mapping.id, structuredClone(mapping)); return structuredClone(mapping); }
 
@@ -801,9 +801,9 @@ export function seededComplianceLibrary(tenantId = 'track-1', options: { audit?:
   const lib = new ComplianceControlLibrary(tenantId, options);
   lib.addOwner({ id: 'owner-compliance', displayName: 'Compliance Officer', role: 'compliance-officer', permissions: ['read','collect-evidence','assess','approve-action'] });
   lib.addOwner({ id: 'owner-auditor', displayName: 'Read-only Auditor', role: 'read-only-auditor', permissions: ['read'] });
-  lib.addOwner({ id: 'owner-security', displayName: 'Security Control Owner', role: 'security', permissions: ['read','collect-evidence','assess'] });
-  lib.addOwner({ id: 'owner-track', displayName: 'Track Superintendent', role: 'track-superintendent', permissions: ['read','collect-evidence','assess'] });
-  lib.addOwner({ id: 'owner-finance', displayName: 'Finance Control Owner', role: 'finance', permissions: ['read','collect-evidence','assess'] });
+  lib.addOwner({ id: 'owner-security', displayName: 'Security Control Owner', role: 'security-manager', permissions: ['read','collect-evidence','assess'] });
+  lib.addOwner({ id: 'owner-track', displayName: 'Track Superintendent', role: 'facilities-manager', permissions: ['read','collect-evidence','assess'] });
+  lib.addOwner({ id: 'owner-finance', displayName: 'Finance Control Owner', role: 'finance-manager', permissions: ['read','collect-evidence','assess'] });
 
   const obligations: ComplianceObligation[] = [
     { id: 'obl-ai-governance', frameworkId: 'ISO-42001', citation: 'AI management system controls', summary: 'Maintain accountable AI management controls and audit evidence.', applicability: 'AI recommendations and governed workflows', controlIds: ['ctrl-ai-evidence'], dueCadence: 'continuous' },

@@ -54,7 +54,7 @@ export const approvalSourceDomains: readonly ApprovalSourceDomainDefinition[] = 
     shortLabel: 'Race day',
     description: 'Race office, gate, scratch, or start approvals.',
     defaultRiskLevel: 'high',
-    defaultApproverRole: 'racing-secretary',
+    defaultApproverRole: 'horse-operations-coordinator',
     suggestedActions: ['race-start', 'race-stop', 'scratch-horse', 'starting-gate-move', 'race-status-change'],
   },
   {
@@ -72,7 +72,7 @@ export const approvalSourceDomains: readonly ApprovalSourceDomainDefinition[] = 
     shortLabel: 'Security',
     description: 'Perimeter, access, or safety-critical security control.',
     defaultRiskLevel: 'high',
-    defaultApproverRole: 'security',
+    defaultApproverRole: 'security-manager',
     suggestedActions: ['safety-critical-control', 'emergency-action', 'emergency-personnel-override'],
   },
   {
@@ -81,7 +81,7 @@ export const approvalSourceDomains: readonly ApprovalSourceDomainDefinition[] = 
     shortLabel: 'Finance',
     description: 'Payout, settlement, or revenue-impacting change.',
     defaultRiskLevel: 'high',
-    defaultApproverRole: 'finance',
+    defaultApproverRole: 'finance-manager',
     suggestedActions: ['payout'],
   },
   {
@@ -90,7 +90,7 @@ export const approvalSourceDomains: readonly ApprovalSourceDomainDefinition[] = 
     shortLabel: 'Admin',
     description: 'Configuration, policy, or operational record change.',
     defaultRiskLevel: 'medium',
-    defaultApproverRole: 'operations-admin',
+    defaultApproverRole: 'organization-admin',
     suggestedActions: ['race-office-configuration', 'kpi-threshold-change', 'facility-maintenance-execution'],
   },
 ];

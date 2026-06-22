@@ -499,10 +499,10 @@ export class WorkforceOperationsService {
 export function seedWorkforceOperations(deps: ConstructorParameters<typeof WorkforceOperationsService>[1] = {}, tenantId = 'track-1', now = '2026-06-13T20:30:00.000Z'): WorkforceOperationsService {
   const service = new WorkforceOperationsService(tenantId, deps);
   const identities: GovernedIdentity[] = [
-    { id: 'staff-gate-lead', tenantId, kind: 'user', displayName: 'Gate Crew Lead', roles: ['operations-admin'], attributes: { department: 'race-operations', credentialed: true } },
+    { id: 'staff-gate-lead', tenantId, kind: 'user', displayName: 'Gate Crew Lead', roles: ['organization-admin'], attributes: { department: 'race-operations', credentialed: true } },
     { id: 'staff-vet-tech', tenantId, kind: 'user', displayName: 'Veterinary Technician', roles: ['veterinarian'], attributes: { department: 'veterinary', credentialed: true } },
-    { id: 'staff-emergency-liaison', tenantId, kind: 'user', displayName: 'Emergency Liaison', roles: ['security'], attributes: { department: 'emergency', credentialed: true } },
-    { id: 'staff-facilities-watch', tenantId, kind: 'user', displayName: 'Facilities Watch', roles: ['track-superintendent'], attributes: { department: 'facilities', credentialed: true } },
+    { id: 'staff-emergency-liaison', tenantId, kind: 'user', displayName: 'Emergency Liaison', roles: ['security-manager'], attributes: { department: 'emergency', credentialed: true } },
+    { id: 'staff-facilities-watch', tenantId, kind: 'user', displayName: 'Facilities Watch', roles: ['facilities-manager'], attributes: { department: 'facilities', credentialed: true } },
   ];
   identities.forEach((identity, index) => service.registerEmployee({ identity, employeeNumber: `EMP-${index + 101}`, department: index === 1 ? 'veterinary' : index === 2 ? 'emergency' : index === 3 ? 'facilities' : 'race-operations', managerIdentityId: 'staff-gate-lead', employmentStatus: 'active', emergencyQualified: index === 2, homeZoneId: index === 2 ? 'zone-grandstand' : 'backstretch', hiredAt: '2024-01-01T00:00:00.000Z' }, 'seed', now));
   service.scheduleShift({ id: 'shift-race-7', tenantId, label: 'Race 7 operations shift', startsAt: '2026-06-13T19:30:00.000Z', endsAt: '2026-06-13T22:30:00.000Z', zoneId: 'backstretch', status: 'active', raceId: 'race-7', requirements: [

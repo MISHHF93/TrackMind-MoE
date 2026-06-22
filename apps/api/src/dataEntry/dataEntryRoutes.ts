@@ -1,5 +1,5 @@
 import type { Role } from '@trackmind/shared';
-import { isBulkOperationId, isDataEntryEntityKind, isRole, type DataQualityReferenceCatalog, type DataQualityValidationContext } from '@trackmind/shared';
+import { isBulkOperationId, isDataEntryEntityKind, normalizeRole, type DataQualityReferenceCatalog, type DataQualityValidationContext } from '@trackmind/shared';
 import type { BulkDataEntryService } from './bulkDataEntryService.js';
 import type { DataEntryService } from './dataEntryService.js';
 
@@ -19,7 +19,7 @@ export function dataEntryScopeFromHeaders(headers: Record<string, string | undef
     racetrackId: headers['x-trackmind-racetrack-id'] ?? 'main-track',
     organizationId: headers['x-trackmind-organization-id'],
     actorId: headers['x-trackmind-actor-id'] ?? `${roleHeader}-operator`,
-    role: isRole(roleHeader) ? roleHeader : 'read-only-auditor',
+    role: normalizeRole(roleHeader) ?? 'read-only-auditor',
     requestId,
   };
 }

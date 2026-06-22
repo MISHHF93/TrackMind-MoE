@@ -4,7 +4,7 @@ export type LakehouseDomain =
   | 'digital-twin'
   | 'regulatory'
   | 'maintenance'
-  | 'security'
+  | 'security-manager'
   | 'compliance'
   | 'race-operations'
   | 'ai-recommendations'

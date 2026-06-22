@@ -457,7 +457,7 @@ export async function runIntegratedSurfaceIntelligence(input: SurfaceIntelligenc
   if (!deps.eventBus) unresolvedDependencies.push('eventBus');
   else {
     for (const event of domain.events) {
-      publishedEvents.push(await deps.eventBus.publish({ id: event.id, type: event.type, occurredAt: event.occurredAt, payload: event.payload, aggregateId: event.aggregateId, producer: requestedBy, metadata: { team: 'surface-operations', accountableRole: 'track-superintendent', compliance: event.requiresHumanApproval ? 'regulated' : 'internal', requiresHumanApproval: Boolean(event.requiresHumanApproval) } }));
+      publishedEvents.push(await deps.eventBus.publish({ id: event.id, type: event.type, occurredAt: event.occurredAt, payload: event.payload, aggregateId: event.aggregateId, producer: requestedBy, metadata: { team: 'surface-operations', accountableRole: 'facilities-manager', compliance: event.requiresHumanApproval ? 'regulated' : 'internal', requiresHumanApproval: Boolean(event.requiresHumanApproval) } }));
     }
   }
 

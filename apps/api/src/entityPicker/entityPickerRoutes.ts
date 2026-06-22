@@ -1,5 +1,5 @@
 import type { Role } from '@trackmind/shared';
-import { isEntityPickerKind, isRole } from '@trackmind/shared';
+import { isEntityPickerKind, normalizeRole } from '@trackmind/shared';
 import type { EntityPickerService } from './entityPickerService.js';
 
 export interface EntityPickerRequestContext {
@@ -19,7 +19,7 @@ export function entityPickerScopeFromHeaders(
     tenantId: headers['x-trackmind-tenant-id'] ?? 'trackmind',
     racetrackId: headers['x-trackmind-racetrack-id'] ?? 'main-track',
     actorId: headers['x-trackmind-actor-id'] ?? `${roleHeader}-operator`,
-    role: isRole(roleHeader) ? roleHeader : 'read-only-auditor',
+    role: normalizeRole(roleHeader) ?? 'read-only-auditor',
     requestId,
   };
 }

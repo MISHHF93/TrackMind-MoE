@@ -120,7 +120,7 @@ export class JockeyManagementPlatform {
     licensing: JockeyLicensingMetadataDto;
     status?: JockeyStatus;
     eligibility?: Partial<JockeyEligibilityTrackingDto>;
-  }, actor: string | undefined = 'racing-secretary'): JockeyMutationResultDto {
+  }, actor: string | undefined = 'horse-operations-coordinator'): JockeyMutationResultDto {
     if (this.repository.get(input.jockeyId)) throw new Error(`Jockey ${input.jockeyId} already exists`);
     const now = new Date().toISOString();
     const jockey: ManagedJockeyRecord = {
@@ -140,23 +140,23 @@ export class JockeyManagementPlatform {
         failedRules: input.eligibility?.failedRules ?? [],
         suspensionReason: input.eligibility?.suspensionReason,
         reviewedAt: input.eligibility?.reviewedAt ?? now,
-        reviewedBy: input.eligibility?.reviewedBy ?? actor ?? 'racing-secretary',
+        reviewedBy: input.eligibility?.reviewedBy ?? actor ?? 'horse-operations-coordinator',
       },
       links: { raceIds: [], horseIds: [], incidentIds: [], auditIds: [], stewardInquiryIds: [] },
       version: 1,
       auditIds: [],
       eventIds: [],
       updatedAt: now,
-      updatedBy: actor ?? 'racing-secretary',
+      updatedBy: actor ?? 'horse-operations-coordinator',
     };
-    const auditId = this.recordChange(jockey, actor ?? 'racing-secretary', 'jockey-management.created', 'Jockey profile created');
+    const auditId = this.recordChange(jockey, actor ?? 'horse-operations-coordinator', 'jockey-management.created', 'Jockey profile created');
     jockey.auditIds.push(auditId);
     jockey.links.auditIds.push(auditId);
     this.repository.save(jockey);
     return this.mutationResult(jockey, auditId, 'jockey-management.created.v1', 'Jockey profile created and audit-logged.');
   }
 
-  updateLicensing(jockeyId: string, licensing: Partial<JockeyLicensingMetadataDto>, actor = 'racing-secretary'): JockeyMutationResultDto {
+  updateLicensing(jockeyId: string, licensing: Partial<JockeyLicensingMetadataDto>, actor = 'horse-operations-coordinator'): JockeyMutationResultDto {
     const jockey = this.requireJockey(jockeyId);
     jockey.licensing = { ...jockey.licensing, ...licensing, evidence: licensing.evidence ?? jockey.licensing.evidence };
     if (jockey.licensing.status === 'suspended' || jockey.licensing.status === 'expired') {
@@ -166,7 +166,7 @@ export class JockeyManagementPlatform {
     return this.mutate(jockey, actor, 'jockey-management.licensing.updated', 'Jockey licensing metadata updated', 'jockey-management.licensing.updated.v1');
   }
 
-  recordAssignment(jockeyId: string, assignment: Omit<JockeyAssignmentDto, 'assignmentId' | 'auditId' | 'active'>, actor = 'racing-secretary'): JockeyMutationResultDto {
+  recordAssignment(jockeyId: string, assignment: Omit<JockeyAssignmentDto, 'assignmentId' | 'auditId' | 'active'>, actor = 'horse-operations-coordinator'): JockeyMutationResultDto {
     const jockey = this.requireJockey(jockeyId);
     const auditId = id('audit-jockey-assignment');
     jockey.assignments = [
@@ -178,7 +178,7 @@ export class JockeyManagementPlatform {
     return this.mutate(jockey, actor, 'jockey-management.assignment.recorded', `Assignment recorded for horse ${assignment.horseId}`, 'jockey-management.assignment.recorded.v1', auditId);
   }
 
-  recordParticipation(jockeyId: string, participation: Omit<JockeyRaceParticipationDto, 'participationId' | 'auditId'>, actor = 'racing-secretary'): JockeyMutationResultDto {
+  recordParticipation(jockeyId: string, participation: Omit<JockeyRaceParticipationDto, 'participationId' | 'auditId'>, actor = 'horse-operations-coordinator'): JockeyMutationResultDto {
     const jockey = this.requireJockey(jockeyId);
     const auditId = id('audit-jockey-participation');
     if (!jockey.raceParticipation.some((entry) => entry.raceId === participation.raceId && entry.horseId === participation.horseId)) {

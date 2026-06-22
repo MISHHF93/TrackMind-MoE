@@ -153,7 +153,7 @@ test('racetrack asset registry approval-gates safety-critical lifecycle telemetr
   await assert.rejects(() => service.activate(safetyAsset.assetId, principal), /requires approval token/);
 
   const request = await service.requestSafetyCriticalChange(safetyAsset.assetId, { actorType: 'ai-agent', reason: 'AI recommends activation after readiness checks', evidence: ['readiness-report'] }, principal);
-  service.approvalService.decide(request.id, { id: 'track-super-1', roles: ['track-superintendent'], human: true }, 'approved', 'Operations approves asset change', ['human-approval-record']);
+  service.approvalService.decide(request.id, { id: 'track-super-1', roles: ['facilities-manager'], human: true }, 'approved', 'Operations approves asset change', ['human-approval-record']);
   service.approvalService.decide(request.id, { id: 'steward-1', roles: ['steward'], human: true }, 'approved', 'Stewards approve safety-critical change', ['human-approval-record']);
   const token = service.approvalService.authorizeExecution({ requestId: request.id, action: 'safety-critical-control', target: safetyAsset.assetId, tenantId: 'track-a', racetrackId: 'track-a', actor: { id: 'steward-1', roles: ['steward'], human: true } });
 

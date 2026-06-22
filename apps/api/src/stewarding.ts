@@ -88,7 +88,7 @@ export interface StewardCenterIntegrations {
   observability?: { recordSignal?: (signal: { name: string; severity: 'info' | 'warning' | 'critical'; traceId: string; attributes: Record<string, unknown>; timestamp: string }) => void };
 }
 
-const finalRulingRoles: Role[] = ['steward', 'admin'];
+const finalRulingRoles: Role[] = ['steward', 'platform-super-admin'];
 const guardrailStatement = 'AI may summarize and organize evidence only; official rulings and official result changes require authorized human steward workflows.';
 function digest(value: string) { let hash = 0; for (const ch of value) hash = Math.imul(31, hash) + ch.charCodeAt(0) | 0; return `sha256:${(hash >>> 0).toString(16).padStart(8, '0')}`; }
 function signal(inquiry: StewardInquiry, name: string, severity: 'info' | 'warning' | 'critical', at: string) { const item = { name, at, severity, traceId: `trace-steward-${inquiry.id}` }; inquiry.integrations.observabilitySignals.push(item); return item; }
@@ -120,7 +120,7 @@ function notifyStewards(inquiry: StewardInquiry, input: { title: string; message
     category: input.category ?? 'incident',
     title: input.title,
     message: input.message,
-    targetRoles: ['steward', 'admin', 'compliance-officer'],
+    targetRoles: ['steward', 'platform-super-admin', 'compliance-officer'],
     severity: input.severity ?? 'warning',
     correlationId: `steward:${inquiry.id}`,
   });
@@ -352,7 +352,7 @@ export function validateStewardAuditTrail(inquiry: StewardInquiry) {
   const custodyGaps = inquiry.evidenceReferences.filter((e) => !e.custody?.chainOfCustody.length || !e.hash);
   return { complete: missing.length === 0 && custodyGaps.length === 0, recordCount: inquiry.auditRecords.length, missingRecordIds: missing.map((r) => r.id), custodyGapEvidenceIds: custodyGaps.map((e) => e.id) };
 }
-export function canAccessStewardCenter(roles: Role[], action: 'read' | 'draft' | 'finalize' | 'appeal') { if (roles.includes('admin')) return true; if (action === 'read') return roles.some((r) => ['steward', 'compliance-officer', 'read-only-auditor'].includes(r)); if (action === 'draft' || action === 'appeal') return roles.includes('steward') || roles.includes('compliance-officer'); return roles.includes('steward'); }
+export function canAccessStewardCenter(roles: Role[], action: 'read' | 'draft' | 'finalize' | 'appeal') { if (roles.includes('platform-super-admin')) return true; if (action === 'read') return roles.some((r) => ['steward', 'compliance-officer', 'read-only-auditor'].includes(r)); if (action === 'draft' || action === 'appeal') return roles.includes('steward') || roles.includes('compliance-officer'); return roles.includes('steward'); }
 export function listStewardInquiries(): StewardInquiry[] {
   const auditLog = new ImmutableAuditLog();
   const eventBus = new InMemoryEventBus();

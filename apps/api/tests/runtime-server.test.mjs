@@ -134,7 +134,7 @@ test('runtime API facade implements declared shared route contracts for races an
 
 test('runtime KPI facade exposes governed artifacts, snapshots, filtering, and model context', async () => {
   const state = createApiFacadeState();
-  const adminHeaders = { 'x-trackmind-role': 'admin' };
+  const adminHeaders = { 'x-trackmind-role': 'platform-super-admin' };
   const auditorHeaders = { 'x-trackmind-role': 'read-only-auditor' };
 
   for (const path of ['/api/v1/kpis', '/api/v1/kpis/model-context', '/api/v1/kpis/kpi-race-day-operations', '/api/v1/kpis/kpi-race-day-operations/snapshots']) {
@@ -224,7 +224,7 @@ test('runtime operations command center exposes stabilized widget sources', asyn
   assert.equal(unauthenticatedTitles.includes('Steward inquiries'), false);
   assert.equal(unauthenticatedTitles.includes('AI recommendations'), false);
 
-  const response = await handleApiRequest('GET', '/api/v1/operations/command-center', undefined, undefined, { 'x-trackmind-role': 'admin' });
+  const response = await handleApiRequest('GET', '/api/v1/operations/command-center', undefined, undefined, { 'x-trackmind-role': 'platform-super-admin' });
   assert.equal(response.status, 200);
   const titles = response.body.widgets.map((widget) => widget.title);
   for (const required of ['Race readiness','Surface conditions','Weather status','Active incidents','Pending approvals','Steward inquiries','Asset health','Workforce readiness','Emergency resources','Facility readiness','AI recommendations','Audit activity','Event metadata snapshot']) {
@@ -431,7 +431,7 @@ test('runtime API facade enforces shared endpoint permissions when role headers 
   assert.equal(allowedRole.status, 200);
   assert.ok(allowedRole.body.records);
 
-  const uncontractedProtectedRoute = await handleApiRequest('POST', '/api/v1/services/security/credentials/validate', { credentialId: 'credential-unknown' }, state, { 'x-trackmind-role': 'admin' });
+  const uncontractedProtectedRoute = await handleApiRequest('POST', '/api/v1/services/security/credentials/validate', { credentialId: 'credential-unknown' }, state, { 'x-trackmind-role': 'platform-super-admin' });
   assert.equal(uncontractedProtectedRoute.status, 401);
   assert.match(uncontractedProtectedRoute.body.error.message, /Shared API contract required/);
 
@@ -449,11 +449,11 @@ test('runtime protected action POST boundaries require context, human actors, an
     reason: 'Request race start approval after readiness review.',
     actor: 'racing-secretary-1',
     actorType: 'human',
-    roles: ['racing-secretary'],
+    roles: ['horse-operations-coordinator'],
     evidence: ['readiness-check', 'human-approval-record'],
   };
 
-  const missingContext = await handleApiRequest('POST', '/api/v1/approvals/controlled-actions', { action: 'race-start', target: 'race-7', reason: 'missing context', actor: 'starter-1', roles: ['racing-secretary'], evidence: ['readiness-check'] }, state);
+  const missingContext = await handleApiRequest('POST', '/api/v1/approvals/controlled-actions', { action: 'race-start', target: 'race-7', reason: 'missing context', actor: 'starter-1', roles: ['horse-operations-coordinator'], evidence: ['readiness-check'] }, state);
   assert.equal(missingContext.status, 400);
   assert.match(missingContext.body.error.message, /tenantId, racetrackId/);
 
@@ -471,18 +471,18 @@ test('runtime protected action POST boundaries require context, human actors, an
   assert.equal(validHumanRequest.body.tenantId, 'trackmind');
   assert.equal(validHumanRequest.body.racetrackId, 'main-track');
 
-  const aiDraft = await handleApiRequest('POST', '/api/v1/track-configuration/draft-requests', { ...validContext, action: 'starting-gate-move', target: 'gate-1', actor: 'ai-gate-planner', actorType: 'ai-agent', roles: ['track-superintendent'], evidence: ['gps-fix', 'draft-only:no-live-actuator-control'] }, state);
+  const aiDraft = await handleApiRequest('POST', '/api/v1/track-configuration/draft-requests', { ...validContext, action: 'starting-gate-move', target: 'gate-1', actor: 'ai-gate-planner', actorType: 'ai-agent', roles: ['facilities-manager'], evidence: ['gps-fix', 'draft-only:no-live-actuator-control'] }, state);
   assert.equal(aiDraft.status, 202);
   assert.equal(aiDraft.body.eventType, 'track.configuration.change.requested');
 
-  const serviceAssetChange = await handleApiRequest('POST', '/api/v1/assets/safety-critical-changes', { ...validContext, action: 'safety-critical-control', target: 'GATE_MAIN_01', actor: 'service-asset-sync', actorType: 'service', roles: ['admin'] }, state);
+  const serviceAssetChange = await handleApiRequest('POST', '/api/v1/assets/safety-critical-changes', { ...validContext, action: 'safety-critical-control', target: 'GATE_MAIN_01', actor: 'service-asset-sync', actorType: 'service', roles: ['platform-super-admin'] }, state);
   assert.equal(serviceAssetChange.status, 403);
   assert.match(serviceAssetChange.body.error.message, /human actor/i);
 });
 
 test('runtime centralized controlled-action requests can be approved through shared approval service', async () => {
   const state = createApiFacadeState();
-  const securityHeaders = { 'x-trackmind-role': 'security', 'x-trackmind-tenant-id': 'trackmind', 'x-trackmind-racetrack-id': 'main-track' };
+  const securityHeaders = { 'x-trackmind-role': 'security-manager', 'x-trackmind-tenant-id': 'trackmind', 'x-trackmind-racetrack-id': 'main-track' };
   const requestContext = {
     tenantId: 'trackmind',
     racetrackId: 'main-track',
@@ -491,7 +491,7 @@ test('runtime centralized controlled-action requests can be approved through sha
     reason: 'Request emergency action approval from runtime test.',
     actor: 'security-operator-1',
     actorType: 'human',
-    roles: ['security'],
+    roles: ['security-manager'],
     evidence: ['human-approval-record'],
   };
 
@@ -505,7 +505,7 @@ test('runtime centralized controlled-action requests can be approved through sha
     {
       actor: 'security-operator-1',
       actorType: 'human',
-      roles: ['security'],
+      roles: ['security-manager'],
       reason: 'Approved from runtime integration test',
       evidence: ['human-approval-record'],
     },
@@ -899,12 +899,12 @@ test('runtime API facade keeps protected actions approval-only', async () => {
   assert.match(response.body.message, /Execution remains locked/);
   assert.doesNotMatch(response.body.message, /executed/i);
 
-  const draft = await handleApiRequest('POST', '/api/v1/approvals/draft-requests', { tenantId: 'trackmind', racetrackId: 'main-track', action: 'starting-gate-move', target: 'gate-1', reason: 'Draft gate movement package only.', actorId: 'starter-1', actorType: 'human', roles: ['track-superintendent'], evidence: ['gps-fix', 'draft-only:no-live-actuator-control'] }, state);
+  const draft = await handleApiRequest('POST', '/api/v1/approvals/draft-requests', { tenantId: 'trackmind', racetrackId: 'main-track', action: 'starting-gate-move', target: 'gate-1', reason: 'Draft gate movement package only.', actorId: 'starter-1', actorType: 'human', roles: ['facilities-manager'], evidence: ['gps-fix', 'draft-only:no-live-actuator-control'] }, state);
   assert.equal(draft.status, 202);
   assert.equal(draft.body.eventType, 'approval.requested');
   assert.match(draft.body.message, /Execution remains locked/);
 
-  const trackConfigurationDraft = await handleApiRequest('POST', '/api/v1/track-configuration/draft-requests', { tenantId: 'trackmind', racetrackId: 'main-track', action: 'race-distance-configuration', target: 'race-7', reason: 'Draft race distance and rail configuration package only.', actorId: 'track-superintendent-1', actorType: 'human', roles: ['track-superintendent'], evidence: ['distance-sheet', 'survey-control'] }, state);
+  const trackConfigurationDraft = await handleApiRequest('POST', '/api/v1/track-configuration/draft-requests', { tenantId: 'trackmind', racetrackId: 'main-track', action: 'race-distance-configuration', target: 'race-7', reason: 'Draft race distance and rail configuration package only.', actorId: 'track-superintendent-1', actorType: 'human', roles: ['facilities-manager'], evidence: ['distance-sheet', 'survey-control'] }, state);
   assert.equal(trackConfigurationDraft.status, 202);
   assert.equal(trackConfigurationDraft.body.eventType, 'track.configuration.change.requested');
   assert.match(trackConfigurationDraft.body.message, /no live actuator command/);

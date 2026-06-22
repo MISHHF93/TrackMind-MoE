@@ -66,7 +66,7 @@ const POST_HANDLER_PROBE_REGISTRY: Record<string, PostProbeSpec> = {
   createRacingDataProviderDraft: { path: '/racing-data/providers', body: { providerId: 'provider-probe-draft' } },
   createRacingDataIngestDraft: {
     path: '/racing-data/ingestion-jobs/draft-requests',
-    body: { providerId: 'provider-official-feed', requestedBy: 'racing-secretary' },
+    body: { providerId: 'provider-official-feed', requestedBy: 'horse-operations-coordinator' },
   },
   createRacingDataEntityResolutionReviewDraft: {
     path: '/racing-data/entity-resolution/review',
@@ -86,7 +86,7 @@ const POST_HANDLER_PROBE_REGISTRY: Record<string, PostProbeSpec> = {
   },
   createKpiThresholdDraft: {
     path: '/kpis/thresholds/draft-requests',
-    body: { kpiId: 'kpi-race-day-operations', threshold: { target: 0.95 }, requestedBy: 'operations-admin' },
+    body: { kpiId: 'kpi-race-day-operations', threshold: { target: 0.95 }, requestedBy: 'organization-admin' },
   },
 };
 

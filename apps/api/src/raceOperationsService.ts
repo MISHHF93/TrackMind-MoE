@@ -15,7 +15,7 @@ export function createServiceBackedRaceOperations(timestamp: string): {
   workspace: ReturnType<RaceOperationsService['raceOfficeWorkspace']>;
 } {
   const platform = new RaceOperationsPlatform({ approvalService: new CentralizedApprovalService(), tenantId: 'trackmind' });
-  const actor = { id: 'racing-secretary-live', roles: ['racing-secretary'] as Role[], human: true };
+  const actor = { id: 'racing-secretary-live', roles: ['horse-operations-coordinator'] as Role[], human: true };
   const raceDate = timestamp.slice(0, 10);
   const meet = platform.createMeet({
     id: 'meet-2026',

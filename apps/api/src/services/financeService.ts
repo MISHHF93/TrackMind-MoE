@@ -61,7 +61,7 @@ export class FinanceService {
       context: input.context,
       evidence: input.evidence,
       execute: (_token: ApprovalToken) => {
-        const result: FinancePayoutRecord = { payoutId: input.payoutId, amountCents: input.amountCents, recipientId: input.recipientId, status: 'released', dualControl: ['steward', 'finance'] };
+        const result: FinancePayoutRecord = { payoutId: input.payoutId, amountCents: input.amountCents, recipientId: input.recipientId, status: 'released', dualControl: ['steward', 'finance-manager'] };
         this.payouts.set(input.payoutId, result);
         return result;
       },

@@ -52,7 +52,7 @@ test('sensitive overwrite and retirement confirmation enforced', () => {
     dataSource: 'manual-entry',
     confirmRetirement: true,
     reason: 'Retirement recorded from equine workspace with audit trail.',
-  }, { mode: 'create', role: 'racing-secretary' });
+  }, { mode: 'create', role: 'horse-operations-coordinator' });
   assert.equal(validRetirement.valid, true);
 });
 

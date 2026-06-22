@@ -13,7 +13,7 @@ import {
 import { createApiFacadeState, handleApiRequest } from '../dist/server.js';
 
 const adminHeaders = {
-  'x-trackmind-role': 'admin',
+  'x-trackmind-role': 'platform-super-admin',
   'x-trackmind-tenant-id': 'trackmind',
   'x-trackmind-racetrack-id': 'main-track',
   'x-trackmind-organization-id': 'org-trackmind-network',
@@ -53,18 +53,18 @@ test('incident service persists create/triage/review across service recreation',
     status: 'reported',
     category: 'safety',
     reportedBy: 'security-officer',
-    assignedTo: 'incident-commander',
+    assignedTo: 'race-day-operations-manager',
   });
   first.triage(created.id, {
     severity: 'high',
-    assignedTo: 'incident-commander',
-    actor: 'incident-commander',
+    assignedTo: 'race-day-operations-manager',
+    actor: 'race-day-operations-manager',
     note: 'Escalated for durability test',
   });
-  first.update(created.id, { status: 'resolved', actor: 'incident-commander' });
+  first.update(created.id, { status: 'resolved', actor: 'race-day-operations-manager' });
   first.submitPostIncidentReview(created.id, {
     findings: [{ finding: 'Gate latch failed', severity: 'medium', owner: 'facilities' }],
-    submittedBy: 'incident-commander',
+    submittedBy: 'race-day-operations-manager',
   });
 
   await new Promise((resolve) => setTimeout(resolve, 25));
@@ -110,8 +110,8 @@ test('incident API facade reloads persisted incidents and SSE timeline stream', 
 
   const triageResponse = await handleApiRequest('POST', `/api/v1/incidents/${incidentId}/triage`, {
     severity: 'medium',
-    assignedTo: 'incident-commander',
-    actor: 'incident-commander',
+    assignedTo: 'race-day-operations-manager',
+    actor: 'race-day-operations-manager',
   }, firstState, adminHeaders);
   assert.equal(triageResponse.status, 200);
 

@@ -139,7 +139,7 @@ export function handleFanExperienceRequest(
   type: FanExperienceRequestType,
   payload: Record<string, unknown>,
   now: string,
-  actor = 'ticketing-manager',
+  actor = 'ticketing-fan-manager',
 ): FanExperienceRequestResultDto {
   const category = guestServiceCategory(type);
   const result = service.createGuestServiceRequest(
@@ -226,7 +226,7 @@ export function handleFanExperienceApiRequest(
           capacity: Number(input.capacity ?? 12000),
           entryRatePerMinute: Number(input.entryRatePerMinute ?? 0),
         },
-        String(input.actor ?? 'ticketing-manager'),
+        String(input.actor ?? 'ticketing-fan-manager'),
       ),
     };
   }
@@ -245,7 +245,7 @@ export function handleFanExperienceApiRequest(
           waitMinutes: Number(input.waitMinutes ?? 0),
           details: String(input.details ?? 'Guest service request'),
         },
-        String(input.actor ?? 'ticketing-manager'),
+        String(input.actor ?? 'ticketing-fan-manager'),
       ),
     };
   }
@@ -257,7 +257,7 @@ export function handleFanExperienceApiRequest(
       body: service.updateGuestServiceStatus(
         decodeURIComponent(guestServiceStatusMatch[1]),
         (input.status as 'in-progress' | undefined) ?? 'in-progress',
-        String(input.actor ?? 'ticketing-manager'),
+        String(input.actor ?? 'ticketing-fan-manager'),
       ),
     };
   }
@@ -273,7 +273,7 @@ export function handleFanExperienceApiRequest(
           categories: Array.isArray(input.categories) ? input.categories : [],
           comment: input.comment ? String(input.comment) : undefined,
         },
-        String(input.actor ?? 'ticketing-manager'),
+        String(input.actor ?? 'ticketing-fan-manager'),
       ),
     };
   }
@@ -285,7 +285,7 @@ export function handleFanExperienceApiRequest(
       body: service.recordHospitalityIssue(
         decodeURIComponent(hospitalityIssueMatch[1]),
         String(input.issue ?? 'Hospitality issue reported'),
-        String(input.actor ?? 'ticketing-manager'),
+        String(input.actor ?? 'ticketing-fan-manager'),
       ),
     };
   }
@@ -295,7 +295,7 @@ export function handleFanExperienceApiRequest(
       status: 202,
       body: service.resolveHospitalityIssue(
         decodeURIComponent(hospitalityResolveMatch[1]),
-        String(isRecord(body) ? body.actor ?? 'ticketing-manager' : 'ticketing-manager'),
+        String(isRecord(body) ? body.actor ?? 'ticketing-fan-manager' : 'ticketing-fan-manager'),
       ),
     };
   }
@@ -312,7 +312,7 @@ export function handleFanExperienceApiRequest(
           status: input.status as 'available' | 'sold-out' | 'held' | 'comp' | undefined,
           revenueToday: input.revenueToday !== undefined ? Number(input.revenueToday) : undefined,
         },
-        String(input.actor ?? 'ticketing-manager'),
+        String(input.actor ?? 'ticketing-fan-manager'),
       ),
     };
   }
@@ -321,7 +321,7 @@ export function handleFanExperienceApiRequest(
     const type = String(input.type ?? 'refund') as FanExperienceRequestType;
     return {
       status: 202,
-      body: handleFanExperienceRequest(service, type, input, now(), String(input.actor ?? 'ticketing-manager')),
+      body: handleFanExperienceRequest(service, type, input, now(), String(input.actor ?? 'ticketing-fan-manager')),
     };
   }
   return undefined;

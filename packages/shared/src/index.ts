@@ -1,5 +1,7 @@
 export * from './accessControl.js';
 
+export * from './roleOperatingModel.js';
+
 export * from './identityGovernance.js';
 
 export * from './entityResolution.js';

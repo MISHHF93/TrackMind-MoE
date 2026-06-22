@@ -378,11 +378,11 @@ export class HorseRegistryPlatform {
 }
 
 function defaultActor(tenantId?: string): EquineActor {
-  return { id: 'racing-secretary', roles: ['racing-secretary'], tenantId: tenantId ?? 'trackmind', human: true };
+  return { id: 'horse-operations-coordinator', roles: ['horse-operations-coordinator'], tenantId: tenantId ?? 'trackmind', human: true };
 }
 
 function resolveActor(actor: EquineActor | string, tenantId?: string): EquineActor {
-  if (typeof actor === 'string') return { id: actor, roles: ['racing-secretary'], tenantId: tenantId ?? 'trackmind', human: true };
+  if (typeof actor === 'string') return { id: actor, roles: ['horse-operations-coordinator'], tenantId: tenantId ?? 'trackmind', human: true };
   return actor;
 }
 

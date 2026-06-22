@@ -3,7 +3,7 @@ export const surfaceIntelligenceSchemaVersion = 'trackmind.surface-intelligence.
 export const surfaceOperationalGuardrailStatement =
   'Surface operational actions remain advisory and approval-gated; irrigation, harrowing, rolling, and closure recommendations require authorized human workflows.';
 
-export type SurfaceObservationRole = 'steward' | 'jockey' | 'trainer' | 'maintenance' | 'veterinarian' | 'track-superintendent';
+export type SurfaceObservationRole = 'steward' | 'jockey' | 'trainer' | 'maintenance' | 'veterinarian' | 'facilities-manager';
 export type SurfaceInspectionWorkflowStatus = 'scheduled' | 'in-progress' | 'pending-approval' | 'complete' | 'deferred';
 export type SurfaceInspectionWorkflowType = 'routine' | 'pre-race' | 'post-rain' | 'incident-follow-up';
 export type SurfaceMaintenanceAction = 'harrow' | 'water' | 'aerate' | 'roll' | 'topdress' | 'repair' | 'drainage-cleanout';

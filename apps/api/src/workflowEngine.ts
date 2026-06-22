@@ -754,7 +754,7 @@ function templateMetadata(input: {
 
 export function raceDayOperationsWorkflow(tenantId: string): WorkflowDefinition {
   return { id: 'race-day-ops', name: 'Race-Day Operations Command', domain: 'race-day', version: '2.0.0', bpmnProcessId: 'Process_RaceDayOperations', startStepId: 'pre-race-inspection', ownerRole: 'operations-director', tenantId, triggerEvents: ['race-day.opened'], steps: [
-    { id: 'pre-race-inspection', name: 'Pre-race safety and surface inspection', type: 'userTask', role: 'track-superintendent', sla: opsSla(30, 'operations-director'), digitalTwin: { refs: ['twin:track:surface'], syncMode: 'read-write', statePatch: { inspection: 'started' } }, next: ['sync-digital-twin'] },
+    { id: 'pre-race-inspection', name: 'Pre-race safety and surface inspection', type: 'userTask', role: 'facilities-manager', sla: opsSla(30, 'operations-director'), digitalTwin: { refs: ['twin:track:surface'], syncMode: 'read-write', statePatch: { inspection: 'started' } }, next: ['sync-digital-twin'] },
     { id: 'sync-digital-twin', name: 'Sync operational state to Digital Twin', type: 'serviceTask', retryPolicy: { maxAttempts: 2, backoffMinutes: 2, retryableErrors: ['twin-timeout'] }, recoveryStepId: 'manual-twin-recovery', action: (context) => ({ twinSync: { refs: context.digitalTwinRefs, status: 'updated' } }), digitalTwin: { refs: ['twin:operations:command'], syncMode: 'write', statePatch: { status: 'pre-race-validated' } }, next: ['parallel-approvals'] },
     { id: 'manual-twin-recovery', name: 'Manual Digital Twin reconciliation', type: 'userTask', role: 'digital-twin-operator', sla: opsSla(15, 'operations-director', 'critical'), next: ['parallel-approvals'] },
     { id: 'parallel-approvals', name: 'Steward, veterinary, and operations approvals', type: 'parallelApproval', approvalRoles: ['chief-steward', 'veterinarian', 'operations-director'], requiredApprovals: 3, sla: opsSla(10, 'general-manager', 'critical'), dependencies: ['pre-race-inspection', 'sync-digital-twin'], approval: { action: 'race-start', targetPath: 'raceId', requestedBy: 'workflow-orchestration-engine', actorType: 'service', reason: 'Race-day command requires human controlled start approval', evidence: ['workflow-task'], evidencePath: 'evidenceIds' }, next: ['publish-race-ready'] },
@@ -765,7 +765,7 @@ export function raceDayOperationsWorkflow(tenantId: string): WorkflowDefinition 
 
 export function raceDayReadinessWorkflow(tenantId: string): WorkflowDefinition {
   return { id: 'race-day-readiness-workflow', name: 'Race-Day Readiness Workflow', domain: 'race-day', version: '1.0.0', bpmnProcessId: 'Process_RaceDayReadinessWorkflow', startStepId: 'surface-inspection', ownerRole: 'race-day-commander', tenantId, triggerEvents: ['readiness.approval-required'], steps: [
-    { id: 'surface-inspection', name: 'Complete surface and weather inspection', type: 'inspectionTask', role: 'track-superintendent', sla: opsSla(20, 'race-day-commander', 'critical'), digitalTwin: { refs: ['twin:track:surface', 'twin:weather:station'], syncMode: 'read-write', statePatch: { readinessInspection: 'active' } }, next: ['gate-and-staffing'] },
+    { id: 'surface-inspection', name: 'Complete surface and weather inspection', type: 'inspectionTask', role: 'facilities-manager', sla: opsSla(20, 'race-day-commander', 'critical'), digitalTwin: { refs: ['twin:track:surface', 'twin:weather:station'], syncMode: 'read-write', statePatch: { readinessInspection: 'active' } }, next: ['gate-and-staffing'] },
     { id: 'gate-and-staffing', name: 'Verify gate, staffing, and emergency lanes', type: 'userTask', role: 'operations-coordinator', sla: opsSla(15, 'operations-director'), digitalTwin: { refs: ['twin:starting-gate', 'twin:staffing:race-day', 'twin:emergency:lanes'], syncMode: 'read' }, next: ['readiness-decision'] },
     { id: 'readiness-decision', name: 'Approve race readiness decision', type: 'approvalTask', approvalRoles: ['chief-steward', 'veterinarian', 'operations-director'], requiredApprovals: 2, sla: opsSla(10, 'general-manager', 'critical'), approval: { action: 'race-start', targetPath: 'raceId', requestedBy: 'workflow-orchestration-engine', actorType: 'service', reason: 'Readiness workflow requires controlled race start approval', evidence: ['workflow-task'], evidencePath: 'evidenceIds' }, next: ['publish-readiness'] },
     { id: 'publish-readiness', name: 'Publish readiness state', type: 'serviceTask', action: () => ({ readinessWorkflow: 'approved' }), digitalTwin: { refs: ['twin:race-day:readiness'], syncMode: 'write', statePatch: { readinessWorkflow: 'approved' } }, next: ['closed'] },
@@ -805,19 +805,19 @@ export function complianceReviewWorkflow(tenantId: string): WorkflowDefinition {
 }
 
 export function emergencyResponseWorkflow(tenantId: string): WorkflowDefinition {
-  return { id: 'emergency-response', name: 'Emergency Procedure Orchestration', domain: 'emergency', version: '2.0.0', bpmnProcessId: 'Process_EmergencyResponse', startStepId: 'dispatch', ownerRole: 'incident-commander', tenantId, triggerEvents: ['emergency.workflow.activated'], steps: [
-    { id: 'dispatch', name: 'Dispatch incident resources', type: 'emergencyTask', role: 'incident-commander', sla: opsSla(5, 'general-manager', 'critical'), digitalTwin: { refs: ['twin:incident:command', 'twin:emergency:resources'], syncMode: 'read-write', statePatch: { incidentCommand: 'active' } }, next: ['stabilize-scene'] },
-    { id: 'stabilize-scene', name: 'Stabilize scene and coordinate agencies', type: 'emergencyTask', role: 'emergency-liaison', sla: opsSla(20, 'incident-commander', 'critical'), digitalTwin: { refs: ['twin:incident:scene', 'twin:agency:mutual-aid'], syncMode: 'read-write', statePatch: { scene: 'stabilizing' } }, next: ['communications'] },
-    { id: 'communications', name: 'Complete regulator and public communications', type: 'userTask', role: 'public-information-officer', sla: opsSla(15, 'incident-commander'), next: ['after-action'] },
-    { id: 'after-action', name: 'Approve after-action audit', type: 'approvalTask', approvalRoles: ['incident-commander', 'compliance-manager'], requiredApprovals: 1, sla: opsSla(1440, 'compliance-director'), next: ['closed'] },
+  return { id: 'emergency-response', name: 'Emergency Procedure Orchestration', domain: 'emergency', version: '2.0.0', bpmnProcessId: 'Process_EmergencyResponse', startStepId: 'dispatch', ownerRole: 'race-day-operations-manager', tenantId, triggerEvents: ['emergency.workflow.activated'], steps: [
+    { id: 'dispatch', name: 'Dispatch incident resources', type: 'emergencyTask', role: 'race-day-operations-manager', sla: opsSla(5, 'general-manager', 'critical'), digitalTwin: { refs: ['twin:incident:command', 'twin:emergency:resources'], syncMode: 'read-write', statePatch: { incidentCommand: 'active' } }, next: ['stabilize-scene'] },
+    { id: 'stabilize-scene', name: 'Stabilize scene and coordinate agencies', type: 'emergencyTask', role: 'emergency-liaison', sla: opsSla(20, 'race-day-operations-manager', 'critical'), digitalTwin: { refs: ['twin:incident:scene', 'twin:agency:mutual-aid'], syncMode: 'read-write', statePatch: { scene: 'stabilizing' } }, next: ['communications'] },
+    { id: 'communications', name: 'Complete regulator and public communications', type: 'userTask', role: 'public-information-officer', sla: opsSla(15, 'race-day-operations-manager'), next: ['after-action'] },
+    { id: 'after-action', name: 'Approve after-action audit', type: 'approvalTask', approvalRoles: ['race-day-operations-manager', 'compliance-manager'], requiredApprovals: 1, sla: opsSla(1440, 'compliance-director'), next: ['closed'] },
     { id: 'closed', name: 'Emergency workflow closed', type: 'endEvent' },
   ] };
 }
 
 export function controlledRaceStartApprovalWorkflow(tenantId: string): WorkflowDefinition {
-  return { id: 'race-start-approval-workflow', name: 'Controlled Race Start Approval', domain: 'race-day', version: '1.0.0', bpmnProcessId: 'Process_ControlledRaceStartApproval', startStepId: 'compile-start-evidence', ownerRole: 'racing-secretary', tenantId, triggerEvents: ['race.approval.requested'], steps: [
+  return { id: 'race-start-approval-workflow', name: 'Controlled Race Start Approval', domain: 'race-day', version: '1.0.0', bpmnProcessId: 'Process_ControlledRaceStartApproval', startStepId: 'compile-start-evidence', ownerRole: 'horse-operations-coordinator', tenantId, triggerEvents: ['race.approval.requested'], steps: [
     { id: 'compile-start-evidence', name: 'Compile race-start evidence packet', type: 'serviceTask', action: (context) => ({ startEvidencePacket: { raceId: context.payload.raceId, evidenceIds: context.payload.evidenceIds ?? [] } }), digitalTwin: { refs: ['twin:race-day:readiness'], syncMode: 'read' }, next: ['start-approval'] },
-    { id: 'start-approval', name: 'Request race-start controlled approval', type: 'parallelApproval', approvalRoles: ['racing-secretary', 'steward', 'veterinarian'], requiredApprovals: 3, sla: opsSla(15, 'general-manager', 'critical'), approval: { action: 'race-start', targetPath: 'raceId', requestedBy: 'workflow-orchestration-engine', actorType: 'service', reason: 'Race start requires racing secretary, steward, and veterinarian authorization', evidence: ['workflow-task'], evidencePath: 'evidenceIds' }, next: ['approved'] },
+    { id: 'start-approval', name: 'Request race-start controlled approval', type: 'parallelApproval', approvalRoles: ['horse-operations-coordinator', 'steward', 'veterinarian'], requiredApprovals: 3, sla: opsSla(15, 'general-manager', 'critical'), approval: { action: 'race-start', targetPath: 'raceId', requestedBy: 'workflow-orchestration-engine', actorType: 'service', reason: 'Race start requires racing secretary, steward, and veterinarian authorization', evidence: ['workflow-task'], evidencePath: 'evidenceIds' }, next: ['approved'] },
     { id: 'approved', name: 'Race-start approval workflow closed', type: 'endEvent' },
   ] };
 }
@@ -826,17 +826,17 @@ export function canonicalGateMoveWorkflow(tenantId: string): WorkflowDefinition 
   const metadata = templateMetadata({
     canonicalId: 'tmwf.gate-move.v1',
     templateName: 'Gate Move Workflow',
-    requiredRoles: ['racing-secretary', 'track-superintendent', 'steward'],
+    requiredRoles: ['horse-operations-coordinator', 'facilities-manager', 'steward'],
     protectedActions: ['starting-gate-move'],
-    approval: { stepId: 'approve-gate-move', action: 'starting-gate-move', requiredRoles: ['racing-secretary', 'track-superintendent'], minimumApprovals: 2, evidenceRequired: ['human-approval-record', 'gps-fix', 'photo', 'reason'], deadlineMinutes: 15, policy: 'starting-gate-move' },
+    approval: { stepId: 'approve-gate-move', action: 'starting-gate-move', requiredRoles: ['horse-operations-coordinator', 'facilities-manager'], minimumApprovals: 2, evidenceRequired: ['human-approval-record', 'gps-fix', 'photo', 'reason'], deadlineMinutes: 15, policy: 'starting-gate-move' },
     twin: { stepId: 'sync-gate-twin', refs: ['twin:main-track:gate-1', 'twin:race-day:readiness'], syncMode: 'read-write', requiredBeforeApproval: false },
     completeWithinMinutes: 30,
     escalationRole: 'operations-director',
     eventTypes: ['workflow.started', 'approval.requested', 'approval.recorded', 'digital-twin.state.patch', 'workflow.completed'],
   });
-  return { id: metadata.canonicalId, name: metadata.templateName, domain: 'race-day', version: '1.0.0', bpmnProcessId: 'Process_Tier4_GateMove', startStepId: 'survey-gate-location', ownerRole: 'racing-secretary', tenantId, triggerEvents: ['starting-gate.move.requested'], templateMetadata: metadata, steps: [
-    { id: 'survey-gate-location', name: 'Survey target gate location and collect GPS evidence', type: 'inspectionTask', role: 'track-superintendent', sla: opsSla(10, 'operations-director', 'critical'), digitalTwin: { refs: ['twin:main-track:gate-1'], syncMode: 'read', statePatch: { gateMoveSurvey: 'started' } }, next: ['approve-gate-move'] },
-    { id: 'approve-gate-move', name: 'Approve starting gate move', type: 'parallelApproval', approvalRoles: ['racing-secretary', 'track-superintendent'], requiredApprovals: 2, sla: opsSla(15, 'operations-director', 'critical'), approval: { action: 'starting-gate-move', targetPath: 'gateId', requestedBy: 'workflow-orchestration-engine', actorType: 'service', reason: 'Starting gate moves require racing office and surface operations approval', evidence: ['human-approval-record', 'workflow-task'], evidencePath: 'evidenceIds' }, next: ['sync-gate-twin'] },
+  return { id: metadata.canonicalId, name: metadata.templateName, domain: 'race-day', version: '1.0.0', bpmnProcessId: 'Process_Tier4_GateMove', startStepId: 'survey-gate-location', ownerRole: 'horse-operations-coordinator', tenantId, triggerEvents: ['starting-gate.move.requested'], templateMetadata: metadata, steps: [
+    { id: 'survey-gate-location', name: 'Survey target gate location and collect GPS evidence', type: 'inspectionTask', role: 'facilities-manager', sla: opsSla(10, 'operations-director', 'critical'), digitalTwin: { refs: ['twin:main-track:gate-1'], syncMode: 'read', statePatch: { gateMoveSurvey: 'started' } }, next: ['approve-gate-move'] },
+    { id: 'approve-gate-move', name: 'Approve starting gate move', type: 'parallelApproval', approvalRoles: ['horse-operations-coordinator', 'facilities-manager'], requiredApprovals: 2, sla: opsSla(15, 'operations-director', 'critical'), approval: { action: 'starting-gate-move', targetPath: 'gateId', requestedBy: 'workflow-orchestration-engine', actorType: 'service', reason: 'Starting gate moves require racing office and surface operations approval', evidence: ['human-approval-record', 'workflow-task'], evidencePath: 'evidenceIds' }, next: ['sync-gate-twin'] },
     { id: 'sync-gate-twin', name: 'Sync approved gate move to Digital Twin', type: 'serviceTask', action: () => ({ gateMoveWorkflow: 'approved' }), digitalTwin: { refs: ['twin:main-track:gate-1', 'twin:race-day:readiness'], syncMode: 'write', statePatch: { gateMoveApproved: true } }, next: ['closed'] },
     { id: 'closed', name: 'Gate move workflow closed', type: 'endEvent' },
   ] };
@@ -846,18 +846,18 @@ export function canonicalHorseEntryWorkflow(tenantId: string): WorkflowDefinitio
   const metadata = templateMetadata({
     canonicalId: 'tmwf.horse-entry.v1',
     templateName: 'Horse Entry Workflow',
-    requiredRoles: ['racing-secretary', 'veterinarian', 'steward'],
+    requiredRoles: ['horse-operations-coordinator', 'veterinarian', 'steward'],
     protectedActions: ['race-office-configuration'],
-    approval: { stepId: 'approve-entry', action: 'race-office-configuration', requiredRoles: ['racing-secretary', 'steward'], minimumApprovals: 1, evidenceRequired: ['human-approval-record', 'eligibility-check', 'reason'], deadlineMinutes: 45, policy: 'race-office-configuration' },
+    approval: { stepId: 'approve-entry', action: 'race-office-configuration', requiredRoles: ['horse-operations-coordinator', 'steward'], minimumApprovals: 1, evidenceRequired: ['human-approval-record', 'eligibility-check', 'reason'], deadlineMinutes: 45, policy: 'race-office-configuration' },
     twin: { stepId: 'sync-entry-twin', refs: ['twin:race-card', 'twin:horse-entry'], syncMode: 'read-write', requiredBeforeApproval: false },
     completeWithinMinutes: 90,
-    escalationRole: 'racing-secretary',
+    escalationRole: 'horse-operations-coordinator',
     eventTypes: ['race.entry.added', 'approval.requested', 'approval.recorded', 'digital-twin.state.patch', 'workflow.completed'],
   });
-  return { id: metadata.canonicalId, name: metadata.templateName, domain: 'race-day', version: '1.0.0', bpmnProcessId: 'Process_Tier4_HorseEntry', startStepId: 'validate-entry', ownerRole: 'racing-secretary', tenantId, triggerEvents: ['race.entry.requested'], templateMetadata: metadata, steps: [
-    { id: 'validate-entry', name: 'Validate condition book and ownership entry', type: 'userTask', role: 'racing-secretary', sla: opsSla(30, 'racing-secretary'), digitalTwin: { refs: ['twin:race-card'], syncMode: 'read-write', statePatch: { entryValidation: 'active' } }, next: ['veterinary-eligibility'] },
-    { id: 'veterinary-eligibility', name: 'Confirm veterinary eligibility and welfare status', type: 'userTask', role: 'veterinarian', sla: opsSla(30, 'racing-secretary'), digitalTwin: { refs: ['twin:horse-entry'], syncMode: 'read' }, next: ['approve-entry'] },
-    { id: 'approve-entry', name: 'Approve official horse entry', type: 'approvalTask', approvalRoles: ['racing-secretary', 'steward'], requiredApprovals: 1, sla: opsSla(30, 'steward'), approval: { action: 'race-office-configuration', targetPath: 'raceId', requestedBy: 'workflow-orchestration-engine', actorType: 'service', reason: 'Official horse entry changes require controlled race-office approval', evidence: ['human-approval-record', 'workflow-task'], evidencePath: 'evidenceIds' }, next: ['sync-entry-twin'] },
+  return { id: metadata.canonicalId, name: metadata.templateName, domain: 'race-day', version: '1.0.0', bpmnProcessId: 'Process_Tier4_HorseEntry', startStepId: 'validate-entry', ownerRole: 'horse-operations-coordinator', tenantId, triggerEvents: ['race.entry.requested'], templateMetadata: metadata, steps: [
+    { id: 'validate-entry', name: 'Validate condition book and ownership entry', type: 'userTask', role: 'horse-operations-coordinator', sla: opsSla(30, 'horse-operations-coordinator'), digitalTwin: { refs: ['twin:race-card'], syncMode: 'read-write', statePatch: { entryValidation: 'active' } }, next: ['veterinary-eligibility'] },
+    { id: 'veterinary-eligibility', name: 'Confirm veterinary eligibility and welfare status', type: 'userTask', role: 'veterinarian', sla: opsSla(30, 'horse-operations-coordinator'), digitalTwin: { refs: ['twin:horse-entry'], syncMode: 'read' }, next: ['approve-entry'] },
+    { id: 'approve-entry', name: 'Approve official horse entry', type: 'approvalTask', approvalRoles: ['horse-operations-coordinator', 'steward'], requiredApprovals: 1, sla: opsSla(30, 'steward'), approval: { action: 'race-office-configuration', targetPath: 'raceId', requestedBy: 'workflow-orchestration-engine', actorType: 'service', reason: 'Official horse entry changes require controlled race-office approval', evidence: ['human-approval-record', 'workflow-task'], evidencePath: 'evidenceIds' }, next: ['sync-entry-twin'] },
     { id: 'sync-entry-twin', name: 'Sync approved entry to race card twins', type: 'serviceTask', action: () => ({ horseEntryWorkflow: 'approved' }), digitalTwin: { refs: ['twin:race-card', 'twin:horse-entry'], syncMode: 'write', statePatch: { entryApproved: true } }, next: ['closed'] },
     { id: 'closed', name: 'Horse entry workflow closed', type: 'endEvent' },
   ] };
@@ -867,7 +867,7 @@ export function canonicalScratchWorkflow(tenantId: string): WorkflowDefinition {
   const metadata = templateMetadata({
     canonicalId: 'tmwf.scratch.v1',
     templateName: 'Scratch Workflow',
-    requiredRoles: ['veterinarian', 'steward', 'racing-secretary'],
+    requiredRoles: ['veterinarian', 'steward', 'horse-operations-coordinator'],
     protectedActions: ['race-office-scratch'],
     approval: { stepId: 'approve-scratch', action: 'race-office-scratch', requiredRoles: ['veterinarian', 'steward'], minimumApprovals: 2, evidenceRequired: ['human-approval-record', 'scratch-reason', 'veterinary-note'], deadlineMinutes: 30, policy: 'race-office-scratch' },
     twin: { stepId: 'sync-scratch-twin', refs: ['twin:race-card', 'twin:horse-entry'], syncMode: 'read-write', requiredBeforeApproval: false },
@@ -887,17 +887,17 @@ export function canonicalInspectionWorkflow(tenantId: string): WorkflowDefinitio
   const metadata = templateMetadata({
     canonicalId: 'tmwf.inspection.v1',
     templateName: 'Inspection Workflow',
-    requiredRoles: ['track-superintendent', 'inspection-manager', 'steward'],
+    requiredRoles: ['facilities-manager', 'inspection-manager', 'steward'],
     protectedActions: ['safety-critical-control'],
-    approval: { stepId: 'approve-inspection', action: 'safety-critical-control', requiredRoles: ['track-superintendent', 'steward'], minimumApprovals: 1, evidenceRequired: ['human-approval-record', 'inspection-report', 'reason'], deadlineMinutes: 60, policy: 'safety-critical-control' },
+    approval: { stepId: 'approve-inspection', action: 'safety-critical-control', requiredRoles: ['facilities-manager', 'steward'], minimumApprovals: 1, evidenceRequired: ['human-approval-record', 'inspection-report', 'reason'], deadlineMinutes: 60, policy: 'safety-critical-control' },
     twin: { stepId: 'sync-inspection-twin', refs: ['twin:inspection:zone', 'twin:track:surface'], syncMode: 'read-write', requiredBeforeApproval: true },
     completeWithinMinutes: 120,
     escalationRole: 'operations-director',
     eventTypes: ['inspection.requested', 'approval.requested', 'approval.recorded', 'digital-twin.state.patch', 'workflow.completed'],
   });
   return { id: metadata.canonicalId, name: metadata.templateName, domain: 'inspection', version: '1.0.0', bpmnProcessId: 'Process_Tier4_Inspection', startStepId: 'perform-inspection', ownerRole: 'inspection-manager', tenantId, triggerEvents: ['inspection.requested'], templateMetadata: metadata, steps: [
-    { id: 'perform-inspection', name: 'Perform certified inspection checklist', type: 'inspectionTask', role: 'track-superintendent', sla: opsSla(60, 'inspection-manager'), digitalTwin: { refs: ['twin:inspection:zone', 'twin:track:surface'], syncMode: 'read-write', statePatch: { inspection: 'in-progress' } }, next: ['approve-inspection'] },
-    { id: 'approve-inspection', name: 'Approve inspection findings and readiness impact', type: 'approvalTask', approvalRoles: ['track-superintendent', 'steward'], requiredApprovals: 1, sla: opsSla(60, 'operations-director'), approval: { action: 'safety-critical-control', targetPath: 'inspectionId', requestedBy: 'workflow-orchestration-engine', actorType: 'service', reason: 'Inspection findings require human approval before safety-critical state changes', evidence: ['human-approval-record', 'workflow-task'], evidencePath: 'evidenceIds' }, next: ['sync-inspection-twin'] },
+    { id: 'perform-inspection', name: 'Perform certified inspection checklist', type: 'inspectionTask', role: 'facilities-manager', sla: opsSla(60, 'inspection-manager'), digitalTwin: { refs: ['twin:inspection:zone', 'twin:track:surface'], syncMode: 'read-write', statePatch: { inspection: 'in-progress' } }, next: ['approve-inspection'] },
+    { id: 'approve-inspection', name: 'Approve inspection findings and readiness impact', type: 'approvalTask', approvalRoles: ['facilities-manager', 'steward'], requiredApprovals: 1, sla: opsSla(60, 'operations-director'), approval: { action: 'safety-critical-control', targetPath: 'inspectionId', requestedBy: 'workflow-orchestration-engine', actorType: 'service', reason: 'Inspection findings require human approval before safety-critical state changes', evidence: ['human-approval-record', 'workflow-task'], evidencePath: 'evidenceIds' }, next: ['sync-inspection-twin'] },
     { id: 'sync-inspection-twin', name: 'Sync approved inspection state', type: 'serviceTask', action: () => ({ inspectionWorkflow: 'approved' }), digitalTwin: { refs: ['twin:inspection:zone', 'twin:track:surface'], syncMode: 'write', statePatch: { inspectionApproved: true } }, next: ['closed'] },
     { id: 'closed', name: 'Inspection workflow closed', type: 'endEvent' },
   ] };
@@ -907,7 +907,7 @@ export function canonicalIncidentWorkflow(tenantId: string): WorkflowDefinition 
   const metadata = templateMetadata({
     canonicalId: 'tmwf.incident.v1',
     templateName: 'Incident Workflow',
-    requiredRoles: ['steward', 'security', 'compliance-officer'],
+    requiredRoles: ['steward', 'security-manager', 'compliance-officer'],
     protectedActions: ['steward-decision'],
     approval: { stepId: 'approve-incident-decision', action: 'steward-decision', requiredRoles: ['steward'], minimumApprovals: 1, evidenceRequired: ['human-approval-record', 'incident-evidence', 'reason'], deadlineMinutes: 60, policy: 'steward-decision' },
     twin: { stepId: 'sync-incident-twin', refs: ['twin:race:incident', 'twin:case:investigation'], syncMode: 'read-write', requiredBeforeApproval: true },
@@ -917,7 +917,7 @@ export function canonicalIncidentWorkflow(tenantId: string): WorkflowDefinition 
   });
   return { id: metadata.canonicalId, name: metadata.templateName, domain: 'investigation', version: '1.0.0', bpmnProcessId: 'Process_Tier4_Incident', startStepId: 'preserve-incident-evidence', ownerRole: 'chief-steward', tenantId, triggerEvents: ['incident.created', 'steward.investigation.opened'], templateMetadata: metadata, steps: [
     { id: 'preserve-incident-evidence', name: 'Preserve incident evidence and chain of custody', type: 'investigationTask', role: 'steward', sla: opsSla(15, 'chief-steward', 'critical'), digitalTwin: { refs: ['twin:race:incident', 'twin:case:investigation'], syncMode: 'read-write', statePatch: { evidencePreserved: true } }, next: ['security-review'] },
-    { id: 'security-review', name: 'Complete security and safety review', type: 'userTask', role: 'security', sla: opsSla(45, 'chief-steward'), next: ['approve-incident-decision'] },
+    { id: 'security-review', name: 'Complete security and safety review', type: 'userTask', role: 'security-manager', sla: opsSla(45, 'chief-steward'), next: ['approve-incident-decision'] },
     { id: 'approve-incident-decision', name: 'Approve incident decision package', type: 'approvalTask', approvalRoles: ['steward'], requiredApprovals: 1, sla: opsSla(60, 'compliance-officer', 'critical'), approval: { action: 'steward-decision', targetPath: 'incidentId', requestedBy: 'workflow-orchestration-engine', actorType: 'service', reason: 'Incident decisions require authorized human steward approval', evidence: ['human-approval-record', 'workflow-task'], evidencePath: 'evidenceIds' }, next: ['sync-incident-twin'] },
     { id: 'sync-incident-twin', name: 'Sync approved incident state', type: 'serviceTask', action: () => ({ incidentWorkflow: 'approved' }), digitalTwin: { refs: ['twin:race:incident', 'twin:case:investigation'], syncMode: 'write', statePatch: { incidentDecisionApproved: true } }, next: ['closed'] },
     { id: 'closed', name: 'Incident workflow closed', type: 'endEvent' },
@@ -928,9 +928,9 @@ export function canonicalRaceReadinessWorkflow(tenantId: string): WorkflowDefini
   const metadata = templateMetadata({
     canonicalId: 'tmwf.race-readiness.v1',
     templateName: 'Race Readiness Workflow',
-    requiredRoles: ['chief-steward', 'veterinarian', 'operations-director', 'track-superintendent'],
+    requiredRoles: ['chief-steward', 'veterinarian', 'operations-director', 'facilities-manager'],
     protectedActions: ['race-start'],
-    approval: { stepId: 'approve-race-readiness', action: 'race-start', requiredRoles: ['racing-secretary', 'steward', 'veterinarian'], minimumApprovals: 3, evidenceRequired: ['human-approval-record', 'readiness-check', 'reason'], deadlineMinutes: 15, policy: 'race-start' },
+    approval: { stepId: 'approve-race-readiness', action: 'race-start', requiredRoles: ['horse-operations-coordinator', 'steward', 'veterinarian'], minimumApprovals: 3, evidenceRequired: ['human-approval-record', 'readiness-check', 'reason'], deadlineMinutes: 15, policy: 'race-start' },
     twin: { stepId: 'publish-race-readiness', refs: ['twin:race-day:readiness', 'twin:starting-gate', 'twin:track:surface'], syncMode: 'read-write', requiredBeforeApproval: false },
     completeWithinMinutes: 45,
     escalationRole: 'general-manager',
@@ -938,7 +938,7 @@ export function canonicalRaceReadinessWorkflow(tenantId: string): WorkflowDefini
   });
   return { id: metadata.canonicalId, name: metadata.templateName, domain: 'race-day', version: '1.0.0', bpmnProcessId: 'Process_Tier4_RaceReadiness', startStepId: 'verify-readiness-domains', ownerRole: 'race-day-commander', tenantId, triggerEvents: ['readiness.approval-required'], templateMetadata: metadata, steps: [
     { id: 'verify-readiness-domains', name: 'Verify track, gate, staffing, veterinary, emergency, and weather readiness', type: 'inspectionTask', role: 'operations-director', sla: opsSla(20, 'race-day-commander', 'critical'), digitalTwin: { refs: ['twin:starting-gate', 'twin:track:surface', 'twin:emergency:lanes'], syncMode: 'read' }, next: ['approve-race-readiness'] },
-    { id: 'approve-race-readiness', name: 'Approve race readiness and controlled start posture', type: 'parallelApproval', approvalRoles: ['racing-secretary', 'steward', 'veterinarian'], requiredApprovals: 3, sla: opsSla(15, 'general-manager', 'critical'), approval: { action: 'race-start', targetPath: 'raceId', requestedBy: 'workflow-orchestration-engine', actorType: 'service', reason: 'Race readiness workflow requires controlled race-start approval', evidence: ['human-approval-record', 'workflow-task'], evidencePath: 'evidenceIds' }, next: ['publish-race-readiness'] },
+    { id: 'approve-race-readiness', name: 'Approve race readiness and controlled start posture', type: 'parallelApproval', approvalRoles: ['horse-operations-coordinator', 'steward', 'veterinarian'], requiredApprovals: 3, sla: opsSla(15, 'general-manager', 'critical'), approval: { action: 'race-start', targetPath: 'raceId', requestedBy: 'workflow-orchestration-engine', actorType: 'service', reason: 'Race readiness workflow requires controlled race-start approval', evidence: ['human-approval-record', 'workflow-task'], evidencePath: 'evidenceIds' }, next: ['publish-race-readiness'] },
     { id: 'publish-race-readiness', name: 'Publish approved readiness state to Digital Twin', type: 'serviceTask', action: () => ({ raceReadinessWorkflow: 'approved' }), digitalTwin: { refs: ['twin:race-day:readiness', 'twin:starting-gate', 'twin:track:surface'], syncMode: 'write', statePatch: { readinessApproved: true } }, next: ['closed'] },
     { id: 'closed', name: 'Race readiness workflow closed', type: 'endEvent' },
   ] };
@@ -948,18 +948,18 @@ export function canonicalEmergencyWorkflow(tenantId: string): WorkflowDefinition
   const metadata = templateMetadata({
     canonicalId: 'tmwf.emergency.v1',
     templateName: 'Emergency Workflow',
-    requiredRoles: ['incident-commander', 'security', 'public-information-officer', 'compliance-officer'],
+    requiredRoles: ['race-day-operations-manager', 'security-manager', 'public-information-officer', 'compliance-officer'],
     protectedActions: ['emergency-action'],
-    approval: { stepId: 'approve-emergency-record', action: 'emergency-action', requiredRoles: ['security'], minimumApprovals: 1, evidenceRequired: ['human-approval-record', 'command-log', 'reason'], deadlineMinutes: 5, policy: 'emergency-action' },
+    approval: { stepId: 'approve-emergency-record', action: 'emergency-action', requiredRoles: ['security-manager'], minimumApprovals: 1, evidenceRequired: ['human-approval-record', 'command-log', 'reason'], deadlineMinutes: 5, policy: 'emergency-action' },
     twin: { stepId: 'sync-emergency-twin', refs: ['twin:incident:command', 'twin:emergency:resources'], syncMode: 'read-write', requiredBeforeApproval: true },
     completeWithinMinutes: 60,
     escalationRole: 'general-manager',
     eventTypes: ['emergency.workflow.activated', 'approval.requested', 'approval.recorded', 'digital-twin.state.patch', 'workflow.completed'],
   });
-  return { id: metadata.canonicalId, name: metadata.templateName, domain: 'emergency', version: '1.0.0', bpmnProcessId: 'Process_Tier4_Emergency', startStepId: 'assume-incident-command', ownerRole: 'incident-commander', tenantId, triggerEvents: ['emergency.workflow.activated'], description: 'Human-commanded emergency workflow. AI may recommend, but cannot block emergency personnel.', templateMetadata: metadata, steps: [
-    { id: 'assume-incident-command', name: 'Assume human incident command', type: 'emergencyTask', role: 'incident-commander', sla: opsSla(1, 'general-manager', 'critical'), digitalTwin: { refs: ['twin:incident:command'], syncMode: 'read-write', statePatch: { incidentCommand: 'active', aiMayBlock: false } }, next: ['dispatch-response'] },
-    { id: 'dispatch-response', name: 'Dispatch emergency resources', type: 'emergencyTask', role: 'security', sla: opsSla(5, 'incident-commander', 'critical'), digitalTwin: { refs: ['twin:emergency:resources'], syncMode: 'read-write', statePatch: { resourcesDispatched: true } }, next: ['approve-emergency-record'] },
-    { id: 'approve-emergency-record', name: 'Approve emergency action record and controlled re-entry posture', type: 'approvalTask', approvalRoles: ['security'], requiredApprovals: 1, sla: opsSla(5, 'general-manager', 'critical'), approval: { action: 'emergency-action', targetPath: 'incidentId', requestedBy: 'workflow-orchestration-engine', actorType: 'service', reason: 'Emergency workflow requires human command evidence and approval record', evidence: ['human-approval-record', 'workflow-task'], evidencePath: 'evidenceIds' }, next: ['sync-emergency-twin'] },
+  return { id: metadata.canonicalId, name: metadata.templateName, domain: 'emergency', version: '1.0.0', bpmnProcessId: 'Process_Tier4_Emergency', startStepId: 'assume-incident-command', ownerRole: 'race-day-operations-manager', tenantId, triggerEvents: ['emergency.workflow.activated'], description: 'Human-commanded emergency workflow. AI may recommend, but cannot block emergency personnel.', templateMetadata: metadata, steps: [
+    { id: 'assume-incident-command', name: 'Assume human incident command', type: 'emergencyTask', role: 'race-day-operations-manager', sla: opsSla(1, 'general-manager', 'critical'), digitalTwin: { refs: ['twin:incident:command'], syncMode: 'read-write', statePatch: { incidentCommand: 'active', aiMayBlock: false } }, next: ['dispatch-response'] },
+    { id: 'dispatch-response', name: 'Dispatch emergency resources', type: 'emergencyTask', role: 'security-manager', sla: opsSla(5, 'race-day-operations-manager', 'critical'), digitalTwin: { refs: ['twin:emergency:resources'], syncMode: 'read-write', statePatch: { resourcesDispatched: true } }, next: ['approve-emergency-record'] },
+    { id: 'approve-emergency-record', name: 'Approve emergency action record and controlled re-entry posture', type: 'approvalTask', approvalRoles: ['security-manager'], requiredApprovals: 1, sla: opsSla(5, 'general-manager', 'critical'), approval: { action: 'emergency-action', targetPath: 'incidentId', requestedBy: 'workflow-orchestration-engine', actorType: 'service', reason: 'Emergency workflow requires human command evidence and approval record', evidence: ['human-approval-record', 'workflow-task'], evidencePath: 'evidenceIds' }, next: ['sync-emergency-twin'] },
     { id: 'sync-emergency-twin', name: 'Sync emergency command record', type: 'serviceTask', action: () => ({ emergencyWorkflow: 'approved' }), digitalTwin: { refs: ['twin:incident:command', 'twin:emergency:resources'], syncMode: 'write', statePatch: { emergencyRecordApproved: true } }, next: ['closed'] },
     { id: 'closed', name: 'Emergency workflow closed', type: 'endEvent' },
   ] };

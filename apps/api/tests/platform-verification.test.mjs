@@ -57,7 +57,7 @@ test('platform verification: frontend-mapped backend paths are registered in api
 
 test('platform verification: KPI artifacts cover every declared domain', async () => {
   const state = createApiFacadeState();
-  const kpis = await handleApiRequest('GET', '/api/v1/kpis', undefined, state, { 'x-trackmind-role': 'admin' });
+  const kpis = await handleApiRequest('GET', '/api/v1/kpis', undefined, state, { 'x-trackmind-role': 'platform-super-admin' });
   assert.equal(kpis.status, 200);
   const domains = new Set((kpis.body.kpis ?? []).map((kpi) => kpi.domain));
   for (const domain of kpiDomains) {

@@ -84,14 +84,14 @@ test('racing finance payout release requires verified approval token after dual-
   assert.ok(payoutId);
 
   approvalService.decide(approvalRequestId, { id: 'steward-1', roles: ['steward'], human: true }, 'approved', 'Steward approval', ['human-approval-record']);
-  approvalService.decide(approvalRequestId, { id: 'finance-1', roles: ['finance'], human: true }, 'approved', 'Finance approval', ['human-approval-record']);
+  approvalService.decide(approvalRequestId, { id: 'finance-1', roles: ['finance-manager'], human: true }, 'approved', 'Finance approval', ['human-approval-record']);
   const token = approvalService.authorizeExecution({
     requestId: approvalRequestId,
     action: 'payout',
     target: payoutId,
     tenantId: 'trackmind',
     racetrackId: 'main-track',
-    actor: { id: 'finance-1', roles: ['finance'], human: true },
+    actor: { id: 'finance-1', roles: ['finance-manager'], human: true },
   });
 
   const released = platform.releasePayout(payoutId, 'finance', { approvalToken: token });

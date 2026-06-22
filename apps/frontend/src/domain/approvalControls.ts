@@ -1,4 +1,4 @@
-import type { Role } from '@trackmind/shared';
+import { canRoleRequestApprovalAction, normalizeRole, type Role } from '@trackmind/shared';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import type { WorkspaceAction } from '@/design/components/workspace';
 import { isRecord } from '@/lib/utils';
@@ -45,8 +45,11 @@ export function extractApprovalControls(results: WorkspaceDataResult[]): Workspa
 }
 
 export function roleCanUseAction(action: WorkspaceAction, role: Role): boolean {
+  if (action.protectedAction && canRoleRequestApprovalAction(role, action.protectedAction)) {
+    return true;
+  }
   if (!action.requiredRoles?.length) return true;
-  return action.requiredRoles.includes(role);
+  return action.requiredRoles.some((raw) => normalizeRole(raw) === role || raw === role);
 }
 
 export function actionDisabledReason(action: WorkspaceAction, role: Role): string | undefined {

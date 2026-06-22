@@ -40,14 +40,14 @@ test('domain kernel validates organization, tenant, user, role, and permission a
     organizationId: 'org-trackmind',
     email: 'ops@example.test',
     identityKind: 'human',
-    roles: ['admin'],
+    roles: ['platform-super-admin'],
     permissions: ['read:any', 'tenant:admin'],
     racetrackIds: ['track-001'],
     status: 'active',
   };
   const role = {
     ...createDomainEntityBase('role', { id: 'role-admin', tenantId: 'tenant-east', displayName: 'Admin role', ownerId: 'identity-governance', createdBy: 'system', now }),
-    role: 'admin',
+    role: 'platform-super-admin',
     permissions: ['read:any', 'tenant:admin'],
     assignable: false,
     privileged: true,

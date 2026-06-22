@@ -148,7 +148,7 @@ export class FanExperiencePlatform {
 
   recordAttendanceSnapshot(
     input: Omit<AttendanceSnapshotDto, 'snapshotId' | 'auditId' | 'utilizationPercent'> & { utilizationPercent?: number },
-    actor = 'ticketing-manager',
+    actor = 'ticketing-fan-manager',
   ): FanExperienceMutationResultDto {
     const auditId = id('audit-fan');
     const utilizationPercent = input.utilizationPercent ?? Math.round((input.current / input.capacity) * 100);
@@ -169,7 +169,7 @@ export class FanExperiencePlatform {
 
   createGuestServiceRequest(
     input: Omit<GuestServiceRequestDto, 'requestId' | 'auditId' | 'approvalRequestId'>,
-    actor = 'ticketing-manager',
+    actor = 'ticketing-fan-manager',
   ): FanExperienceMutationResultDto {
     const auditId = id('audit-fan');
     let approvalRequestId: string | undefined;
@@ -207,7 +207,7 @@ export class FanExperiencePlatform {
   updateGuestServiceStatus(
     requestId: string,
     status: GuestServiceRequestDto['status'],
-    actor = 'ticketing-manager',
+    actor = 'ticketing-fan-manager',
   ): FanExperienceMutationResultDto {
     const request = this.state.guestServices.find((entry) => entry.requestId === requestId);
     if (!request) throw new Error(`Unknown guest service request ${requestId}`);
@@ -226,7 +226,7 @@ export class FanExperiencePlatform {
 
   recordSatisfactionSurvey(
     input: Omit<EventSatisfactionSurveyDto, 'surveyId' | 'auditId' | 'band' | 'npsScore'> & { npsScore?: number; band?: EventSatisfactionSurveyDto['band'] },
-    actor = 'ticketing-manager',
+    actor = 'ticketing-fan-manager',
   ): FanExperienceMutationResultDto {
     const auditId = id('audit-fan');
     const npsScore = input.npsScore ?? Math.round((input.overallRating - 3) * 33);
@@ -253,7 +253,7 @@ export class FanExperiencePlatform {
   recordHospitalityIssue(
     packageId: string,
     issue: string,
-    actor = 'ticketing-manager',
+    actor = 'ticketing-fan-manager',
   ): FanExperienceMutationResultDto {
     const pkg = this.state.hospitalityPackages.find((entry) => entry.packageId === packageId);
     if (!pkg) throw new Error(`Unknown hospitality package ${packageId}`);
@@ -264,7 +264,7 @@ export class FanExperiencePlatform {
     return this.commit('fan-experience.hospitality.issue.recorded', `Recorded hospitality issue for ${pkg.name}: ${issue}`, auditId, packageId, actor);
   }
 
-  resolveHospitalityIssue(packageId: string, actor = 'ticketing-manager'): FanExperienceMutationResultDto {
+  resolveHospitalityIssue(packageId: string, actor = 'ticketing-fan-manager'): FanExperienceMutationResultDto {
     const pkg = this.state.hospitalityPackages.find((entry) => entry.packageId === packageId);
     if (!pkg) throw new Error(`Unknown hospitality package ${packageId}`);
     pkg.openIssues = Math.max(0, pkg.openIssues - 1);
@@ -277,7 +277,7 @@ export class FanExperiencePlatform {
   updatePremiumSeating(
     sectionId: string,
     input: Partial<Pick<PremiumSeatingSectionDto, 'seatsSold' | 'seatsHeld' | 'status' | 'revenueToday'>>,
-    actor = 'ticketing-manager',
+    actor = 'ticketing-fan-manager',
   ): FanExperienceMutationResultDto {
     const section = this.state.premiumSeating.find((entry) => entry.sectionId === sectionId);
     if (!section) throw new Error(`Unknown premium seating section ${sectionId}`);
@@ -484,7 +484,7 @@ export class FanExperiencePlatform {
     changeSummary: string,
     auditId: string,
     requestId?: string,
-    actor = 'ticketing-manager',
+    actor = 'ticketing-fan-manager',
     approvalRequestId?: string,
     eventId?: string,
   ): FanExperienceMutationResultDto {

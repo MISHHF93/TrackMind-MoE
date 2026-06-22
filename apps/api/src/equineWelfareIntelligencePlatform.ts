@@ -138,7 +138,7 @@ export class EquineWelfareIntelligencePlatform {
 
   recordObservation(
     input: Omit<WelfareObservationDto, 'observationId' | 'auditId'>,
-    actor = 'welfare-officer',
+    actor = 'equine-welfare-officer',
   ): EquineWelfareMutationResultDto {
     const auditId = id('audit-welfare');
     const observation: WelfareObservationDto = { ...clone(input), observationId: id('welfare-obs'), auditId };
@@ -164,7 +164,7 @@ export class EquineWelfareIntelligencePlatform {
     return this.commit('equine-welfare.observation.recorded', `Recorded welfare observation for ${observation.horseId}`, auditId, observation.horseId, observation.observationId, actor);
   }
 
-  acknowledgeAlert(alertId: string, actor = 'welfare-officer'): EquineWelfareMutationResultDto {
+  acknowledgeAlert(alertId: string, actor = 'equine-welfare-officer'): EquineWelfareMutationResultDto {
     const alert = this.state.alerts.find((entry) => entry.alertId === alertId);
     if (!alert) throw new Error(`Unknown welfare alert ${alertId}`);
     alert.status = 'acknowledged';
@@ -172,7 +172,7 @@ export class EquineWelfareIntelligencePlatform {
     return this.commit('equine-welfare.alert.acknowledged', `Acknowledged welfare alert ${alertId}`, auditId, alert.horseId, alertId, actor);
   }
 
-  resolveAlert(alertId: string, actor = 'welfare-officer'): EquineWelfareMutationResultDto {
+  resolveAlert(alertId: string, actor = 'equine-welfare-officer'): EquineWelfareMutationResultDto {
     const alert = this.state.alerts.find((entry) => entry.alertId === alertId);
     if (!alert) throw new Error(`Unknown welfare alert ${alertId}`);
     alert.status = 'resolved';
@@ -204,7 +204,7 @@ export class EquineWelfareIntelligencePlatform {
 
   private syncFromEquinePlatform(now: string) {
     if (!this.deps.equinePlatform) return;
-    const actor = this.systemActor('welfare-officer');
+    const actor = this.systemActor('equine-welfare-officer');
     for (const profile of this.deps.equinePlatform.listProfiles(this.state.tenantId)) {
       const horseId = profile.identity.horseId;
       const welfare = this.deps.equinePlatform.welfareStatus(horseId, actor);
@@ -230,7 +230,7 @@ export class EquineWelfareIntelligencePlatform {
 
   private buildDigitalTwinLinks(now: string): HorseDigitalTwinWelfareLinkDto[] {
     if (!this.deps.equinePlatform) return [];
-    const actor = this.systemActor('welfare-officer');
+    const actor = this.systemActor('equine-welfare-officer');
     return this.deps.equinePlatform.listProfiles(this.state.tenantId).map((profile) => {
       const primaryTwin = profile.digitalTwinReferences.find((ref) => ref.relationship === 'primary') ?? profile.digitalTwinReferences[0];
       const twinState = this.deps.equinePlatform!.twinSnapshot(profile.identity.tenantId).find((twin) => twin.id === profile.twinId || twin.id === primaryTwin?.twinId);
@@ -419,7 +419,7 @@ export class EquineWelfareIntelligencePlatform {
     auditId: string,
     horseId?: string,
     recordId?: string,
-    actor = 'welfare-officer',
+    actor = 'equine-welfare-officer',
   ): EquineWelfareMutationResultDto {
     const previousHash = this.auditChain.at(-1)?.hash ?? 'sha256:00000000';
     const record = {
@@ -454,7 +454,7 @@ export class EquineWelfareIntelligencePlatform {
   }
 
   private systemActor(idValue: string): EquineActor {
-    return { id: idValue, roles: ['welfare-officer', 'veterinarian'], tenantId: this.state.tenantId, human: true };
+    return { id: idValue, roles: ['equine-welfare-officer', 'veterinarian'], tenantId: this.state.tenantId, human: true };
   }
 }
 
@@ -469,7 +469,7 @@ export function createSeededEquineWelfareIntelligence(deps: EquineWelfareIntelli
     horseId: 'horse-1',
     observedAt: now,
     observerId: 'welfare-officer-live',
-    role: 'welfare-officer',
+    role: 'equine-welfare-officer',
     score: 92,
     category: 'barn-check',
     notes: 'Bright, alert, good body condition.',
@@ -492,7 +492,7 @@ export function createSeededEquineWelfareIntelligence(deps: EquineWelfareIntelli
   platform.assessRetirementReadiness('horse-1');
 
   if (deps.equinePlatform) {
-    const actor = { id: 'welfare-officer-live', roles: ['welfare-officer'] as const, tenantId: deps.tenantId ?? 'trackmind', human: true };
+    const actor = { id: 'welfare-officer-live', roles: ['equine-welfare-officer'] as const, tenantId: deps.tenantId ?? 'trackmind', human: true };
     try {
       deps.equinePlatform.recordWelfareStatus('horse-1', {
         recordId: `welfare-seed-${Date.now()}`,
@@ -501,7 +501,7 @@ export function createSeededEquineWelfareIntelligence(deps: EquineWelfareIntelli
         score: 92,
         notes: 'Seeded welfare intelligence observation',
         interventions: [],
-      }, { ...actor, roles: ['welfare-officer', 'veterinarian'] });
+      }, { ...actor, roles: ['equine-welfare-officer', 'veterinarian'] });
       deps.equinePlatform.recordAIRecommendation('horse-1', {
         domain: 'welfare',
         modelId: 'welfare-advisory-v1',

@@ -21,7 +21,7 @@ const seedIncidents = (): Array<IncidentDto & { id: string }> => {
       status: 'triaged',
       category: 'safety',
       reportedBy: 'security-officer',
-      assignedTo: 'incident-commander',
+      assignedTo: 'race-day-operations-manager',
       timeline: [{ at: ts, action: 'reported', actor: 'security-officer' }],
       auditIds: ['audit-inc-1'],
       eventIds: ['event-inc-1'],
@@ -311,7 +311,7 @@ export class IncidentService {
       category: 'incident',
       title: titles[phase],
       message: `${incident.description} (actor: ${actor}, status: ${incident.status})`,
-      targetRoles: ['security', 'steward', 'incident-commander', 'admin'],
+      targetRoles: ['security-manager', 'steward', 'race-day-operations-manager', 'platform-super-admin'],
       severity,
       correlationId: incident.id,
     });
@@ -319,7 +319,7 @@ export class IncidentService {
 
   private registerEventSchemas(): void {
     if (!this.deps.eventBus) return;
-    const owner = { service: 'incident-service', team: 'safety-operations', accountableRole: 'incident-commander' };
+    const owner = { service: 'incident-service', team: 'safety-operations', accountableRole: 'race-day-operations-manager' };
     INCIDENT_EVENT_TYPES.forEach((type) => {
       this.deps.eventBus?.registerEvent({
         type,
@@ -368,7 +368,7 @@ export class IncidentService {
       aggregateId: subjectId,
       producer: 'incident-service',
       correlationId: auditId,
-      metadata: { team: 'safety-operations', accountableRole: 'incident-commander', compliance: 'regulated' },
+      metadata: { team: 'safety-operations', accountableRole: 'race-day-operations-manager', compliance: 'regulated' },
     });
   }
 }

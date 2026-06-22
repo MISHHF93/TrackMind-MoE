@@ -91,7 +91,7 @@ export const horseDataEntryWorkflows: readonly HorseDataEntryWorkflow[] = [
     description: 'Steward eligibility posture — scratch status, flags, and restrictions.',
     supportsDraft: true,
     sensitive: true,
-    allowedRoles: ['admin', 'racing-secretary', 'steward', 'compliance-officer'],
+    allowedRoles: ['platform-super-admin', 'horse-operations-coordinator', 'steward', 'compliance-officer'],
   },
   {
     entityKind: 'transport-record',
@@ -130,7 +130,7 @@ export const horseDataEntryWorkflows: readonly HorseDataEntryWorkflow[] = [
     supportsDraft: true,
     sensitive: true,
     veterinaryRestricted: true,
-    allowedRoles: ['admin', 'veterinarian', 'compliance-officer'],
+    allowedRoles: ['platform-super-admin', 'veterinarian', 'compliance-officer'],
   },
   {
     entityKind: 'retirement-record',

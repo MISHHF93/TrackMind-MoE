@@ -11,7 +11,7 @@ const scope = {
   tenantId: 'trackmind',
   racetrackId: 'main-track',
   actorId: 'admin-operator',
-  role: 'admin',
+  role: 'platform-super-admin',
   requestId: 'req-pipeline-1',
 };
 

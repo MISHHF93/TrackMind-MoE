@@ -9,7 +9,7 @@ import { createApiFacadeState, handleApiRequest } from '../dist/server.js';
 const adminHeaders = {
   'x-trackmind-tenant-id': 'trackmind',
   'x-trackmind-racetrack-id': 'main-track',
-  'x-trackmind-role': 'admin',
+  'x-trackmind-role': 'platform-super-admin',
 };
 
 test('notification delivery adapters dispatch in-app, email-stub, and webhook-stub', () => {
@@ -18,7 +18,7 @@ test('notification delivery adapters dispatch in-app, email-stub, and webhook-st
     category: 'platform',
     title: 'Adapter probe',
     message: 'Verify all delivery adapters.',
-    targetRoles: ['admin'],
+    targetRoles: ['platform-super-admin'],
     severity: 'info',
   });
 
@@ -97,7 +97,7 @@ test('approval reminders and incident notifications produce delivery audit entri
     category: 'compliance',
     title: 'Manual dispatch probe',
     message: 'POST /notifications/dispatch audit trail.',
-    targetRoles: ['admin'],
+    targetRoles: ['platform-super-admin'],
     severity: 'info',
   }, state, adminHeaders);
   assert.equal(dispatch.status, 202);
@@ -110,7 +110,7 @@ test('approval reminders and incident notifications produce delivery audit entri
   assert.ok(auditTrail.body.entries.some((entry) => entry.channel === 'webhook-stub'));
   assert.ok(auditTrail.body.entries.some((entry) => entry.detail?.includes('email-stub')));
 
-  const inbox = await handleApiRequest('GET', '/api/v1/notifications/inbox?role=admin', undefined, state, adminHeaders);
+  const inbox = await handleApiRequest('GET', '/api/v1/notifications/inbox?role=platform-super-admin', undefined, state, adminHeaders);
   assert.equal(inbox.status, 200);
   assert.ok(inbox.body.notifications.some((item) => item.category === 'incident'));
   assert.ok(inbox.body.notifications.some((item) => item.title.includes('Approval reminder') || item.title.includes('Approval requested')));

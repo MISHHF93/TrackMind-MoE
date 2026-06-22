@@ -41,7 +41,7 @@ test('machine-readable governance blocks direct safety-critical commands without
 
 test('race stop scratch and medication API commands require approval gates before event emission', async () => {
   const state = createApiFacadeState();
-  const securityHeaders = { 'x-trackmind-role': 'security' };
+  const securityHeaders = { 'x-trackmind-role': 'security-manager' };
   const vetHeaders = { 'x-trackmind-role': 'veterinarian' };
   const blockedStop = await handleApiRequest('POST', '/api/v1/races/race-7/stop', { reason: 'incident on track' }, state, securityHeaders);
   assert.equal(blockedStop.status, 400);

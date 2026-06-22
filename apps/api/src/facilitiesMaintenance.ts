@@ -771,10 +771,10 @@ export class FacilitiesMaintenanceService {
   }
   private async patchTwin(asset: RegistryAsset, patch: Record<string, unknown>, actor: string, eventId: string): Promise<void> {
     if (!asset.digitalTwin?.twinId) return;
-    await this.eventBus.publish({ id: `${eventId}:twin`, type: 'digital-twin.state.patch', aggregateId: asset.digitalTwin.twinId, producer: 'facilities-maintenance', payload: { twinId: asset.digitalTwin.twinId, patch, actor, observedAt: new Date().toISOString() }, metadata: { team: 'facilities-maintenance', accountableRole: 'track-superintendent', compliance: 'regulated' } });
+    await this.eventBus.publish({ id: `${eventId}:twin`, type: 'digital-twin.state.patch', aggregateId: asset.digitalTwin.twinId, producer: 'facilities-maintenance', payload: { twinId: asset.digitalTwin.twinId, patch, actor, observedAt: new Date().toISOString() }, metadata: { team: 'facilities-maintenance', accountableRole: 'facilities-manager', compliance: 'regulated' } });
   }
   private async publish(type: string, aggregateId: string, payload: Record<string, unknown>): Promise<RaceDayEvent> {
-    return this.eventBus.publish({ type, aggregateId, producer: 'facilities-maintenance', payload, metadata: { team: 'facilities-maintenance', accountableRole: 'track-superintendent', compliance: 'regulated' } });
+    return this.eventBus.publish({ type, aggregateId, producer: 'facilities-maintenance', payload, metadata: { team: 'facilities-maintenance', accountableRole: 'facilities-manager', compliance: 'regulated' } });
   }
   private inventoryItem(asset: RegistryAsset): FacilityInventoryItem {
     const location = asset.location;
@@ -793,7 +793,7 @@ export class FacilitiesMaintenanceService {
     };
   }
   private registerEventSchemas(): void {
-    ['facilities.asset.seeded', 'facilities.inspection.recorded', 'facilities.preventive-maintenance.scheduled', 'facilities.work-order.requested', 'facilities.work-order.completed', 'facilities.readiness.evaluated', 'facilities.predictive-maintenance.flagged', 'facilities.maintenance-schedule.approved', 'facilities.maintenance-schedule.requested', 'facilities.incident.reported', 'facilities.incident.updated', 'facilities.utilities.reading.ingested', 'facilities.inventory.evaluated'].forEach((type) => this.eventBus.registerEvent({ type, version: 1, description: `Facilities maintenance ${type}`, owner: { service: 'facilities-maintenance', team: 'facilities-maintenance', accountableRole: 'track-superintendent' }, payloadFields: ['assetId', 'tenantId', 'actor'], compliance: 'regulated' }));
+    ['facilities.asset.seeded', 'facilities.inspection.recorded', 'facilities.preventive-maintenance.scheduled', 'facilities.work-order.requested', 'facilities.work-order.completed', 'facilities.readiness.evaluated', 'facilities.predictive-maintenance.flagged', 'facilities.maintenance-schedule.approved', 'facilities.maintenance-schedule.requested', 'facilities.incident.reported', 'facilities.incident.updated', 'facilities.utilities.reading.ingested', 'facilities.inventory.evaluated'].forEach((type) => this.eventBus.registerEvent({ type, version: 1, description: `Facilities maintenance ${type}`, owner: { service: 'facilities-maintenance', team: 'facilities-maintenance', accountableRole: 'facilities-manager' }, payloadFields: ['assetId', 'tenantId', 'actor'], compliance: 'regulated' }));
   }
 }
 
@@ -805,14 +805,14 @@ export function facilitiesMaintenanceWorkflow(tenantId: string): WorkflowDefinit
     version: '1.0.0',
     bpmnProcessId: 'Process_FacilitiesMaintenanceWorkOrder',
     startStepId: 'triage',
-    ownerRole: 'track-superintendent',
+    ownerRole: 'facilities-manager',
     tenantId,
     triggerEvents: ['facilities.work-order.requested'],
     steps: [
-      { id: 'triage', name: 'Triage facility asset health metadata', type: 'userTask', role: 'track-superintendent', sla: { minutes: 20, escalationRole: 'admin', severity: 'warning' }, digitalTwin: { refs: [], syncMode: 'read', statePatch: { maintenanceTriage: 'started' } }, next: ['approval'] },
-      { id: 'approval', name: 'Approve operational maintenance impact', type: 'approvalTask', role: 'track-superintendent', approvalRoles: ['track-superintendent', 'admin'], requiredApprovals: 1, sla: { minutes: 45, escalationRole: 'admin', severity: 'critical' }, next: ['schedule'] },
-      { id: 'schedule', name: 'Record crew and lockout-window metadata', type: 'userTask', role: 'track-superintendent', sla: { minutes: 60, escalationRole: 'admin', severity: 'warning' }, digitalTwin: { refs: [], syncMode: 'read', statePatch: { maintenanceScheduled: true } }, next: ['verify'] },
-      { id: 'verify', name: 'Record repair verification metadata', type: 'userTask', role: 'track-superintendent', sla: { minutes: 60, escalationRole: 'admin', severity: 'critical' }, digitalTwin: { refs: [], syncMode: 'read', statePatch: { returnToServiceVerification: 'pending' } }, next: ['closed'] },
+      { id: 'triage', name: 'Triage facility asset health metadata', type: 'userTask', role: 'facilities-manager', sla: { minutes: 20, escalationRole: 'platform-super-admin', severity: 'warning' }, digitalTwin: { refs: [], syncMode: 'read', statePatch: { maintenanceTriage: 'started' } }, next: ['approval'] },
+      { id: 'approval', name: 'Approve operational maintenance impact', type: 'approvalTask', role: 'facilities-manager', approvalRoles: ['facilities-manager', 'platform-super-admin'], requiredApprovals: 1, sla: { minutes: 45, escalationRole: 'platform-super-admin', severity: 'critical' }, next: ['schedule'] },
+      { id: 'schedule', name: 'Record crew and lockout-window metadata', type: 'userTask', role: 'facilities-manager', sla: { minutes: 60, escalationRole: 'platform-super-admin', severity: 'warning' }, digitalTwin: { refs: [], syncMode: 'read', statePatch: { maintenanceScheduled: true } }, next: ['verify'] },
+      { id: 'verify', name: 'Record repair verification metadata', type: 'userTask', role: 'facilities-manager', sla: { minutes: 60, escalationRole: 'platform-super-admin', severity: 'critical' }, digitalTwin: { refs: [], syncMode: 'read', statePatch: { returnToServiceVerification: 'pending' } }, next: ['closed'] },
       { id: 'closed', name: 'Facilities work order metadata closed', type: 'endEvent' },
     ],
   };
@@ -831,7 +831,7 @@ export function facilitiesMaintenanceApiDefinition(): ApiServiceDefinition {
 
 export function createSeededFacilitiesMaintenanceService(timestamp = new Date().toISOString()): FacilitiesMaintenanceService {
   const service = new FacilitiesMaintenanceService({ seedAt: timestamp });
-  const principal = { id: 'facilities-supervisor', tenantId: 'track-1', scopes: ['assets:read', 'assets:write', 'assets:approve'] };
+  const principal = { id: 'facilities-manager', tenantId: 'track-1', scopes: ['assets:read', 'assets:write', 'assets:approve'] };
   service.seedFacilityAssetsSync(principal, timestamp);
   service.recordInspectionSync({
     assetId: 'GRANDSTAND_HVAC_01',
@@ -875,5 +875,5 @@ export function createFacilitiesMaintenanceService() {
 
 export function createMockFacilitiesMaintenanceWorkspace(timestamp = new Date().toISOString()): FacilitiesMaintenanceWorkspace {
   const service = createSeededFacilitiesMaintenanceService(timestamp);
-  return { ...service.workspace({ id: 'facilities-supervisor', tenantId: 'track-1', scopes: ['assets:read'] }), mock: true };
+  return { ...service.workspace({ id: 'facilities-manager', tenantId: 'track-1', scopes: ['assets:read'] }), mock: true };
 }

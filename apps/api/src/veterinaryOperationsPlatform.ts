@@ -98,9 +98,9 @@ function privacyContextForRole(role: Role): VeterinaryPrivacyContextDto {
   }
   const reason = role === 'veterinarian'
     ? 'Veterinarian has full medical access within licensed scope.'
-    : role === 'admin' || role === 'compliance-officer'
+    : role === 'platform-super-admin' || role === 'compliance-officer'
       ? 'Compliance role with regulated veterinary-confidential access.'
-      : role === 'steward' || role === 'racing-secretary'
+      : role === 'steward' || role === 'horse-operations-coordinator'
         ? 'Official view includes clearance posture without confidential medical detail.'
         : role === 'read-only-auditor'
           ? 'Auditor view includes anonymized clearance and welfare bands only.'
@@ -338,7 +338,7 @@ export class VeterinaryOperationsPlatform {
   }
 
   advanceClearanceWorkflow(horseId: string, workflowId: string, input: { status: ClearanceWorkflowStatus; failedRules?: string[]; evidence?: string[] }, access: VeterinaryAccessContext): VeterinaryMutationResultDto {
-    if (access.role !== 'veterinarian' && access.role !== 'steward' && access.role !== 'admin') {
+    if (access.role !== 'veterinarian' && access.role !== 'steward' && access.role !== 'platform-super-admin') {
       throw new Error('Clearance workflow updates require veterinarian or steward role');
     }
     const record = this.requireCase(horseId);
@@ -495,13 +495,13 @@ export class VeterinaryOperationsPlatform {
   }
 
   private assertVeterinaryWrite(access: VeterinaryAccessContext): void {
-    if (!['veterinarian', 'admin', 'compliance-officer'].includes(access.role)) {
+    if (!['veterinarian', 'platform-super-admin', 'compliance-officer'].includes(access.role)) {
       throw new Error('Veterinary write operations require veterinarian role');
     }
   }
 
   private assertCareTeamWrite(access: VeterinaryAccessContext): void {
-    if (!['veterinarian', 'admin', 'compliance-officer', 'steward', 'track-superintendent', 'operations-admin'].includes(access.role)) {
+    if (!['veterinarian', 'platform-super-admin', 'compliance-officer', 'steward', 'facilities-manager', 'organization-admin'].includes(access.role)) {
       throw new Error('Care-team write operations require veterinarian or care-team role');
     }
   }

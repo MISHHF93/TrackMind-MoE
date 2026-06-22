@@ -6,6 +6,7 @@ import {
   extractApprovalControls,
   mergeWorkspaceActions,
   resolveDefaultRaceTarget,
+  roleCanUseAction,
 } from '@/domain/approvalControls';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { routeById, type DomainRouteId } from '@/routes/routes';
@@ -170,7 +171,7 @@ function buildActions(routeId: DomainRouteId, results: WorkspaceDataResult[], ro
     extractApprovalControls(results),
     byRoute[routeId] ?? [],
     common,
-  );
+  ).filter((action) => roleCanUseAction(action, role));
 }
 
 export function WorkspacePage({ routeId }: { routeId: DomainRouteId }): ReactElement {

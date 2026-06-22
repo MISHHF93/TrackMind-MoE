@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createApiFacadeState, handleApiRequest } from '../dist/server.js';
 
 const adminHeaders = {
-  'x-trackmind-role': 'admin',
+  'x-trackmind-role': 'platform-super-admin',
   'x-trackmind-tenant-id': 'trackmind',
   'x-trackmind-racetrack-id': 'main-track',
   'x-trackmind-organization-id': 'org-trackmind-network',
@@ -119,7 +119,7 @@ test('wave 09 paddock and schedule plus wave 11 incidents', async () => {
 
   const triaged = await handleApiRequest('POST', `/api/v1/incidents/${created.body.id}/triage`, {
     severity: 'high',
-    assignedTo: 'incident-commander',
+    assignedTo: 'race-day-operations-manager',
     actor: 'security-officer',
   }, state, adminHeaders);
   assert.equal(triaged.status, 200);
@@ -135,7 +135,7 @@ test('wave 09 paddock and schedule plus wave 11 incidents', async () => {
 
   const resolved = await handleApiRequest('POST', `/api/v1/incidents/${created.body.id}`, {
     status: 'resolved',
-    actor: 'incident-commander',
+    actor: 'race-day-operations-manager',
   }, state, adminHeaders);
   assert.equal(resolved.status, 200);
   assert.equal(resolved.body.status, 'resolved');
@@ -313,8 +313,8 @@ test('wave 09 emergency workflow activation mutation', async () => {
     scenario: 'severe-weather',
     severity: 'major',
     location: 'Grandstand',
-    activatedBy: 'incident-commander',
-    roles: ['admin'],
+    activatedBy: 'race-day-operations-manager',
+    roles: ['platform-super-admin'],
   }, state, adminHeaders);
   assert.equal(activation.status, 201);
   assert.equal(activation.body.eventType, 'emergency.workflow.activated');
@@ -326,7 +326,7 @@ test('wave 09 emergency workflow activation mutation', async () => {
 
 test('wave 14 security operations endpoints', async () => {
   const state = createApiFacadeState();
-  const headers = { 'x-trackmind-role': 'security', 'x-trackmind-tenant-id': 'trackmind', 'x-trackmind-racetrack-id': 'main-track' };
+  const headers = { 'x-trackmind-role': 'security-manager', 'x-trackmind-tenant-id': 'trackmind', 'x-trackmind-racetrack-id': 'main-track' };
 
   const zonesLive = await handleApiRequest('GET', '/api/v1/security-operations/zones/live', undefined, state, headers);
   assert.equal(zonesLive.status, 200);
@@ -392,12 +392,12 @@ test('wave 06 durable approvals, escalation simulation, and audit-backed mutatio
     racetrackId: 'main-track',
     action: 'emergency-action',
     target: 'gate-wave-06',
-    actorId: 'incident-commander',
+    actorId: 'race-day-operations-manager',
     actorType: 'human',
-    roles: ['security'],
+    roles: ['security-manager'],
     reason: 'Gate fault requires controlled approval',
     evidence: ['alarm-feed'],
-  }, state, { ...adminHeaders, 'x-trackmind-role': 'security' });
+  }, state, { ...adminHeaders, 'x-trackmind-role': 'security-manager' });
   assert.equal(created.status, 202);
   assert.equal(created.body.audited, true);
   const approvalId = created.body.approvalId;
@@ -427,12 +427,12 @@ test('wave 06 durable approvals, escalation simulation, and audit-backed mutatio
     {
       actorId: 'security-lead',
       actorType: 'human',
-      roles: ['security'],
+      roles: ['security-manager'],
       reason: 'Gate fault verified for wave 06 audit search',
       evidence: ['human-approval-record'],
     },
     state,
-    { ...adminHeaders, 'x-trackmind-role': 'security' },
+    { ...adminHeaders, 'x-trackmind-role': 'security-manager' },
   );
   assert.equal(approved.status, 200);
 

@@ -9,6 +9,7 @@ import type {
   TenantSessionDto,
 } from '@trackmind/shared';
 import {
+  normalizeRole,
   rolePermissions,
   roleRegistry,
   roles,
@@ -27,7 +28,7 @@ const seedUsers = (): PlatformUserDto[] => [
     organizationId: 'org-trackmind-network',
     displayName: 'Operations Admin',
     email: 'admin@trackmind.local',
-    roles: ['admin'],
+    roles: ['platform-super-admin'],
     status: 'active',
     lastLoginAt: now(),
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -52,7 +53,7 @@ const seedPolicies = (): TenantRbacPolicyDto[] => [
     tenantId: 'trackmind',
     name: 'Operations read baseline',
     permissions: ['read:any', 'kpi:read'],
-    roles: ['steward', 'racing-secretary', 'read-only-auditor'],
+    roles: ['steward', 'horse-operations-coordinator', 'read-only-auditor'],
     requiresApproval: false,
     privileged: false,
     updatedAt: '2026-01-01T00:00:00.000Z',
@@ -62,7 +63,7 @@ const seedPolicies = (): TenantRbacPolicyDto[] => [
     tenantId: 'trackmind',
     name: 'Identity governance',
     permissions: ['identity:read', 'identity:write', 'access:request', 'access:approve', 'access:review'],
-    roles: ['operations-admin'],
+    roles: ['organization-admin'],
     requiresApproval: true,
     privileged: true,
     updatedAt: '2026-01-01T00:00:00.000Z',
@@ -152,19 +153,20 @@ export class IdentityService {
     tenantId: string,
     assignedBy?: string,
   ): RoleAssignmentResultDto {
-    if (!roles.includes(role)) throw new Error(`Invalid role: ${role}`);
-    if (!roleRegistry[role].assignable && role !== 'admin') {
-      throw new Error(`Role is not assignable: ${role}`);
+    const canonical = normalizeRole(role);
+    if (!canonical || !roles.includes(canonical)) throw new Error(`Invalid role: ${role}`);
+    if (!roleRegistry[canonical].assignable && canonical !== 'platform-super-admin') {
+      throw new Error(`Role is not assignable: ${canonical}`);
     }
     const user = this.users.get(userId);
     if (!user) throw new Error(`User not found: ${userId}`);
     if (user.tenantId !== tenantId) throw new Error(`Tenant isolation violation for user ${userId}`);
-    const rolesForUser = [...new Set([...user.roles, role])];
+    const rolesForUser = [...new Set([...user.roles, canonical])];
     const assignedAt = now();
     const updated = { ...user, roles: rolesForUser, status: user.status === 'pending' ? 'active' as const : user.status };
     this.users.upsert(updated);
-    this.roleAssignments.push({ userId, role, tenantId, assignedAt, assignedBy });
-    return { userId, role, tenantId, assignedAt, user: updated };
+    this.roleAssignments.push({ userId, role: canonical, tenantId, assignedAt, assignedBy });
+    return { userId, role: canonical, tenantId, assignedAt, user: updated };
   }
 
   listAccessRequests(tenantId?: string): AccessRequestDto[] {
@@ -199,8 +201,11 @@ export class IdentityService {
     request.status = decision;
     request.reviewedAt = now();
     request.reviewedBy = reviewedBy;
-    if (decision === 'approved' && roles.includes(request.requestedRole as Role)) {
-      this.assignRole(request.userId, request.requestedRole as Role, request.tenantId, reviewedBy);
+    if (decision === 'approved') {
+      const canonical = normalizeRole(request.requestedRole);
+      if (canonical && roles.includes(canonical)) {
+        this.assignRole(request.userId, canonical, request.tenantId, reviewedBy);
+      }
     }
     return { ...request };
   }

@@ -162,7 +162,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/horse-registry/horses', editPath: '/horse-registry/horses/{recordId}/identity', method: 'POST' },
     {
       requiredPermission: 'identity:write',
-      allowedRoles: ['admin', 'racing-secretary', 'compliance-officer'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator', 'compliance-officer'],
       draft: { enabled: true, storage: 'both', retentionDays: 14, warnOnDiscard: true },
       autosave: { enabled: true, debounceMs: 5000 },
       auditAction: 'horse-registry.registered',
@@ -186,7 +186,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/horse-registry/horses/{horseId}/ownership', method: 'POST' },
     {
       requiredPermission: 'identity:write',
-      allowedRoles: ['admin', 'racing-secretary', 'compliance-officer'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator', 'compliance-officer'],
       draft: { enabled: true, storage: 'server' },
       auditAction: 'horse-registry.ownership.updated',
       description: 'Append ownership history entry — does not overwrite prior owners.',
@@ -208,7 +208,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/horse-registry/horses/{horseId}/stable', method: 'POST' },
     {
       requiredPermission: 'identity:write',
-      allowedRoles: ['admin', 'racing-secretary', 'track-superintendent'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator', 'facilities-manager'],
       auditAction: 'horse-registry.stable.assigned',
       description: 'Assign barn and stall; prior assignment is closed automatically.',
     },
@@ -257,7 +257,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/horses/{horseId}/eligibility', editPath: '/horses/{horseId}/eligibility', method: 'POST' },
     {
       requiredPermission: 'race:request-start',
-      allowedRoles: ['admin', 'racing-secretary', 'steward', 'compliance-officer'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator', 'steward', 'compliance-officer'],
       draft: { enabled: true, storage: 'server' },
       auditAction: 'equine.eligibility.updated',
       description: 'Steward-managed race eligibility posture.',
@@ -285,7 +285,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/equine-intelligence/horses/{horseId}/transport', method: 'POST' },
     {
       requiredPermission: 'track:readings',
-      allowedRoles: ['admin', 'racing-secretary', 'track-superintendent'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator', 'facilities-manager'],
       auditAction: 'equine.transport.recorded',
       description: 'Log horse movement with welfare checks.',
     },
@@ -308,7 +308,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/equine-intelligence/horses/{horseId}/workouts', method: 'POST' },
     {
       requiredPermission: 'track:readings',
-      allowedRoles: ['admin', 'racing-secretary'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator'],
       auditAction: 'equine.workout.recorded',
       description: 'Record timed workout from clocker or manual entry.',
     },
@@ -334,7 +334,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/horse-registry/horses/{horseId}/retirement', method: 'POST' },
     {
       requiredPermission: 'identity:write',
-      allowedRoles: ['admin', 'racing-secretary', 'compliance-officer', 'veterinarian'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator', 'compliance-officer', 'veterinarian'],
       draft: { enabled: true, storage: 'server' },
       auditAction: 'horse-registry.retired',
       description: 'Formal retirement with aftercare destination.',
@@ -355,7 +355,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/racing-calendar/schedules/draft-requests', editPath: '/racing-calendar/schedules/draft-requests', method: 'POST' },
     {
       requiredPermission: 'race:request-start',
-      allowedRoles: ['admin', 'racing-secretary'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator'],
       draft: { enabled: true, storage: 'both' },
       autosave: { enabled: true, debounceMs: 4000 },
       auditAction: 'calendar.schedule.draft.requested',
@@ -380,7 +380,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/race-cards', method: 'POST' },
     {
       requiredPermission: 'race:request-start',
-      allowedRoles: ['admin', 'racing-secretary'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator'],
       draft: { enabled: true, storage: 'both', retentionDays: 14, warnOnDiscard: true },
       autosave: { enabled: true, debounceMs: 5000 },
       auditAction: 'race-card.created',
@@ -406,7 +406,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/race-cards/{recordId}/conditions', editPath: '/race-cards/{recordId}/conditions', method: 'POST' },
     {
       requiredPermission: 'race:request-start',
-      allowedRoles: ['admin', 'racing-secretary', 'steward'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator', 'steward'],
       draft: { enabled: true, storage: 'server' },
       autosave: { enabled: true, debounceMs: 4000 },
       auditAction: 'race-card.conditions.updated',
@@ -443,7 +443,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/race-cards/{recordId}/classification', editPath: '/race-cards/{recordId}/classification', method: 'POST' },
     {
       requiredPermission: 'race:request-start',
-      allowedRoles: ['admin', 'racing-secretary'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator'],
       draft: { enabled: true, storage: 'server' },
       auditAction: 'race-card.classification.updated',
     },
@@ -464,7 +464,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/race-cards/{recordId}/purse', editPath: '/race-cards/{recordId}/purse', method: 'POST' },
     {
       requiredPermission: 'race:request-start',
-      allowedRoles: ['admin', 'racing-secretary'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator'],
       draft: { enabled: true, storage: 'server' },
       auditAction: 'race-card.purse.updated',
     },
@@ -486,7 +486,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/race-cards/{recordId}/entries', method: 'POST' },
     {
       requiredPermission: 'race:request-start',
-      allowedRoles: ['admin', 'racing-secretary'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator'],
       auditAction: 'race-card.entry.added',
       description: 'Add horse to race card — duplicate horses are rejected.',
     },
@@ -505,7 +505,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/race-cards/{raceCardId}/entries/{entryId}/trainer', editPath: '/race-cards/{raceCardId}/entries/{entryId}/trainer', method: 'POST' },
     {
       requiredPermission: 'race:request-start',
-      allowedRoles: ['admin', 'racing-secretary'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator'],
       auditAction: 'race-card.trainer.assigned',
     },
   ),
@@ -523,7 +523,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/race-cards/{raceCardId}/entries/{entryId}/post-position', editPath: '/race-cards/{raceCardId}/entries/{entryId}/post-position', method: 'POST' },
     {
       requiredPermission: 'race:request-start',
-      allowedRoles: ['admin', 'racing-secretary'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator'],
       auditAction: 'race-card.post-position.assigned',
     },
   ),
@@ -551,7 +551,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/race-cards/{recordId}/lifecycle-transitions', method: 'POST' },
     {
       requiredPermission: 'race:request-start',
-      allowedRoles: ['admin', 'racing-secretary', 'steward'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator', 'steward'],
       auditAction: 'race-card.lifecycle.transitioned',
       description: 'Governed lifecycle transition — approval may be required for approve/publish.',
     },
@@ -570,7 +570,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
           { value: 'steward', label: 'Steward incident' },
           { value: 'equine-welfare', label: 'Equine welfare incident' },
           { value: 'facilities', label: 'Facilities incident' },
-          { value: 'security', label: 'Security incident' },
+          { value: 'security-manager', label: 'Security incident' },
           { value: 'operational-disruption', label: 'Operational disruption' },
         ],
       }),
@@ -603,7 +603,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/incidents/intake', editPath: '/incidents/{recordId}', method: 'POST' },
     {
       requiredPermission: 'incident:manage',
-      allowedRoles: ['admin', 'steward', 'security', 'track-superintendent', 'operations-admin', 'veterinarian', 'compliance-officer'],
+      allowedRoles: ['platform-super-admin', 'steward', 'security-manager', 'facilities-manager', 'organization-admin', 'veterinarian', 'compliance-officer'],
       draft: { enabled: true, storage: 'both', retentionDays: 14, warnOnDiscard: true },
       autosave: { enabled: true, debounceMs: 3000 },
       auditAction: 'incident.intake.recorded',
@@ -626,7 +626,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/incidents', editPath: '/incidents/{recordId}', method: 'POST' },
     {
       requiredPermission: 'incident:manage',
-      allowedRoles: ['admin', 'steward', 'security', 'track-superintendent', 'operations-admin'],
+      allowedRoles: ['platform-super-admin', 'steward', 'security-manager', 'facilities-manager', 'organization-admin'],
       draft: { enabled: true, storage: 'both', retentionDays: 14 },
       autosave: { enabled: true, debounceMs: 3000 },
       auditAction: 'incident.created',
@@ -646,7 +646,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/approvals/controlled-actions', method: 'POST' },
     {
       requiredPermission: 'workflow:execute',
-      allowedRoles: ['admin', 'steward', 'operations-admin', 'compliance-officer'],
+      allowedRoles: ['platform-super-admin', 'steward', 'organization-admin', 'compliance-officer'],
       draft: { enabled: true, storage: 'local' },
       auditAction: 'approval.requested',
     },
@@ -704,7 +704,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/approvals/composer', method: 'POST' },
     {
       requiredPermission: 'workflow:execute',
-      allowedRoles: ['admin', 'steward', 'racing-secretary', 'track-superintendent', 'veterinarian', 'security', 'finance', 'compliance-officer', 'operations-admin'],
+      allowedRoles: ['platform-super-admin', 'steward', 'horse-operations-coordinator', 'facilities-manager', 'veterinarian', 'security-manager', 'finance-manager', 'compliance-officer', 'organization-admin'],
       draft: { enabled: true, storage: 'local' },
       auditAction: 'approval.requested',
       description: 'Guided approval submission — faster and clearer than raw controlled-action records.',
@@ -750,7 +750,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/data-entry/submit/audit-note', method: 'POST' },
     {
       requiredPermission: 'workflow:execute',
-      allowedRoles: ['admin', 'compliance-officer', 'read-only-auditor', 'steward'],
+      allowedRoles: ['platform-super-admin', 'compliance-officer', 'read-only-auditor', 'steward'],
       auditAction: 'audit.note.recorded',
     },
   ),
@@ -809,7 +809,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/operational-notes/intake', editPath: '/operational-notes/revisions', method: 'POST' },
     {
       requiredPermission: 'read:any',
-      allowedRoles: ['admin', 'operations-admin', 'track-superintendent', 'steward', 'security', 'compliance-officer', 'veterinarian'],
+      allowedRoles: ['platform-super-admin', 'organization-admin', 'facilities-manager', 'steward', 'security-manager', 'compliance-officer', 'veterinarian'],
       autosave: { enabled: true, debounceMs: 1500 },
       auditAction: 'operational-note.recorded',
       description: 'Unified operational journal with tags, visibility, follow-up flags, and edit history.',
@@ -840,7 +840,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
         required: true,
         defaultValue: 'veterinarian',
         options: roles.map((role) => ({ value: role, label: role.replace(/-/g, ' ') })),
-        visibleToRoles: ['admin', 'veterinarian', 'compliance-officer', 'steward'],
+        visibleToRoles: ['platform-super-admin', 'veterinarian', 'compliance-officer', 'steward'],
       }),
       field('severity', 'Severity', 'select', { required: true, options: severityOptions, defaultValue: 'medium' }),
       field('notes', 'Clinical notes', 'textarea', {
@@ -848,30 +848,30 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
         minLength: 8,
         rows: 4,
         classification: 'restricted',
-        visibleToRoles: ['admin', 'veterinarian', 'compliance-officer'],
+        visibleToRoles: ['platform-super-admin', 'veterinarian', 'compliance-officer'],
       }),
       field('followUpNeeded', 'Follow-up needed', 'checkbox', { defaultValue: false }),
       field('clearanceState', 'Clearance / restriction state', 'select', {
         defaultValue: 'none',
         options: clearanceStateOptions,
-        visibleToRoles: ['admin', 'veterinarian', 'steward', 'racing-secretary', 'compliance-officer'],
+        visibleToRoles: ['platform-super-admin', 'veterinarian', 'steward', 'horse-operations-coordinator', 'compliance-officer'],
       }),
       field('restrictions', 'Active restrictions', 'textarea', {
         placeholder: 'One restriction per line',
         rows: 2,
         classification: 'restricted',
-        visibleToRoles: ['admin', 'veterinarian', 'steward', 'compliance-officer'],
+        visibleToRoles: ['platform-super-admin', 'veterinarian', 'steward', 'compliance-officer'],
       }),
       field('privacyScope', 'Privacy scope', 'select', {
         required: true,
         defaultValue: 'veterinary-confidential',
         options: privacyScopeOptions,
-        visibleToRoles: ['admin', 'veterinarian', 'compliance-officer'],
+        visibleToRoles: ['platform-super-admin', 'veterinarian', 'compliance-officer'],
       }),
       field('raceDayImpact', 'Linked race-day impact', 'select', {
         defaultValue: 'none',
         options: raceDayImpactOptions,
-        visibleToRoles: ['admin', 'veterinarian', 'steward', 'racing-secretary'],
+        visibleToRoles: ['platform-super-admin', 'veterinarian', 'steward', 'horse-operations-coordinator'],
       }),
       dataSourceField(),
       auditReasonField(8),
@@ -882,7 +882,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     },
     {
       requiredPermission: 'vet:review',
-      allowedRoles: ['admin', 'veterinarian', 'steward', 'track-superintendent'],
+      allowedRoles: ['platform-super-admin', 'veterinarian', 'steward', 'facilities-manager'],
       draft: { enabled: true, storage: 'both', retentionDays: 14, warnOnDiscard: true },
       autosave: { enabled: true, debounceMs: 4000 },
       auditAction: 'veterinary.observation.recorded',
@@ -912,9 +912,10 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
       field('observedBy', 'Observed by', 'text', { required: true }),
       field('role', 'Observer role', 'select', {
         required: true,
-        defaultValue: 'welfare-officer',
+        defaultValue: 'equine-welfare-officer',
         options: [
-          { value: 'welfare-officer', label: 'Welfare officer' },
+          { value: 'equine-welfare-officer', label: 'Equine welfare officer' },
+          { value: 'welfare-officer', label: 'Welfare officer (legacy)' },
           { value: 'veterinarian', label: 'Veterinarian' },
           { value: 'trainer', label: 'Trainer' },
           { value: 'groom', label: 'Groom' },
@@ -928,17 +929,17 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
       field('clearanceState', 'Clearance / restriction state', 'select', {
         defaultValue: 'none',
         options: clearanceStateOptions,
-        visibleToRoles: ['admin', 'veterinarian', 'steward', 'racing-secretary'],
+        visibleToRoles: ['platform-super-admin', 'veterinarian', 'steward', 'horse-operations-coordinator'],
       }),
       field('restrictions', 'Active restrictions', 'textarea', {
         placeholder: 'One restriction per line',
         rows: 2,
-        visibleToRoles: ['admin', 'veterinarian', 'steward', 'racing-secretary'],
+        visibleToRoles: ['platform-super-admin', 'veterinarian', 'steward', 'horse-operations-coordinator'],
       }),
       field('privacyScope', 'Privacy scope', 'select', {
         defaultValue: 'care-team',
         options: privacyScopeOptions.filter((option) => option.value !== 'veterinary-confidential'),
-        visibleToRoles: ['admin', 'veterinarian', 'steward', 'compliance-officer'],
+        visibleToRoles: ['platform-super-admin', 'veterinarian', 'steward', 'compliance-officer'],
       }),
       field('raceDayImpact', 'Linked race-day impact', 'select', {
         defaultValue: 'none',
@@ -951,7 +952,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/equine-welfare/observations', method: 'POST' },
     {
       requiredPermission: 'vet:review',
-      allowedRoles: ['admin', 'veterinarian', 'steward', 'racing-secretary', 'track-superintendent'],
+      allowedRoles: ['platform-super-admin', 'veterinarian', 'steward', 'horse-operations-coordinator', 'facilities-manager'],
       draft: { enabled: true, storage: 'both', retentionDays: 14, warnOnDiscard: true },
       autosave: { enabled: true, debounceMs: 4000 },
       auditAction: 'welfare.observation.recorded',
@@ -983,7 +984,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/horse-registry/horses/{horseId}/trainer', editPath: '/horse-registry/horses/{horseId}/trainer', method: 'POST' },
     {
       requiredPermission: 'identity:write',
-      allowedRoles: ['admin', 'racing-secretary'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator'],
       auditAction: 'horse-registry.trainer.assigned',
     },
   ),
@@ -1006,7 +1007,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     },
     {
       requiredPermission: 'race:request-start',
-      allowedRoles: ['admin', 'racing-secretary'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator'],
       auditAction: 'race-card.jockey.assigned',
     },
   ),
@@ -1042,7 +1043,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/paddock-operations/assignments', editPath: '/paddock-operations/assignments/{recordId}', method: 'POST' },
     {
       requiredPermission: 'track:readings',
-      allowedRoles: ['admin', 'racing-secretary', 'track-superintendent'],
+      allowedRoles: ['platform-super-admin', 'horse-operations-coordinator', 'facilities-manager'],
       autosave: { enabled: true, debounceMs: 5000 },
       auditAction: 'paddock.record.recorded',
     },
@@ -1059,7 +1060,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
       field('description', 'Description', 'textarea', { required: true, minLength: 12, rows: 4 }),
       field('sensitiveDetails', 'Sensitive details', 'textarea', {
         rows: 3,
-        visibleToRoles: ['admin', 'security'],
+        visibleToRoles: ['platform-super-admin', 'security-manager'],
         requiredPermission: 'security:sensitive-read',
       }),
       field('reason', 'Audit reason', 'textarea', { required: true, minLength: 8, rows: 2 }),
@@ -1067,7 +1068,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/data-entry/submit/security-incident', editPath: '/data-entry/submit/security-incident', method: 'POST' },
     {
       requiredPermission: 'security:manage',
-      allowedRoles: ['admin', 'security', 'operations-admin'],
+      allowedRoles: ['platform-super-admin', 'security-manager', 'organization-admin'],
       autosave: { enabled: true, debounceMs: 3000 },
       auditAction: 'security.incident.reported',
     },
@@ -1112,11 +1113,11 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
       field('detailedNotes', 'Detailed notes', 'textarea', { minLength: 12, rows: 4 }),
       field('personDisplayName', 'Person (display)', 'text', { helpText: 'Subject display name — avoid legal name in quick mode when possible.' }),
       field('personLegalName', 'Person (legal name)', 'text', {
-        visibleToRoles: ['admin', 'security'],
+        visibleToRoles: ['platform-super-admin', 'security-manager'],
         requiredPermission: 'security:sensitive-read',
       }),
       field('credentialId', 'Credential ID', 'text', {
-        visibleToRoles: ['admin', 'security'],
+        visibleToRoles: ['platform-super-admin', 'security-manager'],
         requiredPermission: 'security:sensitive-read',
       }),
       field('accessDecision', 'Access decision', 'select', {
@@ -1151,7 +1152,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
       field('occurredAt', 'Occurred at', 'datetime-local'),
       field('sensitiveDetails', 'Sensitive details', 'textarea', {
         rows: 3,
-        visibleToRoles: ['admin', 'security'],
+        visibleToRoles: ['platform-super-admin', 'security-manager'],
         requiredPermission: 'security:sensitive-read',
       }),
       field('reportedBy', 'Reported by', 'text', { readOnly: true }),
@@ -1160,7 +1161,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/security-operations/events', method: 'POST' },
     {
       requiredPermission: 'security:manage',
-      allowedRoles: ['admin', 'security', 'operations-admin'],
+      allowedRoles: ['platform-super-admin', 'security-manager', 'organization-admin'],
       autosave: { enabled: true, debounceMs: 2500 },
       auditAction: 'security.event.recorded',
     },
@@ -1217,7 +1218,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/facilities-maintenance/inspections', method: 'POST' },
     {
       requiredPermission: 'track:readings',
-      allowedRoles: ['admin', 'track-superintendent', 'operations-admin'],
+      allowedRoles: ['platform-super-admin', 'facilities-manager', 'organization-admin'],
       draft: { enabled: true, storage: 'server', retentionDays: 14 },
       autosave: { enabled: true, debounceMs: 4000 },
       auditAction: 'facilities.inspection.recorded',
@@ -1308,7 +1309,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/compliance/evidence/intake', method: 'POST' },
     {
       requiredPermission: 'compliance:audit',
-      allowedRoles: ['admin', 'compliance-officer'],
+      allowedRoles: ['platform-super-admin', 'compliance-officer'],
       draft: { enabled: true, storage: 'server', retentionDays: 14, warnOnDiscard: true },
       autosave: { enabled: true, debounceMs: 3000 },
       auditAction: 'compliance.evidence.collected',
@@ -1339,7 +1340,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/kpis/thresholds/draft-requests', method: 'POST' },
     {
       requiredPermission: 'kpi:admin',
-      allowedRoles: ['admin', 'operations-admin'],
+      allowedRoles: ['platform-super-admin', 'organization-admin'],
       draft: { enabled: true, storage: 'both' },
       autosave: { enabled: true, debounceMs: 4000 },
       auditAction: 'kpi.threshold.draft.requested',
@@ -1370,7 +1371,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/data-entry/submit/administrative-record', editPath: '/data-entry/submit/administrative-record', method: 'POST' },
     {
       requiredPermission: 'tenant:admin',
-      allowedRoles: ['admin', 'operations-admin'],
+      allowedRoles: ['platform-super-admin', 'organization-admin'],
       draft: { enabled: true, storage: 'server', retentionDays: 30 },
       autosave: { enabled: true, debounceMs: 5000 },
       auditAction: 'platform.administrative.recorded',
@@ -1412,7 +1413,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/data-entry/submit/federation-metadata', editPath: '/data-entry/submit/federation-metadata', method: 'POST' },
     {
       requiredPermission: 'compliance:report',
-      allowedRoles: ['admin', 'compliance-officer', 'operations-admin'],
+      allowedRoles: ['platform-super-admin', 'compliance-officer', 'organization-admin'],
       draft: { enabled: true, storage: 'both', retentionDays: 30, warnOnDiscard: true },
       autosave: { enabled: true, debounceMs: 5000 },
       auditAction: 'federation.policy.updated',
@@ -1434,7 +1435,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/facilities-maintenance/incidents', method: 'POST' },
     {
       requiredPermission: 'track:readings',
-      allowedRoles: ['admin', 'track-superintendent'],
+      allowedRoles: ['platform-super-admin', 'facilities-manager'],
       autosave: { enabled: true, debounceMs: 3000 },
       auditAction: 'facilities.incident.reported',
     },
@@ -1478,7 +1479,7 @@ export const dataEntryEntityForms: Record<DataEntryEntityKind, DataEntryFormDefi
     { createPath: '/facilities-maintenance/maintenance-schedules', method: 'POST' },
     {
       requiredPermission: 'track:readings',
-      allowedRoles: ['admin', 'track-superintendent', 'operations-admin'],
+      allowedRoles: ['platform-super-admin', 'facilities-manager', 'organization-admin'],
       autosave: { enabled: true, debounceMs: 4000 },
       auditAction: 'facilities.maintenance-schedule.requested',
       description: 'Approval-gated maintenance schedule — operational impact requires authorization.',

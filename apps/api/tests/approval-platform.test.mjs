@@ -83,7 +83,7 @@ test('escalation worker escalates, expires, and sends approval reminders', () =>
 
   assert.ok(escalationResult.escalated.includes('approval-escalate-worker'));
   assert.equal(service.getRequest('approval-escalate-worker').status, 'escalated');
-  assert.ok(service.getRequest('approval-escalate-worker').escalatedToRoles.includes('admin'));
+  assert.ok(service.getRequest('approval-escalate-worker').escalatedToRoles.includes('platform-super-admin'));
 
   const expiryResult = runApprovalEscalationCycle({
     approvalService: service,
@@ -117,7 +117,7 @@ test('escalation worker escalates, expires, and sends approval reminders', () =>
 
   assert.ok(reminderResult.remindersSent.includes('approval-reminder-worker'));
   assert.ok(notificationFramework.count() > beforeCount);
-  const inbox = notificationFramework.inbox('admin');
+  const inbox = notificationFramework.inbox('platform-super-admin');
   assert.ok(inbox.notifications.some((item) => item.title.includes('Approval reminder')));
 });
 
@@ -159,7 +159,7 @@ test('approval decisions appear in GET /audit/search', async () => {
   const { createApiFacadeState, handleApiRequest } = await import('../dist/server.js');
   const state = createApiFacadeState();
   const headers = {
-    'x-trackmind-role': 'security',
+    'x-trackmind-role': 'security-manager',
     'x-trackmind-tenant-id': 'trackmind',
     'x-trackmind-racetrack-id': 'main-track',
   };
@@ -169,9 +169,9 @@ test('approval decisions appear in GET /audit/search', async () => {
     racetrackId: 'main-track',
     action: 'emergency-action',
     target: 'gate-audit-search',
-    actorId: 'incident-commander',
+    actorId: 'race-day-operations-manager',
     actorType: 'human',
-    roles: ['security'],
+    roles: ['security-manager'],
     reason: 'Gate fault requires controlled approval for audit search test',
     evidence: ['alarm-feed'],
   }, state, headers);
@@ -185,7 +185,7 @@ test('approval decisions appear in GET /audit/search', async () => {
     {
       actorId: 'security-lead',
       actorType: 'human',
-      roles: ['security'],
+      roles: ['security-manager'],
       reason: 'Gate fault verified',
       evidence: ['human-approval-record'],
     },

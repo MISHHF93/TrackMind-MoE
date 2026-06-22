@@ -12,6 +12,19 @@ const externalOrDeferredResponseSchemas = new Set([
   'RacingDataLineageRecord',
   'WorkforceOperationsDto',
   'TrackMindNexusUpgradePackage',
+  'ComplianceEvidenceIntakeResultDto',
+  'OperationalNoteIntakeResultDto',
+  'OperationalNoteRevisionResultDto',
+  'OperationalNotesJournalDto',
+  'FacilitiesInspectionIntakeResultDto',
+  'SecurityEventIntakeResultDto',
+  'DataEntryDraftListDto',
+  'BulkDataEntryOperationsDto',
+  'BulkDataEntryPreviewDto',
+  'BulkDataEntryCommitResultDto',
+  'DataQualityValidationResultDto',
+  'EntityPickerKindsDto',
+  'EntityPickerSearchResultDto',
   'ServerSentEventStream',
 ]);
 
@@ -68,7 +81,7 @@ test('RBAC registry centralizes route, workflow, approval, and audit export perm
 });
 
 test('shared API standard defines request metadata, pagination, and error envelope schemas', () => {
-  const meta = { requestId: 'req-1', path: '/api/v1/kpis', method: 'GET', timestamp: '2026-06-15T06:00:00.000Z', tenantId: 'trackmind', racetrackId: 'main-track', organizationId: 'org-trackmind-network', role: 'admin', pagination: { limit: 50, offset: 0, total: 100, hasMore: true } };
+  const meta = { requestId: 'req-1', path: '/api/v1/kpis', method: 'GET', timestamp: '2026-06-15T06:00:00.000Z', tenantId: 'trackmind', racetrackId: 'main-track', organizationId: 'org-trackmind-network', role: 'platform-super-admin', pagination: { limit: 50, offset: 0, total: 100, hasMore: true } };
   const error = { code: 'bad_request', message: 'Invalid input', details: ['field is required'], path: meta.path, requestId: meta.requestId, timestamp: meta.timestamp };
   assert.deepEqual(validateContract('ApiResponseMetadata', meta, apiContractSchemas.ApiResponseMetadata), { valid: true, errors: [] });
   assert.deepEqual(validateContract('ApiPaginationMetadata', meta.pagination, apiContractSchemas.ApiPaginationMetadata), { valid: true, errors: [] });

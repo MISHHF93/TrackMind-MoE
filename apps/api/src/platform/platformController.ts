@@ -466,7 +466,7 @@ export function handlePlatformRequest(
           metricType: String(input.metricType ?? 'score') as KPIArtifact['metricType'],
           unit: String(input.unit ?? 'score'),
           target: Number(input.target ?? 90),
-          ownerRole: String(input.ownerRole ?? actorRole ?? 'admin') as Role,
+          ownerRole: String(input.ownerRole ?? actorRole ?? 'platform-super-admin') as Role,
           visibility: String(input.visibility ?? 'tenant-internal') as KPIArtifact['visibility'],
           approvalSensitivity: String(input.approvalSensitivity ?? 'approval-visible') as KPIArtifact['approvalSensitivity'],
           calculationMethod: String(input.calculationMethod ?? 'Draft KPI calculation from event projections.'),
@@ -475,7 +475,7 @@ export function handlePlatformRequest(
           sourceEntities: Array.isArray(input.sourceEntities)
             ? input.sourceEntities.filter(isRecord).map((entity) => ({ entityType: String(entity.entityType), entityId: String(entity.entityId) }))
             : [{ entityType: 'platform-health', entityId: 'trackmind-api' }],
-          requestedBy: String(input.requestedBy ?? 'admin'),
+          requestedBy: String(input.requestedBy ?? 'platform-super-admin'),
           reason: String(input.reason ?? 'KPI definition draft request'),
           evidence: Array.isArray(input.evidence) ? input.evidence.map(String) : ['kpi-definition-draft'],
         }, { tenantId, organizationId, racetrackId }),
@@ -496,7 +496,7 @@ export function handlePlatformRequest(
         critical: input.critical != null ? Number(input.critical) : undefined,
         targetDirection: String(input.targetDirection ?? 'above') as KPIArtifact['threshold']['targetDirection'],
         description: String(input.description ?? 'Threshold change draft'),
-        requestedBy: String(input.requestedBy ?? 'admin'),
+        requestedBy: String(input.requestedBy ?? 'platform-super-admin'),
         reason: String(input.reason ?? 'KPI threshold change request'),
         evidence: Array.isArray(input.evidence) ? input.evidence.map(String) : ['kpi-threshold-draft'],
       }, { tenantId, organizationId, racetrackId }, state.approvalService);
@@ -602,8 +602,8 @@ export function handlePlatformRequest(
     try {
       const updated = platform.incidents.triage(decodeURIComponent(incidentTriageMatch[1]), {
         severity: (input.severity as IncidentDto['severity']) ?? 'medium',
-        assignedTo: String(input.assignedTo ?? 'incident-commander'),
-        actor: String(input.actor ?? actorRole ?? 'security'),
+        assignedTo: String(input.assignedTo ?? 'race-day-operations-manager'),
+        actor: String(input.actor ?? actorRole ?? 'security-manager'),
         note: input.note ? String(input.note) : undefined,
       });
       recalculateAndPersistKpis(state, platform);

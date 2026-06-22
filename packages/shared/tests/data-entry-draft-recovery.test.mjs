@@ -55,7 +55,7 @@ test('pickRecoverableDraft prefers newest non-expired draft', () => {
     entityKind: 'unified-incident',
     mode: 'create',
     values: {},
-    scope: { tenantId: 'trackmind', racetrackId: 'main-track', actorId: 'op', role: 'admin' },
+    scope: { tenantId: 'trackmind', racetrackId: 'main-track', actorId: 'op', role: 'platform-super-admin' },
     status: 'autosaved',
     createdAt: '2026-06-20T10:00:00.000Z',
     updatedAt: '2026-06-20T10:00:00.000Z',

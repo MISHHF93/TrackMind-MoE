@@ -9,9 +9,9 @@ test('racing calendar workspace exposes seasons meets race days schedules confli
   const approvalService = new CentralizedApprovalService();
   const auditLog = new ImmutableAuditLog();
   const racePlatform = new RaceOperationsPlatform({ approvalService, auditLog, tenantId: 'tenant-1' });
-  racePlatform.createMeet({ id: 'meet-cal', trackId: 'trk-1', name: 'Calendar Meet', startsOn: '2026-06-01', endsOn: '2026-06-30', status: 'open', officialConfig: config }, { id: 'secretary', roles: ['racing-secretary'], human: true });
-  racePlatform.createRaceDay({ id: 'day-cal', meetId: 'meet-cal', trackId: 'trk-1', raceDate: '2026-06-14', status: 'entries-open' }, { id: 'secretary', roles: ['racing-secretary'], human: true });
-  racePlatform.createRaceCard('day-cal', { id: 'race-cal-1', trackId: 'trk-1', raceDate: '2026-06-14', raceNumber: 1, scheduledPostTime: '2026-06-14T18:00:00Z', conditions: { surface: 'dirt', distanceFurlongs: 6, classLevel: 'Allowance', purse: 50000, eligibility: ['3up'] } }, { id: 'secretary', roles: ['racing-secretary'], human: true });
+  racePlatform.createMeet({ id: 'meet-cal', trackId: 'trk-1', name: 'Calendar Meet', startsOn: '2026-06-01', endsOn: '2026-06-30', status: 'open', officialConfig: config }, { id: 'secretary', roles: ['horse-operations-coordinator'], human: true });
+  racePlatform.createRaceDay({ id: 'day-cal', meetId: 'meet-cal', trackId: 'trk-1', raceDate: '2026-06-14', status: 'entries-open' }, { id: 'secretary', roles: ['horse-operations-coordinator'], human: true });
+  racePlatform.createRaceCard('day-cal', { id: 'race-cal-1', trackId: 'trk-1', raceDate: '2026-06-14', raceNumber: 1, scheduledPostTime: '2026-06-14T18:00:00Z', conditions: { surface: 'dirt', distanceFurlongs: 6, classLevel: 'Allowance', purse: 50000, eligibility: ['3up'] } }, { id: 'secretary', roles: ['horse-operations-coordinator'], human: true });
 
   const calendar = new RacingCalendarPlatform({ racePlatform, approvalService, auditLog, tenantId: 'tenant-1', racetrackId: 'trk-1' });
   const workspace = calendar.workspace('2026-06-14T12:00:00.000Z');
@@ -29,7 +29,7 @@ test('racing calendar workspace exposes seasons meets race days schedules confli
 test('racing calendar draft requests create approval-gated seasons meets days and schedules', () => {
   const approvalService = new CentralizedApprovalService();
   const racePlatform = new RaceOperationsPlatform({ approvalService, tenantId: 'tenant-1' });
-  racePlatform.createMeet({ id: 'meet-base', trackId: 'trk-1', name: 'Base Meet', startsOn: '2026-07-01', endsOn: '2026-07-31', officialConfig: config }, { id: 'secretary', roles: ['racing-secretary'], human: true });
+  racePlatform.createMeet({ id: 'meet-base', trackId: 'trk-1', name: 'Base Meet', startsOn: '2026-07-01', endsOn: '2026-07-31', officialConfig: config }, { id: 'secretary', roles: ['horse-operations-coordinator'], human: true });
   const calendar = new RacingCalendarPlatform({ racePlatform, approvalService, tenantId: 'tenant-1', racetrackId: 'trk-1' });
   calendar.workspace('2026-06-14T12:00:00.000Z');
   const season = calendar.requestSeasonDraft({ label: 'Fall 2026', year: 2026, startsOn: '2026-09-01', endsOn: '2026-11-30' });
@@ -47,8 +47,8 @@ test('racing calendar draft requests create approval-gated seasons meets days an
 test('racing calendar detects post-time and race-number collisions', () => {
   const repository = new RaceOperationsRepository();
   const racePlatform = new RaceOperationsPlatform({ repository, tenantId: 'tenant-1' });
-  racePlatform.createMeet({ id: 'meet-conflict', trackId: 'trk-1', name: 'Conflict Meet', startsOn: '2026-06-01', endsOn: '2026-06-30', officialConfig: config }, { id: 'secretary', roles: ['racing-secretary'], human: true });
-  racePlatform.createRaceDay({ id: 'day-conflict', meetId: 'meet-conflict', trackId: 'trk-1', raceDate: '2026-06-15' }, { id: 'secretary', roles: ['racing-secretary'], human: true });
+  racePlatform.createMeet({ id: 'meet-conflict', trackId: 'trk-1', name: 'Conflict Meet', startsOn: '2026-06-01', endsOn: '2026-06-30', officialConfig: config }, { id: 'secretary', roles: ['horse-operations-coordinator'], human: true });
+  racePlatform.createRaceDay({ id: 'day-conflict', meetId: 'meet-conflict', trackId: 'trk-1', raceDate: '2026-06-15' }, { id: 'secretary', roles: ['horse-operations-coordinator'], human: true });
   const base = { trackId: 'trk-1', raceDate: '2026-06-15', conditions: { surface: 'dirt', distanceFurlongs: 6, classLevel: 'Maiden', purse: 30000, eligibility: ['3yo'] }, entries: [], approvals: {}, regulatoryControls: ['HISA'], twinLinks: [], telemetryStreams: [], staffingAssignments: [], resources: [], updatedAt: '2026-06-15T12:00:00.000Z' };
   repository.saveRace({ ...base, id: 'race-a', raceNumber: 4, scheduledPostTime: '2026-06-15T19:00:00Z', status: 'scheduled' });
   repository.saveRace({ ...base, id: 'race-b', raceNumber: 4, scheduledPostTime: '2026-06-15T19:30:00Z', status: 'scheduled' });

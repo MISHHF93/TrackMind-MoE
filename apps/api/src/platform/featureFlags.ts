@@ -2,7 +2,7 @@ import type { FeatureFlagDefinitionDto, FeatureFlagEvaluationDto } from '@trackm
 
 export function seedFeatureFlags(): FeatureFlagDefinitionDto[] {
   return [
-    { key: 'platform-health', description: 'Platform health workspace', defaultEnabled: true, environments: { development: true, staging: true, production: true }, moduleKeys: ['admin'], mock: false },
+    { key: 'platform-health', description: 'Platform health workspace', defaultEnabled: true, environments: { development: true, staging: true, production: true }, moduleKeys: ['platform-super-admin'], mock: false },
     { key: 'race-day-ops', description: 'Race day operations module', defaultEnabled: true, environments: { development: true, staging: true, production: true }, moduleKeys: ['raceDay', 'surface', 'workforce'], mock: false },
     { key: 'equine-intelligence', description: 'Equine intelligence module', defaultEnabled: true, environments: { development: true, staging: true, production: true }, moduleKeys: ['equine'], mock: false },
     { key: 'fan-experience', description: 'Fan experience module', defaultEnabled: true, environments: { development: true, staging: false, production: false }, moduleKeys: ['fanExperience'], mock: false },

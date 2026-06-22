@@ -16,11 +16,11 @@ export interface GovernanceRuleEvaluation {
 }
 
 export const safetyCriticalGovernanceRules: SafetyCriticalGovernanceRule[] = [
-  { commandType: 'race_start', protectedAction: 'race-start', requiredApprovalRoles: ['racing-secretary', 'steward', 'veterinarian'], requiredEvidence: ['approval_id', 'approver_id', 'approval_timestamp'], regulations: ['HISA', 'ARCI', 'TRUSTWORTHY_C1'] },
-  { commandType: 'race_stop', protectedAction: 'race-stop', requiredApprovalRoles: ['steward', 'security'], requiredEvidence: ['approval_id', 'approver_id', 'approval_timestamp'], regulations: ['HISA', 'ARCI', 'TRUSTWORTHY_C1'] },
+  { commandType: 'race_start', protectedAction: 'race-start', requiredApprovalRoles: ['horse-operations-coordinator', 'steward', 'veterinarian'], requiredEvidence: ['approval_id', 'approver_id', 'approval_timestamp'], regulations: ['HISA', 'ARCI', 'TRUSTWORTHY_C1'] },
+  { commandType: 'race_stop', protectedAction: 'race-stop', requiredApprovalRoles: ['steward', 'security-manager'], requiredEvidence: ['approval_id', 'approver_id', 'approval_timestamp'], regulations: ['HISA', 'ARCI', 'TRUSTWORTHY_C1'] },
   { commandType: 'scratch_decision', protectedAction: 'scratch-horse', requiredApprovalRoles: ['veterinarian', 'steward'], requiredEvidence: ['approval_id', 'approver_id', 'approval_timestamp'], regulations: ['HISA', 'TRUSTWORTHY_C1'] },
   { commandType: 'medication_admin', protectedAction: 'medication-decision', requiredApprovalRoles: ['veterinarian', 'steward'], requiredEvidence: ['approval_id', 'approver_id', 'approval_timestamp'], regulations: ['HISA', 'TRUSTWORTHY_C1'] },
-  { commandType: 'emergency_action', protectedAction: 'emergency-action', requiredApprovalRoles: ['security'], requiredEvidence: ['approval_id', 'approver_id', 'approval_timestamp'], regulations: ['HISA', 'ARCI', 'TRUSTWORTHY_C1'] },
+  { commandType: 'emergency_action', protectedAction: 'emergency-action', requiredApprovalRoles: ['security-manager'], requiredEvidence: ['approval_id', 'approver_id', 'approval_timestamp'], regulations: ['HISA', 'ARCI', 'TRUSTWORTHY_C1'] },
 ];
 
 export function evaluateSafetyCriticalGovernance(command: CqrsCommand): GovernanceRuleEvaluation {

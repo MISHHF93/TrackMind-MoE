@@ -4,7 +4,7 @@ import { CentralizedApprovalService, EquineIntelligencePlatform, ImmutableAuditL
 
 test('equine intelligence platform manages lifecycle, eligibility, audit, privacy, and twin sync', () => {
   const platform = new EquineIntelligencePlatform();
-  const registrar = { id: 'secretary-1', roles: ['racing-secretary'], tenantId: 'trk-1' };
+  const registrar = { id: 'secretary-1', roles: ['horse-operations-coordinator'], tenantId: 'trk-1' };
   const vet = { id: 'vet-1', roles: ['veterinarian'], tenantId: 'trk-1' };
   const auditor = { id: 'auditor-1', roles: ['auditor'], tenantId: 'trk-1' };
 
@@ -36,7 +36,7 @@ test('equine intelligence platform manages lifecycle, eligibility, audit, privac
 
 test('equine lifecycle domain enforces advisory-only health AI until veterinarian review', () => {
   const platform = new EquineIntelligencePlatform();
-  const registrar = { id: 'secretary-2', roles: ['racing-secretary'], tenantId: 'trk-1' };
+  const registrar = { id: 'secretary-2', roles: ['horse-operations-coordinator'], tenantId: 'trk-1' };
   const aiAgent = { id: 'ai-health-1', roles: ['ai-agent'], tenantId: 'trk-1', human: false };
   const vet = { id: 'vet-2', roles: ['veterinarian'], tenantId: 'trk-1', human: true };
 
@@ -69,7 +69,7 @@ test('equine lifecycle domain enforces advisory-only health AI until veterinaria
 
 test('equine lifecycle domain exposes event streams, relationship maps, retirement, and AI hooks', () => {
   const platform = new EquineIntelligencePlatform();
-  const registrar = { id: 'secretary-3', roles: ['racing-secretary'], tenantId: 'trk-1' };
+  const registrar = { id: 'secretary-3', roles: ['horse-operations-coordinator'], tenantId: 'trk-1' };
   platform.registerAIRecommendationHook((profile) => [{
     id: 'hook-rec-1', horseId: profile.identity.horseId, tenantId: profile.identity.tenantId, createdAt: '2026-06-13T00:00:00Z', requestedBy: 'hook',
     domain: 'training', modelId: 'workload-v1', summary: 'Maintain current workload.', confidence: 0.9, advisoryOnly: true, status: 'advisory', veterinarianReviewRequired: false, evidence: ['workout-history'],
@@ -94,7 +94,7 @@ test('equine lifecycle domain exposes event streams, relationship maps, retireme
 
 test('equine vertical slice exposes explicit APIs for ownership, trainer, barn, welfare, eligibility, and read-only twins', () => {
   const platform = new EquineIntelligencePlatform();
-  const registrar = { id: 'secretary-4', roles: ['racing-secretary'], tenantId: 'trk-1' };
+  const registrar = { id: 'secretary-4', roles: ['horse-operations-coordinator'], tenantId: 'trk-1' };
   const vet = { id: 'vet-4', roles: ['veterinarian'], tenantId: 'trk-1', human: true };
   platform.createProfile({ horseId: 'horse-slice-1', tenantId: 'trk-1', name: 'Slice Runner', lifecycleStatus: 'active' }, registrar);
   assert.throws(() => platform.updateOwnership('horse-slice-1', [{ ownerId: 'bad', ownerName: 'Bad', effectiveFrom: '2026-01-01', percentage: 90, evidence: ['x'] }], registrar), /total 100/);
@@ -119,7 +119,7 @@ test('equine vertical slice exposes explicit APIs for ownership, trainer, barn, 
 
 test('non-veterinarians cannot update veterinary status or impersonate AI risk review', () => {
   const platform = new EquineIntelligencePlatform();
-  const registrar = { id: 'secretary-5', roles: ['racing-secretary'], tenantId: 'trk-1' };
+  const registrar = { id: 'secretary-5', roles: ['horse-operations-coordinator'], tenantId: 'trk-1' };
   const aiVet = { id: 'ai-vet', roles: ['veterinarian'], tenantId: 'trk-1', human: false };
   platform.createProfile({ horseId: 'horse-vet-guard', tenantId: 'trk-1', name: 'Vet Guard', lifecycleStatus: 'active' }, registrar);
   assert.throws(() => platform.updateVeterinaryStatus('horse-vet-guard', { status: 'cleared', summary: 'Nope', updatedAt: '2026-06-12T15:00:00Z', requiresVeterinarian: true }, registrar), /required role/);
@@ -132,7 +132,7 @@ test('equine intelligence wires barn, race office, approval, audit, event, twin,
   const eventBus = new UniversalEventBus();
   const approvalService = new CentralizedApprovalService({ auditLog, eventBus });
   const platform = new EquineIntelligencePlatform({ auditLog, eventBus, approvalService });
-  const registrar = { id: 'secretary-6', roles: ['racing-secretary'], tenantId: 'trk-1', human: true };
+  const registrar = { id: 'secretary-6', roles: ['horse-operations-coordinator'], tenantId: 'trk-1', human: true };
   const transport = { id: 'transport-1', roles: ['transport-coordinator'], tenantId: 'trk-1', human: true };
   const aiAgent = { id: 'ai-health-6', roles: ['ai-agent'], tenantId: 'trk-1', human: false };
 

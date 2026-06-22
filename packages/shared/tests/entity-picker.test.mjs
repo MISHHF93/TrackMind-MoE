@@ -29,7 +29,7 @@ test('entityId resolves picker kind from audit subject entityKind', () => {
 });
 
 test('entity picker permissions filter kinds by role', () => {
-  const adminKinds = listAccessibleEntityPickerKinds('admin').map((entry) => entry.kind);
+  const adminKinds = listAccessibleEntityPickerKinds('platform-super-admin').map((entry) => entry.kind);
   assert.ok(adminKinds.includes('horse'));
   assert.ok(adminKinds.includes('kpi-definition'));
 

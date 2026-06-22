@@ -18,9 +18,9 @@ test('race office vertical slice persists meet day card and emits audit/events f
   eventBus.subscribe('*', (event) => seen.push(event), { name:'race-office-spy' });
   const repository = new RaceOperationsRepository();
   const platform = new RaceOperationsPlatform({ auditLog, eventBus, repository, tenantId:'tenant-1' });
-  platform.createMeet({ id:'meet-1', trackId:'trk-1', name:'Spring Meet', startsOn:'2026-06-01', endsOn:'2026-06-30', officialConfig:config }, { id:'secretary', roles:['racing-secretary'] });
-  platform.createRaceDay({ id:'day-1', meetId:'meet-1', trackId:'trk-1', raceDate:'2026-06-14' }, { id:'secretary', roles:['racing-secretary'] });
-  const card = platform.createRaceCard('day-1', { id:'race-1', trackId:'ignored', raceDate:'ignored', raceNumber:1, scheduledPostTime:'2026-06-14T18:00:00Z', conditions:condition }, { id:'secretary', roles:['racing-secretary'] });
+  platform.createMeet({ id:'meet-1', trackId:'trk-1', name:'Spring Meet', startsOn:'2026-06-01', endsOn:'2026-06-30', officialConfig:config }, { id:'secretary', roles:['horse-operations-coordinator'] });
+  platform.createRaceDay({ id:'day-1', meetId:'meet-1', trackId:'trk-1', raceDate:'2026-06-14' }, { id:'secretary', roles:['horse-operations-coordinator'] });
+  const card = platform.createRaceCard('day-1', { id:'race-1', trackId:'ignored', raceDate:'ignored', raceNumber:1, scheduledPostTime:'2026-06-14T18:00:00Z', conditions:condition }, { id:'secretary', roles:['horse-operations-coordinator'] });
   platform.addEntry(card.id, { id:'entry-1', horseId:'horse-1', trainerId:'trainer-1', ownerId:'owner-1' });
   platform.declareEntry(card.id, 'entry-1', 'jockey-1', 124);
   platform.drawPostPositions(card.id);
@@ -35,12 +35,12 @@ test('race office validates roles and approval-required scratch/config/status ac
   const approvalService = new CentralizedApprovalService();
   const platform = new RaceOperationsPlatform({ approvalService, tenantId:'tenant-1' });
   assert.throws(() => platform.createMeet({ id:'bad', trackId:'trk-1', name:'Bad', startsOn:'2026-06-01', endsOn:'2026-06-30', officialConfig:config }, { id:'auditor', roles:['read-only-auditor'] }), /lacks/);
-  platform.createMeet({ id:'meet-2', trackId:'trk-1', name:'Summer Meet', startsOn:'2026-06-01', endsOn:'2026-06-30', officialConfig:config }, { id:'secretary', roles:['racing-secretary'] });
-  platform.createRaceDay({ id:'day-2', meetId:'meet-2', trackId:'trk-1', raceDate:'2026-06-14' }, { id:'secretary', roles:['racing-secretary'] });
-  platform.createRaceCard('day-2', { id:'race-2', trackId:'trk-1', raceDate:'2026-06-14', raceNumber:2, scheduledPostTime:'2026-06-14T19:00:00Z', conditions:condition }, { id:'secretary', roles:['racing-secretary'] });
+  platform.createMeet({ id:'meet-2', trackId:'trk-1', name:'Summer Meet', startsOn:'2026-06-01', endsOn:'2026-06-30', officialConfig:config }, { id:'secretary', roles:['horse-operations-coordinator'] });
+  platform.createRaceDay({ id:'day-2', meetId:'meet-2', trackId:'trk-1', raceDate:'2026-06-14' }, { id:'secretary', roles:['horse-operations-coordinator'] });
+  platform.createRaceCard('day-2', { id:'race-2', trackId:'trk-1', raceDate:'2026-06-14', raceNumber:2, scheduledPostTime:'2026-06-14T19:00:00Z', conditions:condition }, { id:'secretary', roles:['horse-operations-coordinator'] });
   platform.addEntry('race-2', { id:'entry-2', horseId:'horse-2', trainerId:'trainer-2', ownerId:'owner-2' });
   assert.throws(() => platform.scratchEntryWithApproval('race-2', 'entry-2', 'vet', undefined), /requires approval token/);
-  const req = platform.requestSafetyCriticalAction('race-office-scratch', 'race-2', 'Vet scratch', { id:'secretary', roles:['racing-secretary'] });
+  const req = platform.requestSafetyCriticalAction('race-office-scratch', 'race-2', 'Vet scratch', { id:'secretary', roles:['horse-operations-coordinator'] });
   approvalService.decide(req.id, { id:'vet-1', roles:['veterinarian'], human:true }, 'approved', 'exam complete', ['human-approval-record']);
   approvalService.decide(req.id, { id:'steward-1', roles:['steward'], human:true }, 'approved', 'panel approved', ['human-approval-record']);
   const token = approvalService.authorizeExecution({ requestId:req.id, action:'race-office-scratch', target:'race-2', tenantId:'tenant-1', racetrackId:'trk-1', actor:{ id:'steward-1', roles:['steward'], human:true } });
@@ -67,10 +67,10 @@ test('race office enforces scheduling rules, approved condition changes, readine
   const platform = new RaceOperationsPlatform({ approvalService, auditLog, eventBus, twinRuntime, tenantId:'tenant-1' });
   const tightConfig = { ...config, maxFieldSize:2 };
 
-  platform.createMeet({ id:'meet-3', trackId:'trk-1', name:'Fall Meet', startsOn:'2026-06-01', endsOn:'2026-06-30', officialConfig:tightConfig }, { id:'secretary', roles:['racing-secretary'] });
-  platform.createRaceDay({ id:'day-3', meetId:'meet-3', trackId:'trk-1', raceDate:'2026-06-14' }, { id:'secretary', roles:['racing-secretary'] });
-  platform.createRaceCard('day-3', { id:'race-ops-3', trackId:'ignored', raceDate:'ignored', raceNumber:3, scheduledPostTime:'2026-06-14T18:00:00Z', conditions:condition, twinLinks:['twin:RACE_OPS_3'] }, { id:'secretary', roles:['racing-secretary'] });
-  assert.throws(() => platform.createRaceCard('day-3', { id:'race-conflict', trackId:'ignored', raceDate:'ignored', raceNumber:3, scheduledPostTime:'2026-06-14T18:05:00Z', conditions:condition }, { id:'secretary', roles:['racing-secretary'] }), /schedule conflict/);
+  platform.createMeet({ id:'meet-3', trackId:'trk-1', name:'Fall Meet', startsOn:'2026-06-01', endsOn:'2026-06-30', officialConfig:tightConfig }, { id:'secretary', roles:['horse-operations-coordinator'] });
+  platform.createRaceDay({ id:'day-3', meetId:'meet-3', trackId:'trk-1', raceDate:'2026-06-14' }, { id:'secretary', roles:['horse-operations-coordinator'] });
+  platform.createRaceCard('day-3', { id:'race-ops-3', trackId:'ignored', raceDate:'ignored', raceNumber:3, scheduledPostTime:'2026-06-14T18:00:00Z', conditions:condition, twinLinks:['twin:RACE_OPS_3'] }, { id:'secretary', roles:['horse-operations-coordinator'] });
+  assert.throws(() => platform.createRaceCard('day-3', { id:'race-conflict', trackId:'ignored', raceDate:'ignored', raceNumber:3, scheduledPostTime:'2026-06-14T18:05:00Z', conditions:condition }, { id:'secretary', roles:['horse-operations-coordinator'] }), /schedule conflict/);
 
   platform.addEntry('race-ops-3', { id:'entry-a', horseId:'horse-a', trainerId:'trainer-a', ownerId:'owner-a' });
   platform.addEntry('race-ops-3', { id:'entry-b', horseId:'horse-b', trainerId:'trainer-b', ownerId:'owner-b' });
@@ -87,10 +87,10 @@ test('race office enforces scheduling rules, approved condition changes, readine
   for (const step of ['racingOffice','stewards','veterinarian']) platform.approveWorkflow('race-ops-3', step, 'approved');
   assert.equal(platform.assessReadiness('race-ops-3', [{ streamId:'weather', type:'weather', observedAt:'2026-06-14T17:45:00Z', healthy:true, value:'clear' }]).ready, true);
 
-  const distanceReq = platform.requestSafetyCriticalAction('race-distance-configuration', 'race-ops-3', 'Approved distance correction', { id:'secretary', roles:['racing-secretary'] });
+  const distanceReq = platform.requestSafetyCriticalAction('race-distance-configuration', 'race-ops-3', 'Approved distance correction', { id:'secretary', roles:['horse-operations-coordinator'] });
   const distanceToken = approveRequest(approvalService, distanceReq, 'race-distance-configuration', 'race-ops-3', [['secretary', ['racing-secretary']], ['surface-ops', ['track-superintendent']], ['steward-1', ['steward']]]);
   assert.equal(platform.updateConditionsWithApproval('race-ops-3', { distanceFurlongs:8.5 }, distanceToken).conditions.distanceFurlongs, 8.5);
-  const scheduleReq = platform.requestSafetyCriticalAction('race-office-configuration', 'race-ops-3', 'Move post time after approved operational hold', { id:'secretary', roles:['racing-secretary'] });
+  const scheduleReq = platform.requestSafetyCriticalAction('race-office-configuration', 'race-ops-3', 'Move post time after approved operational hold', { id:'secretary', roles:['horse-operations-coordinator'] });
   const scheduleToken = approveRequest(approvalService, scheduleReq, 'race-office-configuration', 'race-ops-3', [['secretary', ['racing-secretary']], ['surface-ops', ['track-superintendent']], ['steward-1', ['steward']]]);
   assert.equal(platform.rescheduleRaceWithApproval('race-ops-3', '2026-06-14T18:10:00Z', scheduleToken).scheduledPostTime, '2026-06-14T18:10:00Z');
 

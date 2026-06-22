@@ -12,7 +12,7 @@ const scope = {
   tenantId: 'trackmind',
   racetrackId: 'main-track',
   actorId: 'admin-operator',
-  role: 'admin',
+  role: 'platform-super-admin',
   requestId: 'req-bulk-1',
 };
 
@@ -60,7 +60,7 @@ test('previewBulkOperation validates rows and supports partial commit selection'
 });
 
 test('admin role can access horse import bulk operation', () => {
-  assert.equal(canAccessBulkOperation('horse-import', 'admin'), true);
+  assert.equal(canAccessBulkOperation('horse-import', 'platform-super-admin'), true);
   assert.equal(canAccessBulkOperation('horse-import', 'read-only-auditor'), false);
 });
 

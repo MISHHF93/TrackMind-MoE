@@ -1,4 +1,5 @@
 import type { Permission, Role } from './accessControl.js';
+import { normalizeRole } from './accessControl.js';
 import type { DataEntryEntityKind, DataEntryFormMode } from './dataEntryFramework.js';
 import {
   assertDataEntryTenantScope,
@@ -105,7 +106,7 @@ const bulkOperations: Record<BulkOperationId, BulkOperationDefinition> = {
     mode: 'create',
     maxRows: 200,
     requiredPermission: 'identity:write',
-    allowedRoles: ['admin', 'racing-secretary', 'compliance-officer'],
+    allowedRoles: ['platform-super-admin', 'horse-operations-coordinator', 'compliance-officer'],
     auditAction: 'bulk.horse-import.committed',
     columns: [
       { key: 'name', label: 'Registered name', required: true, example: 'Star Runner' },
@@ -127,7 +128,7 @@ const bulkOperations: Record<BulkOperationId, BulkOperationDefinition> = {
     mode: 'create',
     maxRows: 30,
     requiredPermission: 'race:request-start',
-    allowedRoles: ['admin', 'racing-secretary'],
+    allowedRoles: ['platform-super-admin', 'horse-operations-coordinator'],
     auditAction: 'bulk.race-entries.committed',
     columns: [
       { key: 'raceCardId', label: 'Race card ID', required: true, example: 'rc-race-7' },
@@ -147,7 +148,7 @@ const bulkOperations: Record<BulkOperationId, BulkOperationDefinition> = {
     mode: 'create',
     maxRows: 100,
     requiredPermission: 'identity:write',
-    allowedRoles: ['admin', 'racing-secretary'],
+    allowedRoles: ['platform-super-admin', 'horse-operations-coordinator'],
     auditAction: 'bulk.trainer-assignments.committed',
     columns: [
       { key: 'horseId', label: 'Horse ID', required: true, example: 'horse-1' },
@@ -168,7 +169,7 @@ const bulkOperations: Record<BulkOperationId, BulkOperationDefinition> = {
     mode: 'create',
     maxRows: 30,
     requiredPermission: 'race:request-start',
-    allowedRoles: ['admin', 'racing-secretary'],
+    allowedRoles: ['platform-super-admin', 'horse-operations-coordinator'],
     auditAction: 'bulk.jockey-assignments.committed',
     columns: [
       { key: 'raceCardId', label: 'Race card ID', required: true, example: 'rc-race-7' },
@@ -186,7 +187,7 @@ const bulkOperations: Record<BulkOperationId, BulkOperationDefinition> = {
     mode: 'create',
     maxRows: 100,
     requiredPermission: 'track:readings',
-    allowedRoles: ['admin', 'racing-secretary', 'track-superintendent', 'steward'],
+    allowedRoles: ['platform-super-admin', 'horse-operations-coordinator', 'facilities-manager', 'steward'],
     auditAction: 'bulk.status-updates.committed',
     columns: [
       { key: 'statusTarget', label: 'Target (paddock|eligibility)', required: true, example: 'paddock' },
@@ -208,7 +209,7 @@ const bulkOperations: Record<BulkOperationId, BulkOperationDefinition> = {
     mode: 'create',
     maxRows: 50,
     requiredPermission: 'track:readings',
-    allowedRoles: ['admin', 'track-superintendent', 'operations-admin'],
+    allowedRoles: ['platform-super-admin', 'facilities-manager', 'organization-admin'],
     auditAction: 'bulk.inspection-scheduling.committed',
     columns: [
       { key: 'assetId', label: 'Asset ID', required: true, example: 'GRANDSTAND_HVAC_01' },
@@ -236,11 +237,11 @@ const bulkOperations: Record<BulkOperationId, BulkOperationDefinition> = {
     mode: 'create',
     maxRows: 100,
     requiredPermission: 'read:any',
-    allowedRoles: ['admin', 'operations-admin'],
+    allowedRoles: ['platform-super-admin', 'organization-admin'],
     auditAction: 'bulk.notification-targets.committed',
     columns: [
       { key: 'targetKind', label: 'Target kind (role|zone|user)', required: true, example: 'role' },
-      { key: 'targetId', label: 'Target ID', required: true, example: 'racing-secretary' },
+      { key: 'targetId', label: 'Target ID', required: true, example: 'horse-operations-coordinator' },
       { key: 'channel', label: 'Channel (in-app|email|sms)', required: true, example: 'in-app' },
       { key: 'enabled', label: 'Enabled (true|false)', example: 'true' },
       { key: 'reason', label: 'Audit reason', required: true, example: 'Bulk notification target update' },
@@ -255,7 +256,7 @@ const bulkOperations: Record<BulkOperationId, BulkOperationDefinition> = {
     mode: 'create',
     maxRows: 25,
     requiredPermission: 'kpi:admin',
-    allowedRoles: ['admin', 'operations-admin'],
+    allowedRoles: ['platform-super-admin', 'organization-admin'],
     auditAction: 'bulk.kpi-thresholds.committed',
     columns: [
       { key: 'kpiId', label: 'KPI ID', required: true, example: 'kpi-readiness' },
@@ -284,12 +285,14 @@ export function isBulkOperationId(value: string): value is BulkOperationId {
 }
 
 export function canAccessBulkOperation(operationId: BulkOperationId, role: Role): boolean {
+  const canonical = normalizeRole(role);
+  if (!canonical) return false;
   const operation = getBulkOperation(operationId);
-  if (!operation.allowedRoles.includes(role)) return false;
+  if (!operation.allowedRoles.includes(canonical)) return false;
   if (operation.entityKind === 'notification-target') return true;
   try {
     const definition = getDataEntryFormDefinition(operation.entityKind, operation.mode);
-    return canAccessForm(definition, role);
+    return canAccessForm(definition, canonical);
   } catch {
     return false;
   }

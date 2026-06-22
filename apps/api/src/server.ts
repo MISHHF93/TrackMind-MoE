@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { apiEndpointContracts, createTrackMindIntelligenceCoreMetadata, createTrackMindNexusUpgradePackage, createUnifiedDataModelWorkspace, hasAnyPermission, hasPermission, isProtectedAction, isRole, nexusApiBasePath, permissionsForApprovalAction, rolePermissions, roles, buildRacingOperatingModel, buildRacingOperatingConvergenceReport, racingExpansionSequence, type AIControlPlaneDraftResultDto, type AIControlPlaneWorkspaceDto, type ApiResponse, type ApiResponseMetadata, type ApprovalDto, type AuditEventDto, type FederationWorkspaceDto, type KPIArtifact, type Permission, type Role, type RosFacadeStateDto, type TrackCertificationCandidateDto, type TrackMindIntelligenceCoreDto, type TrackMindNexusUpgradePackage, type TUSTwinStandardDto } from '@trackmind/shared';
+import { apiEndpointContracts, contractAllowsRole, createTrackMindIntelligenceCoreMetadata, createTrackMindNexusUpgradePackage, createUnifiedDataModelWorkspace, hasAnyPermission, hasPermission, isProtectedAction, normalizeRole, nexusApiBasePath, permissionsForApprovalAction, rolePermissions, roles, buildRacingOperatingModel, buildRacingOperatingConvergenceReport, racingExpansionSequence, type AIControlPlaneDraftResultDto, type AIControlPlaneWorkspaceDto, type ApiResponse, type ApiResponseMetadata, type ApprovalDto, type AuditEventDto, type FederationWorkspaceDto, type KPIArtifact, type Permission, type Role, type RosFacadeStateDto, type TrackCertificationCandidateDto, type TrackMindIntelligenceCoreDto, type TrackMindNexusUpgradePackage, type TUSTwinStandardDto } from '@trackmind/shared';
 import { listAIAgentRegistryRecords, listExpertModelRegistry } from './aiControlPlane.js';
 import { createApiHubEventCatalog } from './apiHubAdapters.js';
 import { CentralizedApprovalService, buildApprovalArtifact, canonicalApprovalRequest, defaultApprovalPolicies, type ApprovalActor, type ApprovalToken, type ControlledAction, type ControlledActionRequest } from './approvals.js';
@@ -59,6 +59,7 @@ import { createTUSStandardizationWorkspace, legacyAssetToTUSAsset } from './tusS
 import { workflowTemplateRegistry } from './workflowEngine.js';
 import { seedWorkforceOperations } from './workforceOperations.js';
 import { createPlatformServices, handlePlatformRequest, type PlatformServices } from './platform/platformController.js';
+import { IdentityService } from './platform/identityService.js';
 import { IncidentIntakeService } from './incidentIntakeService.js';
 import { ApprovalRequestComposerService } from './approvalRequestComposerService.js';
 import { startApprovalEscalationScheduler } from './platform/approvalEscalationScheduler.js';
@@ -170,6 +171,8 @@ function authHeadersFromQuery(method: HttpMethod, path: string, searchParams: UR
   return { ...headers, 'x-trackmind-role': role };
 }
 
+const identityPolicyEvaluator = new IdentityService();
+
 function authorizeApiRequest(method: HttpMethod, path: string, headers: IncomingMessage['headers'] | undefined, requestId: string): { status: number; headers?: Record<string, string>; body: JsonBody } | undefined {
   const contract = contractForRequest(method, path);
   if (!contract) {
@@ -182,12 +185,17 @@ function authorizeApiRequest(method: HttpMethod, path: string, headers: Incoming
   if (!headers && !directCallRequiresAuth) return undefined;
   const rawRole = headerValue(headers ?? {}, 'x-trackmind-role');
   if (!rawRole) return apiUnauthorized(`Role header required for ${method} ${path}`, path, requestId, [`known roles: ${roles.join(', ')}`]);
-  if (!isRole(rawRole)) return apiForbidden(`Unknown TrackMind role: ${rawRole}`, path, requestId, [`known roles: ${roles.join(', ')}`]);
-  if (contract.roles !== 'authenticated' && !contract.roles.includes(rawRole)) {
-    return apiForbidden(`Role ${rawRole} is not allowed to call ${contract.operationId}`, path, requestId, [`allowed roles: ${contract.roles.join(', ')}`]);
+  const role = normalizeRole(rawRole);
+  if (!role) return apiForbidden(`Unknown TrackMind role: ${rawRole}`, path, requestId, [`known roles: ${roles.join(', ')}`]);
+  if (!contractAllowsRole(contract.roles, role)) {
+    return apiForbidden(`Role ${role} is not allowed to call ${contract.operationId}`, path, requestId, [`allowed roles: ${contract.roles === 'authenticated' ? 'authenticated' : contract.roles.join(', ')}`]);
   }
-  if (!hasAnyPermission(rawRole, [contract.requiredPermission])) {
-    return apiForbidden(`Role ${rawRole} lacks permission ${contract.requiredPermission}`, path, requestId, [`permission: ${contract.requiredPermission}`]);
+  const tenantId = headerValue(headers ?? {}, 'x-trackmind-tenant-id') ?? 'trackmind';
+  if (!identityPolicyEvaluator.evaluatePolicy(tenantId, role, contract.requiredPermission)) {
+    return apiForbidden(`Role ${role} lacks permission ${contract.requiredPermission}`, path, requestId, [`permission: ${contract.requiredPermission}`]);
+  }
+  if (!hasAnyPermission(role, [contract.requiredPermission])) {
+    return apiForbidden(`Role ${role} lacks permission ${contract.requiredPermission}`, path, requestId, [`permission: ${contract.requiredPermission}`]);
   }
   return undefined;
 }
@@ -285,20 +293,20 @@ function evidenceKind(evidenceId: string): 'event' | 'audit' | 'digital-twin' | 
 }
 
 
-const facilitiesPrincipal = { id: 'facilities-supervisor', tenantId: 'track-1', scopes: ['assets:read', 'assets:write', 'assets:approve'] };
+const facilitiesPrincipal = { id: 'facilities-manager', tenantId: 'track-1', scopes: ['assets:read', 'assets:write', 'assets:approve'] };
 
 function createServiceBackedEmergencyWorkspace(workforce: Record<string, any>, timestamp: string): { platform: EmergencyOperationsPlatform; workspace: JsonBody } {
   const platform = new EmergencyOperationsPlatform();
   platform.registerWorkflowDefinitions('trackmind');
-  platform.registerEmergencyPlan({ id: 'plan-fire', name: 'Barn fire and evacuation plan', scenarios: ['fire-incident', 'evacuation'], ownerRole: 'incident-commander', activationCriteria: ['alarm activation', 'smoke report', 'human commander declaration'], communicationChannels: ['radio', 'public-address', 'mass-notification'], evacuationZoneIds: ['zone-barn'], drillCadenceDays: 90 });
+  platform.registerEmergencyPlan({ id: 'plan-fire', name: 'Barn fire and evacuation plan', scenarios: ['fire-incident', 'evacuation'], ownerRole: 'race-day-operations-manager', activationCriteria: ['alarm activation', 'smoke report', 'human commander declaration'], communicationChannels: ['radio', 'public-address', 'mass-notification'], evacuationZoneIds: ['zone-barn'], drillCadenceDays: 90 });
   platform.registerEmergencyPlan({ id: 'plan-weather', name: 'Severe weather shelter plan', scenarios: ['severe-weather'], ownerRole: 'weather-lead', activationCriteria: ['lightning within 10 miles', 'tornado warning', 'human weather lead override'], communicationChannels: ['radio', 'sms', 'public-address'], evacuationZoneIds: ['zone-grandstand'], drillCadenceDays: 60 });
   const workflow = platform.createEmergencyWorkflow({
     id: 'wf-fire-1',
     planId: 'plan-fire',
     activatedBy: 'Avery Chen',
-    activatedByRoles: ['admin'],
+    activatedByRoles: ['platform-super-admin'],
     incident: { id: 'inc-100', scenario: 'fire-incident', severity: 'critical', location: 'Barn 2', reportedAt: timestamp, populationAtRisk: 40, affectedAssets: [{ assetId: 'barn:2', zone: 'zone-barn', risk: 'critical', dependencies: ['power-feed-2'] }, { assetId: 'grandstand', zone: 'zone-grandstand', risk: 'major' }], systems: [{ system: 'workflow-engine', status: 'online', dataFeeds: ['workflow-state'] }, { system: 'digital-twin-runtime', status: 'online', dataFeeds: ['asset-state', 'occupancy'] }, { system: 'access-control', status: 'degraded', dataFeeds: ['badges'] }, { system: 'platform-observability', status: 'online', dataFeeds: ['logs', 'metrics', 'traces'] }] },
-    commandRoles: [{ id: 'role-ic', role: 'incident-commander', assignee: 'Avery Chen', permissions: ['activate-workflow', 'override-ai', 'dispatch-resource', 'send-communication', 'close-incident'] }, { id: 'role-med', role: 'medical-lead', assignee: 'Dr. Rivera', permissions: ['dispatch-resource', 'send-communication'] }, { id: 'role-fire', role: 'fire-lead', assignee: 'Captain Morgan', permissions: ['dispatch-resource', 'override-ai'] }, { id: 'role-weather', role: 'weather-lead', assignee: 'Sam Patel', permissions: ['send-communication', 'override-ai'] }, { id: 'role-evac', role: 'evacuation-lead', assignee: 'Jordan Lee', permissions: ['dispatch-resource', 'send-communication'] }],
+    commandRoles: [{ id: 'role-ic', role: 'race-day-operations-manager', assignee: 'Avery Chen', permissions: ['activate-workflow', 'override-ai', 'dispatch-resource', 'send-communication', 'close-incident'] }, { id: 'role-med', role: 'medical-lead', assignee: 'Dr. Rivera', permissions: ['dispatch-resource', 'send-communication'] }, { id: 'role-fire', role: 'fire-lead', assignee: 'Captain Morgan', permissions: ['dispatch-resource', 'override-ai'] }, { id: 'role-weather', role: 'weather-lead', assignee: 'Sam Patel', permissions: ['send-communication', 'override-ai'] }, { id: 'role-evac', role: 'evacuation-lead', assignee: 'Jordan Lee', permissions: ['dispatch-resource', 'send-communication'] }],
     resources: [{ id: 'res-ambulance', kind: 'medical', label: 'EMS ambulance', status: 'assigned', zoneId: 'zone-grandstand', coordinates: { latitude: 38.044, longitude: -76.949 }, capacity: 2 }, { id: 'res-equine-ambulance', kind: 'medical', label: 'Equine ambulance', status: 'available', zoneId: 'zone-track', coordinates: { latitude: 38.052, longitude: -76.951 }, capacity: 1 }, { id: 'res-fire', kind: 'fire', label: 'Mutual-aid fire unit', status: 'assigned', zoneId: 'zone-barn', coordinates: { latitude: 38.061, longitude: -76.955 }, capacity: 4 }, { id: 'res-shelter', kind: 'shelter', label: 'Grandstand shelter level 1', status: 'available', zoneId: 'zone-grandstand', coordinates: { latitude: 38.043, longitude: -76.952 }, capacity: 900 }],
     workforceResources: workforce.emergencyResources ?? [],
     workforceReadiness: workforce.readiness,
@@ -311,7 +319,7 @@ function createServiceBackedEmergencyWorkspace(workforce: Record<string, any>, t
   platform.recordCommunication(workflow.id, 'comm-radio', 'Avery Chen');
   platform.runSimulationExercise('drill-weather-1', 'severe-weather', ['ops', 'security', 'facilities']);
   platform.completeDrill('drill-weather-1', 'Sam Patel', ['Shelter capacity reconciled with digital twin']);
-  platform.afterActionReport('inc-100', [{ finding: 'Access-control feed failed over slowly', severity: 'major', owner: 'security' }]);
+  platform.afterActionReport('inc-100', [{ finding: 'Access-control feed failed over slowly', severity: 'major', owner: 'security-manager' }]);
   return { platform, workspace: platform.workspace(false) };
 }
 
@@ -320,15 +328,15 @@ function createServiceBackedReadiness(input: { racePlatform: RaceOperationsPlatf
   const race = input.racePlatform.listRaces()[0];
   const workforceCheck = input.workforce.readiness?.raceDayCheck;
   const checks = [
-    { domain: 'track', label: 'Track readiness', score: 92, status: 'ready', evidence: ['surface-condition:good'], blockers: [], updatedAt: input.timestamp, ownerRole: 'track-superintendent' },
+    { domain: 'track', label: 'Track readiness', score: 92, status: 'ready', evidence: ['surface-condition:good'], blockers: [], updatedAt: input.timestamp, ownerRole: 'facilities-manager' },
     { domain: 'gate', label: 'Gate readiness', score: 90, status: 'ready', evidence: ['gate-status:locked'], blockers: [], updatedAt: input.timestamp, ownerRole: 'starter' },
     workforceCheck ?? { domain: 'staffing', label: 'Staffing readiness', score: input.workforce.readiness?.score ?? 80, status: input.workforce.readiness?.status ?? 'watch', evidence: input.workforce.readiness?.raceDayCheck?.evidence ?? ['workforce:service-backed'], blockers: input.workforce.readiness?.emergencyGaps ?? [], updatedAt: input.timestamp, ownerRole: 'operations' },
     { domain: 'veterinary', label: 'Veterinary readiness', score: 88, status: 'watch', evidence: ['vet-live:review-required'], blockers: ['veterinary clearance pending'], updatedAt: input.timestamp, approvalRequired: true, ownerRole: 'veterinarian' },
     { domain: 'stewards', label: 'Steward readiness', score: 94, status: 'ready', evidence: ['steward-live:on-duty'], blockers: [], updatedAt: input.timestamp, ownerRole: 'steward' },
-    { domain: 'emergency', label: 'Emergency readiness', score: input.workforce.readiness?.status === 'blocked' ? 70 : 86, status: input.workforce.readiness?.status === 'blocked' ? 'blocked' : 'watch', evidence: ['emergency-workflow:wf-fire-1'], blockers: input.workforce.readiness?.emergencyGaps ?? ['active emergency workflow requires command review'], updatedAt: input.timestamp, approvalRequired: true, ownerRole: 'incident-commander' },
-    { domain: 'security', label: 'Security readiness', score: input.security.incidents?.length ? 82 : 96, status: input.security.incidents?.length ? 'watch' : 'ready', evidence: input.security.incidents?.flatMap((incident: any) => incident.eventIds ?? []) ?? ['security:no-open-incidents'], blockers: input.security.incidents?.length ? ['security incidents under review'] : [], updatedAt: input.timestamp, ownerRole: 'security' },
+    { domain: 'emergency', label: 'Emergency readiness', score: input.workforce.readiness?.status === 'blocked' ? 70 : 86, status: input.workforce.readiness?.status === 'blocked' ? 'blocked' : 'watch', evidence: ['emergency-workflow:wf-fire-1'], blockers: input.workforce.readiness?.emergencyGaps ?? ['active emergency workflow requires command review'], updatedAt: input.timestamp, approvalRequired: true, ownerRole: 'race-day-operations-manager' },
+    { domain: 'security', label: 'Security readiness', score: input.security.incidents?.length ? 82 : 96, status: input.security.incidents?.length ? 'watch' : 'ready', evidence: input.security.incidents?.flatMap((incident: any) => incident.eventIds ?? []) ?? ['security:no-open-incidents'], blockers: input.security.incidents?.length ? ['security incidents under review'] : [], updatedAt: input.timestamp, ownerRole: 'security-manager' },
     { domain: 'weather', label: 'Weather readiness', score: 90, status: 'ready', evidence: ['weather:operational'], blockers: [], updatedAt: input.timestamp, ownerRole: 'operations' },
-    { domain: 'facility', label: 'Facility readiness', score: input.facilities.readiness?.score ?? 0, status: input.facilities.readiness?.status ?? 'blocked', evidence: input.facilities.readiness?.evidence ?? ['facilities:missing'], blockers: input.facilities.readiness?.status === 'ready' ? [] : ['facility maintenance watch'], updatedAt: input.timestamp, approvalRequired: input.facilities.readiness?.status !== 'ready', ownerRole: 'facilities-supervisor' },
+    { domain: 'facility', label: 'Facility readiness', score: input.facilities.readiness?.score ?? 0, status: input.facilities.readiness?.status ?? 'blocked', evidence: input.facilities.readiness?.evidence ?? ['facilities:missing'], blockers: input.facilities.readiness?.status === 'ready' ? [] : ['facility maintenance watch'], updatedAt: input.timestamp, approvalRequired: input.facilities.readiness?.status !== 'ready', ownerRole: 'facilities-manager' },
   ] as any[];
   const assessment = service.evaluate({ raceId: race.id, trackId: race.trackId, postTime: race.scheduledPostTime, evaluatedAt: input.timestamp, checks, workforceReadiness: input.workforce.readiness }, 'race-day-readiness-service');
   const dashboard = service.dashboard(input.timestamp);
@@ -343,7 +351,7 @@ function createSeededAIGovernanceWorkspace(timestamp: string, mock: boolean): Js
   platform.assessRisk({ modelId:model.id, assessedAt:timestamp, assessor:'erm', impact:5, likelihood:3, mitigations:['human approval required','rollback runbook','monitor drift'] });
   platform.approveForDeployment(model.id, 'ai-governance-board', ['approval-minutes']);
   platform.publishPromptTemplate({ id:'prompt-surface-v4', name:'Surface intervention prompt', version:'4.0.0', owner:'prompt-review-board', template:'Recommend, summarize, classify, prioritize, forecast, simulate, or draft only with cited evidence and approvals.', evidence:['ai/prompt-cards/surface-intervention-v4.md'], status:'approved', allowedActivities:['recommend','summarize','classify','prioritize','forecast','simulate','create-draft-action'] });
-  platform.registerAgent({ id:'agent-surface-ops', name:'Surface Ops Agent', owner:'track-superintendent', modelVersionId:model.id, promptTemplateId:'prompt-surface-v4', status:'active', allowedActions:['recommend-harrow','prioritize-maintenance','race-start'], restrictedActions:['race-start','close-track'], allowedActivities:['recommend','prioritize','forecast','simulate','create-draft-action'], digitalTwinRefs:['twin:sector:far-turn','twin:asset:sensor-44'] });
+  platform.registerAgent({ id:'agent-surface-ops', name:'Surface Ops Agent', owner:'facilities-manager', modelVersionId:model.id, promptTemplateId:'prompt-surface-v4', status:'active', allowedActions:['recommend-harrow','prioritize-maintenance','race-start'], restrictedActions:['race-start','close-track'], allowedActivities:['recommend','prioritize','forecast','simulate','create-draft-action'], digitalTwinRefs:['twin:sector:far-turn','twin:asset:sensor-44'] });
   platform.recordInputIngestion({ id:'input-surface-live-1', source:'surface-telemetry', actor:'surface-ingestion-service', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade', inputRef:'event:surface.reading.updated', inputHash:'sha256:surface-live-1', dataClassification:'restricted', evidence:['surface:moisture=19'], ingestedAt:timestamp, digitalTwinRefs:['twin:sector:far-turn'] });
   platform.recordFeatureBuild({ id:'features-surface-live-1', inputId:'input-surface-live-1', featureSetId:'surface-risk-v1', actor:'feature-builder', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade', causationId:'input-surface-live-1', features:['moistureDeviation','sensorWarning','readinessTrend'], evidence:['feature-store:surface-risk-v1'], builtAt:timestamp, digitalTwinRefs:['twin:sector:far-turn'] });
   platform.recordModelSelection({ id:'selection-surface-live-1', featureBuildId:'features-surface-live-1', modelVersionId:model.id, actor:'model-router', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade', causationId:'features-surface-live-1', candidateModelIds:[model.id], selectionReason:'Highest approved surface advisory model for track conditions.', evidence:['ai/model-cards/surface-advisor-v2.md','ai/evaluations/surface-advisor-v2-readiness.md'], selectedAt:timestamp, digitalTwinRefs:['twin:sector:far-turn'] });
@@ -351,7 +359,7 @@ function createSeededAIGovernanceWorkspace(timestamp: string, mock: boolean): Js
   platform.recordRecommendation({ id:'rec-maintenance-priority', agentId:'agent-surface-ops', modelVersionId:model.id, promptTemplateId:'prompt-surface-v4', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade-maintenance', causationId:'selection-surface-live-1', activity:'prioritize', action:'prioritize-maintenance', target:'sector:far-turn', recommendation:'Prioritize far-turn maintenance review in the next human superintendent workflow.', confidence:.82, affectedAssets:['sector:far-turn','work-order:surface-review'], evidence:['surface:compaction=276','inspection:standing-water'], lineage:['agent:agent-surface-ops','model:model-surface-advisor-v2','prompt:prompt-surface-v4','event:surface.inspection.recorded'], approvalPolicy:'single-human', riskLevel:'high', createdAt:timestamp, digitalTwinRefs:['twin:sector:far-turn'] });
   platform.recordRecommendation({ id:'rec-race-start', agentId:'agent-surface-ops', modelVersionId:model.id, promptTemplateId:'prompt-surface-v4', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade-blocked', causationId:'selection-surface-live-1', activity:'create-draft-action', action:'race-start', target:'race-7', recommendation:'Draft race-start readiness package for human steward, race office, and veterinarian review only.', confidence:.91, affectedAssets:['race:race-7','gate:1','approval:race-start'], evidence:['readiness:watch','gate:gps-verified'], lineage:['agent:agent-surface-ops','model:model-surface-advisor-v2','prompt:prompt-surface-v4','policy:protected-action'], approvalPolicy:'none', riskLevel:'critical', createdAt:timestamp, digitalTwinRefs:['twin:race-7','twin:gate-1'] });
   platform.recordDashboardUpdate({ id:'dashboard-ai-facade-1', dashboardId:'ai-governance', actor:'trackmind-api', tenantId:'trackmind', racetrackId:'main-track', correlationId:'corr-ai-facade-dashboard', causationId:'rec-harrow-7', summary:'AI governance facade refreshed advisory queues and blocked actions.', metrics:{ recommendations:3, blockedActions:1, approvalsRequired:2 }, evidence:['api-facade'], updatedAt:timestamp, digitalTwinRefs:['twin:sector:far-turn'] });
-  platform.recordOverride({ id:'override-1', recommendationId:rec.id, actor:'track-superintendent', reason:'Delay until lightning watch clears', evidence:['weather:cell-west-18mi'], createdAt:timestamp });
+  platform.recordOverride({ id:'override-1', recommendationId:rec.id, actor:'facilities-manager', reason:'Delay until lightning watch clears', evidence:['weather:cell-west-18mi'], createdAt:timestamp });
   platform.recordRollback({ id:'rollback-1', recommendationId:rec.id, actor:'ai-governance-board', reason:'Prompt drift review', restoredVersionId:'prompt-surface-v3', evidence:['drift:metric-9'], createdAt:timestamp });
   platform.ingestMonitoring({ modelId:model.id, observedAt:timestamp, metric:'drift', value:.12, threshold:.2, evidence:['monitor:drift-window-1'] });
   const workspace = platform.governanceWorkspace() as SeededAIGovernanceWorkspace;
@@ -568,9 +576,13 @@ function validateAIControlPlaneDraftBody(body: unknown): string | undefined {
   return undefined;
 }
 
+function roleFromHeader(headers?: IncomingMessage['headers']): Role | undefined {
+  const raw = headerValue(headers ?? {}, 'x-trackmind-role');
+  return raw ? normalizeRole(raw) : undefined;
+}
+
 function securityActorFromHeaders(headers?: IncomingMessage['headers']): SecurityActor {
-  const rawRole = headerValue(headers ?? {}, 'x-trackmind-role');
-  const resolvedRole: Role = rawRole && isRole(rawRole) ? rawRole : 'security';
+  const resolvedRole: Role = roleFromHeader(headers) ?? 'security-manager';
   const permissions = (rolePermissions[resolvedRole] ?? []).filter((permission): permission is SecurityOpsPermission => permission.startsWith('security:'));
   return {
     id: headerValue(headers ?? {}, 'x-trackmind-actor-id') ?? `${resolvedRole}-operator`,
@@ -583,7 +595,7 @@ function securityActorFromHeaders(headers?: IncomingMessage['headers']): Securit
 
 function createSecurityOperationsFacade(timestamp: string): { service: SecurityOperationsService; workspace: JsonBody } {
   const service = createSeededSecurityOperationsService(() => timestamp);
-  const workspace = service.getWorkspace({ id: 'dashboard-security-reader', roles: ['security'], tenantId: 'trackmind', permissions: ['security:read'] });
+  const workspace = service.getWorkspace({ id: 'dashboard-security-reader', roles: ['security-manager'], tenantId: 'trackmind', permissions: ['security:read'] });
   return { service, workspace: { ...workspace, mock: false } };
 }
 
@@ -615,7 +627,7 @@ function createTUSStandardizationFacade(timestamp: string): JsonBody {
   const assetSeed = [
     { assetId: 'GATE_MAIN_01', name: 'Main Starting Gate', assetType: 'StartingGate', assetClass: 'physical' as const, lifecycleStatus: 'active', riskLevel: 'high' as const, safetyCritical: true, location: { sectorId: 'backstretch', railPositionMeters: 0 }, state: { stalls: 14, locked: true, lifecycleStatus: 'active' }, maintenanceStatus: 'ok', healthScore: 84, telemetryBindings: [{ sourceId: 'gate-status-01', stream: 'telemetry.gate.status', schemaRef: 'telemetry.gate.v1', metric: 'locked', required: true, lastObservedAt: timestamp }], approvals: [{ id: 'approval-gate-move', policyId: 'critical-asset-dual-control', status: 'required', requiredApprovers: ['Starter', 'Steward'], reason: 'Starting gate movement and release controls are safety critical.', evidence: ['gps-fix', 'human-approval-record'], updatedAt: timestamp }], audit: [{ id: 'audit-gate-01', action: 'asset-standardized', actor: 'api-facade', timestamp, evidence: ['registry:gate'] }], twinId: 'twin:gate:main-01' },
     { assetId: 'CAM_PADDOCK_01', name: 'Paddock Camera 01', assetType: 'Camera', assetClass: 'digital' as const, lifecycleStatus: 'active', riskLevel: 'medium' as const, safetyCritical: false, location: { zoneId: 'paddock' }, state: { privacyMasking: true, status: 'online' }, maintenanceStatus: 'ok', healthScore: 92, telemetryBindings: [{ sourceId: 'cam-paddock-heartbeat', stream: 'telemetry.camera.heartbeat', metric: 'heartbeat', required: true, lastObservedAt: timestamp }], approvals: [{ id: 'approval-camera-sensitive-read', status: 'required', requiredApprovers: ['SecuritySupervisor'], reason: 'Sensitive security footage access requires approval.', evidence: ['security-policy'], updatedAt: timestamp }], audit: [{ id: 'audit-camera-01', action: 'asset-standardized', actor: 'api-facade', timestamp, evidence: ['security-camera'] }], twinId: 'twin:camera:paddock-01' },
-    { assetId: 'GEN_BACKUP_A', name: 'Backup Generator A', assetType: 'Generator', assetClass: 'physical' as const, lifecycleStatus: 'active', riskLevel: 'high' as const, safetyCritical: true, location: { facilityId: 'maintenance-yard' }, state: { loadTestStatus: 'passed', fuelPct: 74 }, maintenanceStatus: 'due', healthScore: 78, telemetryBindings: [{ sourceId: 'generator-load-a', stream: 'telemetry.facility.power', metric: 'loadPct', required: true, lastObservedAt: timestamp }], approvals: [{ id: 'approval-generator-transfer', status: 'required', requiredApprovers: ['FacilitiesLead'], reason: 'Life-safety power transfer is approval-gated.', evidence: ['load-test'], updatedAt: timestamp }], audit: [{ id: 'audit-generator-a', action: 'inspection-recorded', actor: 'facilities-supervisor', timestamp, evidence: ['work-order:generator-a'] }], twinId: 'twin:facility:generator-a' },
+    { assetId: 'GEN_BACKUP_A', name: 'Backup Generator A', assetType: 'Generator', assetClass: 'physical' as const, lifecycleStatus: 'active', riskLevel: 'high' as const, safetyCritical: true, location: { facilityId: 'maintenance-yard' }, state: { loadTestStatus: 'passed', fuelPct: 74 }, maintenanceStatus: 'due', healthScore: 78, telemetryBindings: [{ sourceId: 'generator-load-a', stream: 'telemetry.facility.power', metric: 'loadPct', required: true, lastObservedAt: timestamp }], approvals: [{ id: 'approval-generator-transfer', status: 'required', requiredApprovers: ['FacilitiesLead'], reason: 'Life-safety power transfer is approval-gated.', evidence: ['load-test'], updatedAt: timestamp }], audit: [{ id: 'audit-generator-a', action: 'inspection-recorded', actor: 'facilities-manager', timestamp, evidence: ['work-order:generator-a'] }], twinId: 'twin:facility:generator-a' },
     { assetId: 'LIGHT_POLE_12', name: 'Light Pole 12', assetType: 'LightPole', assetClass: 'physical' as const, lifecycleStatus: 'active', riskLevel: 'medium' as const, safetyCritical: false, location: { zoneId: 'parking-north' }, state: { lumensPct: 88 }, maintenanceStatus: 'ok', healthScore: 88, telemetryBindings: [{ sourceId: 'light-pole-12-power', stream: 'telemetry.facility.lighting', metric: 'powerDraw', required: false, lastObservedAt: timestamp }], audit: [{ id: 'audit-light-pole-12', action: 'asset-standardized', actor: 'api-facade', timestamp, evidence: ['facilities-registry'] }], twinId: 'twin:facility:light-pole-12' },
     { assetId: 'IRRIGATION_ZONE_FAR_TURN', name: 'Far Turn Irrigation Zone', assetType: 'IrrigationZone', assetClass: 'physical' as const, lifecycleStatus: 'active', riskLevel: 'high' as const, safetyCritical: true, location: { sectorId: 'far-turn' }, state: { waterMm: 0, valveState: 'locked' }, maintenanceStatus: 'ok', healthScore: 80, telemetryBindings: [{ sourceId: 'irrigation-far-turn-flow', stream: 'telemetry.surface.irrigation', metric: 'flowRate', required: true, lastObservedAt: timestamp }], approvals: [{ id: 'approval-irrigation-far-turn', status: 'required', requiredApprovers: ['TrackSuperintendent'], reason: 'Surface irrigation changes remain human-approved.', evidence: ['surface-telemetry'], updatedAt: timestamp }], audit: [{ id: 'audit-irrigation-far-turn', action: 'approval-required', actor: 'surface-service', timestamp, evidence: ['surface-risk'] }], twinId: 'twin:track:irrigation-far-turn' },
     { assetId: 'TRACK_SECTOR_FAR_TURN', name: 'Far Turn Track Sector', assetType: 'TrackSector', assetClass: 'physical' as const, lifecycleStatus: 'maintenance', riskLevel: 'high' as const, safetyCritical: true, location: { sectorId: 'far-turn', startMeters: 900, endMeters: 1250 }, state: { condition: 'watch', moisture: 27, compaction: 276 }, maintenanceStatus: 'due', healthScore: 58, telemetryBindings: [{ sourceId: 'surface-probe-44', stream: 'telemetry.surface.measurement', metric: 'moisture', required: true, lastObservedAt: timestamp }], approvals: [{ id: 'approval-surface-harrow', status: 'pending', requiredApprovers: ['TrackSuperintendent'], reason: 'Harrow pass remains approval-gated.', evidence: ['surface:moisture=27'], updatedAt: timestamp }], audit: [{ id: 'audit-track-sector-far-turn', action: 'risk-classified', actor: 'surface-service', timestamp, evidence: ['surface-inspection'] }], twinId: 'twin:track:far-turn' },
@@ -1033,7 +1045,7 @@ export function createApiFacadeState(): ApiFacadeState {
     eligibilityStatus: { eligible: false, complianceStatus: 'under-review', flags: ['vet-review-pending'], failedRules: ['veterinarian-review-required', 'no-unreviewed-health-ai'] },
     eligibilityRules: [{ id: 'active-lifecycle', description: 'Horse must be active', passed: true, failureStatus: 'ineligible' }, { id: 'no-unreviewed-health-ai', description: 'Health AI remains advisory until veterinarian review', passed: false, failureStatus: 'under-review' }],
     welfareStatus: { level: 'acceptable', latestScore: 92, interventions: [] },
-    welfareRecords: [{ recordId: 'welfare-1', observedAt: timestamp, observerId: 'welfare-officer', score: 92, notes: 'Bright and alert', interventions: [] }],
+    welfareRecords: [{ recordId: 'welfare-1', observedAt: timestamp, observerId: 'equine-welfare-officer', score: 92, notes: 'Bright and alert', interventions: [] }],
     barnAssignment: { barnId: 'barn-2', stallId: 'stall-12A', assignedAt: timestamp },
     digitalTwinReferences: [{ twinId: 'equine:horse-1', twinType: 'horse', sourceSystem: 'trackmind-api', relationship: 'primary', readOnly: true }],
     relationships: [
@@ -1122,7 +1134,7 @@ export function createApiFacadeState(): ApiFacadeState {
     kpis: kpis.kpis,
   });
   notificationFramework.publish({ category: 'platform', severity: 'info', title: 'Platform services online', message: 'Foundation platform wave services are active.', targetRoles: ['*'] });
-  notificationFramework.publish({ category: 'approval', severity: 'warning', title: 'Pending approvals', message: 'Review approval queue before race-day mutations.', targetRoles: ['admin', 'steward'] });
+  notificationFramework.publish({ category: 'approval', severity: 'warning', title: 'Pending approvals', message: 'Review approval queue before race-day mutations.', targetRoles: ['platform-super-admin', 'steward'] });
   const dataEntryService = createDataEntryService(sharedAuditTarget, {
     approvals: approvalService,
     eventBus: platformEventBus,
@@ -1156,13 +1168,13 @@ export function createApiFacadeState(): ApiFacadeState {
         raceDistance: { advertisedMeters: 1609, measuredMeters: 1614.4, varianceMeters: 5.4, regulatoryFlags: ['rail-adjustment-applied', 'distance-variance-review'] },
         railPosition: { railId: 'portable-rail-b', offsetMeters: 6, protectedTurns: ['clubhouse', 'far-turn'] },
         turfConfiguration: { lane: 'B', going: 'good', irrigationMillimeters: 2, mowingHeightMillimeters: 110, resting: false },
-        approvalRequirements: ['racing-secretary', 'track-superintendent', 'steward', 'timer', 'course-superintendent', 'regulatory-compliance'],
+        approvalRequirements: ['horse-operations-coordinator', 'facilities-manager', 'steward', 'timer', 'course-superintendent', 'regulatory-compliance'],
         workOrders: [
           { id: 'chg-race-7-track-config-gate', crew: 'gate-crew', status: 'approval-blocked', tasks: ['verify 1609m race distance', 'place gate gate-1', 'capture post-placement GPS proof'], evidenceRequired: ['gps-fix', 'photo', 'crew-attestation', 'distance-calculation-sheet'], dueAt: timestamp },
           { id: 'chg-race-7-track-config-rail', crew: 'rail-crew', status: 'approval-blocked', tasks: ['draft rail portable-rail-b 6m work package', 'inspect protected turns'], evidenceRequired: ['rail-measurement', 'inspection-report'], dueAt: timestamp },
           { id: 'chg-race-7-track-config-turf', crew: 'turf-crew', status: 'approval-blocked', tasks: ['draft turf lane B preparation package', 'confirm going good'], evidenceRequired: ['going-stick-reading', 'irrigation-log', 'mowing-log'], dueAt: timestamp },
         ],
-        verificationWorkflow: { id: 'chg-race-7-track-config-verification', status: 'approval-blocked', digitalTwinSync: 'blocked-until-approved', requiredRoles: ['racing-secretary', 'track-superintendent', 'steward'], actuatorControlAvailable: false },
+        verificationWorkflow: { id: 'chg-race-7-track-config-verification', status: 'approval-blocked', digitalTwinSync: 'blocked-until-approved', requiredRoles: ['horse-operations-coordinator', 'facilities-manager', 'steward'], actuatorControlAvailable: false },
         events: ['track.configuration.change.requested', 'track.configuration.approval.required', 'track.configuration.work-order.issued', 'track.configuration.verified', 'digital-twin.state.patch'],
         auditIds: ['audit-track-config-submit', 'audit-track-config-approval'],
         digitalTwinSync: { twinId: 'race-setup:race-7', status: 'approval-required' },
@@ -1225,16 +1237,16 @@ export function createApiFacadeState(): ApiFacadeState {
         { id: 'weather-status', title: 'Weather status', domain: 'weather', status: surfaceWorkspace.weatherObservation.forecastRainMm > 10 ? 'warning' : 'advisory', value: `${surfaceWorkspace.weatherObservation.forecastRainMm}mm forecast rain`, detail: 'Weather is currently surfaced through the Race Day surface facade; no separate live weather service is claimed.', source: 'service', drillDownPath: '/race-day', roleView: 'all', configurable: false },
         { id: 'active-incidents', title: 'Active incidents', domain: 'security', status: security.incidents.length ? 'warning' : 'nominal', value: `${security.incidents.length} active incident`, detail: `Security incidents load from /api/v1/security-operations/workspace; escalation count metadata ${security.dashboard.openEscalations ?? 0}.`, source: 'service', drillDownPath: '/security', roleView: 'all', configurable: false },
         { id: 'pending-approvals', title: 'Pending approvals', domain: 'approvals', status: contract.approvals.length ? 'warning' : 'nominal', value: `${contract.approvals.length} pending approval`, detail: 'Approval queue loads from /api/v1/approvals/requests; protected controls stay locked and are not executable from dashboard cards.', source: 'service', drillDownPath: '/approvals', roleView: 'all', configurable: false },
-        { id: 'steward-inquiries', title: 'Steward inquiries', domain: 'stewards', status: stewardCenter.inquiries.length ? 'warning' : 'nominal', value: `${stewardCenter.inquiries.length} inquiry under review`, detail: 'Steward Center loads inquiry evidence, audit, events, and approval refs; official results stay read-only in command cards.', source: 'service', drillDownPath: '/compliance', roleView: ['admin', 'steward'], configurable: false },
+        { id: 'steward-inquiries', title: 'Steward inquiries', domain: 'stewards', status: stewardCenter.inquiries.length ? 'warning' : 'nominal', value: `${stewardCenter.inquiries.length} inquiry under review`, detail: 'Steward Center loads inquiry evidence, audit, events, and approval refs; official results stay read-only in command cards.', source: 'service', drillDownPath: '/compliance', roleView: ['platform-super-admin', 'steward'], configurable: false },
         { id: 'workforce-readiness', title: 'Workforce readiness', domain: 'workforce', status: workforce.readiness.status === 'ready' ? 'nominal' : workforce.readiness.status === 'watch' ? 'warning' : 'critical', value: `${workforce.readiness.coveragePct}% covered`, detail: `${workforce.readiness.checkedIn}/${workforce.readiness.demand} checked in; compliance metadata ${workforce.compliance.status}.`, source: 'service', drillDownPath: '/facilities', roleView: 'all', configurable: false },
         { id: 'asset-health', title: 'Asset health', domain: 'assets', status: 'warning', value: `${contract.assets.length} assets`, detail: 'Asset and twin records are read from /api/v1/assets and /api/v1/digital-twin/state metadata.', source: 'digital-twin', drillDownPath: '/facilities', roleView: 'all', configurable: false },
         { id: 'facility-readiness', title: 'Facility readiness', domain: 'facilities', status: facilitiesMaintenance.readiness.status === 'ready' ? 'nominal' : 'warning', value: `${facilitiesMaintenance.readiness.score}% ready`, detail: 'Facilities maintenance reads RACR assets, Digital Twin references, approvals, work orders, and predictive metadata.', source: 'service', drillDownPath: '/facilities', roleView: 'all', configurable: false },
         { id: 'emergency-resources', title: 'Emergency resources', domain: 'emergency', status: emergency.events.length ? 'warning' : 'nominal', value: `${emergency.resources.length} resources`, detail: `EmergencyOperationsPlatform exposes ${emergency.workflowIntegrations.length} workflow integration metadata and an active human command checklist; AI cannot block emergency actions.`, source: 'service', drillDownPath: '/incidents', roleView: 'all', configurable: false },
-        { id: 'ai-recommendations', title: 'AI recommendations', domain: 'ai-governance', status: 'advisory', value: `${contract.aiRecommendations.length} governed recommendation`, detail: 'AI output remains recommendation-only and approval-aware.', source: 'service', drillDownPath: '/settings', roleView: ['admin'], configurable: false },
-        { id: 'audit-activity', title: 'Audit activity', domain: 'audit', status: 'nominal', value: `${contract.auditEvents.length || 1} visible audit rows`, detail: 'Audit activity loads from /api/v1/audit/events with hash references; platform totals remain separate observability metadata.', source: 'service', drillDownPath: '/audit', roleView: ['admin', 'read-only-auditor'], configurable: false },
+        { id: 'ai-recommendations', title: 'AI recommendations', domain: 'ai-governance', status: 'advisory', value: `${contract.aiRecommendations.length} governed recommendation`, detail: 'AI output remains recommendation-only and approval-aware.', source: 'service', drillDownPath: '/settings', roleView: ['platform-super-admin'], configurable: false },
+        { id: 'audit-activity', title: 'Audit activity', domain: 'audit', status: 'nominal', value: `${contract.auditEvents.length || 1} visible audit rows`, detail: 'Audit activity loads from /api/v1/audit/events with hash references; platform totals remain separate observability metadata.', source: 'service', drillDownPath: '/audit', roleView: ['platform-super-admin', 'read-only-auditor'], configurable: false },
         { id: 'event-timeline', title: 'Event metadata snapshot', domain: 'platform', status: 'advisory', value: 'Static event snapshot', detail: 'Timeline uses static OperationsCommandCenterDto.liveEvents with readiness, emergency, and AI metadata; SSE remains heartbeat-only.', source: 'service', drillDownPath: '/dashboard', roleView: 'all', configurable: false },
       ],
-      savedLayouts: [{ id: 'race-day-commander', name: 'Race Day Commander', role: 'admin', widgetIds: ['race-readiness','surface-conditions','weather-status','active-incidents','pending-approvals','steward-inquiries','asset-health','workforce-readiness','emergency-resources','facility-readiness','ai-recommendations','audit-activity','event-timeline'] }, { id: 'steward-view', name: 'Steward Inquiry View', role: 'steward', widgetIds: ['race-readiness','steward-inquiries','pending-approvals','event-timeline'] }, { id: 'facilities-view', name: 'Facilities and Maintenance', role: 'track-superintendent', widgetIds: ['facility-readiness','asset-health','workforce-readiness','emergency-resources'] }],
+      savedLayouts: [{ id: 'race-day-commander', name: 'Race Day Commander', role: 'platform-super-admin', widgetIds: ['race-readiness','surface-conditions','weather-status','active-incidents','pending-approvals','steward-inquiries','asset-health','workforce-readiness','emergency-resources','facility-readiness','ai-recommendations','audit-activity','event-timeline'] }, { id: 'steward-view', name: 'Steward Inquiry View', role: 'steward', widgetIds: ['race-readiness','steward-inquiries','pending-approvals','event-timeline'] }, { id: 'facilities-view', name: 'Facilities and Maintenance', role: 'facilities-manager', widgetIds: ['facility-readiness','asset-health','workforce-readiness','emergency-resources'] }],
       liveEvents: [{ id: 'evt-api-facade', timestamp, type: 'nexus.api.facade.started', domain: 'platform', summary: 'Runtime API facade is serving command-center contracts.', severity: 'info', source: 'static-snapshot' }, { id: 'evt-surface-snapshot', timestamp, type: 'surface.reading.updated', domain: 'surface', summary: `Surface score ${surfaceWorkspace.overallScore}; weather forecast ${surfaceWorkspace.weatherObservation.forecastRainMm}mm rain.`, severity: surfaceWorkspace.weatherObservation.forecastRainMm > 10 ? 'warning' : 'info', source: 'service' }, { id: 'evt-security-snapshot', timestamp, type: 'security.incident.summary', domain: 'security', summary: `${security.incidents.length} security incidents loaded for command center.`, severity: security.incidents.length ? 'warning' : 'info', source: 'service' }, { id: 'evt-workforce-snapshot', timestamp, type: 'workforce.readiness.evaluated', domain: 'operations', summary: `Workforce readiness ${workforce.readiness.status} at ${workforce.readiness.score}.`, severity: workforce.readiness.status === 'blocked' ? 'critical' : workforce.readiness.status === 'watch' ? 'warning' : 'info', source: 'service' }, { id: 'evt-facility-readiness', timestamp, type: 'facilities.readiness.evaluated', domain: 'facilities', summary: `Facilities readiness ${facilitiesMaintenance.readiness.score}% with approval-gated work orders.`, severity: 'warning', source: 'service' }],
       alerts: [{ id: 'alert-approval', title: 'Protected actions remain approval-gated', severity: 'advisory', acknowledged: false, actionPath: '/approvals', evidence: ['centralized-approval-service'] }, { id: 'alert-security', title: 'Security incident watch', severity: security.incidents.length ? 'warning' : 'advisory', acknowledged: false, actionPath: '/security', evidence: security.incidents.flatMap((incident: any) => incident.eventIds) }, { id: 'alert-facilities', title: 'Facilities maintenance watch', severity: 'warning', acknowledged: false, actionPath: '/facilities', evidence: ['facilities-maintenance', 'racr:GRANDSTAND_HVAC_01'] }],
       aiRecommendations: contract.aiRecommendations.map((rec) => ({ id: rec.id, recommendationId: rec.recommendationId, recommendation: rec.recommendation, confidence: rec.confidence, evidence: rec.evidence, modelVersion: rec.modelVersion, generatedAt: rec.generatedAt, approvalRequirement: rec.approvalRequirement, auditReference: rec.auditReference, requiresApproval: rec.requiresApproval, actionPath: rec.actionPath })),
@@ -1384,8 +1396,7 @@ function collaborationQuery(params: URLSearchParams): CollaborationThreadQuery &
 }
 
 function kpiPrincipal(params: URLSearchParams, headers?: IncomingMessage['headers']): { organizationId?: string; tenantId?: string; racetrackId?: string; role?: Role } {
-  const headerRole = headerValue(headers, 'x-trackmind-role');
-  const role = headerRole && isRole(headerRole) ? headerRole : undefined;
+  const role = roleFromHeader(headers);
   return {
     organizationId: stringValue(params.get('organizationId')) ?? headerValue(headers, 'x-trackmind-organization-id'),
     tenantId: stringValue(params.get('tenantId')) ?? headerValue(headers, 'x-trackmind-tenant-id'),
@@ -1450,7 +1461,9 @@ function approvalBoundaryContext(body: unknown): { input?: Record<string, unknow
 }
 
 function actorRoles(input: Record<string, unknown>): Role[] {
-  return stringArray(input.roles).filter(isRole);
+  return stringArray(input.roles)
+    .map((role) => normalizeRole(role))
+    .filter((role): role is Role => role !== undefined);
 }
 
 function actorTypeFrom(input: Record<string, unknown>): 'human' | 'ai-agent' | 'service' | undefined {
@@ -1474,8 +1487,8 @@ function validateProtectedApprovalBoundary(body: unknown, approvalService: Centr
   if (!isProtectedAction(normalizedAction)) return badRequest(`Unsupported controlled action: ${action}`);
   const roles = actorRoles(input);
   if (roles.length === 0) return forbidden('Controlled action requests require actor roles for RBAC enforcement.');
-  const headerRole = headerValue(options.headers, 'x-trackmind-role');
-  if (headerRole && isRole(headerRole) && !roles.includes(headerRole)) return forbidden(`Actor roles must include authenticated role ${headerRole}.`);
+  const headerRole = roleFromHeader(options.headers);
+  if (headerRole && !roles.includes(headerRole)) return forbidden(`Actor roles must include authenticated role ${headerRole}.`);
   const requiredPermissions = permissionsForApprovalAction(normalizedAction);
   if (!roles.some((role) => requiredPermissions.some((permission) => hasPermission(role, permission)))) {
     return forbidden(`Actor lacks required role permission for ${normalizedAction}`);
@@ -1995,8 +2008,8 @@ function handleCentralizedApprovalDecision(
   const actorType = actorTypeFrom(input);
   if (!actorType || actorType !== 'human') return forbidden('Approval decisions require an authenticated human actor');
   const roles = actorRoles(input);
-  const headerRole = headerValue(headers, 'x-trackmind-role');
-  if (headerRole && isRole(headerRole) && !roles.includes(headerRole)) return forbidden(`Actor roles must include authenticated role ${headerRole}.`);
+  const headerRole = roleFromHeader(headers);
+  if (headerRole && !roles.includes(headerRole)) return forbidden(`Actor roles must include authenticated role ${headerRole}.`);
   const reason = stringValue(input.reason) ?? (decision === 'approve' ? 'Approved from TrackMind console' : 'Rejected from TrackMind console');
   const evidence = stringArray(input.evidence);
   const evidenceWithDefault = evidence.length > 0 ? evidence : ['human-approval-record'];
@@ -2120,14 +2133,14 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   }
   if (method === 'POST' && path === '/finance/purses') {
     const input = isRecord(body) ? body : {};
-    return { status: 201, body: state.racingFinanceService.allocatePurse({ raceId: String(input.raceId ?? ''), raceNumber: input.raceNumber !== undefined ? Number(input.raceNumber) : undefined, allocatedAmount: Number(input.allocatedAmount ?? 0), currency: String(input.currency ?? 'USD'), status: (input.status as 'allocated' | undefined) ?? 'allocated', beneficiaries: Array.isArray(input.beneficiaries) ? input.beneficiaries : [] }, String(input.actor ?? 'finance')) };
+    return { status: 201, body: state.racingFinanceService.allocatePurse({ raceId: String(input.raceId ?? ''), raceNumber: input.raceNumber !== undefined ? Number(input.raceNumber) : undefined, allocatedAmount: Number(input.allocatedAmount ?? 0), currency: String(input.currency ?? 'USD'), status: (input.status as 'allocated' | undefined) ?? 'allocated', beneficiaries: Array.isArray(input.beneficiaries) ? input.beneficiaries : [] }, String(input.actor ?? 'finance-manager')) };
   }
   const purseReleaseMatch = path.match(/^\/finance\/purses\/([^/]+)\/release$/);
   if (method === 'POST' && purseReleaseMatch) {
     const input = isRecord(body) ? body : {};
     const approvalToken = isApprovalToken(input.approvalToken) ? input.approvalToken : undefined;
     try {
-      return { status: approvalToken ? 200 : 202, body: state.racingFinanceService.requestPurseRelease(decodeURIComponent(purseReleaseMatch[1]), String(input.actor ?? 'finance'), { approvalToken }) };
+      return { status: approvalToken ? 200 : 202, body: state.racingFinanceService.requestPurseRelease(decodeURIComponent(purseReleaseMatch[1]), String(input.actor ?? 'finance-manager'), { approvalToken }) };
     } catch (error) {
       return { status: approvalToken ? 403 : 400, body: { accepted: false, blockedReason: error instanceof Error ? error.message : String(error) } };
     }
@@ -2139,34 +2152,34 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
       return approvalFailure('Payout release requires verified approvalToken');
     }
     try {
-      return { status: 200, body: state.racingFinanceService.releasePayout(decodeURIComponent(payoutReleaseMatch[1]), String(input.actor ?? 'finance'), { approvalToken: input.approvalToken }) };
+      return { status: 200, body: state.racingFinanceService.releasePayout(decodeURIComponent(payoutReleaseMatch[1]), String(input.actor ?? 'finance-manager'), { approvalToken: input.approvalToken }) };
     } catch (error) {
       return approvalFailure(error instanceof Error ? error.message : 'Payout release failed');
     }
   }
   if (method === 'POST' && path === '/finance/race-day-expenses') {
     const input = isRecord(body) ? body : {};
-    return { status: 201, body: state.racingFinanceService.recordRaceDayExpense({ raceDayId: String(input.raceDayId ?? 'race-day-main'), category: (input.category as 'race-day' | undefined) ?? 'race-day', label: String(input.label ?? 'Race-day expense'), amount: Number(input.amount ?? 0), currency: String(input.currency ?? 'USD'), status: (input.status as 'recorded' | undefined) ?? 'recorded', incurredAt: String(input.incurredAt ?? now()), vendorId: input.vendorId ? String(input.vendorId) : undefined }, String(input.actor ?? 'finance')) };
+    return { status: 201, body: state.racingFinanceService.recordRaceDayExpense({ raceDayId: String(input.raceDayId ?? 'race-day-main'), category: (input.category as 'race-day' | undefined) ?? 'race-day', label: String(input.label ?? 'Race-day expense'), amount: Number(input.amount ?? 0), currency: String(input.currency ?? 'USD'), status: (input.status as 'recorded' | undefined) ?? 'recorded', incurredAt: String(input.incurredAt ?? now()), vendorId: input.vendorId ? String(input.vendorId) : undefined }, String(input.actor ?? 'finance-manager')) };
   }
   if (method === 'POST' && path === '/finance/operational-costs') {
     const input = isRecord(body) ? body : {};
-    return { status: 201, body: state.racingFinanceService.recordOperationalCost({ costCenter: String(input.costCenter ?? 'race-operations'), label: String(input.label ?? 'Operational cost'), amount: Number(input.amount ?? 0), currency: String(input.currency ?? 'USD'), period: String(input.period ?? now().slice(0, 7)), status: (input.status as 'recorded' | undefined) ?? 'recorded', incurredAt: String(input.incurredAt ?? now()) }, String(input.actor ?? 'finance')) };
+    return { status: 201, body: state.racingFinanceService.recordOperationalCost({ costCenter: String(input.costCenter ?? 'race-operations'), label: String(input.label ?? 'Operational cost'), amount: Number(input.amount ?? 0), currency: String(input.currency ?? 'USD'), period: String(input.period ?? now().slice(0, 7)), status: (input.status as 'recorded' | undefined) ?? 'recorded', incurredAt: String(input.incurredAt ?? now()) }, String(input.actor ?? 'finance-manager')) };
   }
   if (method === 'POST' && path === '/finance/facility-costs') {
     const input = isRecord(body) ? body : {};
-    return { status: 201, body: state.racingFinanceService.recordFacilityCost({ facilityId: String(input.facilityId ?? ''), facilityName: String(input.facilityName ?? 'Facility'), workOrderId: input.workOrderId ? String(input.workOrderId) : undefined, label: String(input.label ?? 'Facility cost'), amount: Number(input.amount ?? 0), currency: String(input.currency ?? 'USD'), status: (input.status as 'recorded' | undefined) ?? 'recorded', incurredAt: String(input.incurredAt ?? now()) }, String(input.actor ?? 'finance')) };
+    return { status: 201, body: state.racingFinanceService.recordFacilityCost({ facilityId: String(input.facilityId ?? ''), facilityName: String(input.facilityName ?? 'Facility'), workOrderId: input.workOrderId ? String(input.workOrderId) : undefined, label: String(input.label ?? 'Facility cost'), amount: Number(input.amount ?? 0), currency: String(input.currency ?? 'USD'), status: (input.status as 'recorded' | undefined) ?? 'recorded', incurredAt: String(input.incurredAt ?? now()) }, String(input.actor ?? 'finance-manager')) };
   }
   if (method === 'POST' && path === '/finance/ticket-revenue') {
     const input = isRecord(body) ? body : {};
-    return { status: 201, body: state.racingFinanceService.recordTicketRevenue({ raceDayId: String(input.raceDayId ?? 'race-day-main'), source: (input.source as 'ticketing' | undefined) ?? 'ticketing', label: String(input.label ?? 'Ticket revenue'), grossAmount: Number(input.grossAmount ?? 0), netAmount: Number(input.netAmount ?? 0), currency: String(input.currency ?? 'USD'), ticketCount: Number(input.ticketCount ?? 0), recordedAt: String(input.recordedAt ?? now()), fanExperienceReference: input.fanExperienceReference ? String(input.fanExperienceReference) : undefined }, String(input.actor ?? 'finance')) };
+    return { status: 201, body: state.racingFinanceService.recordTicketRevenue({ raceDayId: String(input.raceDayId ?? 'race-day-main'), source: (input.source as 'ticketing' | undefined) ?? 'ticketing', label: String(input.label ?? 'Ticket revenue'), grossAmount: Number(input.grossAmount ?? 0), netAmount: Number(input.netAmount ?? 0), currency: String(input.currency ?? 'USD'), ticketCount: Number(input.ticketCount ?? 0), recordedAt: String(input.recordedAt ?? now()), fanExperienceReference: input.fanExperienceReference ? String(input.fanExperienceReference) : undefined }, String(input.actor ?? 'finance-manager')) };
   }
   if (method === 'POST' && path === '/finance/hospitality-revenue') {
     const input = isRecord(body) ? body : {};
-    return { status: 201, body: state.racingFinanceService.recordHospitalityRevenue({ raceDayId: String(input.raceDayId ?? 'race-day-main'), packageId: String(input.packageId ?? ''), packageName: String(input.packageName ?? 'Hospitality package'), grossAmount: Number(input.grossAmount ?? 0), netAmount: Number(input.netAmount ?? 0), currency: String(input.currency ?? 'USD'), guestCount: Number(input.guestCount ?? 0), recordedAt: String(input.recordedAt ?? now()), fanExperienceReference: input.fanExperienceReference ? String(input.fanExperienceReference) : undefined }, String(input.actor ?? 'finance')) };
+    return { status: 201, body: state.racingFinanceService.recordHospitalityRevenue({ raceDayId: String(input.raceDayId ?? 'race-day-main'), packageId: String(input.packageId ?? ''), packageName: String(input.packageName ?? 'Hospitality package'), grossAmount: Number(input.grossAmount ?? 0), netAmount: Number(input.netAmount ?? 0), currency: String(input.currency ?? 'USD'), guestCount: Number(input.guestCount ?? 0), recordedAt: String(input.recordedAt ?? now()), fanExperienceReference: input.fanExperienceReference ? String(input.fanExperienceReference) : undefined }, String(input.actor ?? 'finance-manager')) };
   }
   if (method === 'POST' && path === '/finance/payout-requests') {
     const input = isRecord(body) ? body : {};
-    return { status: 202, body: state.racingFinanceService.requestPayout(Number(input.amount ?? 0), String(input.recipientLabel ?? 'Recipient'), String(input.actor ?? 'finance')) };
+    return { status: 202, body: state.racingFinanceService.requestPayout(Number(input.amount ?? 0), String(input.recipientLabel ?? 'Recipient'), String(input.actor ?? 'finance-manager')) };
   }
   if (method === 'GET' && path === '/equine-welfare/workspace') {
     return { status: 200, body: state.equineWelfareIntelligenceService.workspace(now()) };
@@ -2193,7 +2206,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
       horseId: String(input.horseId ?? 'horse-1'),
       observedAt: String(input.observedAt ?? now()),
       observerId: String(input.observerId ?? input.observedBy ?? input.actor ?? 'veterinarian'),
-      role: (input.role as 'veterinarian' | 'welfare-officer' | 'trainer' | 'groom' | 'steward' | undefined) ?? 'veterinarian',
+      role: (input.role as 'veterinarian' | 'equine-welfare-officer' | 'trainer' | 'groom' | 'steward' | undefined) ?? 'veterinarian',
       observationType: input.observationType ? String(input.observationType) : undefined,
       score: Number(input.score ?? 80),
       category: String(input.category ?? input.observationType ?? 'observation'),
@@ -2380,7 +2393,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
         horseId: String(payload.horseId ?? 'horse-1'),
         observedAt: now(),
         observerId: String(payload.observerId ?? observer),
-        role: (payload.role as 'welfare-officer') ?? 'welfare-officer',
+        role: (payload.role as 'equine-welfare-officer') ?? 'equine-welfare-officer',
         score: Number(payload.score ?? 70),
         category: String(payload.category ?? 'welfare-incident'),
         notes: String(payload.notes ?? 'Welfare incident intake'),
@@ -2422,10 +2435,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     federation: state.federation as Record<string, unknown>,
     equine: state.equine as { horse?: { horseId: string; name?: string } },
     aiControlPlane: state.aiControlPlane as { recommendations?: unknown[] },
-  }, state.platformServices, requestUrl.searchParams, (() => {
-    const headerRole = headerValue(headers, 'x-trackmind-role');
-    return headerRole && isRole(headerRole) ? headerRole : undefined;
-  })());
+  }, state.platformServices, requestUrl.searchParams, roleFromHeader(headers));
   if (platformResponse) return platformResponse;
   if (method === 'GET' && path === '/approvals/requests') {
     const seeded = Array.isArray(state.approvals) ? state.approvals : [];
@@ -2541,8 +2551,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   if (method === 'GET' && path === '/track-configuration/map') return { status: 200, body: state.trackMap };
   if (method === 'GET' && path === '/track-surface/measurements') return { status: 200, body: state.commandCenterContract.surfaceMeasurements };
   if (method === 'GET' && path === '/operations/command-center') {
-    const headerRole = headerValue(headers, 'x-trackmind-role');
-    return { status: 200, body: filterOperationsForRole(state.operations, headerRole && isRole(headerRole) ? headerRole : undefined) };
+    return { status: 200, body: filterOperationsForRole(state.operations, roleFromHeader(headers)) };
   }
   if (method === 'GET' && path === '/races') return { status: 200, body: (state.readiness as any).races ?? [] };
   if (method === 'GET' && path === '/race-day-readiness/dashboard') return { status: 200, body: state.readiness };
@@ -2579,52 +2588,52 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   }
   if (method === 'POST' && path === '/race-cards') {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 201, body: state.raceCardManagementService.createCard({ raceDayId: String(input.raceDayId ?? ''), racetrackId: String(input.racetrackId ?? 'main-track'), raceDate: String(input.raceDate ?? now().slice(0, 10)), raceNumber: Number(input.raceNumber ?? 1), scheduledPostTime: String(input.scheduledPostTime ?? now()), conditions: input.conditions, classification: input.classification, purse: input.purse }, String(input.actor ?? 'racing-secretary')) };
+    return { status: 201, body: state.raceCardManagementService.createCard({ raceDayId: String(input.raceDayId ?? ''), racetrackId: String(input.racetrackId ?? 'main-track'), raceDate: String(input.raceDate ?? now().slice(0, 10)), raceNumber: Number(input.raceNumber ?? 1), scheduledPostTime: String(input.scheduledPostTime ?? now()), conditions: input.conditions, classification: input.classification, purse: input.purse }, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const raceCardConditionsMatch = path.match(/^\/race-cards\/([^/]+)\/conditions$/);
   if (method === 'POST' && raceCardConditionsMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.raceCardManagementService.updateConditions(decodeURIComponent(raceCardConditionsMatch[1]), input.conditions ?? input, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.raceCardManagementService.updateConditions(decodeURIComponent(raceCardConditionsMatch[1]), input.conditions ?? input, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const raceCardClassificationMatch = path.match(/^\/race-cards\/([^/]+)\/classification$/);
   if (method === 'POST' && raceCardClassificationMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.raceCardManagementService.updateClassification(decodeURIComponent(raceCardClassificationMatch[1]), input.classification ?? input, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.raceCardManagementService.updateClassification(decodeURIComponent(raceCardClassificationMatch[1]), input.classification ?? input, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const raceCardPurseMatch = path.match(/^\/race-cards\/([^/]+)\/purse$/);
   if (method === 'POST' && raceCardPurseMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.raceCardManagementService.updatePurse(decodeURIComponent(raceCardPurseMatch[1]), input.purse ?? input, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.raceCardManagementService.updatePurse(decodeURIComponent(raceCardPurseMatch[1]), input.purse ?? input, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const raceCardEntriesMatch = path.match(/^\/race-cards\/([^/]+)\/entries$/);
   if (method === 'POST' && raceCardEntriesMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.raceCardManagementService.addEntry(decodeURIComponent(raceCardEntriesMatch[1]), { horseId: String(input.horseId ?? ''), trainerId: String(input.trainerId ?? ''), ownerIds: Array.isArray(input.ownerIds) ? input.ownerIds.map(String) : [String(input.ownerId ?? 'owner-unknown')], jockeyId: input.jockeyId, programNumber: input.programNumber, weightLbs: input.weightLbs }, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.raceCardManagementService.addEntry(decodeURIComponent(raceCardEntriesMatch[1]), { horseId: String(input.horseId ?? ''), trainerId: String(input.trainerId ?? ''), ownerIds: Array.isArray(input.ownerIds) ? input.ownerIds.map(String) : [String(input.ownerId ?? 'owner-unknown')], jockeyId: input.jockeyId, programNumber: input.programNumber, weightLbs: input.weightLbs }, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const raceCardHorseMatch = path.match(/^\/race-cards\/([^/]+)\/entries\/([^/]+)\/horse$/);
   if (method === 'POST' && raceCardHorseMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.raceCardManagementService.assignHorse(decodeURIComponent(raceCardHorseMatch[1]), decodeURIComponent(raceCardHorseMatch[2]), String(input.horseId ?? ''), String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.raceCardManagementService.assignHorse(decodeURIComponent(raceCardHorseMatch[1]), decodeURIComponent(raceCardHorseMatch[2]), String(input.horseId ?? ''), String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const raceCardTrainerMatch = path.match(/^\/race-cards\/([^/]+)\/entries\/([^/]+)\/trainer$/);
   if (method === 'POST' && raceCardTrainerMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.raceCardManagementService.assignTrainer(decodeURIComponent(raceCardTrainerMatch[1]), decodeURIComponent(raceCardTrainerMatch[2]), String(input.trainerId ?? ''), String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.raceCardManagementService.assignTrainer(decodeURIComponent(raceCardTrainerMatch[1]), decodeURIComponent(raceCardTrainerMatch[2]), String(input.trainerId ?? ''), String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const raceCardJockeyMatch = path.match(/^\/race-cards\/([^/]+)\/entries\/([^/]+)\/jockey$/);
   if (method === 'POST' && raceCardJockeyMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.raceCardManagementService.assignJockey(decodeURIComponent(raceCardJockeyMatch[1]), decodeURIComponent(raceCardJockeyMatch[2]), String(input.jockeyId ?? ''), String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.raceCardManagementService.assignJockey(decodeURIComponent(raceCardJockeyMatch[1]), decodeURIComponent(raceCardJockeyMatch[2]), String(input.jockeyId ?? ''), String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const raceCardPostMatch = path.match(/^\/race-cards\/([^/]+)\/entries\/([^/]+)\/post-position$/);
   if (method === 'POST' && raceCardPostMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.raceCardManagementService.assignPostPosition(decodeURIComponent(raceCardPostMatch[1]), decodeURIComponent(raceCardPostMatch[2]), Number(input.postPosition ?? 1), String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.raceCardManagementService.assignPostPosition(decodeURIComponent(raceCardPostMatch[1]), decodeURIComponent(raceCardPostMatch[2]), Number(input.postPosition ?? 1), String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const raceCardLifecycleMatch = path.match(/^\/race-cards\/([^/]+)\/lifecycle-transitions$/);
   if (method === 'POST' && raceCardLifecycleMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.raceCardManagementService.transitionLifecycle(decodeURIComponent(raceCardLifecycleMatch[1]), String(input.toStatus ?? input.lifecycleStatus ?? 'review') as any, String(input.actor ?? 'racing-secretary'), String(input.reason ?? 'lifecycle transition')) };
+    return { status: 202, body: state.raceCardManagementService.transitionLifecycle(decodeURIComponent(raceCardLifecycleMatch[1]), String(input.toStatus ?? input.lifecycleStatus ?? 'review') as any, String(input.actor ?? 'horse-operations-coordinator'), String(input.reason ?? 'lifecycle transition')) };
   }
   if (method === 'GET' && path === '/horse-registry/workspace') return { status: 200, body: state.horseRegistryService.workspace(now()) };
   if (method === 'GET' && path === '/horse-registry/audit-trail') {
@@ -2643,12 +2652,12 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   }
   if (method === 'POST' && path === '/horse-registry/horses') {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 201, body: state.horseRegistryService.registerHorse({ identity: { horseId: String(input.horseId ?? `horse-${Date.now().toString(36)}`), name: String(input.name ?? 'New Horse'), microchipId: input.microchipId, foaled: input.foaled, sex: input.sex, breed: input.breed, racetrackId: input.racetrackId ?? 'main-track', lifecycleStatus: input.lifecycleStatus ?? 'active', tenantId: input.tenantId }, breedingMetadata: input.breedingMetadata, registrationRecords: input.registrationRecords, ownership: input.ownership, trainer: input.trainer }, String(input.actor ?? 'racing-secretary')) };
+    return { status: 201, body: state.horseRegistryService.registerHorse({ identity: { horseId: String(input.horseId ?? `horse-${Date.now().toString(36)}`), name: String(input.name ?? 'New Horse'), microchipId: input.microchipId, foaled: input.foaled, sex: input.sex, breed: input.breed, racetrackId: input.racetrackId ?? 'main-track', lifecycleStatus: input.lifecycleStatus ?? 'active', tenantId: input.tenantId }, breedingMetadata: input.breedingMetadata, registrationRecords: input.registrationRecords, ownership: input.ownership, trainer: input.trainer }, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const horseIdentityMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/identity$/);
   if (method === 'POST' && horseIdentityMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.horseRegistryService.updateIdentity(decodeURIComponent(horseIdentityMatch[1]), input.identity ?? input, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.horseRegistryService.updateIdentity(decodeURIComponent(horseIdentityMatch[1]), input.identity ?? input, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const horseOwnershipMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/ownership$/);
   if (method === 'POST' && horseOwnershipMatch) {
@@ -2676,34 +2685,34 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
           String(input.dataSource ?? 'manual-entry'),
         ],
       };
-      return { status: 202, body: state.horseRegistryService.recordOwnership(horseId, [...existing, entry], String(input.actor ?? 'racing-secretary')) };
+      return { status: 202, body: state.horseRegistryService.recordOwnership(horseId, [...existing, entry], String(input.actor ?? 'horse-operations-coordinator')) };
     }
-    return { status: 202, body: state.horseRegistryService.recordOwnership(horseId, Array.isArray(input.ownershipHistory) ? input.ownershipHistory : input.ownership ?? [], String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.horseRegistryService.recordOwnership(horseId, Array.isArray(input.ownershipHistory) ? input.ownershipHistory : input.ownership ?? [], String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const horseTrainerMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/trainer$/);
   if (method === 'POST' && horseTrainerMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.horseRegistryService.recordTrainer(decodeURIComponent(horseTrainerMatch[1]), input.trainer ?? input, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.horseRegistryService.recordTrainer(decodeURIComponent(horseTrainerMatch[1]), input.trainer ?? input, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const horseStableMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/stable$/);
   if (method === 'POST' && horseStableMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.horseRegistryService.recordStableAssignment(decodeURIComponent(horseStableMatch[1]), { barnId: String(input.barnId ?? ''), stallId: input.stallId, assignedAt: String(input.assignedAt ?? now()), assignedBy: String(input.assignedBy ?? input.actor ?? 'racing-secretary'), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.horseRegistryService.recordStableAssignment(decodeURIComponent(horseStableMatch[1]), { barnId: String(input.barnId ?? ''), stallId: input.stallId, assignedAt: String(input.assignedAt ?? now()), assignedBy: String(input.assignedBy ?? input.actor ?? 'horse-operations-coordinator'), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const horseBreedingMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/breeding$/);
   if (method === 'POST' && horseBreedingMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.horseRegistryService.updateBreedingMetadata(decodeURIComponent(horseBreedingMatch[1]), input.breedingMetadata ?? input, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.horseRegistryService.updateBreedingMetadata(decodeURIComponent(horseBreedingMatch[1]), input.breedingMetadata ?? input, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const horseRegistrationMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/registrations$/);
   if (method === 'POST' && horseRegistrationMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.horseRegistryService.addRegistrationRecord(decodeURIComponent(horseRegistrationMatch[1]), input.registration ?? input, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.horseRegistryService.addRegistrationRecord(decodeURIComponent(horseRegistrationMatch[1]), input.registration ?? input, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const horseRetirementMatch = path.match(/^\/horse-registry\/horses\/([^/]+)\/retirement$/);
   if (method === 'POST' && horseRetirementMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.horseRegistryService.recordRetirement(decodeURIComponent(horseRetirementMatch[1]), { retiredAt: String(input.retiredAt ?? now()), reason: String(input.reason ?? 'retirement'), destination: String(input.destination ?? 'aftercare'), aftercareContact: input.aftercareContact, evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.horseRegistryService.recordRetirement(decodeURIComponent(horseRetirementMatch[1]), { retiredAt: String(input.retiredAt ?? now()), reason: String(input.reason ?? 'retirement'), destination: String(input.destination ?? 'aftercare'), aftercareContact: input.aftercareContact, evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   if (method === 'GET' && path === '/trainer-management/workspace') return { status: 200, body: state.trainerManagementService.workspace(now()) };
   if (method === 'GET' && path === '/trainer-management/audit-trail') {
@@ -2717,27 +2726,27 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   }
   if (method === 'POST' && path === '/trainer-management/trainers') {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 201, body: state.trainerManagementService.createTrainer({ trainerId: String(input.trainerId ?? `trainer-${Date.now().toString(36)}`), displayName: String(input.displayName ?? 'New Trainer'), licensing: input.licensing ?? { licenseNumber: 'PENDING', issuingAuthority: 'State Racing Commission', jurisdiction: 'US-NY', status: 'pending-renewal', issuedOn: now().slice(0, 10), expiresOn: now().slice(0, 10), restrictions: [], evidence: [] }, status: input.status, compliancePosture: input.compliancePosture }, String(input.actor ?? 'racing-secretary')) };
+    return { status: 201, body: state.trainerManagementService.createTrainer({ trainerId: String(input.trainerId ?? `trainer-${Date.now().toString(36)}`), displayName: String(input.displayName ?? 'New Trainer'), licensing: input.licensing ?? { licenseNumber: 'PENDING', issuingAuthority: 'State Racing Commission', jurisdiction: 'US-NY', status: 'pending-renewal', issuedOn: now().slice(0, 10), expiresOn: now().slice(0, 10), restrictions: [], evidence: [] }, status: input.status, compliancePosture: input.compliancePosture }, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const trainerLicensingMatch = path.match(/^\/trainer-management\/trainers\/([^/]+)\/licensing$/);
   if (method === 'POST' && trainerLicensingMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.trainerManagementService.updateLicensing(decodeURIComponent(trainerLicensingMatch[1]), input.licensing ?? input, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.trainerManagementService.updateLicensing(decodeURIComponent(trainerLicensingMatch[1]), input.licensing ?? input, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const trainerStableMatch = path.match(/^\/trainer-management\/trainers\/([^/]+)\/stable$/);
   if (method === 'POST' && trainerStableMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.trainerManagementService.assignStable(decodeURIComponent(trainerStableMatch[1]), { barnId: String(input.barnId ?? ''), barnName: input.barnName, assignedAt: String(input.assignedAt ?? now()), assignedBy: String(input.assignedBy ?? input.actor ?? 'racing-secretary'), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.trainerManagementService.assignStable(decodeURIComponent(trainerStableMatch[1]), { barnId: String(input.barnId ?? ''), barnName: input.barnName, assignedAt: String(input.assignedAt ?? now()), assignedBy: String(input.assignedBy ?? input.actor ?? 'horse-operations-coordinator'), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const trainerHorseMatch = path.match(/^\/trainer-management\/trainers\/([^/]+)\/horses$/);
   if (method === 'POST' && trainerHorseMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.trainerManagementService.assignHorse(decodeURIComponent(trainerHorseMatch[1]), { horseId: String(input.horseId ?? ''), horseName: input.horseName, assignedAt: String(input.assignedAt ?? now()), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.trainerManagementService.assignHorse(decodeURIComponent(trainerHorseMatch[1]), { horseId: String(input.horseId ?? ''), horseName: input.horseName, assignedAt: String(input.assignedAt ?? now()), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const trainerPerformanceMatch = path.match(/^\/trainer-management\/trainers\/([^/]+)\/performance$/);
   if (method === 'POST' && trainerPerformanceMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.trainerManagementService.recordPerformance(decodeURIComponent(trainerPerformanceMatch[1]), { raceId: String(input.raceId ?? ''), raceDate: String(input.raceDate ?? now().slice(0, 10)), trackId: String(input.trackId ?? 'main-track'), horseId: String(input.horseId ?? ''), finishPosition: input.finishPosition, earningsCents: input.earningsCents, status: input.status ?? 'entered', evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.trainerManagementService.recordPerformance(decodeURIComponent(trainerPerformanceMatch[1]), { raceId: String(input.raceId ?? ''), raceDate: String(input.raceDate ?? now().slice(0, 10)), trackId: String(input.trackId ?? 'main-track'), horseId: String(input.horseId ?? ''), finishPosition: input.finishPosition, earningsCents: input.earningsCents, status: input.status ?? 'entered', evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const trainerComplianceMatch = path.match(/^\/trainer-management\/trainers\/([^/]+)\/compliance$/);
   if (method === 'POST' && trainerComplianceMatch) {
@@ -2762,22 +2771,22 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   }
   if (method === 'POST' && path === '/jockey-management/jockeys') {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 201, body: state.jockeyManagementService.createJockey({ jockeyId: String(input.jockeyId ?? `jockey-${Date.now().toString(36)}`), displayName: String(input.displayName ?? 'New Jockey'), licensing: input.licensing ?? { licenseNumber: 'PENDING', issuingAuthority: 'State Racing Commission', jurisdiction: 'US-NY', status: 'pending-renewal', issuedOn: now().slice(0, 10), expiresOn: now().slice(0, 10), restrictions: [], evidence: [] }, status: input.status, eligibility: input.eligibility }, String(input.actor ?? 'racing-secretary')) };
+    return { status: 201, body: state.jockeyManagementService.createJockey({ jockeyId: String(input.jockeyId ?? `jockey-${Date.now().toString(36)}`), displayName: String(input.displayName ?? 'New Jockey'), licensing: input.licensing ?? { licenseNumber: 'PENDING', issuingAuthority: 'State Racing Commission', jurisdiction: 'US-NY', status: 'pending-renewal', issuedOn: now().slice(0, 10), expiresOn: now().slice(0, 10), restrictions: [], evidence: [] }, status: input.status, eligibility: input.eligibility }, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const jockeyLicensingMatch = path.match(/^\/jockey-management\/jockeys\/([^/]+)\/licensing$/);
   if (method === 'POST' && jockeyLicensingMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.jockeyManagementService.updateLicensing(decodeURIComponent(jockeyLicensingMatch[1]), input.licensing ?? input, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.jockeyManagementService.updateLicensing(decodeURIComponent(jockeyLicensingMatch[1]), input.licensing ?? input, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const jockeyAssignmentMatch = path.match(/^\/jockey-management\/jockeys\/([^/]+)\/assignments$/);
   if (method === 'POST' && jockeyAssignmentMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.jockeyManagementService.recordAssignment(decodeURIComponent(jockeyAssignmentMatch[1]), { horseId: String(input.horseId ?? ''), horseName: input.horseName, raceCardId: input.raceCardId, entryId: input.entryId, assignedAt: String(input.assignedAt ?? now()), weightLbs: input.weightLbs, postPosition: input.postPosition, evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.jockeyManagementService.recordAssignment(decodeURIComponent(jockeyAssignmentMatch[1]), { horseId: String(input.horseId ?? ''), horseName: input.horseName, raceCardId: input.raceCardId, entryId: input.entryId, assignedAt: String(input.assignedAt ?? now()), weightLbs: input.weightLbs, postPosition: input.postPosition, evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const jockeyParticipationMatch = path.match(/^\/jockey-management\/jockeys\/([^/]+)\/participation$/);
   if (method === 'POST' && jockeyParticipationMatch) {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 202, body: state.jockeyManagementService.recordParticipation(decodeURIComponent(jockeyParticipationMatch[1]), { raceId: String(input.raceId ?? ''), raceCardId: input.raceCardId, raceDate: String(input.raceDate ?? now().slice(0, 10)), trackId: String(input.trackId ?? 'main-track'), horseId: String(input.horseId ?? ''), finishPosition: input.finishPosition, earningsCents: input.earningsCents, status: input.status ?? 'declared', evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'racing-secretary')) };
+    return { status: 202, body: state.jockeyManagementService.recordParticipation(decodeURIComponent(jockeyParticipationMatch[1]), { raceId: String(input.raceId ?? ''), raceCardId: input.raceCardId, raceDate: String(input.raceDate ?? now().slice(0, 10)), trackId: String(input.trackId ?? 'main-track'), horseId: String(input.horseId ?? ''), finishPosition: input.finishPosition, earningsCents: input.earningsCents, status: input.status ?? 'declared', evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   const jockeyComplianceMatch = path.match(/^\/jockey-management\/jockeys\/([^/]+)\/compliance$/);
   if (method === 'POST' && jockeyComplianceMatch) {
@@ -2893,7 +2902,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   }
   if (method === 'POST' && path === '/paddock-operations/assignments') {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 201, body: state.paddockOperationsService.assignPaddock({ horseId: String(input.horseId ?? ''), horseName: input.horseName, raceId: String(input.raceId ?? ''), raceCardId: input.raceCardId, entryId: input.entryId, saddleCloth: Number(input.saddleCloth ?? 0), paddockSlot: String(input.paddockSlot ?? 'A-1'), postPosition: input.postPosition, jockeyId: input.jockeyId, trainerId: input.trainerId, status: input.status ?? 'waiting', assignedAt: String(input.assignedAt ?? now()), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'racing-secretary')) };
+    return { status: 201, body: state.paddockOperationsService.assignPaddock({ horseId: String(input.horseId ?? ''), horseName: input.horseName, raceId: String(input.raceId ?? ''), raceCardId: input.raceCardId, entryId: input.entryId, saddleCloth: Number(input.saddleCloth ?? 0), paddockSlot: String(input.paddockSlot ?? 'A-1'), postPosition: input.postPosition, jockeyId: input.jockeyId, trainerId: input.trainerId, status: input.status ?? 'waiting', assignedAt: String(input.assignedAt ?? now()), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'horse-operations-coordinator')) };
   }
   if (method === 'POST' && path === '/paddock-operations/arrivals') {
     const input = (body ?? {}) as Record<string, any>;
@@ -2941,24 +2950,24 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   }
   if (method === 'POST' && path === '/surface-intelligence/observations') {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 201, body: state.surfaceIntelligenceService.recordObservation({ sectionId: String(input.sectionId ?? 'far-turn'), observedAt: String(input.observedAt ?? now()), observerId: String(input.observerId ?? input.actor ?? 'track-superintendent'), role: input.role ?? 'track-superintendent', severity: Number(input.severity ?? 3), note: String(input.note ?? 'Surface observation recorded'), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'track-superintendent')) };
+    return { status: 201, body: state.surfaceIntelligenceService.recordObservation({ sectionId: String(input.sectionId ?? 'far-turn'), observedAt: String(input.observedAt ?? now()), observerId: String(input.observerId ?? input.actor ?? 'facilities-manager'), role: input.role ?? 'facilities-manager', severity: Number(input.severity ?? 3), note: String(input.note ?? 'Surface observation recorded'), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'facilities-manager')) };
   }
   if (method === 'POST' && path === '/surface-intelligence/inspections') {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 201, body: state.surfaceIntelligenceService.recordInspection({ sectionId: String(input.sectionId ?? 'far-turn'), inspectedAt: String(input.inspectedAt ?? now()), inspectorId: String(input.inspectorId ?? input.actor ?? 'track-superintendent'), surfaceType: input.surfaceType ?? 'dirt', footingUniformity: Number(input.footingUniformity ?? 80), divots: Number(input.divots ?? 0), standingWater: Boolean(input.standingWater), railWear: Number(input.railWear ?? 0), findings: Array.isArray(input.findings) ? input.findings : [], workflowId: input.workflowId }, String(input.actor ?? 'track-superintendent')) };
+    return { status: 201, body: state.surfaceIntelligenceService.recordInspection({ sectionId: String(input.sectionId ?? 'far-turn'), inspectedAt: String(input.inspectedAt ?? now()), inspectorId: String(input.inspectorId ?? input.actor ?? 'facilities-manager'), surfaceType: input.surfaceType ?? 'dirt', footingUniformity: Number(input.footingUniformity ?? 80), divots: Number(input.divots ?? 0), standingWater: Boolean(input.standingWater), railWear: Number(input.railWear ?? 0), findings: Array.isArray(input.findings) ? input.findings : [], workflowId: input.workflowId }, String(input.actor ?? 'facilities-manager')) };
   }
   if (method === 'POST' && path === '/surface-intelligence/inspection-workflows') {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 201, body: state.surfaceIntelligenceService.openInspectionWorkflow({ sectionId: String(input.sectionId ?? 'far-turn'), inspectionType: input.inspectionType ?? 'routine', scheduledAt: String(input.scheduledAt ?? now()), findings: Array.isArray(input.findings) ? input.findings : [] }, String(input.actor ?? 'track-superintendent')) };
+    return { status: 201, body: state.surfaceIntelligenceService.openInspectionWorkflow({ sectionId: String(input.sectionId ?? 'far-turn'), inspectionType: input.inspectionType ?? 'routine', scheduledAt: String(input.scheduledAt ?? now()), findings: Array.isArray(input.findings) ? input.findings : [] }, String(input.actor ?? 'facilities-manager')) };
   }
   if (method === 'POST' && path === '/surface-intelligence/maintenance-events') {
     const input = (body ?? {}) as Record<string, any>;
-    return { status: 201, body: state.surfaceIntelligenceService.recordMaintenance({ sectionId: String(input.sectionId ?? 'far-turn'), completedAt: String(input.completedAt ?? now()), action: input.action ?? 'harrow', effectiveness: Number(input.effectiveness ?? 7), notes: String(input.notes ?? 'Maintenance completed'), performedBy: String(input.performedBy ?? input.actor ?? 'maintenance-crew'), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'track-superintendent')) };
+    return { status: 201, body: state.surfaceIntelligenceService.recordMaintenance({ sectionId: String(input.sectionId ?? 'far-turn'), completedAt: String(input.completedAt ?? now()), action: input.action ?? 'harrow', effectiveness: Number(input.effectiveness ?? 7), notes: String(input.notes ?? 'Maintenance completed'), performedBy: String(input.performedBy ?? input.actor ?? 'maintenance-crew'), evidence: Array.isArray(input.evidence) ? input.evidence : [] }, String(input.actor ?? 'facilities-manager')) };
   }
   if (method === 'POST' && path === '/surface-intelligence/operational-actions') {
     const input = (body ?? {}) as Record<string, any>;
     try {
-      return { status: 202, body: state.surfaceIntelligenceService.requestOperationalAction({ action: input.action ?? 'harrowing', sectionId: String(input.sectionId ?? 'far-turn'), reason: String(input.reason ?? 'Surface operational action requested'), requestedBy: input.requestedBy ?? input.actor, payload: input.payload }, String(input.actor ?? 'track-superintendent')) };
+      return { status: 202, body: state.surfaceIntelligenceService.requestOperationalAction({ action: input.action ?? 'harrowing', sectionId: String(input.sectionId ?? 'far-turn'), reason: String(input.reason ?? 'Surface operational action requested'), requestedBy: input.requestedBy ?? input.actor, payload: input.payload }, String(input.actor ?? 'facilities-manager')) };
     } catch (error) {
       return { status: 400, body: { ok: false, error: { code: 'surface_request_denied', message: error instanceof Error ? error.message : String(error) } } };
     }
@@ -2973,7 +2982,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     const input = isRecord(body) ? body : {};
     const horseId = decodeURIComponent(equineWorkoutMatch[1]);
     try {
-      const actor: EquineActor = { id: String(input.actor ?? input.actorId ?? 'racing-secretary'), roles: ['racing-secretary'], tenantId: String(input.tenantId ?? 'tenant-1') };
+      const actor: EquineActor = { id: String(input.actor ?? input.actorId ?? 'horse-operations-coordinator'), roles: ['horse-operations-coordinator'], tenantId: String(input.tenantId ?? 'tenant-1') };
       state.equinePlatform.recordWorkout(horseId, {
         workoutId: String(input.workoutId ?? `workout-${Date.now().toString(36)}`),
         date: String(input.date ?? now().slice(0, 10)),
@@ -3067,7 +3076,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
         tasks: Array.isArray(input.tasks) ? input.tasks : ['verify lockout', 'perform maintenance', 'capture evidence'],
         evidence: Array.isArray(input.evidence) ? input.evidence : [],
         operationalImpact: input.operationalImpact ?? 'operational-impact',
-        requestedBy: String(input.requestedBy ?? input.maintenanceOwner ?? input.actor ?? 'facilities-supervisor'),
+        requestedBy: String(input.requestedBy ?? input.maintenanceOwner ?? input.actor ?? 'facilities-manager'),
         maintenanceOwner: input.maintenanceOwner ? String(input.maintenanceOwner) : undefined,
         notes: input.notes ? String(input.notes) : undefined,
         issuesFound: Array.isArray(input.issuesFound) ? input.issuesFound.map(String) : undefined,
@@ -3089,7 +3098,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
           scheduledFor: input.scheduledFor ? String(input.scheduledFor) : undefined,
           status: input.status ? String(input.status) as import('./facilitiesMaintenance.js').WorkOrderStatus : undefined,
         },
-        String(input.actorId ?? input.requestedBy ?? 'facilities-supervisor'),
+        String(input.actorId ?? input.requestedBy ?? 'facilities-manager'),
         {
           reason: input.reason ? String(input.reason) : undefined,
           confirmedDestructive: input.confirmedDestructive === true,
@@ -3110,7 +3119,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
         severity: input.severity ?? 'medium',
         description: String(input.description ?? 'Facility incident recorded for triage.'),
         evidence: Array.isArray(input.evidence) ? input.evidence : [],
-        reportedBy: String(input.reportedBy ?? input.actor ?? 'facilities-supervisor'),
+        reportedBy: String(input.reportedBy ?? input.actor ?? 'facilities-manager'),
       }, facilitiesPrincipal),
     };
   }
@@ -3219,7 +3228,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     if (issuedByRoleRaw === 'ai-agent' || issuedByRoleRaw === 'read-only-auditor') {
       return { status: 403, body: { ok: false, error: { code: 'steward_request_denied', message: 'official steward rulings require an authorized human steward role' } } };
     }
-    const issuedByRole = issuedByRoleRaw === 'admin' ? 'admin' as const : 'steward' as const;
+    const issuedByRole = issuedByRoleRaw === 'platform-super-admin' ? 'platform-super-admin' as const : 'steward' as const;
     if (input.officialResultsModified === true) {
       return { status: 403, body: { ok: false, error: { code: 'steward_request_denied', message: 'steward center may not modify official results' } } };
     }
@@ -3662,8 +3671,8 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     if (actorType !== 'human') return forbidden('Approval composer requires an authenticated human actor.');
     const roles = actorRoles(body);
     if (roles.length === 0) return forbidden('Approval composer requires actor roles for RBAC enforcement.');
-    const headerRole = headerValue(headers, 'x-trackmind-role');
-    if (headerRole && isRole(headerRole) && !roles.includes(headerRole)) {
+    const headerRole = roleFromHeader(headers);
+    if (headerRole && !roles.includes(headerRole)) {
       return forbidden(`Actor roles must include authenticated role ${headerRole}.`);
     }
     const tenantId = stringValue(body.tenantId) ?? 'trackmind';

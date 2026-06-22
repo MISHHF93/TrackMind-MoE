@@ -6,9 +6,9 @@ const entra = { tenantId: 'tenant-a', issuer: 'https://login.microsoftonline.com
 
 test('enterprise identity governance enforces Entra tenant isolation, RBAC, ABAC, approvals, and audit evidence', () => {
   const platform = new EnterpriseIdentityGovernancePlatform(entra);
-  platform.registerIdentity({ id: 'u1', tenantId: 'tenant-a', kind: 'user', displayName: 'Ops Admin', entraObjectId: 'entra-u1', roles: ['operations-admin'], attributes: { department: 'operations', region: 'east' } });
+  platform.registerIdentity({ id: 'u1', tenantId: 'tenant-a', kind: 'user', displayName: 'Ops Admin', entraObjectId: 'entra-u1', roles: ['organization-admin'], attributes: { department: 'operations', region: 'east' } });
   platform.registerIdentity({ id: 'agent-1', tenantId: 'tenant-a', kind: 'ai-agent', displayName: 'Safety Agent', roles: ['ai-safety-agent'], attributes: { department: 'safety', region: 'east' }, managedIdentity: true });
-  platform.definePolicy({ id: 'pol-admin', tenantId: 'tenant-a', name: 'Operations delegated admin', permissions: ['tenant:admin'], roles: ['operations-admin'], attributes: { region: 'east' }, requiresApproval: true, privileged: true, evidenceRequired: ['ticket'] });
+  platform.definePolicy({ id: 'pol-admin', tenantId: 'tenant-a', name: 'Operations delegated admin', permissions: ['tenant:admin'], roles: ['organization-admin'], attributes: { region: 'east' }, requiresApproval: true, privileged: true, evidenceRequired: ['ticket'] });
   platform.definePolicy({ id: 'pol-agent', tenantId: 'tenant-a', name: 'AI agent bounded action', permissions: ['ai-agent:act'], subjectKinds: ['ai-agent'], attributes: { department: 'safety' }, evidenceRequired: ['model-policy'] });
 
   assert.equal(platform.decide('agent-1', 'ai-agent:act', { tenantId: 'tenant-a', target: 'risk-workflow', evidence: ['model-policy'] }).allowed, true);

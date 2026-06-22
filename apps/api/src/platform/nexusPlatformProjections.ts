@@ -121,7 +121,7 @@ export function projectEquineWelfare(
   tenantId: string,
   racetrackId: string,
 ): EquineWelfareWorkspaceDto {
-  const actor = { actorId: 'welfare-officer', role: 'regulator' as const };
+  const actor = { actorId: 'equine-welfare-officer', role: 'regulator' as const };
   const horses: EquineWelfareScoreDto[] = [];
   for (const horseId of CANONICAL_HORSE_IDS) {
     try {
@@ -243,7 +243,7 @@ export function projectSecuritySoc(
   const workspace = security.getWorkspace({
     id: 'nexus-projection',
     permissions: ['security:read'],
-    roles: ['admin'],
+    roles: ['platform-super-admin'],
     tenantId,
     human: true,
   });

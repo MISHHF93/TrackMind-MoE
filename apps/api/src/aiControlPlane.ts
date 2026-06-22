@@ -435,7 +435,7 @@ const expertImplementations: Record<ExpertModelId, ExpertImplementation> = {
       evidence,
       confidence: clamp01(0.62 + evidence.length * 0.025 + (forecasts.length ? 0.06 : 0)),
       riskLevel: normalizeSurfaceRisk(worst.riskLevel),
-      requiredApprovals: worst.riskLevel === 'critical' || worst.riskLevel === 'high' ? ['track-superintendent', 'steward'] : ['track-superintendent-review'],
+      requiredApprovals: worst.riskLevel === 'critical' || worst.riskLevel === 'high' ? ['facilities-manager', 'steward'] : ['track-superintendent-review'],
       affectedAssets: sections.map((section) => `surface-section:${section.sectionId}`),
       protectedActions: worst.riskLevel === 'critical' ? ['safety-critical-control'] : [],
       draftAction: worst.riskLevel === 'critical' ? lockedDraftAction('surface-track-closure-recommendation', `surface-section:${worst.sectionId}`, 'Recommend closure review package only; no autonomous closure is permitted.') : undefined,
@@ -454,7 +454,7 @@ const expertImplementations: Record<ExpertModelId, ExpertImplementation> = {
       evidence,
       confidence: clamp01(0.55 + features.checks.length * 0.03 - exceptionChecks.length * 0.02),
       riskLevel: score < 70 ? 'critical' : score < 85 ? 'high' : score < 95 ? 'medium' : 'low',
-      requiredApprovals: [...new Set(['steward', 'racing-secretary', ...exceptionChecks.map((check) => check.ownerRole)])],
+      requiredApprovals: [...new Set(['steward', 'horse-operations-coordinator', ...exceptionChecks.map((check) => check.ownerRole)])],
       affectedAssets: [`race:${features.raceId}`, `track:${features.trackId}`, ...features.checks.map((check) => `readiness:${check.domain}`)],
       protectedActions: ['race-start'],
       draftAction: lockedDraftAction('race-start-readiness-package', `race:${features.raceId}`, 'Draft readiness package only; race start remains human controlled.'),
@@ -513,7 +513,7 @@ const expertImplementations: Record<ExpertModelId, ExpertImplementation> = {
       evidence: scoped.flatMap((signal) => [`security-signal:${signal.id}:${signal.severity}`, ...(signal.evidenceUris ?? [])]),
       confidence: clamp01(0.5 + scoped.length * 0.04 + (hasCritical ? 0.1 : 0)),
       riskLevel,
-      requiredApprovals: riskLevel === 'critical' ? ['security', 'incident-commander', 'compliance-officer'] : ['security'],
+      requiredApprovals: riskLevel === 'critical' ? ['security-manager', 'race-day-operations-manager', 'compliance-officer'] : ['security-manager'],
       affectedAssets: [...new Set(scoped.flatMap((signal) => [signal.subject, signal.location]))],
       protectedActions: riskLevel === 'critical' || drivers.includes('emergency-response') ? ['emergency-action'] : [],
       draftAction: lockedDraftAction('security-incident-triage', features.scope ?? 'enterprise', 'Recommend investigation/escalation package only; emergency controls stay human controlled.'),
@@ -536,7 +536,7 @@ const expertImplementations: Record<ExpertModelId, ExpertImplementation> = {
       evidence: [`rainfall:${weather.rainfallMm}`, `forecastRain:${weather.forecastRainMm}`, `wind:${weather.windMph}`, `temperature:${weather.temperature}`, `lightningMiles:${weather.lightningMiles ?? 'not-reported'}`],
       confidence: clamp01(0.58 + Math.min(0.32, impactScore / 250)),
       riskLevel,
-      requiredApprovals: riskLevel === 'critical' || riskLevel === 'high' ? ['steward', 'race-day-commander', 'track-superintendent'] : ['weather-desk'],
+      requiredApprovals: riskLevel === 'critical' || riskLevel === 'high' ? ['steward', 'race-day-commander', 'facilities-manager'] : ['weather-desk'],
       affectedAssets: [`track:${features.trackId ?? 'track'}`, ...(features.affectedRaceIds ?? []).map((raceId) => `race:${raceId}`)],
       protectedActions: riskLevel === 'critical' ? ['race-stop', 'race-start'] : [],
       draftAction: lockedDraftAction('weather-impact-review', features.trackId ?? 'track', 'Weather impact recommendation only; race controls remain human controlled.'),
@@ -552,7 +552,7 @@ const expertImplementations: Record<ExpertModelId, ExpertImplementation> = {
       evidence: predictions.flatMap((prediction) => [`maintenance:${prediction.assetId}:failureProbability=${prediction.failureProbability}`, `maintenance:${prediction.assetId}:priority=${prediction.priority}`]),
       confidence: clamp01(0.55 + predictions.length * 0.04 + (worst?.failureProbability ?? 0) * 0.2),
       riskLevel,
-      requiredApprovals: riskLevel === 'critical' || riskLevel === 'high' ? ['facilities-supervisor', 'operations-command'] : ['maintenance-dispatcher'],
+      requiredApprovals: riskLevel === 'critical' || riskLevel === 'high' ? ['facilities-manager', 'operations-command'] : ['maintenance-dispatcher'],
       affectedAssets: predictions.map((prediction) => `asset:${prediction.assetId}`),
       protectedActions: riskLevel === 'critical' ? ['safety-critical-control'] : [],
       draftAction: worst ? lockedDraftAction('facility-maintenance-work-order-draft', `asset:${worst.assetId}`, 'Draft maintenance work order recommendation only; execution remains approval gated.') : undefined,
@@ -668,9 +668,9 @@ function approverRolesForGovernanceRecord(record: RecommendationRecord): string[
   if (record.approvalPolicy === 'veterinarian') return ['veterinarian'];
   if (record.approvalPolicy === 'steward') return ['steward'];
   if (record.approvalPolicy === 'two-person') return ['steward', 'compliance-officer'];
-  if (record.approvalPolicy === 'governance-board') return ['compliance-officer', 'admin'];
-  if (/gate/i.test(record.action)) return ['racing-secretary', 'track-superintendent'];
-  if (/surface|harrow|irrigation|rolling/i.test(record.action)) return ['track-superintendent'];
+  if (record.approvalPolicy === 'governance-board') return ['compliance-officer', 'platform-super-admin'];
+  if (/gate/i.test(record.action)) return ['horse-operations-coordinator', 'facilities-manager'];
+  if (/surface|harrow|irrigation|rolling/i.test(record.action)) return ['facilities-manager'];
   return ['compliance-officer'];
 }
 

@@ -4,8 +4,8 @@ import { ApexApprovalGateway, createApexDomainControllers, handleApiRequest, cre
 
 const steward = { actor: 'steward-1', roles: ['steward'], reason: 'Human steward reviewed evidence.', evidence: ['human-approval-record'], now: '2026-06-14T18:00:30.000Z' };
 const vet = { actor: 'vet-1', roles: ['veterinarian'], reason: 'Veterinarian examined horse.', evidence: ['human-approval-record'], now: '2026-06-14T18:00:20.000Z' };
-const finance = { actor: 'finance-1', roles: ['finance'], reason: 'Finance verified payout funding.', evidence: ['human-approval-record'], now: '2026-06-14T18:00:45.000Z' };
-const security = { actor: 'security-1', roles: ['security'], reason: 'Incident commander reviewed action.', evidence: ['human-approval-record'], now: '2026-06-14T18:00:25.000Z' };
+const finance = { actor: 'finance-1', roles: ['finance-manager'], reason: 'Finance verified payout funding.', evidence: ['human-approval-record'], now: '2026-06-14T18:00:45.000Z' };
+const security = { actor: 'security-1', roles: ['security-manager'], reason: 'Incident commander reviewed action.', evidence: ['human-approval-record'], now: '2026-06-14T18:00:25.000Z' };
 
 function evidence(rationale = 'Evidence supports approval request.') {
   return {
@@ -31,7 +31,7 @@ test('APEX safety service creates approval request before emergency mutation and
   const request = await handleApiRequest('POST', '/api/v1/services/safety/emergency-actions', {
     incidentId: 'incident-fire-1',
     action: 'dispatch emergency response',
-    ...context('safety-lead', ['security']),
+    ...context('safety-lead', ['security-manager']),
     evidence: evidence('Emergency action requires incident commander review.'),
   }, state);
 
@@ -96,12 +96,12 @@ test('finance payout requires steward and finance approval and emits immutable a
     payoutId: 'payout-race-7',
     amountCents: 125000,
     recipientId: 'owner-1',
-    ...context('finance-bot', ['finance']),
+    ...context('finance-bot', ['finance-manager']),
     evidence: evidence('Payout release requires steward and finance dual-control.'),
   });
 
   assert.equal(request.status, 202);
-  assert.deepEqual(request.body.requiredRoles.sort(), ['finance', 'steward']);
+  assert.deepEqual(request.body.requiredRoles.sort(), ['finance-manager', 'steward']);
 
   const partial = await controllers.handle('POST', `/approvals/${request.body.approvalRequestId}/approve`, steward);
   assert.equal(partial.body.executed, false);
@@ -109,7 +109,7 @@ test('finance payout requires steward and finance approval and emits immutable a
   const final = await controllers.handle('POST', `/approvals/${request.body.approvalRequestId}/approve`, finance);
   assert.equal(final.body.executed, true);
   assert.equal(final.body.result.status, 'released');
-  assert.deepEqual(final.body.result.dualControl, ['steward', 'finance']);
+  assert.deepEqual(final.body.result.dualControl, ['steward', 'finance-manager']);
 
   const audits = gateway.auditLog.all();
   assert.ok(audits.some((entry) => entry.action === 'approval.evidence-presented'));

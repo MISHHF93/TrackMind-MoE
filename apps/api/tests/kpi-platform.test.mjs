@@ -4,7 +4,7 @@ import { apiEndpointContracts, validateKpiLineage } from '@trackmind/shared';
 import { createApiFacadeState, handleApiRequest } from '../dist/server.js';
 
 const adminHeaders = {
-  'x-trackmind-role': 'admin',
+  'x-trackmind-role': 'platform-super-admin',
   'x-trackmind-tenant-id': 'trackmind',
   'x-trackmind-racetrack-id': 'main-track',
   'x-trackmind-organization-id': 'org-trackmind-network',

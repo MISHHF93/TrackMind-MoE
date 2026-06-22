@@ -154,7 +154,7 @@ export class SurfaceIntelligencePlatform {
     };
   }
 
-  recordObservation(input: Omit<SurfaceObservationDto, 'observationId' | 'auditId'>, actor = 'track-superintendent'): SurfaceIntelligenceMutationResultDto {
+  recordObservation(input: Omit<SurfaceObservationDto, 'observationId' | 'auditId'>, actor = 'facilities-manager'): SurfaceIntelligenceMutationResultDto {
     const auditId = id('audit-surface');
     const observation: SurfaceObservationDto = { ...clone(input), observationId: id('surface-observation'), auditId };
     this.state.observations.push(observation);
@@ -172,7 +172,7 @@ export class SurfaceIntelligencePlatform {
     railWear: number;
     findings: string[];
     workflowId?: string;
-  }, actor = 'track-superintendent'): SurfaceIntelligenceMutationResultDto {
+  }, actor = 'facilities-manager'): SurfaceIntelligenceMutationResultDto {
     const auditId = id('audit-surface');
     const inspectionId = id('surface-inspection');
     if (input.workflowId) {
@@ -191,7 +191,7 @@ export class SurfaceIntelligencePlatform {
     return this.commit('surface-intelligence.inspection.recorded', `Recorded inspection for ${input.sectionId}`, auditId, input.sectionId, actor);
   }
 
-  openInspectionWorkflow(input: Omit<SurfaceInspectionWorkflowDto, 'workflowId' | 'auditId' | 'status' | 'requiresFollowUp'>, actor = 'track-superintendent'): SurfaceIntelligenceMutationResultDto {
+  openInspectionWorkflow(input: Omit<SurfaceInspectionWorkflowDto, 'workflowId' | 'auditId' | 'status' | 'requiresFollowUp'>, actor = 'facilities-manager'): SurfaceIntelligenceMutationResultDto {
     const auditId = id('audit-surface');
     const workflow: SurfaceInspectionWorkflowDto = {
       ...clone(input),
@@ -204,7 +204,7 @@ export class SurfaceIntelligencePlatform {
     return this.commit('surface-intelligence.inspection-workflow.opened', `Opened ${workflow.inspectionType} inspection workflow for ${workflow.sectionId}`, auditId, workflow.sectionId, actor);
   }
 
-  recordMaintenance(input: Omit<SurfaceMaintenanceEventDto, 'eventId' | 'auditId'>, actor = 'track-superintendent'): SurfaceIntelligenceMutationResultDto {
+  recordMaintenance(input: Omit<SurfaceMaintenanceEventDto, 'eventId' | 'auditId'>, actor = 'facilities-manager'): SurfaceIntelligenceMutationResultDto {
     const auditId = id('audit-surface');
     const event: SurfaceMaintenanceEventDto = { ...clone(input), eventId: id('surface-maintenance'), auditId };
     this.state.maintenanceEvents.push(event);
@@ -217,7 +217,7 @@ export class SurfaceIntelligencePlatform {
     reason: string;
     requestedBy?: string;
     payload?: Record<string, unknown>;
-  }, actor = 'track-superintendent', now = new Date().toISOString()): SurfaceIntelligenceMutationResultDto {
+  }, actor = 'facilities-manager', now = new Date().toISOString()): SurfaceIntelligenceMutationResultDto {
     if (!this.deps.approvalService) throw new Error('Approval service integration required for surface operational actions');
     const draft = requestSurfaceOperationalAction({
       action: input.action,
@@ -303,7 +303,7 @@ export class SurfaceIntelligencePlatform {
       id: observation.observationId,
       sectionId: observation.sectionId,
       observedAt: observation.observedAt,
-      role: observation.role === 'track-superintendent' ? 'maintenance' : observation.role,
+      role: observation.role === 'facilities-manager' ? 'maintenance' : observation.role,
       severity: observation.severity,
       note: observation.note,
     }));
@@ -507,7 +507,7 @@ export function createSurfaceFacadeInput(timestamp: string): SurfaceIntelligence
       { id: 'surface-live-2', sectionId: 'backstretch', surfaceType: 'dirt', latitude: 38.041, longitude: -76.958, moisture: 14, compaction: 205, drainageRate: 11, cushionDepth: 3.7, temperature: 82, rainfall: 1, observedAt: timestamp },
       { id: 'surface-live-3', sectionId: 'stretch', surfaceType: 'synthetic', latitude: 38.044, longitude: -76.949, moisture: 12, compaction: 212, drainageRate: 13, cushionDepth: 3.1, temperature: 80, rainfall: 1, observedAt: timestamp },
     ],
-    inspections: [{ id: 'surface-inspection-live-1', sectionId: 'far-turn', inspectedAt: timestamp, inspector: 'track-superintendent', surfaceType: 'dirt', footingUniformity: 72, divots: 4, standingWater: true, railWear: 3, observations: ['standing water near inside lane'] }],
+    inspections: [{ id: 'surface-inspection-live-1', sectionId: 'far-turn', inspectedAt: timestamp, inspector: 'facilities-manager', surfaceType: 'dirt', footingUniformity: 72, divots: 4, standingWater: true, railWear: 3, observations: ['standing water near inside lane'] }],
     weather: { observedAt: timestamp, rainfallMm: 5, forecastRainMm: 14, temperature: 83, windMph: 12 },
     maintenanceRecords: [
       { id: 'surface-maint-live-1', sectionId: 'far-turn', completedAt: timestamp, action: 'harrow', effectiveness: 6, notes: 'partial improvement before additional drainage review' },

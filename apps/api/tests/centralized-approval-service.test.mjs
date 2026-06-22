@@ -24,7 +24,7 @@ import {
 import { protectedActions } from '../../../packages/shared/dist/index.js';
 
 const human = (id, roles) => ({ id, roles, human: true });
-const ai = { id: 'ai-race-agent', roles: ['admin'], human: false };
+const ai = { id: 'ai-race-agent', roles: ['platform-super-admin'], human: false };
 
 function raceInput(id = 'race-approval-1') {
   return { id, trackId: 'trk-1', raceDate: '2026-06-13', raceNumber: 1, scheduledPostTime: '2026-06-13T18:00:00Z', conditions: { surface: 'dirt', distanceFurlongs: 6, classLevel: 'Allowance', purse: 90000, eligibility: ['three-year-olds-and-up'] } };
@@ -39,7 +39,7 @@ test('central approval service enforces chained race start approvals with audit 
   assert.equal(request.status, 'pending');
   assert.throws(() => service.decide(request.id, ai, 'approved', 'unsafe autonomous approval', ['human-approval-record'], '2026-06-13T17:46:00Z'), /AI agents and services cannot approve/);
 
-  service.decide(request.id, human('secretary-1', ['racing-secretary']), 'approved', 'entries and gate order verified', ['human-approval-record'], '2026-06-13T17:47:00Z');
+  service.decide(request.id, human('secretary-1', ['horse-operations-coordinator']), 'approved', 'entries and gate order verified', ['human-approval-record'], '2026-06-13T17:47:00Z');
   service.decide(request.id, human('steward-1', ['steward']), 'approved', 'panel authorizes start', ['human-approval-record'], '2026-06-13T17:48:00Z');
   const approved = service.decide(request.id, human('vet-1', ['veterinarian']), 'approved', 'all runners cleared', ['human-approval-record'], '2026-06-13T17:49:00Z');
   assert.equal(approved.status, 'approved');
@@ -100,12 +100,12 @@ test('approval delegation, expiration, escalation, and workflow references are t
   const slow = service.createRequest({ id: 'approval-emergency-escalate', tenantId: 'tenant-1', racetrackId: 'trk-1', action: 'emergency-action', target: 'gate-1', requestedBy: 'incident-bot', actorType: 'ai-agent', reason: 'gate alarm', evidence: ['alarm'], now: '2026-06-13T18:00:00Z' });
   const escalated = service.evaluateEscalations('2026-06-13T18:03:00Z').find((item) => item.id === slow.id);
   assert.equal(escalated.status, 'escalated');
-  assert.ok(escalated.escalatedToRoles.includes('admin'));
+  assert.ok(escalated.escalatedToRoles.includes('platform-super-admin'));
   const canonical = canonicalApprovalRequest(escalated, { policies: defaultApprovalPolicies(), auditRefs: ['audit-approval-escalated'], eventRefs: ['approval.escalated'] });
   assert.equal(canonical.approvalRequestId, slow.id);
   assert.equal(canonical.status, 'escalated');
   assert.equal(canonical.auditLinkage.auditIds[0], 'audit-approval-escalated');
-  assert.ok(canonical.escalation.some((rule) => rule.approverRoles.includes('admin')));
+  assert.ok(canonical.escalation.some((rule) => rule.approverRoles.includes('platform-super-admin')));
 });
 
 test('default approval policies cover every protected regulated action', () => {
@@ -244,7 +244,7 @@ test('escalation cycle escalates, expires, and sends approval reminders', () => 
 
   assert.ok(reminderResult.remindersSent.includes('approval-reminder-central'));
   assert.ok(notificationFramework.count() > beforeCount);
-  const inbox = notificationFramework.inbox('admin');
+  const inbox = notificationFramework.inbox('platform-super-admin');
   assert.ok(inbox.notifications.some((item) => item.title.includes('Approval reminder')));
 });
 

@@ -14,7 +14,7 @@ const scope = {
   tenantId: 'trackmind',
   racetrackId: 'main-track',
   actorId: 'admin-operator',
-  role: 'admin',
+  role: 'platform-super-admin',
   requestId: 'req-dq-1',
 };
 
@@ -75,7 +75,7 @@ test('validateDataEntryWithQuality merges form and quality checks', () => {
   }, {
     scope,
     mode: 'create',
-    role: 'admin',
+    role: 'platform-super-admin',
     references,
   });
   assert.equal(result.valid, false);
@@ -95,7 +95,7 @@ test('stale reference detection flags missing horse catalog entry', () => {
   }, {
     scope,
     mode: 'create',
-    role: 'admin',
+    role: 'platform-super-admin',
     references,
   });
   assert.equal(result.valid, false);

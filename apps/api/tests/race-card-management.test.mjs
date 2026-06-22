@@ -4,7 +4,7 @@ import { CentralizedApprovalService, ImmutableAuditLog, RaceOperationsPlatform, 
 import { apiContractSchemas, raceCardLifecycleStatuses, validateContract } from '@trackmind/shared';
 
 const config = { stewards: ['steward-1'], racingSecretary: 'sec-1', commission: 'NYSGC', rulesVersion: '2026.1', scratchDeadlineMinutes: 45, maxFieldSize: 14 };
-const actor = { id: 'secretary', roles: ['racing-secretary'], human: true };
+const actor = { id: 'secretary', roles: ['horse-operations-coordinator'], human: true };
 
 test('race card workspace exposes cards entries lifecycle and audit trail', () => {
   const approvalService = new CentralizedApprovalService();
@@ -52,6 +52,7 @@ test('race card mutations audit entries assignments conditions purse and lifecyc
   platform.updateConditions(created.raceCardId, { distanceFurlongs: 7, surface: 'turf' });
   platform.updatePurse(created.raceCardId, { basePurse: 40000 });
 
+  platform.addEntry(created.raceCardId, { horseId: 'horse-b', trainerId: 'trainer-b', ownerIds: ['owner-b'] });
   const review = platform.transitionLifecycle(created.raceCardId, 'review');
   assert.equal(review.lifecycleStatus, 'review');
   const approved = platform.transitionLifecycle(created.raceCardId, 'approved');

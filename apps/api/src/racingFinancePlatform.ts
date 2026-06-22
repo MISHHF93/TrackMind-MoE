@@ -126,7 +126,7 @@ export class RacingFinancePlatform {
     };
   }
 
-  syncSettlement(actor = 'finance', at = new Date().toISOString()): RacingFinanceMutationResultDto {
+  syncSettlement(actor = 'finance-manager', at = new Date().toISOString()): RacingFinanceMutationResultDto {
     const settlement = this.settlementRegistry.sync(at);
     const auditId = id('audit-finance');
     const message = `Settlement sync completed: ${settlement.entries.length} ledger entries, ${settlement.pendingPostings} pending, ${settlement.exceptionCount} exceptions`;
@@ -149,7 +149,7 @@ export class RacingFinancePlatform {
     };
   }
 
-  allocatePurse(input: Omit<RacePurseDto, 'purseId' | 'auditId' | 'approvalRequestId' | 'releasedAmount'>, actor = 'finance'): RacingFinanceMutationResultDto {
+  allocatePurse(input: Omit<RacePurseDto, 'purseId' | 'auditId' | 'approvalRequestId' | 'releasedAmount'>, actor = 'finance-manager'): RacingFinanceMutationResultDto {
     const auditId = id('audit-finance');
     const purse: RacePurseDto = {
       ...clone(input),
@@ -161,7 +161,7 @@ export class RacingFinancePlatform {
     return this.commit('racing-finance.purse.allocated', `Allocated purse ${purse.allocatedAmount} for race ${purse.raceId}`, auditId, purse.purseId, actor);
   }
 
-  requestPurseRelease(purseId: string, actor = 'finance', options: { approvalToken?: ApprovalToken } = {}): RacingFinanceMutationResultDto {
+  requestPurseRelease(purseId: string, actor = 'finance-manager', options: { approvalToken?: ApprovalToken } = {}): RacingFinanceMutationResultDto {
     if (!this.deps.approvalService) throw new Error('Approval service integration required for purse release workflows');
     const purse = this.state.purses.find((entry) => entry.purseId === purseId);
     if (!purse) throw new Error(`Unknown purse ${purseId}`);
@@ -202,42 +202,42 @@ export class RacingFinancePlatform {
     return { ...result, approvalRequestId: approval.id, approvalRequired: true };
   }
 
-  recordRaceDayExpense(input: Omit<RaceDayExpenseDto, 'expenseId' | 'auditId' | 'approvalRequestId'>, actor = 'finance'): RacingFinanceMutationResultDto {
+  recordRaceDayExpense(input: Omit<RaceDayExpenseDto, 'expenseId' | 'auditId' | 'approvalRequestId'>, actor = 'finance-manager'): RacingFinanceMutationResultDto {
     const auditId = id('audit-finance');
     const expense: RaceDayExpenseDto = { ...clone(input), expenseId: id('race-expense'), auditId };
     this.state.raceDayExpenses.push(expense);
     return this.commit('racing-finance.race-day-expense.recorded', `Recorded race-day expense ${expense.label}`, auditId, expense.expenseId, actor);
   }
 
-  recordOperationalCost(input: Omit<OperationalCostDto, 'costId' | 'auditId'>, actor = 'finance'): RacingFinanceMutationResultDto {
+  recordOperationalCost(input: Omit<OperationalCostDto, 'costId' | 'auditId'>, actor = 'finance-manager'): RacingFinanceMutationResultDto {
     const auditId = id('audit-finance');
     const cost: OperationalCostDto = { ...clone(input), costId: id('operational-cost'), auditId };
     this.state.operationalCosts.push(cost);
     return this.commit('racing-finance.operational-cost.recorded', `Recorded operational cost ${cost.label}`, auditId, cost.costId, actor);
   }
 
-  recordFacilityCost(input: Omit<FacilityCostDto, 'facilityCostId' | 'auditId'>, actor = 'finance'): RacingFinanceMutationResultDto {
+  recordFacilityCost(input: Omit<FacilityCostDto, 'facilityCostId' | 'auditId'>, actor = 'finance-manager'): RacingFinanceMutationResultDto {
     const auditId = id('audit-finance');
     const cost: FacilityCostDto = { ...clone(input), facilityCostId: id('facility-cost'), auditId };
     this.state.facilityCosts.push(cost);
     return this.commit('racing-finance.facility-cost.recorded', `Recorded facility cost for ${cost.facilityName}`, auditId, cost.facilityCostId, actor);
   }
 
-  recordTicketRevenue(input: Omit<TicketRevenueDto, 'revenueId' | 'auditId'>, actor = 'finance'): RacingFinanceMutationResultDto {
+  recordTicketRevenue(input: Omit<TicketRevenueDto, 'revenueId' | 'auditId'>, actor = 'finance-manager'): RacingFinanceMutationResultDto {
     const auditId = id('audit-finance');
     const revenue: TicketRevenueDto = { ...clone(input), revenueId: id('ticket-revenue'), auditId };
     this.state.ticketRevenue.push(revenue);
     return this.commit('racing-finance.ticket-revenue.recorded', `Recorded ticket revenue ${revenue.label}`, auditId, revenue.revenueId, actor);
   }
 
-  recordHospitalityRevenue(input: Omit<HospitalityRevenueDto, 'revenueId' | 'auditId'>, actor = 'finance'): RacingFinanceMutationResultDto {
+  recordHospitalityRevenue(input: Omit<HospitalityRevenueDto, 'revenueId' | 'auditId'>, actor = 'finance-manager'): RacingFinanceMutationResultDto {
     const auditId = id('audit-finance');
     const revenue: HospitalityRevenueDto = { ...clone(input), revenueId: id('hospitality-revenue'), auditId };
     this.state.hospitalityRevenue.push(revenue);
     return this.commit('racing-finance.hospitality-revenue.recorded', `Recorded hospitality revenue ${revenue.packageName}`, auditId, revenue.revenueId, actor);
   }
 
-  requestPayout(amount: number, recipientLabel: string, actor = 'finance'): RacingFinanceMutationResultDto {
+  requestPayout(amount: number, recipientLabel: string, actor = 'finance-manager'): RacingFinanceMutationResultDto {
     if (!this.deps.approvalService) throw new Error('Approval service integration required for payout workflows');
     const auditId = id('audit-finance');
     const payoutId = id('payout');
@@ -256,7 +256,7 @@ export class RacingFinancePlatform {
     return { ...result, approvalRequestId: approval.id, approvalRequired: true };
   }
 
-  releasePayout(payoutId: string, actor = 'finance', options: { approvalToken?: ApprovalToken } = {}): RacingFinanceMutationResultDto {
+  releasePayout(payoutId: string, actor = 'finance-manager', options: { approvalToken?: ApprovalToken } = {}): RacingFinanceMutationResultDto {
     if (!this.deps.approvalService) throw new Error('Approval service integration required for payout workflows');
     const payout = this.state.payouts.find((entry) => entry.id === payoutId);
     if (!payout) throw new Error(`Unknown payout ${payoutId}`);
@@ -303,7 +303,7 @@ export class RacingFinancePlatform {
         action: 'payout',
         target: 'new-payout',
         reason: 'Dual-control steward and finance approval required before payout release.',
-        requiredRoles: ['admin', 'finance'],
+        requiredRoles: ['platform-super-admin', 'finance-manager'],
         approvalApi: 'POST /api/v1/approvals/controlled-actions',
         locked: true,
         safetyCritical: true,
@@ -316,7 +316,7 @@ export class RacingFinancePlatform {
         action: 'payout',
         target: purse.purseId,
         reason: `Purse release for race ${purse.raceId} requires steward and finance approval.`,
-        requiredRoles: ['admin', 'finance'],
+        requiredRoles: ['platform-super-admin', 'finance-manager'],
         approvalApi: 'POST /api/v1/approvals/controlled-actions',
         locked: true,
         safetyCritical: true,
@@ -402,7 +402,7 @@ export class RacingFinancePlatform {
     changeSummary: string,
     auditId: string,
     recordId?: string,
-    actor = 'finance',
+    actor = 'finance-manager',
     approvalRequestId?: string,
   ): RacingFinanceMutationResultDto {
     const previousHash = this.auditChain.at(-1)?.hash ?? 'sha256:00000000';

@@ -22,7 +22,7 @@ test('governance wave: platform governance endpoints are registered in contracts
 
 test('governance wave: domain ownership registry maps workspaces and KPI domains', async () => {
   const state = createApiFacadeState();
-  const response = await handleApiRequest('GET', '/api/v1/platform/domain-ownership', undefined, state, { 'x-trackmind-role': 'admin' });
+  const response = await handleApiRequest('GET', '/api/v1/platform/domain-ownership', undefined, state, { 'x-trackmind-role': 'platform-super-admin' });
   assert.equal(response.status, 200);
   assert.ok(response.body.entries.length >= 28);
   assert.ok(response.body.entries.some((entry) => entry.domainId === 'race-day-operations'));
@@ -51,7 +51,7 @@ test('governance wave: readiness and executive scorecards derive from KPI worksp
 
 test('governance wave: lineage validation report covers events, KPIs, and notifications', async () => {
   const state = createApiFacadeState();
-  const report = await handleApiRequest('GET', '/api/v1/platform/governance-lineage/validation', undefined, state, { 'x-trackmind-role': 'admin' });
+  const report = await handleApiRequest('GET', '/api/v1/platform/governance-lineage/validation', undefined, state, { 'x-trackmind-role': 'platform-super-admin' });
   assert.equal(report.status, 200);
   assert.ok(report.body.summary.total >= 1);
   assert.ok(Array.isArray(report.body.kpis));
@@ -78,7 +78,7 @@ test('governance wave: approval requests publish operational notifications', asy
 
 test('governance wave: KPI recalculate applies readiness domain scores', async () => {
   const state = createApiFacadeState();
-  const recalculated = await handleApiRequest('POST', '/api/v1/kpis/recalculate', undefined, state, { 'x-trackmind-role': 'admin' });
+  const recalculated = await handleApiRequest('POST', '/api/v1/kpis/recalculate', undefined, state, { 'x-trackmind-role': 'platform-super-admin' });
   assert.equal(recalculated.status, 200);
   const raceDay = recalculated.body.kpis.find((kpi) => kpi.domain === 'race-day-operations');
   assert.ok(raceDay);
@@ -87,7 +87,7 @@ test('governance wave: KPI recalculate applies readiness domain scores', async (
 
 test('governance wave: platform maturity review returns graded dimensions', async () => {
   const state = createApiFacadeState();
-  const maturity = await handleApiRequest('GET', '/api/v1/platform/maturity-review', undefined, state, { 'x-trackmind-role': 'admin' });
+  const maturity = await handleApiRequest('GET', '/api/v1/platform/maturity-review', undefined, state, { 'x-trackmind-role': 'platform-super-admin' });
   assert.equal(maturity.status, 200);
   assert.ok(['A', 'B', 'C', 'D', 'F'].includes(maturity.body.overallGrade));
   assert.ok(maturity.body.dimensions.length >= 7);

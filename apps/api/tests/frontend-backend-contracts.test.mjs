@@ -42,7 +42,7 @@ test('contract metadata covers authorization, audit records, event emissions, an
     assert.ok(byOperation.has(op), `${op} must have OpenAPI metadata`);
     assert.ok(byOperation.get(op).audits.length > 0, `${op} must declare audit metadata`);
   }
-  assert.deepEqual(byOperation.get('listAuditEvents').roles, ['compliance-officer','read-only-auditor','admin']);
+  assert.deepEqual(byOperation.get('listAuditEvents').roles, ['compliance-officer','read-only-auditor','platform-super-admin']);
   assert.deepEqual(byOperation.get('createDraftRequest').emits, ['approval.requested']);
   assert.deepEqual(byOperation.get('createTrackConfigurationDraftRequest').emits, ['track.configuration.change.requested','approval.requested']);
   assert.deepEqual(createCommandCenterContractSnapshot().errors.notAuthorized, { ok: false, error: { code: 'forbidden', message: 'Actor is not authorized for this TrackMind API operation' } });

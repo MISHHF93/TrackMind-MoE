@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node ../../scripts/run-node-tests.mjs tests/*.test.mjs"
+    "test": "npm run build && node scripts/validate-role-coverage.mjs && node ../../scripts/run-node-tests.mjs tests/*.test.mjs"
   },
   "devDependencies": {}
 }

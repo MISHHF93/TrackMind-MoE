@@ -158,31 +158,31 @@ export const defaultAIGovernorPolicyConfig: AIGovernorPolicyConfig = {
     'OVERRIDE_EMERGENCY_PERSONNEL',
   ].map(normalizeGovernorAction)),
   approvalRoles: {
-    'race-start': ['racing-secretary', 'steward', 'veterinarian'],
-    'race-stop': ['steward', 'security'],
+    'race-start': ['horse-operations-coordinator', 'steward', 'veterinarian'],
+    'race-stop': ['steward', 'security-manager'],
     'declare-winner': ['steward'],
-    'official-results': ['steward', 'finance'],
-    'modify-official-results': ['steward', 'finance', 'compliance-officer'],
+    'official-results': ['steward', 'finance-manager'],
+    'modify-official-results': ['steward', 'finance-manager', 'compliance-officer'],
     'scratch-horse': ['veterinarian', 'steward'],
     'clear-vet-flag': ['veterinarian'],
     'steward-ruling': ['steward'],
-    payout: ['steward', 'finance'],
-    'starting-gate-move': ['racing-secretary', 'track-superintendent'],
-    'close-track': ['track-superintendent', 'steward'],
-    'reopen-track': ['track-superintendent', 'steward'],
-    'emergency-personnel-override': ['security', 'admin'],
-    'emergency-action': ['security'],
+    payout: ['steward', 'finance-manager'],
+    'starting-gate-move': ['horse-operations-coordinator', 'facilities-manager'],
+    'close-track': ['facilities-manager', 'steward'],
+    'reopen-track': ['facilities-manager', 'steward'],
+    'emergency-personnel-override': ['security-manager', 'platform-super-admin'],
+    'emergency-action': ['security-manager'],
     'disciplinary-decision': ['steward', 'compliance-officer'],
-    'safety-critical-control': ['track-superintendent', 'steward'],
+    'safety-critical-control': ['facilities-manager', 'steward'],
     'race-cancellation': ['steward'],
     'race-status-change': ['steward'],
-    'race-office-configuration': ['racing-secretary', 'track-superintendent', 'steward'],
-    'race-distance-configuration': ['racing-secretary', 'track-superintendent', 'steward'],
-    'surface-irrigation': ['track-superintendent'],
-    'surface-harrowing': ['track-superintendent'],
-    'surface-rolling': ['track-superintendent'],
-    'surface-track-closure-recommendation': ['track-superintendent', 'steward'],
-    'facility-maintenance-execution': ['track-superintendent', 'admin'],
+    'race-office-configuration': ['horse-operations-coordinator', 'facilities-manager', 'steward'],
+    'race-distance-configuration': ['horse-operations-coordinator', 'facilities-manager', 'steward'],
+    'surface-irrigation': ['facilities-manager'],
+    'surface-harrowing': ['facilities-manager'],
+    'surface-rolling': ['facilities-manager'],
+    'surface-track-closure-recommendation': ['facilities-manager', 'steward'],
+    'facility-maintenance-execution': ['facilities-manager', 'platform-super-admin'],
     'compliance-filing-approval': ['compliance-officer'],
   },
   automaticAdvisoryActions: ['SUMMARIZE', 'CLASSIFY', 'FORECAST', 'DETECT_ANOMALY', 'DRAFT_WORK_ORDER', 'CREATE_RECOMMENDATION', 'NOTIFY_HUMANS', 'GENERATE_REPORT', 'UPDATE_DASHBOARD'].map(normalizeGovernorAction),
@@ -807,25 +807,25 @@ export class ResponsibleAIGovernancePlatform {
   private rolesFor(policy: GovernanceApprovalPolicy, action: string): string[] {
     const configured = this.governor.requiredRolesFor(action);
     if (configured.length) return configured;
-    if (policy === 'governance-board') return ['compliance-officer', 'admin'];
+    if (policy === 'governance-board') return ['compliance-officer', 'platform-super-admin'];
     if (policy === 'veterinarian') return ['veterinarian'];
     if (policy === 'steward') return ['steward'];
     if (policy === 'two-person') return ['steward', 'compliance-officer'];
-    if (action === 'race-start') return ['racing-secretary', 'steward', 'veterinarian'];
-    if (action === 'payout' || action === 'official-results') return ['steward', 'finance'];
+    if (action === 'race-start') return ['horse-operations-coordinator', 'steward', 'veterinarian'];
+    if (action === 'payout' || action === 'official-results') return ['steward', 'finance-manager'];
     return ['compliance-officer'];
   }
   private rolesForControlledAction(action: ControlledAction): string[] {
-    if (action === 'starting-gate-move') return ['racing-secretary', 'track-superintendent'];
-    if (action.startsWith('surface-')) return ['track-superintendent'];
+    if (action === 'starting-gate-move') return ['horse-operations-coordinator', 'facilities-manager'];
+    if (action.startsWith('surface-')) return ['facilities-manager'];
     if (action === 'veterinary-clearance' || action === 'clear-vet-flag' || action === 'medication-decision') return ['veterinarian'];
     if (action === 'steward-ruling' || action === 'steward-decision' || action === 'disciplinary-decision') return ['steward'];
     const configured = this.governor.requiredRolesFor(action);
     if (configured.length) return configured;
-    if (action === 'race-start') return ['racing-secretary', 'steward', 'veterinarian'];
+    if (action === 'race-start') return ['horse-operations-coordinator', 'steward', 'veterinarian'];
     if (action === 'scratch-horse' || action === 'race-office-scratch') return ['veterinarian', 'steward'];
-    if (action === 'official-results' || action === 'modify-official-results' || action === 'payout') return ['steward', action === 'payout' ? 'finance' : 'finance'];
-    if (action === 'race-distance-configuration' || action === 'race-office-configuration') return ['racing-secretary', 'track-superintendent', 'steward'];
+    if (action === 'official-results' || action === 'modify-official-results' || action === 'payout') return ['steward', action === 'payout' ? 'finance-manager' : 'finance-manager'];
+    if (action === 'race-distance-configuration' || action === 'race-office-configuration') return ['horse-operations-coordinator', 'facilities-manager', 'steward'];
     if (action === 'compliance-filing-approval') return ['compliance-officer'];
     return this.rolesFor('single-human', action);
   }

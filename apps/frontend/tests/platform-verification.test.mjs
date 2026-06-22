@@ -196,12 +196,13 @@ test('platform verification: facilities maintenance panels wire mutation endpoin
   assert.match(paths, /routeMutationPathGroups[\s\S]*facilities[\s\S]*incidents/);
   assert.match(paths, /\[apiPaths\.facilities\.maintenanceSchedules\]: 'live-api'/);
   assert.match(paths, /\[apiPaths\.facilities\.incidents\]: 'live-api'/);
-  assert.match(panels, /createFacilitiesMaintenanceSchedule/);
-  assert.match(panels, /reportFacilitiesIncident/);
+  assert.match(panels, /FacilitiesEntryConsole/);
+  const submitEntityForm = await source('src/features/data-entry/submitEntityForm.ts');
+  assert.match(submitEntityForm, /createFacilitiesMaintenanceSchedule/);
+  assert.match(panels, /facilities-maintenance/);
   assert.match(panels, /GovernedActionDialog/);
   assert.match(panels, /facility-maintenance-execution/);
   assert.match(panels, /Schedule maintenance/);
-  assert.match(panels, /Report incident/);
   assert.match(map, /onAssetSelect/);
   assert.match(map, /assetIdFromMapFeature/);
   assert.match(mutations, /\/facilities-maintenance\/maintenance-schedules/);

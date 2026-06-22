@@ -16,7 +16,7 @@ const scope = {
   tenantId: 'trackmind',
   racetrackId: 'main-track',
   actorId: 'admin-operator',
-  role: 'admin',
+  role: 'platform-super-admin',
 };
 
 const sampleValues = {
@@ -109,7 +109,7 @@ const sampleValues = {
     observedAt: '2026-06-22T09:00',
     observedBy: 'welfare-1',
     observerId: 'welfare-1',
-    role: 'welfare-officer',
+    role: 'equine-welfare-officer',
     dataSource: 'manual-entry',
     severity: 'low',
     notes: 'Horse calm and alert in stall during walkthrough.',

@@ -34,11 +34,11 @@ const ownershipStatus = (status: string): DomainOwnershipEntryDto['status'] => {
 const domainOwnerRoles: Record<string, string> = {
   'race-day-operations': 'steward',
   compliance: 'compliance-officer',
-  security: 'security',
-  facilities: 'track-superintendent',
+  security: 'security-manager',
+  facilities: 'facilities-manager',
   'equine-welfare': 'veterinarian',
   'approval-workflows': 'compliance-officer',
-  'system-health': 'admin',
+  'system-health': 'platform-super-admin',
   'data-quality': 'compliance-officer',
 };
 
@@ -50,7 +50,7 @@ export function buildDomainOwnershipRegistry(kpis: KPIArtifact[] = []): DomainOw
       domainId: workspace.id,
       domainName: workspace.title,
       ownerTeam: workspace.owner,
-      ownerRole: domainOwnerRoles[workspace.id] ?? 'admin',
+      ownerRole: domainOwnerRoles[workspace.id] ?? 'platform-super-admin',
       serviceId: workspace.apiPath?.split('/').slice(-2).join('-') ?? workspace.id,
       apiPrefix: workspace.apiPath,
       workflowIds: workspace.approvalRequiredActions,
@@ -61,7 +61,7 @@ export function buildDomainOwnershipRegistry(kpis: KPIArtifact[] = []): DomainOw
       domainId: domain,
       domainName: domain.replace(/-/g, ' '),
       ownerTeam: 'KPI Governance',
-      ownerRole: domainOwnerRoles[domain] ?? 'admin',
+      ownerRole: domainOwnerRoles[domain] ?? 'platform-super-admin',
       serviceId: `kpi-${domain}`,
       apiPrefix: '/api/v1/kpis',
       workflowIds: [] as string[],
@@ -102,11 +102,11 @@ export function buildReadinessScorecards(kpis: KPIArtifact[]): ReadinessScorecar
       { label: 'Control mapping readiness', value: kpis.find((k) => k.domain === 'compliance')?.value ?? 0 },
       { label: 'Audit integrity', value: kpis.find((k) => k.domain === 'audit-integrity')?.value ?? 0 },
     ]),
-    facilities: scorecard('facilities', 'track-superintendent', [
+    facilities: scorecard('facilities', 'facilities-manager', [
       { label: 'Facilities readiness', value: kpis.find((k) => k.domain === 'facilities')?.value ?? 0 },
       { label: 'Surface intelligence', value: kpis.find((k) => k.domain === 'surface-intelligence')?.value ?? 0 },
     ]),
-    security: scorecard('security', 'security', [
+    security: scorecard('security', 'security-manager', [
       { label: 'Security coverage', value: kpis.find((k) => k.domain === 'security')?.value ?? 0 },
       { label: 'Safety incidents', value: kpis.find((k) => k.domain === 'safety-incidents')?.value ?? 0 },
     ]),
@@ -129,7 +129,7 @@ export function buildExecutiveScorecard(kpis: KPIArtifact[]): ExecutiveScorecard
     adoption,
     overall,
     kpis: kpis
-      .filter((kpi) => ['race-day-operations', 'compliance', 'security', 'equine-welfare', 'facilities', 'fan-experience'].includes(kpi.domain))
+      .filter((kpi) => ['race-day-operations', 'compliance', 'security-manager', 'equine-welfare', 'facilities', 'fan-experience'].includes(kpi.domain))
       .map((kpi) => ({ kpiId: kpi.kpiId, label: kpi.name, value: kpi.value, domain: kpi.domain, status: kpi.status })),
     mock: false,
   };
@@ -186,7 +186,7 @@ export function buildGovernedArtifactRegistry(kpis: KPIArtifact[], approvalServi
         artifactId: artifact.id,
         artifactType: 'approval',
         domain: 'approval-workflows',
-        ownerRole: artifact.requiredApprovers[0] ?? 'admin',
+        ownerRole: artifact.requiredApprovers[0] ?? 'platform-super-admin',
         lineageComplete: artifact.auditRefs.length > 0,
         auditRefs: artifact.auditRefs,
         eventRefs: artifact.eventRefs,
@@ -294,7 +294,7 @@ export function buildPlatformMaturityReview(input: {
       recommendations: ['Populate approval auditLinkage on all seeded approvals'],
     },
     {
-      dimension: 'security',
+      dimension: 'security-manager',
       score: input.readiness.security.score,
       findings: ['Restricted zones and incident facades available'],
       recommendations: ['Connect live SOC integrations'],

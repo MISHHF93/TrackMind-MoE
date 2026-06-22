@@ -31,14 +31,14 @@ export interface EmergencyOperationsServiceOptions {
 const isRole = (value: unknown): value is Role => typeof value === 'string';
 
 export function emergencyRolesFromInput(input: JsonRecord, headerRole?: string): Role[] {
-  const roles = (Array.isArray(input.roles) ? input.roles : headerRole ? [headerRole] : ['admin']).filter(isRole);
-  return roles.length > 0 ? roles : (['admin'] as Role[]);
+  const roles = (Array.isArray(input.roles) ? input.roles : headerRole ? [headerRole] : ['platform-super-admin']).filter(isRole);
+  return roles.length > 0 ? roles : (['platform-super-admin'] as Role[]);
 }
 
 export function defaultCommandRoles(assignee: string): IncidentCommandRole[] {
   return [{
     id: 'role-ic',
-    role: 'incident-commander',
+    role: 'race-day-operations-manager',
     assignee,
     permissions: ['activate-workflow', 'override-ai', 'dispatch-resource', 'send-communication', 'close-incident'],
   }];
@@ -99,7 +99,7 @@ export class EmergencyOperationsService {
     const workflowId = String(input.id ?? `wf-${Date.now()}`);
     const planId = String(input.planId ?? 'plan-weather');
     const location = String(input.location ?? 'Track perimeter');
-    const activatedBy = String(input.activatedBy ?? 'incident-commander');
+    const activatedBy = String(input.activatedBy ?? 'race-day-operations-manager');
     const tenantId = String(input.tenantId ?? 'trackmind');
     const racetrackId = String(input.racetrackId ?? 'main-track');
     const commandRoles = Array.isArray(input.commandRoles) && input.commandRoles.length > 0
@@ -144,7 +144,7 @@ export class EmergencyOperationsService {
   }
 
   completeCommunication(workflowId: string, input: JsonRecord): EmergencyMutationResult {
-    const actor = String(input.actor ?? input.completedBy ?? 'incident-commander');
+    const actor = String(input.actor ?? input.completedBy ?? 'race-day-operations-manager');
     const itemId = String(input.itemId ?? input.communicationId ?? '');
     const workflow = this.options.platform.recordCommunication(workflowId, itemId, actor);
     const auditId = workflow.auditTimeline.at(-1)?.id ?? `audit-emergency-${workflowId}`;
@@ -162,7 +162,7 @@ export class EmergencyOperationsService {
   scheduleDrill(input: JsonRecord): EmergencyMutationResult {
     const drillId = String(input.id ?? `drill-${Date.now()}`);
     const scenario = String(input.scenario ?? 'severe-weather') as EmergencyScenario;
-    const participants = Array.isArray(input.participants) ? input.participants.map(String) : ['ops', 'security'];
+    const participants = Array.isArray(input.participants) ? input.participants.map(String) : ['ops', 'security-manager'];
     const drill = this.options.platform.runSimulationExercise(drillId, scenario, participants);
     const auditId = `audit-emergency-drill-${drill.id}`;
 
@@ -175,7 +175,7 @@ export class EmergencyOperationsService {
   }
 
   completeDrill(drillId: string, input: JsonRecord): EmergencyMutationResult {
-    const actor = String(input.actor ?? 'incident-commander');
+    const actor = String(input.actor ?? 'race-day-operations-manager');
     const workflowId = input.workflowId ? String(input.workflowId) : undefined;
     const observations = Array.isArray(input.observations) ? input.observations.map(String) : [];
     const drill = this.options.platform.completeDrill(drillId, actor, observations, workflowId);
@@ -191,7 +191,7 @@ export class EmergencyOperationsService {
 
   createAfterActionReport(input: JsonRecord): EmergencyMutationResult {
     const incidentId = String(input.incidentId ?? 'inc-100');
-    const actor = String(input.actor ?? 'incident-commander');
+    const actor = String(input.actor ?? 'race-day-operations-manager');
     const workflowId = input.workflowId ? String(input.workflowId) : undefined;
     const findings = Array.isArray(input.findings)
       ? input.findings as Array<{ finding: string; severity: EmergencyWorkflowInput['incident']['severity']; owner: string }>

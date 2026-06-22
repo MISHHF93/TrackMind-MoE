@@ -71,9 +71,9 @@ test('digital twin runtime auto-creates asset twins, applies stream updates, exp
   assert.ok(rejected.context.auditRefs.length >= 1);
 
   const request = runtime.requestStateChangeApproval({ twinId: created.twinId, tenantId: 'trk-1', requestedBy: 'ops-user', actorType: 'human', reason: 'manual lock state correction', evidence: ['operator-report'] });
-  approvals.decide(request.id, { id: 'super-1', roles: ['track-superintendent'], human: true }, 'approved', 'track ops approved', ['human-approval-record']);
+  approvals.decide(request.id, { id: 'super-1', roles: ['facilities-manager'], human: true }, 'approved', 'track ops approved', ['human-approval-record']);
   approvals.decide(request.id, { id: 'steward-1', roles: ['steward'], human: true }, 'approved', 'steward approved', ['human-approval-record']);
-  const token = approvals.authorizeExecution({ requestId: request.id, action: 'safety-critical-control', target: created.twinId, tenantId: 'trk-1', racetrackId: 'trk-1', actor: { id: 'super-1', roles: ['track-superintendent'], human: true } });
+  const token = approvals.authorizeExecution({ requestId: request.id, action: 'safety-critical-control', target: created.twinId, tenantId: 'trk-1', racetrackId: 'trk-1', actor: { id: 'super-1', roles: ['facilities-manager'], human: true } });
   const commanded = runtime.updateState({ twinId: created.twinId, tenantId: 'trk-1', patch: { locked: false }, actor: 'ops-user', approvalToken: token, command: true });
   assert.equal(commanded.state.locked, false);
   assert.equal(runtime.replayHistory(created.twinId).at(-1).approvalRequestId, request.id);

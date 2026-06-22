@@ -1,5 +1,5 @@
 import type { Role, TenantRacetrackContext } from '@trackmind/shared';
-import { isRole } from '@trackmind/shared';
+import { isRole, normalizeRole } from '@trackmind/shared';
 import { defaultTenantContext } from '@/domain/support';
 
 const storageKey = 'trackmind-operator-session';
@@ -13,7 +13,8 @@ function sessionKeyFor(session: TenantRacetrackContext): string {
 }
 
 function normalizeSession(parsed: Partial<TenantRacetrackContext>): TenantRacetrackContext {
-  const role: Role = parsed.role && isRole(parsed.role) ? parsed.role : defaultTenantContext.role;
+  const rawRole = parsed.role ? String(parsed.role) : defaultTenantContext.role;
+  const role: Role = normalizeRole(rawRole) ?? (isRole(rawRole) ? rawRole : defaultTenantContext.role);
   return {
     ...defaultTenantContext,
     ...parsed,

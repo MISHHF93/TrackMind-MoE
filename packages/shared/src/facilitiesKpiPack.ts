@@ -132,7 +132,7 @@ export function buildFacilitiesKpiArtifact(
     calculationRunId: `calc-${kpiId}-v1`,
     integrityRef: `sha256:${kpiId}:v1`,
   };
-  const ownerRole: Role = 'track-superintendent';
+  const ownerRole: Role = 'facilities-manager';
   const visibility: KPIVisibility = 'tenant-internal';
   const approvalSensitivity: KPIApprovalSensitivity = 'approval-visible';
   return {

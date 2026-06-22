@@ -72,9 +72,9 @@ export type OperationalStatusOptionSetId = keyof typeof operationalStatusOptionS
 
 /** Roles permitted to override tenant/racetrack scope in operational forms. */
 export const operationalScopeOverrideRoles: readonly Role[] = [
-  'admin',
+  'platform-super-admin',
   'compliance-officer',
-  'operations-admin',
+  'organization-admin',
 ];
 
 const notesFieldPaths = new Set(['notes', 'reason', 'summary', 'description', 'comment', 'body']);

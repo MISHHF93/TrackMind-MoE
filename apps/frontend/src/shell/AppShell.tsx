@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { navigationGroupOrderForRole } from '@trackmind/shared';
 import { backendSupportLabels, canAccessRoute } from '@/domain/support';
 import { useModuleEnablement } from '@/hooks/useModuleEnablement';
-import { moduleKeyForRoute } from '@/routes/routes';
-import { navigationGroups } from '@/routes/validateRoutes';
+import { moduleKeyForRoute, routes, type AppRoute } from '@/routes/routes';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
-import { routes, type AppRoute } from '@/routes/routes';
 import { useWorkspaceContext } from '@/hooks/useWorkspaceContext';
 import { useEventStream } from '@/hooks/useEventStream';
 import { applyTheme } from '@/lib/theme';
@@ -16,8 +15,6 @@ import { LiveStatusBar } from './LiveStatusBar';
 import { CommandPalette } from './CommandPalette';
 import { MoEChatPanel } from '@/features/assistant/MoEChatPanel';
 
-const navigationOrder = navigationGroups;
-
 export function AppShell(): ReactElement {
   const { session } = useTenantSession();
   const { posture, postureLabel, primaryActions } = useWorkspaceContext();
@@ -27,6 +24,11 @@ export function AppShell(): ReactElement {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { status, lastHeartbeat } = useEventStream();
   const { enabledModules } = useModuleEnablement();
+
+  const navigationOrder = useMemo(
+    () => navigationGroupOrderForRole(session.role),
+    [session.role],
+  );
 
   const visibleRoutes = routes.filter((route) =>
     canAccessRoute(route, session.role, enabledModules, moduleKeyForRoute(route.id)),
@@ -46,7 +48,7 @@ export function AppShell(): ReactElement {
             .map((route) => ({ ...route, supportLabel: backendSupportLabels[route.supportStatus] })),
         }))
         .filter((entry) => entry.routes.length > 0),
-    [searchableRoutes],
+    [navigationOrder, searchableRoutes],
   );
 
   useEffect(() => {

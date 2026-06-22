@@ -1,5 +1,5 @@
 import type { Permission, Role } from './accessControl.js';
-import { hasAnyPermission, hasPermission } from './accessControl.js';
+import { hasAnyPermission, hasPermission, normalizeRole } from './accessControl.js';
 import type { ContractRule } from './apiContracts.js';
 import { validateContract } from './apiContracts.js';
 import { dataEntryEntityForms, fieldRulesFromDefinition } from './dataEntryEntityRegistry.js';
@@ -277,8 +277,10 @@ export function isFieldVisible(
   field: DataEntryFieldDefinition,
   role: Role,
 ): boolean {
-  if (field.visibleToRoles && !field.visibleToRoles.includes(role)) return false;
-  if (field.requiredPermission && !hasPermission(role, field.requiredPermission)) return false;
+  const canonical = normalizeRole(role);
+  if (!canonical) return false;
+  if (field.visibleToRoles && !field.visibleToRoles.includes(canonical)) return false;
+  if (field.requiredPermission && !hasPermission(canonical, field.requiredPermission)) return false;
   return true;
 }
 
@@ -286,9 +288,11 @@ export function isFieldEditable(
   field: DataEntryFieldDefinition,
   role: Role,
 ): boolean {
+  const canonical = normalizeRole(role);
+  if (!canonical) return false;
   if (field.readOnly) return false;
-  if (field.editRoles && !field.editRoles.includes(role)) return false;
-  return isFieldVisible(field, role);
+  if (field.editRoles && !field.editRoles.includes(canonical)) return false;
+  return isFieldVisible(field, canonical);
 }
 
 export function filterVisibleFields(
@@ -299,8 +303,10 @@ export function filterVisibleFields(
 }
 
 export function canAccessForm(definition: DataEntryFormDefinition, role: Role): boolean {
-  if (!definition.allowedRoles.includes(role)) return false;
-  return hasPermission(role, definition.requiredPermission);
+  const canonical = normalizeRole(role);
+  if (!canonical) return false;
+  if (!definition.allowedRoles.includes(canonical)) return false;
+  return hasPermission(canonical, definition.requiredPermission);
 }
 
 export function buildDataEntryAuditMetadata(

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ImmutableAuditLog, RacetrackAssetRegistryService, SecurityOperationsService, UniversalEventBus, createSeededSecurityOperationsService } from '../dist/index.js';
 
-const fullActor = { id: 'sec-commander', roles: ['security'], tenantId: 'trackmind', human: true, permissions: ['security:read','security:sensitive-read','security:manage','security:investigate'] };
+const fullActor = { id: 'sec-commander', roles: ['security-manager'], tenantId: 'trackmind', human: true, permissions: ['security:read','security:sensitive-read','security:manage','security:investigate'] };
 
 test('security operations enforces access control and creates auditable events/incidents', () => {
   const service = new SecurityOperationsService(() => '2026-06-14T00:00:00.000Z');
@@ -99,7 +99,7 @@ test('camera assets sync to registry with shared audit evidence', async () => {
 
 test('wave 14 live zones, readiness endpoints, webhook adapter, and KPI pack', () => {
   const service = createSeededSecurityOperationsService(() => '2026-06-14T12:00:00.000Z');
-  const actor = { id: 'sec-analyst', roles: ['security'], tenantId: 'trackmind', human: true, permissions: ['security:read', 'security:manage'] };
+  const actor = { id: 'sec-analyst', roles: ['security-manager'], tenantId: 'trackmind', human: true, permissions: ['security:read', 'security:manage'] };
 
   const zonesLive = service.getZonesLive(actor);
   assert.equal(zonesLive.mock, false);
@@ -136,7 +136,7 @@ test('wave 14 live zones, readiness endpoints, webhook adapter, and KPI pack', (
 
 test('webhook adapter rejects invalid signatures', () => {
   const service = createSeededSecurityOperationsService(() => '2026-06-14T12:00:00.000Z');
-  const actor = { id: 'sec-analyst', roles: ['security'], permissions: ['security:manage'] };
+  const actor = { id: 'sec-analyst', roles: ['security-manager'], permissions: ['security:manage'] };
   assert.throws(() => service.ingestAccessWebhook(actor, {
     adapterId: 'vendor-access-1',
     zoneId: 'zone-paddock',

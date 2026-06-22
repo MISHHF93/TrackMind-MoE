@@ -4,7 +4,7 @@ import { apiEndpointContracts } from '@trackmind/shared';
 import { createApiFacadeState, handleApiRequest } from '../dist/server.js';
 
 const adminHeaders = {
-  'x-trackmind-role': 'admin',
+  'x-trackmind-role': 'platform-super-admin',
   'x-trackmind-tenant-id': 'trackmind',
   'x-trackmind-racetrack-id': 'main-track',
   'x-trackmind-organization-id': 'org-trackmind-network',
@@ -12,7 +12,7 @@ const adminHeaders = {
 
 const opsAdminHeaders = {
   ...adminHeaders,
-  'x-trackmind-role': 'operations-admin',
+  'x-trackmind-role': 'organization-admin',
 };
 
 const stewardHeaders = {
@@ -71,19 +71,19 @@ test('wave 04 platform roles list and assign', async () => {
 
   const assigned = await handleApiRequest('POST', '/api/v1/platform/roles', {
     userId: created.body.id,
-    role: 'racing-secretary',
+    role: 'horse-operations-coordinator',
     tenantId: 'trackmind',
   }, state, opsAdminHeaders);
   assert.equal(assigned.status, 201);
-  assert.equal(assigned.body.role, 'racing-secretary');
-  assert.ok(assigned.body.user.roles.includes('racing-secretary'));
+  assert.equal(assigned.body.role, 'horse-operations-coordinator');
+  assert.ok(assigned.body.user.roles.includes('horse-operations-coordinator'));
 });
 
 test('wave 04 access requests create, list, and review', async () => {
   const state = createApiFacadeState();
   const request = await handleApiRequest('POST', '/api/v1/platform/access-requests', {
     userId: 'user-steward-1',
-    requestedRole: 'racing-secretary',
+    requestedRole: 'horse-operations-coordinator',
     tenantId: 'trackmind',
   }, state, opsAdminHeaders);
   assert.equal(request.status, 201);
@@ -103,7 +103,7 @@ test('wave 04 access requests create, list, and review', async () => {
 
   const user = await handleApiRequest('GET', '/api/v1/platform/users', undefined, state, adminHeaders);
   const steward = user.body.find((entry) => entry.id === 'user-steward-1');
-  assert.ok(steward.roles.includes('racing-secretary'));
+  assert.ok(steward.roles.includes('horse-operations-coordinator'));
 });
 
 test('wave 04 RBAC enforcement denies unauthorized roles', async () => {

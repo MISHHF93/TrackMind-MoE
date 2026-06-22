@@ -1,5 +1,6 @@
 import type { ImmutableAuditLog } from './auditLog.js';
 import type { CentralizedApprovalService, ControlledAction, ControlledActionRequest } from './approvals.js';
+import { normalizeRole } from '@trackmind/shared';
 import type { UniversalEventBus } from './eventBus.js';
 import type { WorkflowDefinition, WorkflowInstance, WorkflowOrchestrationEngine } from './workflowEngine.js';
 
@@ -422,13 +423,13 @@ export function trackConfigurationWorkflowDefinition(tenantId: string, change: T
     version: '1.0.0',
     bpmnProcessId: `Process_TrackConfiguration_${change.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
     startStepId: 'approval-gate',
-    ownerRole: 'track-superintendent',
+    ownerRole: 'facilities-manager',
     tenantId,
     triggerEvents: ['track.configuration.change.requested'],
     steps: [
       { id: 'approval-gate', name: 'Confirm approvals before field work', type: 'parallelApproval', approvalRoles: requiredApprovalsForChange(change), requiredApprovals: requiredApprovalsForChange(change).length, slaMinutes: 20, digitalTwin: { refs, syncMode: 'read', statePatch: { approvalGate: 'pending' } }, next: ['issue-work-orders'] },
       { id: 'issue-work-orders', name: 'Issue draft work orders', type: 'userTask', role: 'race-office', slaMinutes: 30, digitalTwin: { refs, syncMode: 'read', statePatch: { workOrders: 'drafted' } }, next: ['field-verification'] },
-      { id: 'field-verification', name: 'Verify GPS, rail, turf, and timing evidence', type: 'userTask', role: 'track-superintendent', slaMinutes: 30, digitalTwin: { refs, syncMode: 'read', statePatch: { verification: 'pending' } }, next: ['queue-twin-sync'] },
+      { id: 'field-verification', name: 'Verify GPS, rail, turf, and timing evidence', type: 'userTask', role: 'facilities-manager', slaMinutes: 30, digitalTwin: { refs, syncMode: 'read', statePatch: { verification: 'pending' } }, next: ['queue-twin-sync'] },
       { id: 'queue-twin-sync', name: 'Queue Digital Twin synchronization', type: 'serviceTask', action: () => ({ trackConfigurationTwinSync: 'queued-after-verification', noLiveActuatorControl: true }), digitalTwin: { refs, syncMode: 'write', statePatch: { trackConfiguration: 'verified' } }, next: ['done'] },
       { id: 'done', name: 'Track configuration verification complete', type: 'endEvent' },
     ],
@@ -468,14 +469,17 @@ export function generateGateMoveChange(current: TrackConfigurationChange, move: 
 export function approveTrackChange(change: TrackConfigurationChange, approverRole: string, evidence: string[], timestamp: string): TrackConfigurationChange {
   if (approverRole === 'ai-agent' || approverRole === 'service' || approverRole.startsWith('ai-')) throw new Error('track configuration approvals require authorized human roles');
   if (evidence.length === 0) throw new Error('approval requires evidence');
-  const approvals = [...new Set([...change.approvals, approverRole])];
+  const canonical = normalizeRole(approverRole);
   const required = requiredApprovalsForChange(change);
+  const resolvedRole = canonical ?? (required.includes(approverRole) ? approverRole : undefined);
+  if (!resolvedRole) throw new Error(`Unknown approver role: ${approverRole}`);
+  const approvals = [...new Set([...change.approvals, resolvedRole])];
   const status: ApprovalState = required.every((role) => approvals.includes(role)) ? 'approved' : 'pending-approval';
-  return { ...change, approvals, status, evidence: [...change.evidence, ...evidence, `approved:${approverRole}:${timestamp}`] };
+  return { ...change, approvals, status, evidence: [...change.evidence, ...evidence, `approved:${resolvedRole}:${timestamp}`] };
 }
 
 export function requiredApprovalsForChange(change: TrackConfigurationChange): string[] {
-  const required = new Set(['racing-secretary', 'track-superintendent', 'steward']);
+  const required = new Set(['horse-operations-coordinator', 'facilities-manager', 'steward']);
   if (change.kind === 'race-distance' || change.kind === 'gate-placement') required.add('timer');
   if (change.raceSetup.surface === 'turf' || change.kind === 'turf-configuration') required.add('course-superintendent');
   if ((change.kind === 'race-distance' || change.kind === 'gate-placement') && change.raceSetup.calculations?.regulatoryFlags.includes('distance-variance-review')) required.add('regulatory-compliance');
@@ -706,11 +710,11 @@ export class TrackConfigurationPlatform {
 
   private registerEventContracts(): void {
     for (const type of ['track.configuration.change.requested', 'track.configuration.approval.required', 'track.configuration.approval.recorded', 'track.configuration.work-order.issued', 'track.configuration.verified', 'track.configuration.digital-twin.sync.requested']) {
-      this.options.eventBus?.registerEvent({ type, version: 1, description: `Track configuration ${type}`, owner: { service: 'track-configuration-platform', team: 'racetrack-platform', accountableRole: 'track-superintendent' }, payloadFields: ['changeId'], compliance: 'regulated' });
+      this.options.eventBus?.registerEvent({ type, version: 1, description: `Track configuration ${type}`, owner: { service: 'track-configuration-platform', team: 'racetrack-platform', accountableRole: 'facilities-manager' }, payloadFields: ['changeId'], compliance: 'regulated' });
     }
   }
 
   private async publish(type: string, payload: Record<string, unknown>, aggregateId: string): Promise<void> {
-    await this.options.eventBus?.publish({ type, payload, aggregateId, producer: 'track-configuration-platform', metadata: { compliance: 'regulated', team: 'racetrack-platform', accountableRole: 'track-superintendent' } });
+    await this.options.eventBus?.publish({ type, payload, aggregateId, producer: 'track-configuration-platform', metadata: { compliance: 'regulated', team: 'racetrack-platform', accountableRole: 'facilities-manager' } });
   }
 }

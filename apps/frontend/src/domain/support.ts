@@ -1,4 +1,4 @@
-import { hasPermission, roleRegistry, type Permission, type Role, type TenantRacetrackContext } from '@trackmind/shared';
+import { hasPermission, roleRegistry, canRoleViewRoute, homePathForRole, type Permission, type Role, type TenantRacetrackContext } from '@trackmind/shared';
 
 export type BackendSupportStatus = 'live-api' | 'facade-api' | 'documented-stub';
 export type NavigationGroup = 'Command' | 'Race Operations' | 'Safety & Facilities' | 'Governance' | 'Business Controls' | 'Data Governance' | 'System Status' | 'Platform';
@@ -51,7 +51,7 @@ export const defaultTenantContext: TenantRacetrackContext = {
   tenantId: 'trackmind',
   racetrackId: 'main-track',
   organizationId: 'org-trackmind-network',
-  role: 'admin' as Role,
+  role: 'platform-super-admin' as Role,
   auditMode: 'read-only',
   scopeSource: 'operator-session',
 };
@@ -92,7 +92,11 @@ export function roleDisplayName(role: Role): string {
 
 export function canViewRoute(route: RouteSupportMetadata, role: Role): boolean {
   const roleAllowed = route.requiredRoles === 'authenticated' || route.requiredRoles.includes(role);
-  return roleAllowed && hasPermission(role, route.requiredPermission);
+  return roleAllowed && canRoleViewRoute(role, route.id) && hasPermission(role, route.requiredPermission);
+}
+
+export function homePathForSessionRole(role: Role): string {
+  return homePathForRole(role);
 }
 
 export function isRouteModuleEnabled(

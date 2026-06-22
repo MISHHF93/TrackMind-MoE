@@ -12,7 +12,7 @@ export type WelfareIndicatorKind =
   | 'training-load'
   | 'retirement-candidate';
 export type WelfareIndicatorStatus = 'nominal' | 'watch' | 'concern' | 'critical';
-export type WelfareObservationRole = 'veterinarian' | 'welfare-officer' | 'trainer' | 'groom' | 'steward';
+export type WelfareObservationRole = 'veterinarian' | 'equine-welfare-officer' | 'trainer' | 'groom' | 'steward';
 export type WelfareAlertSeverity = 'low' | 'medium' | 'high' | 'critical';
 export type WelfareAlertStatus = 'open' | 'acknowledged' | 'resolved';
 export type RetirementReadinessBand = 'not-ready' | 'monitor' | 'candidate' | 'ready-for-review';

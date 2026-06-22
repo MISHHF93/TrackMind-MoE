@@ -113,7 +113,7 @@ export class RaceCardManagementPlatform {
           action: 'race-office-configuration',
           target: card.id,
           reason: `Race card ${card.id} requires authorized approval before ${card.lifecycleStatus === 'review' ? 'approval' : 'publication'}.`,
-          requiredRoles: ['racing-secretary', 'steward'],
+          requiredRoles: ['horse-operations-coordinator', 'steward'],
           evidence: ['condition-book', 'human-approval-record'],
           locked: true as const,
         })),
@@ -136,7 +136,7 @@ export class RaceCardManagementPlatform {
     conditions?: Partial<RaceCardConditionsDto>;
     classification?: Partial<RaceCardClassificationDto>;
     purse?: Partial<RaceCardPurseDto>;
-  }, actor = 'racing-secretary'): RaceCardMutationResultDto {
+  }, actor = 'horse-operations-coordinator'): RaceCardMutationResultDto {
     const duplicate = this.repository.list({ raceDayId: input.raceDayId }).find((card) => card.raceNumber === input.raceNumber);
     if (duplicate) {
       throw new Error(`Race number ${input.raceNumber} already exists on race day ${input.raceDayId}`);
@@ -214,7 +214,7 @@ export class RaceCardManagementPlatform {
     return this.mutationResult(card, auditId, 'race-card.created.v1', 'Race card created in draft status. All changes are audit-logged.');
   }
 
-  updateConditions(cardId: string, conditions: Partial<RaceCardConditionsDto>, actor = 'racing-secretary'): RaceCardMutationResultDto {
+  updateConditions(cardId: string, conditions: Partial<RaceCardConditionsDto>, actor = 'horse-operations-coordinator'): RaceCardMutationResultDto {
     const card = this.requireMutable(cardId);
     const nextConditions = { ...card.conditions, ...conditions };
     const issues = validateRaceCardCombination({
@@ -227,7 +227,7 @@ export class RaceCardManagementPlatform {
     return this.mutate(card, actor, 'race-card.conditions.updated', 'Race conditions updated', 'race-card.conditions.updated.v1');
   }
 
-  updateClassification(cardId: string, classification: Partial<RaceCardClassificationDto>, actor = 'racing-secretary'): RaceCardMutationResultDto {
+  updateClassification(cardId: string, classification: Partial<RaceCardClassificationDto>, actor = 'horse-operations-coordinator'): RaceCardMutationResultDto {
     const card = this.requireMutable(cardId);
     const nextClassification = { ...card.classification, ...classification };
     const issues = validateRaceCardCombination({
@@ -240,7 +240,7 @@ export class RaceCardManagementPlatform {
     return this.mutate(card, actor, 'race-card.classification.updated', 'Race classification updated', 'race-card.classification.updated.v1');
   }
 
-  updatePurse(cardId: string, purse: Partial<RaceCardPurseDto>, actor = 'racing-secretary'): RaceCardMutationResultDto {
+  updatePurse(cardId: string, purse: Partial<RaceCardPurseDto>, actor = 'horse-operations-coordinator'): RaceCardMutationResultDto {
     const card = this.requireMutable(cardId);
     const nextPurse = { ...card.purse, ...purse };
     const issues = validateRaceCardCombination({
@@ -253,7 +253,7 @@ export class RaceCardManagementPlatform {
     return this.mutate(card, actor, 'race-card.purse.updated', 'Purse information updated', 'race-card.purse.updated.v1');
   }
 
-  addEntry(cardId: string, input: { horseId: string; trainerId: string; ownerIds: string[]; jockeyId?: string; programNumber?: string; weightLbs?: number }, actor = 'racing-secretary'): RaceCardMutationResultDto {
+  addEntry(cardId: string, input: { horseId: string; trainerId: string; ownerIds: string[]; jockeyId?: string; programNumber?: string; weightLbs?: number }, actor = 'horse-operations-coordinator'): RaceCardMutationResultDto {
     const card = this.requireMutable(cardId);
     if (card.entries.some((entry) => entry.horseId === input.horseId && !entry.scratched)) {
       throw new Error(`Horse ${input.horseId} is already entered on this race card`);
@@ -281,7 +281,7 @@ export class RaceCardManagementPlatform {
     return this.mutate(card, actor, 'race-card.entry.added', `Horse ${input.horseId} added to race card`, 'race-card.entry.added.v1');
   }
 
-  assignHorse(cardId: string, entryId: string, horseId: string, actor = 'racing-secretary'): RaceCardMutationResultDto {
+  assignHorse(cardId: string, entryId: string, horseId: string, actor = 'horse-operations-coordinator'): RaceCardMutationResultDto {
     const card = this.requireMutable(cardId);
     if (card.entries.some((entry) => entry.id !== entryId && entry.horseId === horseId && !entry.scratched)) {
       throw new Error(`Horse ${horseId} is already entered on this race card`);
@@ -289,11 +289,11 @@ export class RaceCardManagementPlatform {
     return this.updateEntry(cardId, entryId, actor, 'race-card.horse.assigned', `Horse assignment set to ${horseId}`, (entry) => ({ ...entry, horseId }));
   }
 
-  assignTrainer(cardId: string, entryId: string, trainerId: string, actor = 'racing-secretary'): RaceCardMutationResultDto {
+  assignTrainer(cardId: string, entryId: string, trainerId: string, actor = 'horse-operations-coordinator'): RaceCardMutationResultDto {
     return this.updateEntry(cardId, entryId, actor, 'race-card.trainer.assigned', `Trainer assignment set to ${trainerId}`, (entry) => ({ ...entry, trainerId }));
   }
 
-  assignJockey(cardId: string, entryId: string, jockeyId: string, actor = 'racing-secretary'): RaceCardMutationResultDto {
+  assignJockey(cardId: string, entryId: string, jockeyId: string, actor = 'horse-operations-coordinator'): RaceCardMutationResultDto {
     const card = this.requireMutable(cardId);
     if (card.entries.some((entry) => entry.id !== entryId && entry.jockeyId === jockeyId && !entry.scratched)) {
       throw new Error(`Jockey ${jockeyId} is already assigned on this race card`);
@@ -301,7 +301,7 @@ export class RaceCardManagementPlatform {
     return this.updateEntry(cardId, entryId, actor, 'race-card.jockey.assigned', `Jockey assignment set to ${jockeyId}`, (entry) => ({ ...entry, jockeyId, status: 'declared' as RaceCardEntryStatus }));
   }
 
-  assignPostPosition(cardId: string, entryId: string, postPosition: number, actor = 'racing-secretary'): RaceCardMutationResultDto {
+  assignPostPosition(cardId: string, entryId: string, postPosition: number, actor = 'horse-operations-coordinator'): RaceCardMutationResultDto {
     if (postPosition < 1) throw new Error('Post position must be positive');
     const card = this.requireMutable(cardId);
     if (card.entries.some((entry) => entry.id !== entryId && entry.postPosition === postPosition && !entry.scratched)) {
@@ -310,7 +310,7 @@ export class RaceCardManagementPlatform {
     return this.updateEntry(cardId, entryId, actor, 'race-card.post-position.assigned', `Post position ${postPosition} assigned`, (entry) => ({ ...entry, postPosition, programNumber: entry.programNumber ?? String(postPosition) }));
   }
 
-  transitionLifecycle(cardId: string, toStatus: RaceCardLifecycleStatus, actor = 'racing-secretary', reason = 'lifecycle transition'): RaceCardMutationResultDto {
+  transitionLifecycle(cardId: string, toStatus: RaceCardLifecycleStatus, actor = 'horse-operations-coordinator', reason = 'lifecycle transition'): RaceCardMutationResultDto {
     const card = this.requireCard(cardId);
     const fromStatus = card.lifecycleStatus;
     this.assertTransition(fromStatus, toStatus);
@@ -502,7 +502,7 @@ export class RaceCardManagementPlatform {
       payload: { cardId, actor, ...payload },
       aggregateId: cardId,
       producer: 'race-card-management',
-      metadata: { compliance: 'regulated', team: 'race-office', accountableRole: 'racing-secretary' },
+      metadata: { compliance: 'regulated', team: 'race-office', accountableRole: 'horse-operations-coordinator' },
     });
   }
 

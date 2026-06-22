@@ -117,7 +117,7 @@ const routeByType: Record<SocSignalType, string[]> = {
   'access-control': ['security-operations'],
   surveillance: ['security-operations'],
   'incident-report': ['safety-manager', 'security-operations'],
-  'emergency-response': ['incident-commander', 'public-safety-liaison'],
+  'emergency-response': ['race-day-operations-manager', 'public-safety-liaison'],
   'restricted-area': ['security-operations', 'area-owner'],
   'cybersecurity-telemetry': ['cybersecurity-analyst'],
   'threat-intelligence': ['cybersecurity-analyst', 'security-operations'],
@@ -313,7 +313,7 @@ export interface SecurityOperationsOptions {
 const mask = '••••';
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const can = (actor: SecurityActor, permission: SecurityOpsPermission) => actor.permissions.includes(permission);
-const hasSensitiveRole = (actor: SecurityActor) => actor.roles?.some((role) => role === 'admin' || role === 'security' || role === 'compliance-officer') ?? false;
+const hasSensitiveRole = (actor: SecurityActor) => actor.roles?.some((role) => role === 'platform-super-admin' || role === 'security-manager' || role === 'compliance-officer') ?? false;
 const riskByZone: Record<RestrictedZone['classification'], AssetRiskLevel> = { public: 'low', 'staff-only': 'medium', restricted: 'high', critical: 'critical' };
 
 export class SecurityOperationsService {
@@ -374,7 +374,7 @@ export class SecurityOperationsService {
   requestSensitiveAccess(actor: SecurityActor, input: { reason: string; evidence: string[]; expiresAt?: string }): SecurityApprovalGate {
     this.require(actor, 'security:read');
     const recommendationId = this.sensitiveRecommendationId(actor.id);
-    this.approvalStore.saveRecommendation({ id: recommendationId, status: 'pending-approval', requestedBy: actor.id, createdAt: this.clock(), evidence: input.evidence, requiredApprovals: ['security', 'compliance-officer'], recommendation: { reason: input.reason, action: 'security-sensitive-read' } });
+    this.approvalStore.saveRecommendation({ id: recommendationId, status: 'pending-approval', requestedBy: actor.id, createdAt: this.clock(), evidence: input.evidence, requiredApprovals: ['security-manager', 'compliance-officer'], recommendation: { reason: input.reason, action: 'security-sensitive-read' } });
     const gate: SecurityApprovalGate = { id: `gate-${this.approvalGates.length + 1}`, action: 'security-sensitive-read', target: recommendationId, status: 'pending', requestedBy: actor.id, evidence: [...input.evidence], reason: input.reason };
     this.approvalGates.push(gate);
     const auditId = this.audit('security.approval.requested', actor.id, recommendationId, []);
@@ -1065,7 +1065,7 @@ export function createSeededSecurityOperationsService(clock: () => string = () =
   const service = new SecurityOperationsService(clock, options);
   const commander: SecurityActor = {
     id: 'sec-commander',
-    roles: ['security'],
+    roles: ['security-manager'],
     tenantId: 'trackmind',
     human: true,
     permissions: ['security:read', 'security:sensitive-read', 'security:manage', 'security:investigate'],

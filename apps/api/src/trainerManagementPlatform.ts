@@ -118,7 +118,7 @@ export class TrainerManagementPlatform {
     licensing: TrainerLicensingMetadataDto;
     status?: TrainerStatus;
     compliancePosture?: Partial<TrainerCompliancePostureDto>;
-  }, actor = 'racing-secretary'): TrainerMutationResultDto {
+  }, actor = 'horse-operations-coordinator'): TrainerMutationResultDto {
     if (this.repository.get(input.trainerId)) throw new Error(`Trainer ${input.trainerId} already exists`);
     const now = new Date().toISOString();
     const trainer: ManagedTrainerRecord = {
@@ -155,14 +155,14 @@ export class TrainerManagementPlatform {
     return this.mutationResult(trainer, auditId, 'trainer-management.created.v1', 'Trainer profile created and linked to audit trail.');
   }
 
-  updateLicensing(trainerId: string, licensing: Partial<TrainerLicensingMetadataDto>, actor = 'racing-secretary'): TrainerMutationResultDto {
+  updateLicensing(trainerId: string, licensing: Partial<TrainerLicensingMetadataDto>, actor = 'horse-operations-coordinator'): TrainerMutationResultDto {
     const trainer = this.requireTrainer(trainerId);
     trainer.licensing = { ...trainer.licensing, ...licensing, evidence: licensing.evidence ?? trainer.licensing.evidence };
     if (trainer.licensing.status === 'suspended' || trainer.licensing.status === 'expired') trainer.status = 'suspended';
     return this.mutate(trainer, actor, 'trainer-management.licensing.updated', 'Trainer licensing metadata updated', 'trainer-management.licensing.updated.v1');
   }
 
-  assignStable(trainerId: string, assignment: Omit<TrainerStableAssignmentDto, 'auditId' | 'active'>, actor = 'racing-secretary'): TrainerMutationResultDto {
+  assignStable(trainerId: string, assignment: Omit<TrainerStableAssignmentDto, 'auditId' | 'active'>, actor = 'horse-operations-coordinator'): TrainerMutationResultDto {
     const trainer = this.requireTrainer(trainerId);
     const auditId = id('audit-trainer-stable');
     trainer.stableAssignments = [
@@ -173,7 +173,7 @@ export class TrainerManagementPlatform {
     return this.mutate(trainer, actor, 'trainer-management.stable.assigned', `Stable ${assignment.barnId} assigned`, 'trainer-management.stable.assigned.v1', auditId);
   }
 
-  assignHorse(trainerId: string, assignment: Omit<TrainerHorseAssignmentDto, 'auditId' | 'active'>, actor = 'racing-secretary'): TrainerMutationResultDto {
+  assignHorse(trainerId: string, assignment: Omit<TrainerHorseAssignmentDto, 'auditId' | 'active'>, actor = 'horse-operations-coordinator'): TrainerMutationResultDto {
     const trainer = this.requireTrainer(trainerId);
     const auditId = id('audit-trainer-horse');
     trainer.horseAssignments = [
@@ -184,7 +184,7 @@ export class TrainerManagementPlatform {
     return this.mutate(trainer, actor, 'trainer-management.horse.assigned', `Horse ${assignment.horseId} assigned`, 'trainer-management.horse.assigned.v1', auditId);
   }
 
-  recordPerformance(trainerId: string, record: Omit<TrainerPerformanceRecordDto, 'recordId' | 'auditId'>, actor = 'racing-secretary'): TrainerMutationResultDto {
+  recordPerformance(trainerId: string, record: Omit<TrainerPerformanceRecordDto, 'recordId' | 'auditId'>, actor = 'horse-operations-coordinator'): TrainerMutationResultDto {
     const trainer = this.requireTrainer(trainerId);
     const auditId = id('audit-trainer-performance');
     const performance: TrainerPerformanceRecordDto = { ...record, recordId: id('performance'), auditId };
@@ -561,7 +561,7 @@ export function createSeededTrainerManagement(deps: TrainerManagementDeps, now =
         evidence: ['annual-review'],
       },
     });
-    platform.assignStable('trainer-1', { barnId: 'barn-2', barnName: 'Barn 2', assignedAt: now, assignedBy: 'racing-secretary', evidence: ['barn-assignment'] });
+    platform.assignStable('trainer-1', { barnId: 'barn-2', barnName: 'Barn 2', assignedAt: now, assignedBy: 'horse-operations-coordinator', evidence: ['barn-assignment'] });
     platform.assignHorse('trainer-1', { horseId: 'horse-1', horseName: 'Lifecycle Runner', assignedAt: '2026-02-01', evidence: ['horse-assignment'] });
     platform.recordPerformance('trainer-1', { raceId: 'race-7', raceDate: '2026-06-13', trackId: 'main-track', horseId: 'horse-1', status: 'entered', evidence: ['race-office'] });
     platform.linkIncident('trainer-1', 'incident-credential-1');

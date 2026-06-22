@@ -313,7 +313,7 @@ export class StewardOperationsPlatform {
         workflowType: 'approval',
         status: inquiry.status === 'pending-final-approval' ? 'pending-approval' : inquiry.finalRuling ? 'approved' : 'open',
         currentStep: 'human-final-approval',
-        requiredApprovers: ['steward', 'admin'],
+        requiredApprovers: ['steward', 'platform-super-admin'],
         approvalRequestId: approvalId,
         workflowInstanceId: inquiry.integrations.workflowInstanceIds[0],
         evidenceIds: inquiry.evidenceReferences.map((evidence) => evidence.id),

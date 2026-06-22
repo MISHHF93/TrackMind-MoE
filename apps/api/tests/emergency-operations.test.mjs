@@ -15,7 +15,7 @@ import {
   createApiFacadeState,
 } from '../dist/index.js';
 
-const adminHeaders = { 'x-trackmind-role': 'admin', 'x-trackmind-tenant-id': 'trackmind', 'x-trackmind-racetrack-id': 'main-track' };
+const adminHeaders = { 'x-trackmind-role': 'platform-super-admin', 'x-trackmind-tenant-id': 'trackmind', 'x-trackmind-racetrack-id': 'main-track' };
 
 test('emergency operations platform coordinates incidents, continuity, exercises, and after-action reporting', () => {
   const platform = new EmergencyOperationsPlatform();
@@ -70,11 +70,11 @@ test('emergency operations blueprint integrates operational systems and digital 
 
 test('emergency workflow creation supports command roles resources checklist and non-blocking AI override', () => {
   const platform = new EmergencyOperationsPlatform();
-  platform.registerEmergencyPlan({ id:'plan-fire', name:'Barn fire plan', scenarios:['fire-incident','evacuation'], ownerRole:'incident-commander', activationCriteria:['smoke','alarm'], communicationChannels:['radio','pa'], evacuationZoneIds:['zone-barn'], drillCadenceDays:90 });
+  platform.registerEmergencyPlan({ id:'plan-fire', name:'Barn fire plan', scenarios:['fire-incident','evacuation'], ownerRole:'race-day-operations-manager', activationCriteria:['smoke','alarm'], communicationChannels:['radio','pa'], evacuationZoneIds:['zone-barn'], drillCadenceDays:90 });
   const workflow = platform.createEmergencyWorkflow({
     id:'wf-fire-1', planId:'plan-fire', activatedBy:'commander-1', activatedByRoles:['security'],
     incident:{ id:'inc-fire-1', scenario:'fire-incident', severity:'critical', location:'Barn 2', reportedAt:'2026-06-13T18:00:00Z', populationAtRisk:40, affectedAssets:[{assetId:'barn-2', zone:'zone-barn', risk:'critical'}], systems:[{system:'dispatch', status:'online', dataFeeds:['radio']}] },
-    commandRoles:[{id:'role-ic', role:'incident-commander', assignee:'commander-1', permissions:['activate-workflow','override-ai','dispatch-resource','send-communication','close-incident']}],
+    commandRoles:[{id:'role-ic', role:'race-day-operations-manager', assignee:'commander-1', permissions:['activate-workflow','override-ai','dispatch-resource','send-communication','close-incident']}],
     resources:[{id:'res-fire-1', kind:'fire', label:'Fire brigade', status:'assigned', zoneId:'zone-barn', coordinates:{latitude:38.061, longitude:-76.955}, capacity:4}],
     evacuationZones:[{id:'zone-barn', name:'Barn Zone', status:'evacuating', route:['north gate','assembly A'], assemblyArea:'Lot A', capacity:120}],
     communicationChecklist:[{id:'comm-pa', audience:'patrons', channel:'pa', message:'Move away from Barn 2', completed:false}],
@@ -101,7 +101,7 @@ test('emergency role permissions reject users without incident management', () =
 
 test('emergency audit records and events are generated for workflow and communications', () => {
   const platform = new EmergencyOperationsPlatform();
-  const workflow = platform.createEmergencyWorkflow({ id:'wf-weather-1', planId:'weather-plan', activatedBy:'steward-1', activatedByRoles:['steward'], incident:{ id:'inc-weather-1', scenario:'severe-weather', severity:'major', location:'main track', reportedAt:'2026-06-13T18:00:00Z', affectedAssets:[], systems:[] }, commandRoles:[{id:'role-ic', role:'incident-commander', assignee:'steward-1', permissions:['activate-workflow','override-ai','dispatch-resource','send-communication','close-incident']}], resources:[], evacuationZones:[], communicationChecklist:[{id:'comm-radio', audience:'field teams', channel:'radio', message:'Shelter now', completed:false}] });
+  const workflow = platform.createEmergencyWorkflow({ id:'wf-weather-1', planId:'weather-plan', activatedBy:'steward-1', activatedByRoles:['steward'], incident:{ id:'inc-weather-1', scenario:'severe-weather', severity:'major', location:'main track', reportedAt:'2026-06-13T18:00:00Z', affectedAssets:[], systems:[] }, commandRoles:[{id:'role-ic', role:'race-day-operations-manager', assignee:'steward-1', permissions:['activate-workflow','override-ai','dispatch-resource','send-communication','close-incident']}], resources:[], evacuationZones:[], communicationChecklist:[{id:'comm-radio', audience:'field teams', channel:'radio', message:'Shelter now', completed:false}] });
   platform.recordCommunication(workflow.id, 'comm-radio', 'steward-1');
   assert.equal(platform.listAuditRecords().length, 3);
   assert.equal(platform.listAuditRecords().every((record) => record.aiBlocked === false), true);
@@ -118,7 +118,7 @@ test('emergency workflows integrate workflow engine, audit, event bus, approvals
   const workflow = platform.createEmergencyWorkflow({
     id:'wf-medical-1', planId:'plan-medical', activatedBy:'commander-2', activatedByRoles:['admin'], tenantId:'track-1',
     incident:{ id:'inc-medical-1', scenario:'medical-emergency', severity:'critical', location:'grandstand', reportedAt:'2026-06-13T18:00:00Z', populationAtRisk:25, affectedAssets:[{assetId:'grandstand', zone:'zone-grandstand', risk:'critical'}], systems:[{system:'event-bus', status:'online', dataFeeds:['events']}] },
-    commandRoles:[{id:'role-ic', role:'incident-commander', assignee:'commander-2', permissions:['activate-workflow','override-ai','dispatch-resource','send-communication','close-incident']}],
+    commandRoles:[{id:'role-ic', role:'race-day-operations-manager', assignee:'commander-2', permissions:['activate-workflow','override-ai','dispatch-resource','send-communication','close-incident']}],
     resources:[{id:'res-ems', kind:'medical', label:'EMS unit', status:'assigned', zoneId:'zone-grandstand', coordinates:{latitude:38.044, longitude:-76.949}, capacity:2}],
     evacuationZones:[],
     communicationChecklist:[{id:'comm-ems', audience:'ems', channel:'radio', message:'Proceed to grandstand', completed:false}],
@@ -142,7 +142,7 @@ test('emergency command role enforcement rejects unauthorized communication acto
     id:'wf-fire-guard', planId:'plan-fire', activatedBy:'commander-1', activatedByRoles:['security'],
     incident:{ id:'inc-guard-1', scenario:'fire-incident', severity:'critical', location:'Barn 2', reportedAt:'2026-06-13T18:00:00Z', affectedAssets:[], systems:[] },
     commandRoles:[
-      {id:'role-ic', role:'incident-commander', assignee:'commander-1', permissions:['activate-workflow','override-ai','dispatch-resource','send-communication','close-incident']},
+      {id:'role-ic', role:'race-day-operations-manager', assignee:'commander-1', permissions:['activate-workflow','override-ai','dispatch-resource','send-communication','close-incident']},
       {id:'role-observer', role:'safety-officer', assignee:'observer-1', permissions:['activate-workflow']},
     ],
     resources:[], evacuationZones:[], communicationChecklist:[{id:'comm-guard', audience:'field teams', channel:'radio', message:'Test', completed:false}],
@@ -169,7 +169,7 @@ test('emergency activation rejects actors without incident-commander authority',
     activatedByRoles: ['security'],
     incident: { id: 'inc-denied-command', scenario: 'fire-incident', severity: 'critical', location: 'Barn 2', reportedAt: '2026-06-13T18:00:00Z', affectedAssets: [], systems: [] },
     commandRoles: [
-      { id: 'role-ic', role: 'incident-commander', assignee: 'commander-1', permissions: ['activate-workflow', 'override-ai', 'dispatch-resource', 'send-communication', 'close-incident'] },
+      { id: 'role-ic', role: 'race-day-operations-manager', assignee: 'commander-1', permissions: ['activate-workflow', 'override-ai', 'dispatch-resource', 'send-communication', 'close-incident'] },
       { id: 'role-observer', role: 'safety-officer', assignee: 'observer-1', permissions: ['activate-workflow'] },
     ],
     resources: [],
@@ -188,7 +188,7 @@ test('emergency operations service wires safety post-action evidence on native a
     scenario: 'severe-weather',
     severity: 'major',
     activatedBy: 'commander-native',
-    roles: ['admin'],
+    roles: ['platform-super-admin'],
   }, ['admin']);
 
   assert.equal(result.eventType, 'emergency.workflow.activated');
@@ -207,9 +207,9 @@ test('emergency native mutation routes enforce RBAC and post-action evidence sem
     scenario: 'severe-weather',
     severity: 'major',
     activatedBy: 'unauthorized-operator',
-    roles: ['admin'],
+    roles: ['platform-super-admin'],
     commandRoles: [
-      { id: 'role-ic', role: 'incident-commander', assignee: 'Avery Chen', permissions: ['activate-workflow', 'override-ai', 'dispatch-resource', 'send-communication', 'close-incident'] },
+      { id: 'role-ic', role: 'race-day-operations-manager', assignee: 'Avery Chen', permissions: ['activate-workflow', 'override-ai', 'dispatch-resource', 'send-communication', 'close-incident'] },
       { id: 'role-observer', role: 'safety-officer', assignee: 'unauthorized-operator', permissions: ['activate-workflow'] },
     ],
   }, state, adminHeaders);
@@ -223,7 +223,7 @@ test('emergency native mutation routes enforce RBAC and post-action evidence sem
     severity: 'major',
     location: 'Grandstand',
     activatedBy: 'Avery Chen',
-    roles: ['admin'],
+    roles: ['platform-super-admin'],
   }, state, adminHeaders);
   assert.equal(activation.status, 201);
   assert.equal(activation.body.eventType, 'emergency.workflow.activated');
@@ -276,7 +276,7 @@ test('safety emergency boundary delegates workspace read model through service c
     scenario: 'severe-weather',
     severity: 'major',
     activatedBy: 'commander-boundary',
-    roles: ['admin'],
+    roles: ['platform-super-admin'],
   }, ['admin']);
 
   const workspace = boundary.workspace();

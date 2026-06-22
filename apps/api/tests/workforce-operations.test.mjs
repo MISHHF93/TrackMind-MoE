@@ -61,10 +61,10 @@ test('workforce readiness feeds race-day readiness and emergency workflows', () 
   const workflow = emergency.createEmergencyWorkflow({
     id: 'wf-workforce',
     planId: 'plan-fire',
-    activatedBy: 'incident-commander',
+    activatedBy: 'race-day-operations-manager',
     activatedByRoles: ['admin'],
     incident: { id: 'inc-workforce', scenario: 'fire-incident', severity: 'critical', location: 'Barn 2', reportedAt: '2026-06-13T12:04:00.000Z', affectedAssets: [], systems: [] },
-    commandRoles: [{ id: 'role-ic', role: 'incident-commander', assignee: 'incident-commander', permissions: ['activate-workflow', 'override-ai', 'dispatch-resource', 'send-communication', 'close-incident'] }],
+    commandRoles: [{ id: 'role-ic', role: 'race-day-operations-manager', assignee: 'race-day-operations-manager', permissions: ['activate-workflow', 'override-ai', 'dispatch-resource', 'send-communication', 'close-incident'] }],
     resources: [],
     workforceResources: service.emergencyResources(),
     workforceReadiness: workforce,

@@ -33,7 +33,7 @@ export class EquineIntelligenceService {
 
   horseProfile(horseId: string, roles: string[] = []) {
     const horse = this.requireHorse(horseId);
-    const canViewVetPrivate = roles.includes('veterinarian') || roles.includes('steward') || roles.includes('admin');
+    const canViewVetPrivate = roles.includes('veterinarian') || roles.includes('steward') || roles.includes('platform-super-admin');
     return {
       ...horse,
       veterinaryNotes: canViewVetPrivate ? horse.veterinaryNotes : 'redacted-veterinary-privacy',

@@ -1,4 +1,4 @@
-import { hasPermission, type CanonicalEventRef, type Role } from '@trackmind/shared';
+import { hasPermission, normalizeRole, type CanonicalEventRef, type Role } from '@trackmind/shared';
 import type { ImmutableAuditLog } from './auditLog.js';
 import type { CentralizedApprovalService } from './approvals.js';
 import type { UniversalEventBus } from './eventBus.js';
@@ -16,7 +16,7 @@ export type EmergencyScenario =
   | 'disaster-recovery';
 
 export type IncidentSeverity = 'watch' | 'minor' | 'major' | 'critical';
-export type EmergencyRoleName = 'incident-commander' | 'safety-officer' | 'public-information-officer' | 'operations-section' | 'planning-section' | 'logistics-section' | 'medical-lead' | 'fire-lead' | 'weather-lead' | 'evacuation-lead';
+export type EmergencyRoleName = 'race-day-operations-manager' | 'safety-officer' | 'public-information-officer' | 'operations-section' | 'planning-section' | 'logistics-section' | 'medical-lead' | 'fire-lead' | 'weather-lead' | 'evacuation-lead';
 export type EmergencyResourceKind = 'personnel' | 'medical' | 'fire' | 'weather' | 'transport' | 'shelter' | 'communications' | 'equipment';
 export type EmergencyWorkflowStatus = 'draft' | 'active' | 'demobilizing' | 'closed';
 export type EmergencyEventType = 'emergency.incident.opened' | 'emergency.workflow.activated' | 'emergency.communication.completed' | 'emergency.drill.completed' | 'emergency.after-action.created' | 'emergency.digital-twin.patch.requested' | 'incident.post-incident-review.synced';
@@ -130,11 +130,11 @@ export class EmergencyOperationsPlatform {
   registerEmergencyPlan(plan: EmergencyPlan) { this.plans.set(plan.id, plan); return { ...plan, aiMayBlockActivation: false, humanOverrideRequired: true, workflows: plan.scenarios.map((scenario) => workflowByScenario[scenario]) }; }
   registerResource(resource: EmergencyResource): EmergencyResource { this.resources.set(resource.id, resource); return clone(resource); }
   registerEvacuationZone(zone: EvacuationZone): EvacuationZone { this.evacuationProcedures.set(zone.id, zone); return clone(zone); }
-  canManageEmergency(roles: Role[]) { return roles.some((role) => hasPermission(role, 'incident:manage')); }
+  canManageEmergency(roles: Role[]) { return roles.map((role) => normalizeRole(role)).filter((role): role is Role => role !== undefined).some((role) => hasPermission(role, 'incident:manage')); }
 
   requireIncidentCommander(workflowId: string, actor: string, permission: IncidentCommandRole['permissions'][number] = 'activate-workflow') {
     const workflow = this.requireWorkflow(workflowId);
-    const commander = workflow.commandRoles.find((role) => role.role === 'incident-commander');
+    const commander = workflow.commandRoles.find((role) => role.role === 'race-day-operations-manager');
     if (!commander) throw new Error('incident-commander role required in command structure');
     const actorRole = workflow.commandRoles.find((role) => role.assignee === actor);
     const isCommander = commander.assignee === actor;
@@ -153,7 +153,7 @@ export class EmergencyOperationsPlatform {
   registerWorkflowDefinitions(tenantId: string): WorkflowDefinition[] {
     const definitions = buildEmergencyWorkflowDefinitions(tenantId);
     definitions.forEach((definition) => this.deps.workflows?.register(definition));
-    const integration: EmergencyWorkflowIntegration = { engine: 'workflow-orchestration', definitionIds: definitions.map((definition) => definition.id), status: this.deps.workflows ? 'registered' : 'not-configured', humanTaskRoles: ['incident-commander', 'medical-lead', 'fire-lead', 'weather-lead', 'evacuation-lead'] };
+    const integration: EmergencyWorkflowIntegration = { engine: 'workflow-orchestration', definitionIds: definitions.map((definition) => definition.id), status: this.deps.workflows ? 'registered' : 'not-configured', humanTaskRoles: ['race-day-operations-manager', 'medical-lead', 'fire-lead', 'weather-lead', 'evacuation-lead'] };
     this.workflowIntegrations.push(integration);
     return definitions;
   }
@@ -167,7 +167,7 @@ export class EmergencyOperationsPlatform {
   }
 
   assertActivationCommander(input: EmergencyWorkflowInput) {
-    const commander = input.commandRoles.find((role) => role.role === 'incident-commander');
+    const commander = input.commandRoles.find((role) => role.role === 'race-day-operations-manager');
     if (!commander) throw new Error('incident-commander role required in command structure');
     if (commander.assignee !== input.activatedBy) {
       throw new Error(`incident-commander authority required for activate-workflow; actor ${input.activatedBy} is not assigned`);
@@ -294,7 +294,7 @@ export class EmergencyOperationsPlatform {
     const eventId = `evt-emergency-${this.events.length + 1}`;
     const event: EmergencyDomainEvent = { eventId, eventType: `${type}.v1` as CanonicalEventRef['eventType'], tenantId: 'trackmind', racetrackId: 'main-track', actorId: 'emergency-operations', source: 'emergency-operations', timestamp: nowIso(), version: 1, id: eventId, type, subjectId, severity, auditId, payload };
     this.events.push(event);
-    void this.deps.eventBus?.publish({ id: event.eventId, type: event.eventType, tenantId: event.tenantId, racetrackId: event.racetrackId, actor: { id: event.actorId, type: 'service' }, subject: { id: subjectId, type: 'emergency', tenantId: event.tenantId }, evidence: [auditId], auditRef: auditId, payload: { subjectId, severity, auditId, ...payload }, aggregateId: subjectId, producer: event.source, correlationId: auditId, metadata: { compliance: 'regulated', team: 'emergency-operations', accountableRole: 'incident-commander', description: `Emergency Operations ${type}` } }).then((published) => { event.eventBusId = published.eventId; });
+    void this.deps.eventBus?.publish({ id: event.eventId, type: event.eventType, tenantId: event.tenantId, racetrackId: event.racetrackId, actor: { id: event.actorId, type: 'service' }, subject: { id: subjectId, type: 'emergency', tenantId: event.tenantId }, evidence: [auditId], auditRef: auditId, payload: { subjectId, severity, auditId, ...payload }, aggregateId: subjectId, producer: event.source, correlationId: auditId, metadata: { compliance: 'regulated', team: 'emergency-operations', accountableRole: 'race-day-operations-manager', description: `Emergency Operations ${type}` } }).then((published) => { event.eventBusId = published.eventId; });
     return event;
   }
 
@@ -302,7 +302,7 @@ export class EmergencyOperationsPlatform {
     const patches: EmergencyTwinPatch[] = input.incident.affectedAssets.map((asset) => ({ twinId: asset.assetId.startsWith('twin:') ? asset.assetId : `twin:${asset.assetId}`, actor: input.activatedBy, observedAt: nowIso(), eventId: sourceEventId, status: 'published', patch: { emergencyStatus: input.incident.severity, emergencyScenario: input.incident.scenario, emergencyZone: asset.zone, commandWorkflowId: input.id, aiMayBlock: false } }));
     patches.forEach((patch) => {
       this.twinPatches.push(patch);
-      void this.deps.eventBus?.publish({ type: 'digital-twin.state.patch', payload: { twinId: patch.twinId, patch: patch.patch, actor: patch.actor, observedAt: patch.observedAt }, aggregateId: patch.twinId, producer: 'emergency-operations', correlationId: patch.eventId, metadata: { team: 'emergency-operations', accountableRole: 'incident-commander', compliance: 'regulated' } });
+      void this.deps.eventBus?.publish({ type: 'digital-twin.state.patch', payload: { twinId: patch.twinId, patch: patch.patch, actor: patch.actor, observedAt: patch.observedAt }, aggregateId: patch.twinId, producer: 'emergency-operations', correlationId: patch.eventId, metadata: { team: 'emergency-operations', accountableRole: 'race-day-operations-manager', compliance: 'regulated' } });
       try { this.deps.twins?.updateState({ twinId: patch.twinId, patch: patch.patch, actor: patch.actor, observedAt: patch.observedAt, sourceEventId: patch.eventId }); patch.status = 'applied'; } catch { patch.status = this.deps.twins ? 'queued-for-existing-twin' : patch.status; }
     });
     if (patches.length) this.appendEvent('emergency.digital-twin.patch.requested', input.id, input.incident.severity, `audit-emergency-${this.auditRecords.length}`, { twinIds: patches.map((patch) => patch.twinId) });
@@ -312,7 +312,7 @@ export class EmergencyOperationsPlatform {
   private startWorkflowIntegration(input: EmergencyWorkflowInput, digitalTwinPatches: EmergencyTwinPatch[]): EmergencyWorkflowIntegration {
     const definitions = this.registerWorkflowDefinitions(input.tenantId ?? 'trackmind');
     const definition = definitions.find((candidate) => candidate.id === `emergency-${input.incident.scenario}-workflow`) ?? definitions[0];
-    if (!this.deps.workflows || !definition) return { engine: 'workflow-orchestration', definitionIds: definitions.map((candidate) => candidate.id), status: 'not-configured', humanTaskRoles: ['incident-commander'] };
+    if (!this.deps.workflows || !definition) return { engine: 'workflow-orchestration', definitionIds: definitions.map((candidate) => candidate.id), status: 'not-configured', humanTaskRoles: ['race-day-operations-manager'] };
     const instance = this.deps.workflows.start(definition.id, { tenantId: input.tenantId ?? 'trackmind', priority: input.incident.severity === 'critical' ? 'critical' : 'high', digitalTwinRefs: digitalTwinPatches.map((patch) => patch.twinId), payload: { incidentId: input.incident.id, scenario: input.incident.scenario, humanAuthority: true, aiMayBlock: false } }, input.activatedBy);
     const integration = { engine: 'workflow-orchestration' as const, definitionIds: definitions.map((candidate) => candidate.id), instanceId: instance.id, status: 'started' as const, humanTaskRoles: [...new Set(definition.steps.map((step) => step.role).filter((role): role is string => Boolean(role)))] };
     this.workflowIntegrations.push(integration);
@@ -334,7 +334,7 @@ export class EmergencyOperationsPlatform {
   }
 
   private registerEventSchemas(): void {
-    const owner = { service: 'emergency-operations', team: 'emergency-operations', accountableRole: 'incident-commander' };
+    const owner = { service: 'emergency-operations', team: 'emergency-operations', accountableRole: 'race-day-operations-manager' };
     (['emergency.incident.opened', 'emergency.workflow.activated', 'emergency.communication.completed', 'emergency.drill.completed', 'emergency.after-action.created', 'emergency.digital-twin.patch.requested', 'incident.post-incident-review.synced'] satisfies EmergencyEventType[]).forEach((type) => this.deps.eventBus?.registerEvent({ type, version: 1, description: `Emergency Operations ${type}`, owner, payloadFields: ['subjectId', 'severity', 'auditId'], compliance: 'regulated', operationalMetadata: { humanAuthority: true, aiMayBlock: false } }));
   }
 
@@ -343,18 +343,18 @@ export class EmergencyOperationsPlatform {
 
 export function buildEmergencyWorkflowDefinitions(tenantId: string): WorkflowDefinition[] {
   const definition = (scenario: EmergencyScenario, name: string, ownerRole: string, leadRole: string): WorkflowDefinition => ({ id: `emergency-${scenario}-workflow`, name, domain: 'emergency', version: '1.0.0', bpmnProcessId: `Process_Emergency_${scenario.replace(/-/g, '_')}`, startStepId: 'assume-command', ownerRole, tenantId, triggerEvents: ['emergency.workflow.activated'], description: 'Human-commanded emergency workflow. AI may recommend and summarize, but cannot block emergency personnel.', steps: [
-    { id: 'assume-command', name: 'Assume human incident command', type: 'userTask', role: 'incident-commander', sla: { minutes: 1, escalationRole: ownerRole, severity: 'critical' }, digitalTwin: { refs: [`twin:emergency:${scenario}`], syncMode: 'read-write', statePatch: { emergencyCommand: 'active', aiMayBlock: false } }, next: ['dispatch-response'] },
-    { id: 'dispatch-response', name: `Dispatch ${scenario} resources`, type: 'userTask', role: leadRole, sla: { minutes: procedureSla[scenario], escalationRole: 'incident-commander', severity: scenario === 'severe-weather' ? 'breach' : 'critical' }, next: ['communicate'] },
-    { id: 'communicate', name: 'Issue emergency communications', type: 'userTask', role: 'public-information-officer', sla: { minutes: 5, escalationRole: 'incident-commander', severity: 'critical' }, next: ['stabilize'] },
-    { id: 'stabilize', name: 'Stabilize scene and account for people and horses', type: 'userTask', role: 'operations-section', sla: { minutes: 20, escalationRole: 'incident-commander', severity: 'critical' }, next: ['after-action'] },
-    { id: 'after-action', name: 'Complete after-action and corrective actions', type: 'approvalTask', role: 'safety-officer', approvalRoles: ['compliance-officer', 'admin'], requiredApprovals: 1, sla: { minutes: 1440, escalationRole: 'general-manager', severity: 'breach' }, next: ['closed'] },
+    { id: 'assume-command', name: 'Assume human incident command', type: 'userTask', role: 'race-day-operations-manager', sla: { minutes: 1, escalationRole: ownerRole, severity: 'critical' }, digitalTwin: { refs: [`twin:emergency:${scenario}`], syncMode: 'read-write', statePatch: { emergencyCommand: 'active', aiMayBlock: false } }, next: ['dispatch-response'] },
+    { id: 'dispatch-response', name: `Dispatch ${scenario} resources`, type: 'userTask', role: leadRole, sla: { minutes: procedureSla[scenario], escalationRole: 'race-day-operations-manager', severity: scenario === 'severe-weather' ? 'breach' : 'critical' }, next: ['communicate'] },
+    { id: 'communicate', name: 'Issue emergency communications', type: 'userTask', role: 'public-information-officer', sla: { minutes: 5, escalationRole: 'race-day-operations-manager', severity: 'critical' }, next: ['stabilize'] },
+    { id: 'stabilize', name: 'Stabilize scene and account for people and horses', type: 'userTask', role: 'operations-section', sla: { minutes: 20, escalationRole: 'race-day-operations-manager', severity: 'critical' }, next: ['after-action'] },
+    { id: 'after-action', name: 'Complete after-action and corrective actions', type: 'approvalTask', role: 'safety-officer', approvalRoles: ['compliance-officer', 'platform-super-admin'], requiredApprovals: 1, sla: { minutes: 1440, escalationRole: 'general-manager', severity: 'breach' }, next: ['closed'] },
     { id: 'closed', name: `${name} closed`, type: 'endEvent' },
   ] });
   return [
-    definition('medical-emergency', 'Medical Response Workflow', 'incident-commander', 'medical-lead'),
-    definition('fire-incident', 'Fire Response Workflow', 'incident-commander', 'fire-lead'),
-    definition('severe-weather', 'Severe Weather Workflow', 'incident-commander', 'weather-lead'),
-    definition('evacuation', 'Evacuation Procedure Workflow', 'incident-commander', 'evacuation-lead'),
+    definition('medical-emergency', 'Medical Response Workflow', 'race-day-operations-manager', 'medical-lead'),
+    definition('fire-incident', 'Fire Response Workflow', 'race-day-operations-manager', 'fire-lead'),
+    definition('severe-weather', 'Severe Weather Workflow', 'race-day-operations-manager', 'weather-lead'),
+    definition('evacuation', 'Evacuation Procedure Workflow', 'race-day-operations-manager', 'evacuation-lead'),
   ];
 }
 
@@ -362,15 +362,15 @@ export function buildEmergencyOperationsBlueprint(systems: OperationalSystemLink
 
 export function createMockEmergencyOperationsWorkspace(): EmergencyOperationsWorkspace {
   const platform = new EmergencyOperationsPlatform();
-  platform.registerEmergencyPlan({ id: 'plan-fire', name: 'Barn fire and evacuation plan', scenarios: ['fire-incident', 'evacuation'], ownerRole: 'incident-commander', activationCriteria: ['alarm activation', 'smoke report', 'human commander declaration'], communicationChannels: ['radio', 'public-address', 'mass-notification'], evacuationZoneIds: ['zone-barn'], drillCadenceDays: 90 });
+  platform.registerEmergencyPlan({ id: 'plan-fire', name: 'Barn fire and evacuation plan', scenarios: ['fire-incident', 'evacuation'], ownerRole: 'race-day-operations-manager', activationCriteria: ['alarm activation', 'smoke report', 'human commander declaration'], communicationChannels: ['radio', 'public-address', 'mass-notification'], evacuationZoneIds: ['zone-barn'], drillCadenceDays: 90 });
   platform.registerEmergencyPlan({ id: 'plan-weather', name: 'Severe weather shelter plan', scenarios: ['severe-weather'], ownerRole: 'weather-lead', activationCriteria: ['lightning within 10 miles', 'tornado warning', 'human weather lead override'], communicationChannels: ['radio', 'sms', 'public-address'], evacuationZoneIds: ['zone-grandstand'], drillCadenceDays: 60 });
   const workflow = platform.createEmergencyWorkflow({
     id: 'wf-fire-1',
     planId: 'plan-fire',
     activatedBy: 'Avery Chen',
-    activatedByRoles: ['admin'],
+    activatedByRoles: ['platform-super-admin'],
     incident: { id: 'inc-100', scenario: 'fire-incident', severity: 'critical', location: 'Barn 2', reportedAt: '2026-06-13T18:00:00Z', populationAtRisk: 40, affectedAssets: [{ assetId: 'barn:2', zone: 'zone-barn', risk: 'critical', dependencies: ['power-feed-2'] }, { assetId: 'grandstand', zone: 'zone-grandstand', risk: 'major' }], systems: [{ system: 'workflow-engine', status: 'online', dataFeeds: ['workflow-state'] }, { system: 'digital-twin-runtime', status: 'online', dataFeeds: ['asset-state', 'occupancy'] }, { system: 'access-control', status: 'degraded', dataFeeds: ['badges'] }, { system: 'platform-observability', status: 'online', dataFeeds: ['logs', 'metrics', 'traces'] }] },
-    commandRoles: [{ id: 'role-ic', role: 'incident-commander', assignee: 'Avery Chen', permissions: ['activate-workflow', 'override-ai', 'dispatch-resource', 'send-communication', 'close-incident'] }, { id: 'role-med', role: 'medical-lead', assignee: 'Dr. Rivera', permissions: ['dispatch-resource', 'send-communication'] }, { id: 'role-fire', role: 'fire-lead', assignee: 'Captain Morgan', permissions: ['dispatch-resource', 'override-ai'] }, { id: 'role-weather', role: 'weather-lead', assignee: 'Sam Patel', permissions: ['send-communication', 'override-ai'] }, { id: 'role-evac', role: 'evacuation-lead', assignee: 'Jordan Lee', permissions: ['dispatch-resource', 'send-communication'] }],
+    commandRoles: [{ id: 'role-ic', role: 'race-day-operations-manager', assignee: 'Avery Chen', permissions: ['activate-workflow', 'override-ai', 'dispatch-resource', 'send-communication', 'close-incident'] }, { id: 'role-med', role: 'medical-lead', assignee: 'Dr. Rivera', permissions: ['dispatch-resource', 'send-communication'] }, { id: 'role-fire', role: 'fire-lead', assignee: 'Captain Morgan', permissions: ['dispatch-resource', 'override-ai'] }, { id: 'role-weather', role: 'weather-lead', assignee: 'Sam Patel', permissions: ['send-communication', 'override-ai'] }, { id: 'role-evac', role: 'evacuation-lead', assignee: 'Jordan Lee', permissions: ['dispatch-resource', 'send-communication'] }],
     resources: [{ id: 'res-ambulance', kind: 'medical', label: 'EMS ambulance', status: 'assigned', zoneId: 'zone-grandstand', coordinates: { latitude: 38.044, longitude: -76.949 }, capacity: 2 }, { id: 'res-equine-ambulance', kind: 'medical', label: 'Equine ambulance', status: 'available', zoneId: 'zone-track', coordinates: { latitude: 38.052, longitude: -76.951 }, capacity: 1 }, { id: 'res-fire', kind: 'fire', label: 'Mutual-aid fire unit', status: 'assigned', zoneId: 'zone-barn', coordinates: { latitude: 38.061, longitude: -76.955 }, capacity: 4 }, { id: 'res-shelter', kind: 'shelter', label: 'Grandstand shelter level 1', status: 'available', zoneId: 'zone-grandstand', coordinates: { latitude: 38.043, longitude: -76.952 }, capacity: 900 }],
     evacuationZones: [{ id: 'zone-barn', name: 'Barn zone', status: 'evacuating', route: ['north service gate', 'lot A'], assemblyArea: 'Lot A', capacity: 120 }, { id: 'zone-grandstand', name: 'Grandstand', status: 'open', route: ['main concourse', 'south plaza'], assemblyArea: 'South Plaza', capacity: 1200 }],
     communicationChecklist: [{ id: 'comm-radio', audience: 'field teams', channel: 'radio', message: 'Barn 2 evacuation in progress', completed: false }, { id: 'comm-pa', audience: 'patrons', channel: 'public-address', message: 'Avoid backstretch service road', completed: false }, { id: 'comm-regulator', audience: 'regulators', channel: 'email', message: 'Critical emergency workflow activated under human incident command', completed: false }],
@@ -380,6 +380,6 @@ export function createMockEmergencyOperationsWorkspace(): EmergencyOperationsWor
   platform.recordCommunication(workflow.id, 'comm-radio', 'Avery Chen');
   platform.runSimulationExercise('drill-weather-1', 'severe-weather', ['ops', 'security', 'facilities']);
   platform.completeDrill('drill-weather-1', 'Sam Patel', ['Shelter capacity reconciled with digital twin']);
-  platform.afterActionReport('inc-100', [{ finding: 'Access-control feed failed over slowly', severity: 'major', owner: 'security' }]);
+  platform.afterActionReport('inc-100', [{ finding: 'Access-control feed failed over slowly', severity: 'major', owner: 'security-manager' }]);
   return platform.workspace(true);
 }

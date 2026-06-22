@@ -330,7 +330,7 @@ export class DataEntryArtifactPipelineExecutor {
         tenantId: scope.tenantId,
         racetrackId: scope.racetrackId,
         team: 'data-entry',
-        accountableRole: 'operations-admin',
+        accountableRole: 'organization-admin',
         compliance: 'regulated',
         eventId,
       },

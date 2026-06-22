@@ -77,7 +77,7 @@ export function createTrackCertificationCandidate(input: CertificationInputs): T
   const program = input.compliance.accreditationPrograms?.[0];
   const domainScores = input.readiness.domainScores ?? [];
   const operationalScore = clamp(input.readiness.averageScore ?? avg(domainScores.map((domain) => domain.averageScore)));
-  const safetyScore = avg(domainScores.filter((domain) => ['track','gate','veterinary','stewards','emergency','security'].includes(domain.domain)).map((domain) => domain.averageScore));
+  const safetyScore = avg(domainScores.filter((domain) => ['track','gate','veterinary','stewards','emergency','security-manager'].includes(domain.domain)).map((domain) => domain.averageScore));
   const complianceScore = clamp(input.compliance.readiness?.score ?? 0);
   const accreditationScore = clamp(program?.readinessScore ?? complianceScore);
   const auditValid = input.auditLedger.verification?.valid ?? input.platformHealth.audit?.validLedger ?? false;
@@ -97,9 +97,9 @@ export function createTrackCertificationCandidate(input: CertificationInputs): T
 
   const operatingStandards: TrackOperatingStandardDto[] = [
     { id: 'standard-safety-controls', title: 'Safety-critical controls remain human-approved and audit-backed', category: 'safety', required: true, controlRefs: unique(['ctrl-racing-safety-integrity', 'ctrl-risk-treatment'].filter((id) => controlIds.includes(id))), evidenceRefs: ['readiness:domain-scores', 'approval:controlled-actions'], ownerRole: 'steward', cadence: 'race-day' },
-    { id: 'standard-operations-readiness', title: 'Operational readiness is evaluated before governed race-day actions', category: 'operations', required: true, controlRefs: unique(['ctrl-risk-treatment', ...effectiveControlIds]), evidenceRefs: ['readiness:dashboard', 'readiness:audit-records'], ownerRole: 'admin', cadence: 'race-day' },
-    { id: 'standard-inspection-evidence', title: 'Inspection and facility evidence is linked before readiness review', category: 'inspection', required: true, controlRefs: unique(['ctrl-racing-safety-integrity', 'ctrl-software-quality'].filter((id) => controlIds.includes(id))), evidenceRefs: ['inspection:surface', 'inspection:facilities'], ownerRole: 'track-superintendent', cadence: 'daily' },
-    { id: 'standard-digital-twin', title: 'Digital Twin references are active and read-only until approved sync', category: 'digital-twin', required: true, controlRefs: unique(controls.filter((control) => (control.digitalTwinRefs ?? []).length > 0).map((control) => control.id)), evidenceRefs: ['digital-twin:state', 'digital-twin:queued-sync'], ownerRole: 'track-superintendent', cadence: 'continuous' },
+    { id: 'standard-operations-readiness', title: 'Operational readiness is evaluated before governed race-day actions', category: 'operations', required: true, controlRefs: unique(['ctrl-risk-treatment', ...effectiveControlIds]), evidenceRefs: ['readiness:dashboard', 'readiness:audit-records'], ownerRole: 'platform-super-admin', cadence: 'race-day' },
+    { id: 'standard-inspection-evidence', title: 'Inspection and facility evidence is linked before readiness review', category: 'inspection', required: true, controlRefs: unique(['ctrl-racing-safety-integrity', 'ctrl-software-quality'].filter((id) => controlIds.includes(id))), evidenceRefs: ['inspection:surface', 'inspection:facilities'], ownerRole: 'facilities-manager', cadence: 'daily' },
+    { id: 'standard-digital-twin', title: 'Digital Twin references are active and read-only until approved sync', category: 'digital-twin', required: true, controlRefs: unique(controls.filter((control) => (control.digitalTwinRefs ?? []).length > 0).map((control) => control.id)), evidenceRefs: ['digital-twin:state', 'digital-twin:queued-sync'], ownerRole: 'facilities-manager', cadence: 'continuous' },
     { id: 'standard-audit-ledger', title: 'Audit ledger remains immutable, valid, and exportable', category: 'audit', required: true, controlRefs: unique(controls.filter((control) => (control.auditRecordIds ?? []).length > 0).map((control) => control.id)), evidenceRefs: ['audit:verification', 'audit:compliance-export'], ownerRole: 'compliance-officer', cadence: 'continuous' },
     { id: 'standard-ai-governance', title: 'AI recommendations are advisory-only with required evidence and approvals', category: 'ai-governance', required: true, controlRefs: unique(['ctrl-ai-evidence'].filter((id) => controlIds.includes(id))), evidenceRefs: ['ai:safety-policy', 'ai:evidence-packages', 'ai:audit-trails'], ownerRole: 'compliance-officer', cadence: 'continuous' },
     { id: 'standard-accreditation-readiness', title: 'Accreditation readiness is internal TrackMind readiness, not external certification', category: 'compliance', required: true, controlRefs: unique(program?.requiredControlIds ?? controlIds), evidenceRefs: unique(packages.map((pkg) => `evidence-package:${pkg.id}`)), ownerRole: 'compliance-officer', cadence: 'quarterly' },
@@ -135,8 +135,8 @@ export function createTrackCertificationCandidate(input: CertificationInputs): T
       required: true,
       score: safetyScore,
       requiredControlRefs: unique(['ctrl-racing-safety-integrity', 'ctrl-risk-treatment'].filter((id) => controlIds.includes(id))),
-      requiredEvidenceRefs: unique(domainScores.filter((domain) => ['track','gate','veterinary','stewards','emergency','security'].includes(domain.domain)).map((domain) => evidence(`readiness:${domain.domain}`, 'readiness', 'race-day-readiness', undefined, String(domain.averageScore)))),
-      blockers: domainScores.filter((domain) => ['track','gate','veterinary','stewards','emergency','security'].includes(domain.domain) && domain.blocked > 0).map((domain) => `${domain.domain} blocked`),
+      requiredEvidenceRefs: unique(domainScores.filter((domain) => ['track','gate','veterinary','stewards','emergency','security-manager'].includes(domain.domain)).map((domain) => evidence(`readiness:${domain.domain}`, 'readiness', 'race-day-readiness', undefined, String(domain.averageScore)))),
+      blockers: domainScores.filter((domain) => ['track','gate','veterinary','stewards','emergency','security-manager'].includes(domain.domain) && domain.blocked > 0).map((domain) => `${domain.domain} blocked`),
       status: 'candidate',
     },
     {

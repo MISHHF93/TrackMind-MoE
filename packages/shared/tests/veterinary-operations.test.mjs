@@ -7,6 +7,6 @@ test('veterinary operations schema version is stable', () => {
 });
 
 test('veterinary privacy scopes exclude confidential data for racing secretary', () => {
-  assert.ok(!veterinaryPrivacyScopesByRole['racing-secretary'].includes('veterinary-confidential'));
+  assert.ok(!veterinaryPrivacyScopesByRole['horse-operations-coordinator'].includes('veterinary-confidential'));
   assert.ok(veterinaryPrivacyScopesByRole.veterinarian.includes('veterinary-confidential'));
 });

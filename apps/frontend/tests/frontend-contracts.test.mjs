@@ -178,8 +178,9 @@ test('frontend approval payloads align with backend contracts', async () => {
   const workspace = await source('src/workspaces/WorkspacePage.tsx');
   const controls = await source('src/domain/approvalControls.ts');
   assert.match(payload, /buildControlledActionBody/);
+  assert.match(payload, /buildApprovalControlledActionPayload/);
   assert.match(payload, /tenantId: session\.tenantId/);
-  assert.match(payload, /action: input\.action/);
+  assert.match(payload, /protectedAction: input\.action/);
   assert.match(payload, /reason: input\.reason/);
   assert.match(payload, /buildApprovalDecisionBody/);
   assert.match(mutations, /assertMutationOk/);

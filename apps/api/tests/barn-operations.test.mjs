@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CoordinatedBarnOperationsService, CentralizedApprovalService, DigitalTwinRuntime, EquineIntelligencePlatform, ImmutableAuditLog, RacetrackAssetRegistryService, UniversalEventBus } from '../dist/index.js';
 
-const admin = { id:'admin-1', roles:['admin'], tenantId:'tenant-1' };
+const admin = { id:'admin-1', roles:['platform-super-admin'], tenantId:'tenant-1' };
 const steward = { id:'steward-1', roles:['steward'], tenantId:'tenant-1', human:true };
-const superintendent = { id:'super-1', roles:['track-superintendent'], tenantId:'tenant-1', human:true };
+const superintendent = { id:'super-1', roles:['facilities-manager'], tenantId:'tenant-1', human:true };
 
 function seeded() {
   const eventBus = new UniversalEventBus(); const auditLog = new ImmutableAuditLog(); const approvals = new CentralizedApprovalService({ auditLog, eventBus });
@@ -21,16 +21,16 @@ test('barn role permissions block read-only and steward stall mutations', () => 
 
 test('barn tenant boundaries are checked before reassignment and veterinary writes', () => {
   const { service } = seeded();
-  service.createBarn({ id:'admin-2', roles:['admin'], tenantId:'tenant-2' }, { id:'barn-b', name:'Barn B', tenantId:'tenant-2', location:'Backstretch', status:'ready', capacity:1, incidentIds:[], trainerIds:[] }, [{ id:'stall-b1', label:'B1' }]);
+  service.createBarn({ id:'admin-2', roles:['platform-super-admin'], tenantId:'tenant-2' }, { id:'barn-b', name:'Barn B', tenantId:'tenant-2', location:'Backstretch', status:'ready', capacity:1, incidentIds:[], trainerIds:[] }, [{ id:'stall-b1', label:'B1' }]);
   service.assignHorse({ actor:admin, horseId:'horse-tenant', barnId:'barn-a', stallId:'stall-a1', assignedAt:'2026-06-13T00:00:00.000Z', reason:'arrival' });
 
-  assert.throws(() => service.assignHorse({ actor:{ id:'admin-2', roles:['admin'], tenantId:'tenant-2' }, horseId:'horse-tenant', barnId:'barn-b', stallId:'stall-b1', assignedAt:'2026-06-13T00:05:00.000Z', reason:'cross tenant move' }), /Tenant boundary violation/);
+  assert.throws(() => service.assignHorse({ actor:{ id:'admin-2', roles:['platform-super-admin'], tenantId:'tenant-2' }, horseId:'horse-tenant', barnId:'barn-b', stallId:'stall-b1', assignedAt:'2026-06-13T00:05:00.000Z', reason:'cross tenant move' }), /Tenant boundary violation/);
   assert.throws(() => service.recordVeterinaryVisit({ actor:{ id:'vet-2', roles:['veterinarian'], tenantId:'tenant-2' }, horseId:'horse-tenant', findings:['cross tenant write'], at:'2026-06-13T00:06:00.000Z' }), /Tenant boundary violation/);
 });
 
 test('barn incident links are audited and emitted without browser-side mutation', () => {
   const { service, eventBus, auditLog } = seeded();
-  const link = service.linkIncident({ actor:{ id:'security-1', roles:['security'], tenantId:'tenant-1' }, barnId:'barn-a', incidentId:'incident-security-2', reason:'Denied restricted access near barn', at:'2026-06-13T00:10:00.000Z' });
+  const link = service.linkIncident({ actor:{ id:'security-1', roles:['security-manager'], tenantId:'tenant-1' }, barnId:'barn-a', incidentId:'incident-security-2', reason:'Denied restricted access near barn', at:'2026-06-13T00:10:00.000Z' });
   const snapshot = service.snapshot();
 
   assert.equal(link.eventId, 'barn.incident.linked');
@@ -48,7 +48,7 @@ test('barn assets, equine profile, runtime twins, events, and dashboard stay coo
   const twinRuntime = new DigitalTwinRuntime({ eventBus, auditLog });
   const assetRegistry = new RacetrackAssetRegistryService({ eventBus, auditLog });
   const equine = new EquineIntelligencePlatform();
-  const equineActor = { id:'race-office-1', roles:['racing-secretary'], tenantId:'tenant-1', human:true };
+  const equineActor = { id:'race-office-1', roles:['horse-operations-coordinator'], tenantId:'tenant-1', human:true };
   equine.createProfile({ horseId:'horse-42', tenantId:'tenant-1', name:'Integrated Runner', lifecycleStatus:'active' }, equineActor);
   const service = new CoordinatedBarnOperationsService({ eventBus, auditLog, twinRuntime, assetRegistry, equinePlatform:equine });
   service.createBarn(admin, { id:'barn-integrated', name:'Integrated Barn', tenantId:'tenant-1', location:'Backstretch', status:'ready', capacity:2, incidentIds:[], trainerIds:[] }, [{ id:'stall-i1', label:'I1' }, { id:'stall-i2', label:'I2' }]);
@@ -78,7 +78,7 @@ test('restricted trainer and access assignments are approval and audit gated', (
   service.inspect({ actor:admin, barnId:'barn-a', score:50, findings:['biosecurity watch'], at:'2026-06-13T00:03:00.000Z' });
   assert.throws(() => service.assignTrainer({ actor:admin, barnId:'barn-a', trainerId:'trainer-restricted', at:'2026-06-13T00:04:00.000Z' }), /requires approval token/);
   const assignment = service.assignTrainer({ actor:admin, barnId:'barn-a', trainerId:'trainer-restricted', at:'2026-06-13T00:04:00.000Z', approvalToken:token });
-  const access = service.recordAccess({ actor:{ id:'security-9', roles:['security'], tenantId:'tenant-1' }, barnId:'barn-a', purpose:'restricted patrol', at:'2026-06-13T00:05:00.000Z', approvalToken:token });
+  const access = service.recordAccess({ actor:{ id:'security-9', roles:['security-manager'], tenantId:'tenant-1' }, barnId:'barn-a', purpose:'restricted patrol', at:'2026-06-13T00:05:00.000Z', approvalToken:token });
   const snapshot = service.snapshot();
 
   assert.equal(assignment.approvalRequestId, 'approval-barn-a');

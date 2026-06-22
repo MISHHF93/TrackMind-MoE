@@ -125,7 +125,7 @@ test('track configuration changes require approvals before Digital Twin sync and
 
   const exported = platform.raceOfficeExport('chg-2');
   assert.equal(exported.jurisdiction, 'US-HISA-state-racing-commission');
-  assert.deepEqual(exported.approvals, ['racing-secretary', 'track-superintendent', 'steward', 'course-superintendent']);
+  assert.deepEqual(exported.approvals, ['horse-operations-coordinator', 'facilities-manager', 'steward', 'course-superintendent']);
   assert.equal(platform.auditTrail('chg-2').length, 8);
 });
 

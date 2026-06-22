@@ -74,7 +74,7 @@ test('wave 02: navigation groups and KPI strip components are wired', async () =
   const commandPanels = await source('src/workspaces/views/commandPanels.tsx');
 
   assert.match(validate, /navigationGroups/);
-  assert.match(shell, /navigationGroups/);
+  assert.match(shell, /navigationGroupOrderForRole/);
   assert.match(kpiStrip, /export function KpiStrip/);
   assert.match(commandPanels, /KpiStrip/);
   assert.match(states, /export function Skeleton/);

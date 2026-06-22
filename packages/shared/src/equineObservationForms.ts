@@ -1,5 +1,5 @@
 import type { Role } from './accessControl.js';
-import { isRole } from './accessControl.js';
+import { isRole, normalizeRole } from './accessControl.js';
 import type { DataEntryEntityKind, DataEntryFormMode } from './dataEntryFramework.js';
 import type { WelfareAlertSeverity } from './equineWelfareIntelligence.js';
 import type { VeterinaryObservationDto, VeterinaryPrivacyScope } from './veterinaryOperations.js';
@@ -138,9 +138,9 @@ export function validateEquineObservationEntry(
   }
 
   const observerRole = String(values.observerRole ?? values.role ?? '');
-  if (observerRole && !isRole(observerRole) && !['welfare-officer', 'trainer', 'groom'].includes(observerRole)) {
-    // welfare roles include non-Role enum values — allow welfare observation roles
-    if (entityKind === 'veterinary-observation' && !isRole(observerRole)) {
+  const normalizedObserver = normalizeRole(observerRole);
+  if (observerRole && !normalizedObserver && !['equine-welfare-officer', 'welfare-officer', 'trainer', 'groom'].includes(observerRole)) {
+    if (entityKind === 'veterinary-observation' && !normalizedObserver) {
       issues.push({ code: 'invalid-observer', message: 'observerRole must be a valid platform role for veterinary observations', field: 'observerRole' });
     }
   }
@@ -241,7 +241,7 @@ export function buildWelfareObservationPayload(
     horseId: String(values.horseId),
     observedAt: String(values.observedAt ?? new Date().toISOString()),
     observerId: String(values.observerId ?? values.observedBy ?? scope.actorId),
-    role: String(values.role ?? values.observerRole ?? 'welfare-officer'),
+    role: String(values.role ?? values.observerRole ?? 'equine-welfare-officer'),
     observationType,
     category: observationType,
     score: values.score != null && String(values.score).trim() ? Number(values.score) : welfareScoreFromSeverity(String(values.severity ?? 'medium')),
@@ -291,7 +291,7 @@ export function defaultObservationSeed(kind: EquineObservationKind, horseId: str
     observedBy: actorId,
     observerId: actorId,
     observerRole: role,
-    role: kind === 'welfare' ? 'welfare-officer' : role,
+    role: kind === 'welfare' ? 'equine-welfare-officer' : role,
     severity: 'medium',
     followUpNeeded: false,
     clearanceState: 'none',
@@ -329,7 +329,7 @@ export function redactObservationForRole(
       auditId: observation.auditId,
     };
   }
-  if (scope === 'veterinary-confidential' && role !== 'veterinarian' && role !== 'admin' && role !== 'compliance-officer') {
+  if (scope === 'veterinary-confidential' && role !== 'veterinarian' && role !== 'platform-super-admin' && role !== 'compliance-officer') {
     const notes = String(observation.notes ?? observation.summary ?? '');
     return {
       ...observation,

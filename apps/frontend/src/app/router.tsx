@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { Navigate, createBrowserRouter } from 'react-router-dom';
 import { AppShell } from '@/shell/AppShell';
 import { RequireRouteAccess } from '@/auth/guards';
+import { RoleHomeRedirect } from '@/auth/RoleHomeRedirect';
 import { routes, routeById } from '@/routes/routes';
 import { routePathSegment } from '@/routes/validateRoutes';
 import { RouteError } from '@/app/RouteError';
@@ -23,9 +24,9 @@ export const appRouter = createBrowserRouter([
     element: <AppShell />,
     errorElement: <RouteError />,
     children: [
-      { index: true, element: <Navigate to="/dashboard" replace /> },
+      { index: true, element: <RoleHomeRedirect /> },
       ...workspaceRoutes,
-      { path: '*', element: <Navigate to="/dashboard" replace /> },
+      { path: '*', element: <RoleHomeRedirect /> },
     ],
   },
 ]);

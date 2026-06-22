@@ -1,4 +1,5 @@
 import type { ExpertDomain, Role } from '@trackmind/shared';
+import { normalizeRole } from '@trackmind/shared';
 import { ImmutableAuditLog, type AuditEventType, type AuditSeverity } from './auditLog.js';
 import { type ApprovalToken, CentralizedApprovalService, type ControlledActionRequest } from './approvals.js';
 import { DigitalTwinRuntime, type DigitalTwinRuntimeTwin } from './digitalTwinRuntime.js';
@@ -46,19 +47,28 @@ export interface BarnIntegrationSignal { id: string; service: 'asset-registry' |
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const id = (p: string) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const barnEvents: BarnEventType[] = ['barn.created', 'barn.asset.synced', 'barn.horse.assigned', 'barn.horse.moved', 'barn.access.recorded', 'barn.inspected', 'barn.restriction.created', 'barn.trainer.assigned', 'barn.veterinary-visit.recorded', 'barn.facility-readiness.evaluated', 'barn.incident.linked', 'digital-twin.state.patch'];
-const equineRoles = ['trainer', 'veterinarian', 'racing-secretary', 'steward', 'compliance-officer', 'welfare-officer', 'transport-coordinator', 'auditor', 'ai-agent'] as const;
+const equineRoles = ['trainer', 'veterinarian', 'horse-operations-coordinator', 'steward', 'compliance-officer', 'equine-welfare-officer', 'transport-coordinator', 'auditor', 'ai-agent'] as const;
 const rolePermissions: Record<Role, BarnPermission[]> = {
-  admin: ['barn:read', 'barn:manage', 'stall:assign', 'movement:record', 'access:record', 'inspection:perform', 'vet:record', 'restriction:manage'],
+  'platform-super-admin': ['barn:read', 'barn:manage', 'stall:assign', 'movement:record', 'access:record', 'inspection:perform', 'vet:record', 'restriction:manage'],
+  'organization-admin': ['barn:read', 'barn:manage', 'stall:assign', 'movement:record', 'access:record', 'inspection:perform', 'restriction:manage'],
+  'racetrack-admin': ['barn:read', 'barn:manage', 'stall:assign', 'movement:record', 'access:record', 'inspection:perform', 'restriction:manage'],
+  'race-day-operations-manager': ['barn:read', 'stall:assign', 'movement:record', 'access:record'],
   steward: ['barn:read', 'access:record'],
+  'starter-official': ['barn:read'],
+  'paddock-official': ['barn:read', 'stall:assign', 'movement:record', 'access:record'],
+  'equine-welfare-officer': ['barn:read', 'access:record', 'vet:record'],
   veterinarian: ['barn:read', 'access:record', 'vet:record', 'restriction:manage'],
-  'track-superintendent': ['barn:read', 'barn:manage', 'stall:assign', 'movement:record', 'inspection:perform', 'restriction:manage'],
-  security: ['barn:read', 'access:record', 'restriction:manage'],
-  'racing-secretary': ['barn:read', 'stall:assign', 'movement:record'],
+  'horse-operations-coordinator': ['barn:read', 'stall:assign', 'movement:record'],
+  'security-manager': ['barn:read', 'access:record', 'restriction:manage'],
+  'facilities-manager': ['barn:read', 'barn:manage', 'stall:assign', 'movement:record', 'inspection:perform', 'restriction:manage'],
   'compliance-officer': ['barn:read', 'access:record'],
+  'finance-manager': ['barn:read'],
+  'ticketing-fan-manager': ['barn:read'],
+  executive: ['barn:read'],
   'read-only-auditor': ['barn:read'],
-  finance: ['barn:read'],
-  'ticketing-manager': ['barn:read'],
-  'operations-admin': ['barn:read', 'barn:manage', 'stall:assign', 'movement:record', 'access:record', 'inspection:perform', 'restriction:manage'],
+  'data-analytics-user': ['barn:read'],
+  'support-operator': ['barn:read', 'barn:manage'],
+  'staff-limited': ['barn:read'],
   'ai-safety-agent': ['barn:read'],
 };
 
@@ -106,7 +116,7 @@ export class CoordinatedBarnOperationsService {
     this.barns.set(normalized.id, normalized);
     for (const stall of stalls) this.stalls.set(stall.id, { ...clone(stall), barnId: normalized.id, status: 'available', restrictionIds: [] });
     const audit = this.audit('barn.created', actor, normalized.id, { barn: normalized, stallIds: stalls.map((stall) => stall.id) }, 'data-change');
-    const event = this.publish('barn.created', { barn: normalized, stalls: stalls.map((stall) => ({ ...stall, barnId: normalized.id })), auditId: audit.id }, normalized.id, 'regulated', 'track-superintendent');
+    const event = this.publish('barn.created', { barn: normalized, stalls: stalls.map((stall) => ({ ...stall, barnId: normalized.id })), auditId: audit.id }, normalized.id, 'regulated', 'facilities-manager');
     this.syncBarnAndStallAssets(actor, normalized, audit.id, event.id);
     this.evaluateAndPublishReadiness(normalized.id, actor, 'barn.created');
     return clone(normalized);
@@ -128,7 +138,7 @@ export class CoordinatedBarnOperationsService {
     const nextStall: Stall = { ...stall, status: 'occupied', occupancyHorseId: input.horseId };
     this.stalls.set(nextStall.id, nextStall);
     const audit = this.audit('stall.assignment.changed', input.actor, input.horseId, { ...input, previous, approvalRequired: Boolean(approvalTarget) }, 'data-change', approvalTarget ? 'critical' : 'warning');
-    const event = this.publish('barn.horse.assigned', { horseId: input.horseId, barnId: input.barnId, stallId: input.stallId, previous, reason: input.reason, auditId: audit.id, approvalRequestId: input.approvalToken?.requestId }, input.horseId, approvalTarget ? 'restricted' : 'regulated', 'racing-secretary');
+    const event = this.publish('barn.horse.assigned', { horseId: input.horseId, barnId: input.barnId, stallId: input.stallId, previous, reason: input.reason, auditId: audit.id, approvalRequestId: input.approvalToken?.requestId }, input.horseId, approvalTarget ? 'restricted' : 'regulated', 'horse-operations-coordinator');
     const occ: HorseOccupancy = { horseId: input.horseId, barnId: input.barnId, stallId: input.stallId, assignedAt: input.assignedAt, assignedBy: input.actor.id, eventId: 'barn.horse.assigned', auditId: audit.id, twinId: `equine:${input.horseId}`, approvalRequestId: input.approvalToken?.requestId };
     this.occupancy.set(input.horseId, occ);
     this.syncEquineAssignment(input, occ, audit.id, event.id);
@@ -142,7 +152,7 @@ export class CoordinatedBarnOperationsService {
     const occ = this.assignHorse({ actor: input.actor, horseId: input.horseId, barnId: input.toBarnId, stallId: input.toStallId, reason: input.reason, assignedAt: input.movedAt, approvalToken: input.approvalToken });
     const restrictedMove = Boolean(input.approvalToken?.requestId);
     const audit = this.audit('horse.movement.recorded', input.actor, input.horseId, { ...input, before, occupancy: occ, restrictedMove }, 'data-change', restrictedMove ? 'critical' : 'warning');
-    this.publish('barn.horse.moved', { horseId: input.horseId, from: before, to: occ, reason: input.reason, auditId: audit.id, approvalRequestId: input.approvalToken?.requestId }, input.horseId, restrictedMove ? 'restricted' : 'regulated', 'racing-secretary');
+    this.publish('barn.horse.moved', { horseId: input.horseId, from: before, to: occ, reason: input.reason, auditId: audit.id, approvalRequestId: input.approvalToken?.requestId }, input.horseId, restrictedMove ? 'restricted' : 'regulated', 'horse-operations-coordinator');
     const rec: HorseMovementRecord = { id: id('movement'), horseId: input.horseId, fromBarnId: before?.barnId, fromStallId: before?.stallId, toBarnId: input.toBarnId, toStallId: input.toStallId, reason: input.reason, movedAt: input.movedAt, movedBy: input.actor.id, eventId: 'barn.horse.moved', auditId: audit.id, approvalRequestId: input.approvalToken?.requestId };
     this.movements.push(rec);
     this.startRestrictedWorkflowIfNeeded(input.actor, rec, restrictedMove);
@@ -170,7 +180,7 @@ export class CoordinatedBarnOperationsService {
     const nextBarn = { ...barn, status };
     this.barns.set(input.barnId, nextBarn);
     const audit = this.audit('barn.inspected', input.actor, input.barnId, input, 'data-change', status === 'restricted' ? 'critical' : 'warning');
-    this.publish('barn.inspected', { ...input, status, auditId: audit.id }, input.barnId, 'regulated', 'track-superintendent');
+    this.publish('barn.inspected', { ...input, status, auditId: audit.id }, input.barnId, 'regulated', 'facilities-manager');
     const rec: BarnInspection = { id: id('inspection'), barnId: input.barnId, inspectedBy: input.actor.id, inspectedAt: input.at, score: input.score, findings: [...input.findings], status, eventId: 'barn.inspected', auditId: audit.id };
     this.inspections.push(rec);
     this.syncBarnAndStallAssets(input.actor, nextBarn, audit.id, rec.eventId);
@@ -209,7 +219,7 @@ export class CoordinatedBarnOperationsService {
     const nextBarn = { ...barn, trainerIds: [...new Set([...barn.trainerIds, input.trainerId])] };
     this.barns.set(input.barnId, nextBarn);
     const audit = this.audit('barn.trainer.assigned', input.actor, input.barnId, input, 'data-change', input.approvalToken ? 'critical' : 'warning');
-    this.publish('barn.trainer.assigned', { ...input, auditId: audit.id, approvalRequestId: input.approvalToken?.requestId }, input.barnId, input.approvalToken ? 'restricted' : 'regulated', 'racing-secretary');
+    this.publish('barn.trainer.assigned', { ...input, auditId: audit.id, approvalRequestId: input.approvalToken?.requestId }, input.barnId, input.approvalToken ? 'restricted' : 'regulated', 'horse-operations-coordinator');
     const rec: BarnTrainerAssignment = { id: id('trainer'), barnId: input.barnId, trainerId: input.trainerId, assignedBy: input.actor.id, assignedAt: input.at, active: true, auditId: audit.id, eventId: 'barn.trainer.assigned', approvalRequestId: input.approvalToken?.requestId };
     this.trainers.push(rec);
     this.syncBarnAndStallAssets(input.actor, nextBarn, audit.id, rec.eventId);
@@ -235,7 +245,7 @@ export class CoordinatedBarnOperationsService {
     const nextBarn = { ...barn, incidentIds: [...new Set([...barn.incidentIds, input.incidentId])] };
     this.barns.set(input.barnId, nextBarn);
     const audit = this.audit('barn.incident.linked', input.actor, input.barnId, input, 'security-event', 'warning');
-    this.publish('barn.incident.linked', { ...input, auditId: audit.id }, input.barnId, 'regulated', 'security');
+    this.publish('barn.incident.linked', { ...input, auditId: audit.id }, input.barnId, 'regulated', 'security-manager');
     const link: BarnIncidentLink = { id: id('barn-incident'), barnId: input.barnId, incidentId: input.incidentId, linkedBy: input.actor.id, linkedAt: input.at, reason: input.reason, eventId: 'barn.incident.linked', auditId: audit.id };
     this.incidentLinks.push(link);
     return clone(link);
@@ -319,8 +329,12 @@ export class CoordinatedBarnOperationsService {
     });
   }
 
+  private actorRoles(actor: BarnActor): Role[] {
+    return actor.roles.map((role) => normalizeRole(role)).filter((role): role is Role => role !== undefined);
+  }
+
   private require(actor: BarnActor, permission: BarnPermission) {
-    if (!actor.roles.some((role) => rolePermissions[role]?.includes(permission))) throw new Error(`Actor lacks ${permission}`);
+    if (!this.actorRoles(actor).some((role) => rolePermissions[role]?.includes(permission))) throw new Error(`Actor lacks ${permission}`);
   }
 
   private requireTenant(actor: BarnActor, tenantId: string): void {
@@ -377,7 +391,7 @@ export class CoordinatedBarnOperationsService {
         type,
         version: 1,
         description: `Barn Operations ${type}`,
-        owner: { service: 'barn-operations', team: 'barn-operations', accountableRole: type.includes('access') ? 'security' : type.includes('veterinary') ? 'veterinarian' : 'track-superintendent' },
+        owner: { service: 'barn-operations', team: 'barn-operations', accountableRole: type.includes('access') ? 'security-manager' : type.includes('veterinary') ? 'veterinarian' : 'facilities-manager' },
         payloadFields: [],
         compliance: type.includes('restriction') || type.includes('access') ? 'restricted' : 'regulated',
       });
@@ -448,7 +462,7 @@ export class CoordinatedBarnOperationsService {
   private evaluateAndPublishReadiness(barnId: string, actor: BarnActor, reason: string): void {
     const readiness = this.readiness().find((item) => item.barnId === barnId);
     if (!readiness) return;
-    this.publish('barn.facility-readiness.evaluated', { readiness, reason, actorId: actor.id }, barnId, readiness.status === 'restricted' ? 'restricted' : 'regulated', 'track-superintendent');
+    this.publish('barn.facility-readiness.evaluated', { readiness, reason, actorId: actor.id }, barnId, readiness.status === 'restricted' ? 'restricted' : 'regulated', 'facilities-manager');
   }
 
   private startRestrictedWorkflowIfNeeded(actor: BarnActor, movement: HorseMovementRecord, restricted: boolean): void {
@@ -478,7 +492,7 @@ export class CoordinatedBarnOperationsService {
 
   private equineActor(actor: BarnActor): EquineActor {
     const mapped = actor.roles.filter((role) => (equineRoles as readonly string[]).includes(role)) as EquineActor['roles'];
-    return { id: actor.id, tenantId: actor.tenantId, human: actor.human ?? true, roles: mapped.length ? mapped : ['racing-secretary'] };
+    return { id: actor.id, tenantId: actor.tenantId, human: actor.human ?? true, roles: mapped.length ? mapped : ['horse-operations-coordinator'] };
   }
 
   private barnAsset(barn: Barn): RegistryAsset {
@@ -545,12 +559,12 @@ export function barnRestrictedMoveWorkflow(tenantId: string): WorkflowDefinition
     version: '1.0.0',
     bpmnProcessId: 'Process_BarnRestrictedMove',
     startStepId: 'verify-approval',
-    ownerRole: 'track-superintendent',
+    ownerRole: 'facilities-manager',
     tenantId,
     triggerEvents: ['barn.horse.moved', 'barn.restriction.created'],
     steps: [
-      { id: 'verify-approval', name: 'Verify safety-critical approval evidence', type: 'approvalTask', role: 'track-superintendent', approvalRoles: ['track-superintendent'], requiredApprovals: 1, sla: { minutes: 10, escalationRole: 'admin', severity: 'critical' }, digitalTwin: { refs: ['equine:restricted-move'], syncMode: 'read', statePatch: {} }, next: ['notify-care-team'] },
-      { id: 'notify-care-team', name: 'Notify trainer, security, and veterinary care team', type: 'serviceTask', action: (context) => ({ notifications: ['trainer', 'security', 'veterinary'], movementId: context.payload.movementId }), next: ['closed'] },
+      { id: 'verify-approval', name: 'Verify safety-critical approval evidence', type: 'approvalTask', role: 'facilities-manager', approvalRoles: ['facilities-manager'], requiredApprovals: 1, sla: { minutes: 10, escalationRole: 'platform-super-admin', severity: 'critical' }, digitalTwin: { refs: ['equine:restricted-move'], syncMode: 'read', statePatch: {} }, next: ['notify-care-team'] },
+      { id: 'notify-care-team', name: 'Notify trainer, security, and veterinary care team', type: 'serviceTask', action: (context) => ({ notifications: ['trainer', 'security-manager', 'veterinary'], movementId: context.payload.movementId }), next: ['closed'] },
       { id: 'closed', name: 'Restricted barn movement review closed', type: 'endEvent' },
     ],
   };
@@ -561,11 +575,11 @@ export function createSeededBarnOperationsService(): CoordinatedBarnOperationsSe
   const auditLog = new ImmutableAuditLog();
   const twinRuntime = new DigitalTwinRuntime({ eventBus, auditLog });
   const service = new CoordinatedBarnOperationsService({ eventBus, auditLog, twinRuntime });
-  const actor = { id: 'ops-admin', roles: ['admin'] as Role[], tenantId: 'tenant-1', human: true };
+  const actor = { id: 'ops-admin', roles: ['platform-super-admin'] as Role[], tenantId: 'tenant-1', human: true };
   service.createBarn(actor, { id: 'barn-2', name: 'Barn 2', tenantId: 'tenant-1', location: 'Backstretch', status: 'ready', capacity: 3, incidentIds: ['incident-credential-1'], trainerIds: ['trainer-1'] }, [{ id: 'stall-12A', label: '12A' }, { id: 'stall-12B', label: '12B' }, { id: 'stall-12C', label: '12C' }]);
   service.assignHorse({ actor, horseId: 'horse-1', barnId: 'barn-2', stallId: 'stall-12A', assignedAt: '2026-06-13T00:00:00.000Z', reason: 'race-day stabling' });
   service.assignTrainer({ actor, barnId: 'barn-2', trainerId: 'trainer-1', at: '2026-06-13T00:01:00.000Z' });
   service.inspect({ actor, barnId: 'barn-2', score: 88, findings: ['aisles clear', 'water available'], at: '2026-06-13T00:02:00.000Z' });
-  service.recordAccess({ actor: { id: 'security-1', roles: ['security'], tenantId: 'tenant-1', human: true }, barnId: 'barn-2', purpose: 'credential patrol', at: '2026-06-13T00:03:00.000Z' });
+  service.recordAccess({ actor: { id: 'security-1', roles: ['security-manager'], tenantId: 'tenant-1', human: true }, barnId: 'barn-2', purpose: 'credential patrol', at: '2026-06-13T00:03:00.000Z' });
   return service;
 }

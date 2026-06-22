@@ -63,7 +63,7 @@ export function runApprovalEscalationCycle(deps: {
         category: 'approval',
         title: `Approval reminder: ${request.action}`,
         message: `Approval for ${request.target} expires in ${Math.max(1, Math.ceil(remaining))} minute(s). Reason: ${request.reason}`,
-        targetRoles: roles.length > 0 ? roles : ['admin'],
+        targetRoles: roles.length > 0 ? roles : ['platform-super-admin'],
         severity: remaining <= 2 ? 'critical' : 'warning',
         priority: approvalPriorityFromAction(request.action),
         correlationId: request.id,

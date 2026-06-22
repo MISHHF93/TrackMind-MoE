@@ -12,7 +12,7 @@ function approveToken(state, action, target, approvers, now = new Date().toISOSt
 
 test('race start command requires approval metadata before emitting canonical race.lifecycle.started.v1 event', async () => {
   const state = createApiFacadeState();
-  const raceHeaders = { 'x-trackmind-role': 'racing-secretary' };
+  const raceHeaders = { 'x-trackmind-role': 'horse-operations-coordinator' };
   const blocked = await handleApiRequest('POST', '/api/v1/races/race-7/start', {
     starterId: 'starter-1',
     tenantId: 'tenant-1',

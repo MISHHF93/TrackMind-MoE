@@ -31,7 +31,7 @@ test('TrackMind Nexus foundation wires assets, events, twins, APIs, approvals, a
   assert.equal(request.status, 'pending');
   assert.throws(() => nexus.approvals.authorizeExecution({ requestId: request.id, action: 'race-start', target: 'race-7', tenantId: 'track-1', racetrackId: 'track-1', actor: { id: 'ai-copilot', roles: ['steward'], human: false } }), /AI agents cannot execute/);
 
-  nexus.approvals.decide(request.id, { id: 'secretary-1', roles: ['racing-secretary'], human: true }, 'approved', 'Race office ready', ['human-approval-record']);
+  nexus.approvals.decide(request.id, { id: 'secretary-1', roles: ['horse-operations-coordinator'], human: true }, 'approved', 'Race office ready', ['human-approval-record']);
   nexus.approvals.decide(request.id, { id: 'steward-1', roles: ['steward'], human: true }, 'approved', 'Stewards ready', ['human-approval-record']);
   nexus.approvals.decide(request.id, { id: 'vet-1', roles: ['veterinarian'], human: true }, 'approved', 'Veterinary clear', ['human-approval-record']);
   const token = nexus.approvals.authorizeExecution({ requestId: request.id, action: 'race-start', target: 'race-7', tenantId: 'track-1', racetrackId: 'track-1', actor: { id: 'steward-1', roles: ['steward'], human: true } });

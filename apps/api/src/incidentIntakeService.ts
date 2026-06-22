@@ -113,7 +113,7 @@ export class IncidentIntakeService {
           notes: summary,
           evidence: evidence.length ? evidence : [`platform-incident:${incident.id}`],
           observerId: actor,
-          role: 'welfare-officer',
+          role: 'equine-welfare-officer',
         }, actor) as { observationId?: string };
         return String(result?.observationId ?? `welfare:${incident.id}`);
       }

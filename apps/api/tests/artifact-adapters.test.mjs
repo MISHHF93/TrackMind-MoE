@@ -27,7 +27,7 @@ import {
 
 const securityActor = {
   id: 'sec-commander',
-  roles: ['security'],
+  roles: ['security-manager'],
   tenantId: 'track-1',
   human: true,
   permissions: ['security:read', 'security:sensitive-read', 'security:manage', 'security:investigate'],

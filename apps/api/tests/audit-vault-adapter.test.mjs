@@ -10,7 +10,7 @@ import {
   handleApiRequest,
 } from '../dist/index.js';
 
-const adminHeaders = { 'x-trackmind-role': 'admin' };
+const adminHeaders = { 'x-trackmind-role': 'platform-super-admin' };
 const exportHeaders = { 'x-trackmind-role': 'compliance-officer' };
 
 test('audit vault adapter enforces WORM append-only semantics', () => {

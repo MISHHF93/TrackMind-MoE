@@ -50,11 +50,11 @@ test('facilities maintenance uses RACR assets, twins, approvals, workflows, audi
 
   await assert.rejects(() => service.completeWorkOrder({ workOrderId: order.id, completedBy: 'facilities-supervisor', evidence: ['repair-photo'] }, principal), /requires approval token/);
 
-  service.approvals.decide(order.approvalRequestId, { id: 'facilities-lead', roles: ['track-superintendent'], human: true }, 'approved', 'Approve facility work order execution', ['human-approval-record']);
-  service.approvals.decide(order.approvalRequestId, { id: 'ops-command', roles: ['admin'], human: true }, 'approved', 'Approve operational impact window', ['human-approval-record']);
-  const facilityToken = service.approvals.authorizeExecution({ requestId: order.approvalRequestId, action: 'facility-maintenance-execution', target: 'GRANDSTAND_HVAC_01', tenantId: 'track-1', racetrackId: 'track-1', actor: { id: 'ops-command', roles: ['admin'], human: true } });
+  service.approvals.decide(order.approvalRequestId, { id: 'facilities-lead', roles: ['facilities-manager'], human: true }, 'approved', 'Approve facility work order execution', ['human-approval-record']);
+  service.approvals.decide(order.approvalRequestId, { id: 'ops-command', roles: ['platform-super-admin'], human: true }, 'approved', 'Approve operational impact window', ['human-approval-record']);
+  const facilityToken = service.approvals.authorizeExecution({ requestId: order.approvalRequestId, action: 'facility-maintenance-execution', target: 'GRANDSTAND_HVAC_01', tenantId: 'track-1', racetrackId: 'track-1', actor: { id: 'ops-command', roles: ['platform-super-admin'], human: true } });
   const assetSafetyRequest = await service.assetRegistry.requestSafetyCriticalChange('GRANDSTAND_HVAC_01', { actorType: 'human', reason: 'Approve return to service after completed facility work order', evidence: ['human-approval-record', 'repair-photo'] }, principal);
-  service.assetRegistry.approvalService.decide(assetSafetyRequest.id, { id: 'track-superintendent', roles: ['track-superintendent'], human: true }, 'approved', 'Approve asset return-to-service update', ['human-approval-record']);
+  service.assetRegistry.approvalService.decide(assetSafetyRequest.id, { id: 'track-superintendent', roles: ['facilities-manager'], human: true }, 'approved', 'Approve asset return-to-service update', ['human-approval-record']);
   service.assetRegistry.approvalService.decide(assetSafetyRequest.id, { id: 'steward-1', roles: ['steward'], human: true }, 'approved', 'Approve safety-critical asset maintenance update', ['human-approval-record']);
   const assetToken = service.assetRegistry.approvalService.authorizeExecution({ requestId: assetSafetyRequest.id, action: 'safety-critical-control', target: 'GRANDSTAND_HVAC_01', tenantId: 'track-1', racetrackId: 'track-1', actor: { id: 'steward-1', roles: ['steward'], human: true } });
   const completed = await service.completeWorkOrder({ workOrderId: order.id, completedBy: 'facilities-supervisor', evidence: ['repair-photo'], approvalToken: facilityToken, assetApprovalToken: assetToken }, principal);
@@ -96,15 +96,15 @@ test('facilities maintenance schedule POST is approval-gated with audit hooks', 
 
   const approvalId = pending.approvalRequestId;
   assert.ok(approvalId);
-  service.approvals.decide(approvalId, { id: 'facilities-lead', roles: ['track-superintendent'], human: true }, 'approved', 'Approve generator maintenance window', ['human-approval-record']);
-  service.approvals.decide(approvalId, { id: 'ops-command', roles: ['admin'], human: true }, 'approved', 'Approve operational impact', ['human-approval-record']);
+  service.approvals.decide(approvalId, { id: 'facilities-lead', roles: ['facilities-manager'], human: true }, 'approved', 'Approve generator maintenance window', ['human-approval-record']);
+  service.approvals.decide(approvalId, { id: 'ops-command', roles: ['platform-super-admin'], human: true }, 'approved', 'Approve operational impact', ['human-approval-record']);
   const token = service.approvals.authorizeExecution({
     requestId: approvalId,
     action: 'facility-maintenance-execution',
     target: 'BACKUP_GENERATOR_A',
     tenantId: 'track-1',
     racetrackId: 'track-1',
-    actor: { id: 'ops-command', roles: ['admin'], human: true },
+    actor: { id: 'ops-command', roles: ['platform-super-admin'], human: true },
   });
 
   const scheduled = service.scheduleMaintenance({

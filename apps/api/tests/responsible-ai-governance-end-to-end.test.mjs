@@ -67,7 +67,7 @@ test('AI safety policy allows advisory activities only and blocks ungoverned pro
   assert.equal(blocked.status, 'safety-blocked');
   const ws = p.governanceWorkspace();
   assert.ok(ws.humanInLoopWorkflows.some((workflow) => workflow.recommendationId === blocked.id && workflow.executionAllowed === false));
-  assert.ok(ws.governorReviews.some((review) => review.recommendationId === blocked.id && review.blockedAutonomousExecution === true && review.requiredApproverRoles.includes('racing-secretary')));
+  assert.ok(ws.governorReviews.some((review) => review.recommendationId === blocked.id && review.blockedAutonomousExecution === true && review.requiredApproverRoles.includes('horse-operations-coordinator')));
 });
 
 test('AI Governor policy blocks protected controls and keeps advisory actions non-executable', () => {
@@ -129,7 +129,7 @@ test('AI recommendations create approval drafts, mapped roles, metadata, and blo
   assert.equal(rec.action, 'starting-gate-move');
   const ws = p.governanceWorkspace();
   const req = ws.approvalRequirements.find((item) => item.recommendationId === rec.id);
-  assert.deepEqual(req.requiredRoles, ['racing-secretary', 'track-superintendent']);
+  assert.deepEqual(req.requiredRoles, ['horse-operations-coordinator', 'facilities-manager']);
   assert.equal(req.controlledAction, 'starting-gate-move');
   assert.ok(req.approvalRequestId);
 
@@ -149,7 +149,7 @@ test('AI recommendations create approval drafts, mapped roles, metadata, and blo
   assert.deepEqual(approvals.getRecommendation(rec.id).approvalRequestIds, [approvalRequest.id]);
 
   for (const [id, action, roles] of [
-    ['rec-surface-action', 'surfaceAction', ['track-superintendent']],
+    ['rec-surface-action', 'surfaceAction', ['facilities-manager']],
     ['rec-vet-action', 'vetAction', ['veterinarian']],
     ['rec-steward-ruling', 'stewardRuling', ['steward']],
   ]) {
@@ -218,7 +218,7 @@ test('approval-required AI recommendation adapts to Recommendation Insight and F
 test('prompt lineage draft and publish mutations govern registry cards with audit trail', async () => {
   const { createApiFacadeState, handleApiRequest } = await import('../dist/server.js');
   const adminHeaders = {
-    'x-trackmind-role': 'admin',
+    'x-trackmind-role': 'platform-super-admin',
     'x-trackmind-tenant-id': 'trackmind',
     'x-trackmind-racetrack-id': 'main-track',
     'x-trackmind-organization-id': 'org-trackmind-network',

@@ -1,5 +1,5 @@
 import type { Permission, Role } from './accessControl.js';
-import { hasPermission } from './accessControl.js';
+import { hasPermission, normalizeRole } from './accessControl.js';
 import type { KnowledgeGraphEntityKind } from './racingKnowledgeGraph.js';
 
 export const entityPickerSchemaVersion = 'trackmind.entity-picker.v1' as const;
@@ -235,8 +235,10 @@ export function getEntityPickerKindDefinition(kind: EntityPickerKind): EntityPic
 }
 
 export function canAccessEntityPickerKind(kind: EntityPickerKind, role: Role): boolean {
+  const canonical = normalizeRole(role);
+  if (!canonical) return false;
   const definition = getEntityPickerKindDefinition(kind);
-  return hasPermission(role, definition.requiredPermission);
+  return hasPermission(canonical, definition.requiredPermission);
 }
 
 export function listAccessibleEntityPickerKinds(role: Role): EntityPickerKindDefinition[] {

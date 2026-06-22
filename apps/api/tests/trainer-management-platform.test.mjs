@@ -13,7 +13,7 @@ import {
 import { apiContractSchemas, validateContract } from '@trackmind/shared';
 
 const config = { stewards: ['steward-1'], racingSecretary: 'sec-1', commission: 'NYSGC', rulesVersion: '2026.1', scratchDeadlineMinutes: 45, maxFieldSize: 14 };
-const actor = { id: 'secretary', roles: ['racing-secretary'], human: true };
+const actor = { id: 'secretary', roles: ['horse-operations-coordinator'], human: true };
 
 test('trainer management workspace exposes profiles licensing assignments performance compliance KPIs and links', () => {
   const auditLog = new ImmutableAuditLog();

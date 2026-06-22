@@ -135,7 +135,7 @@ export class RacingCalendarPlatform {
     return { generatedAt: now, schemaVersion: 'trackmind.racing-calendar.v1', kpis: workspace.kpis, mock: false };
   }
 
-  requestSeasonDraft(input: { label: string; year: number; startsOn: string; endsOn: string; racetrackId?: string }, actor = 'racing-secretary'): RacingCalendarDraftResultDto {
+  requestSeasonDraft(input: { label: string; year: number; startsOn: string; endsOn: string; racetrackId?: string }, actor = 'horse-operations-coordinator'): RacingCalendarDraftResultDto {
     if (input.endsOn < input.startsOn) throw new Error('Season end date must be on or after start date');
     const racetrackId = input.racetrackId ?? this.deps.racetrackId ?? 'main-track';
     const seasonId = id('season');
@@ -183,7 +183,7 @@ export class RacingCalendarPlatform {
     };
   }
 
-  requestMeetDraft(input: { seasonId: string; name: string; startsOn: string; endsOn: string; racetrackId?: string }, actor = 'racing-secretary'): RacingCalendarDraftResultDto {
+  requestMeetDraft(input: { seasonId: string; name: string; startsOn: string; endsOn: string; racetrackId?: string }, actor = 'horse-operations-coordinator'): RacingCalendarDraftResultDto {
     const season = this.requireSeason(input.seasonId);
     const racetrackId = input.racetrackId ?? season.racetrackId;
     const meetId = id('meet');
@@ -208,7 +208,7 @@ export class RacingCalendarPlatform {
       endsOn: input.endsOn,
       status: 'draft',
       officialConfig: { stewards: ['steward-calendar'], racingSecretary: actor, commission: 'state-racing-commission', rulesVersion: '2026.06', scratchDeadlineMinutes: 45, maxFieldSize: 14 },
-    }, { id: actor, roles: ['racing-secretary'], human: true });
+    }, { id: actor, roles: ['horse-operations-coordinator'], human: true });
 
     season.meetIds = [...new Set([...season.meetIds, meetId])];
     season.updatedAt = new Date().toISOString();
@@ -229,7 +229,7 @@ export class RacingCalendarPlatform {
     };
   }
 
-  requestRaceDayDraft(input: { meetId: string; raceDate: string; racetrackId?: string }, actor = 'racing-secretary'): RacingCalendarDraftResultDto {
+  requestRaceDayDraft(input: { meetId: string; raceDate: string; racetrackId?: string }, actor = 'horse-operations-coordinator'): RacingCalendarDraftResultDto {
     const meet = this.deps.racePlatform.listMeets().find((m) => m.id === input.meetId);
     if (!meet) throw new Error(`Unknown meet ${input.meetId}`);
     const racetrackId = input.racetrackId ?? meet.trackId;
@@ -247,7 +247,7 @@ export class RacingCalendarPlatform {
       evidence: ['race-day-calendar-draft', 'human-approval-record'],
     })?.id;
 
-    this.deps.racePlatform.createRaceDay({ id: dayId, meetId: meet.id, trackId: racetrackId, raceDate: input.raceDate, status: 'draft' }, { id: actor, roles: ['racing-secretary'], human: true });
+    this.deps.racePlatform.createRaceDay({ id: dayId, meetId: meet.id, trackId: racetrackId, raceDate: input.raceDate, status: 'draft' }, { id: actor, roles: ['horse-operations-coordinator'], human: true });
 
     return {
       accepted: true,
@@ -264,7 +264,7 @@ export class RacingCalendarPlatform {
     };
   }
 
-  requestScheduleDraft(input: { raceDayId: string; raceNumber: number; scheduledPostTime: string; surface: 'dirt' | 'turf' | 'synthetic'; distanceFurlongs: number }, actor = 'racing-secretary'): RacingCalendarDraftResultDto {
+  requestScheduleDraft(input: { raceDayId: string; raceNumber: number; scheduledPostTime: string; surface: 'dirt' | 'turf' | 'synthetic'; distanceFurlongs: number }, actor = 'horse-operations-coordinator'): RacingCalendarDraftResultDto {
     const day = this.deps.racePlatform.listRaceDays().find((d) => d.id === input.raceDayId);
     if (!day) throw new Error(`Unknown race day ${input.raceDayId}`);
     const raceId = id('race');
@@ -288,7 +288,7 @@ export class RacingCalendarPlatform {
       raceNumber: input.raceNumber,
       scheduledPostTime: input.scheduledPostTime,
       conditions: { surface: input.surface, distanceFurlongs: input.distanceFurlongs, classLevel: 'Open', purse: 0, eligibility: [] },
-    }, { id: actor, roles: ['racing-secretary'], human: true });
+    }, { id: actor, roles: ['horse-operations-coordinator'], human: true });
 
     return {
       accepted: true,
@@ -524,9 +524,9 @@ export class RacingCalendarPlatform {
 
   private approvalControls(meets: CalendarMeetDto[], raceDays: CalendarRaceDayDto[], schedules: RaceScheduleItemDto[]) {
     return [
-      ...meets.filter((m) => m.approvalRequired).map((m) => control('race-office-configuration', m.id, `Approve meet ${m.name}`, 'Meet calendar activation requires racing secretary approval.', ['racing-secretary', 'steward'])),
-      ...raceDays.filter((d) => d.approvalRequired).map((d) => control('race-office-configuration', d.id, `Approve race day ${d.raceDate}`, 'Race day opening requires authorized calendar approval.', ['racing-secretary'])),
-      ...schedules.filter((s) => s.approvalRequired).map((s) => control('race-office-configuration', s.id, `Approve race ${s.raceNumber} schedule`, 'Post time publication requires calendar approval.', ['racing-secretary', 'steward'])),
+      ...meets.filter((m) => m.approvalRequired).map((m) => control('race-office-configuration', m.id, `Approve meet ${m.name}`, 'Meet calendar activation requires racing secretary approval.', ['horse-operations-coordinator', 'steward'])),
+      ...raceDays.filter((d) => d.approvalRequired).map((d) => control('race-office-configuration', d.id, `Approve race day ${d.raceDate}`, 'Race day opening requires authorized calendar approval.', ['horse-operations-coordinator'])),
+      ...schedules.filter((s) => s.approvalRequired).map((s) => control('race-office-configuration', s.id, `Approve race ${s.raceNumber} schedule`, 'Post time publication requires calendar approval.', ['horse-operations-coordinator', 'steward'])),
     ];
   }
 
@@ -596,7 +596,7 @@ export class RacingCalendarPlatform {
   private recordEvent(eventType: string, subjectId: string, actor: string, payload: Record<string, unknown>): string {
     const eventId = id('evt-calendar');
     this.eventIds.push(eventId);
-    void this.deps.eventBus?.publish({ id: eventId, type: eventType, payload: { subjectId, actor, ...payload }, aggregateId: subjectId, producer: 'racing-calendar', metadata: { compliance: 'regulated', team: 'racing-operations', accountableRole: 'racing-secretary' } });
+    void this.deps.eventBus?.publish({ id: eventId, type: eventType, payload: { subjectId, actor, ...payload }, aggregateId: subjectId, producer: 'racing-calendar', metadata: { compliance: 'regulated', team: 'racing-operations', accountableRole: 'horse-operations-coordinator' } });
     return eventId;
   }
 }
