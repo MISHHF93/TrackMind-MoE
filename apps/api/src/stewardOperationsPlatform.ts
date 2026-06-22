@@ -12,6 +12,7 @@ import type {
   StewardReviewDto,
 } from '@trackmind/shared';
 import { stewardAdvisoryGuardrailStatement } from '@trackmind/shared';
+import { assertEntityAccess } from './platform/entityAccessGuard.js';
 import type { AuditAppendTarget } from './auditAdapter.js';
 import { appendAudit } from './auditAdapter.js';
 import type { ImmutableAuditLog } from './auditLog.js';
@@ -78,7 +79,8 @@ export class StewardOperationsPlatform {
     return this.deps.racetrackId;
   }
 
-  workspace(now = new Date().toISOString()): StewardOperationsWorkspaceDto {
+  workspace(now = new Date().toISOString(), role: Role = 'steward'): StewardOperationsWorkspaceDto {
+    assertEntityAccess(role, 'disciplinary', 'view');
     const inquiries = [...this.inquiries.values()].map((inquiry) => this.toInquiryDto(inquiry, now));
     const allReviews = inquiries.flatMap((inquiry) => inquiry.reviews);
     const decisionWorkflows = inquiries.flatMap((inquiry) => inquiry.decisionWorkflows);

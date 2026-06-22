@@ -8,6 +8,7 @@ import {
   type EntityPickerKind,
   type EntityPickerSearchResponse,
 } from '@trackmind/shared';
+import { filterByScope, type ScopeContext } from '../platform/scopeGuard.js';
 import type { CompliancePlatformService } from '../compliance/compliancePlatformService.js';
 import type { IdentityService } from '../platform/identityService.js';
 import type { RacingCalendarPlatform } from '../racingCalendarPlatform.js';
@@ -67,7 +68,12 @@ export class EntityPickerService {
     }
 
     const limit = Math.max(1, Math.min(input.limit ?? definition.browseLimit, 50));
-    const items = this.collectItems(input.kind);
+    const scopeContext: ScopeContext = {
+      role: input.role,
+      tenantId: this.deps.tenantId,
+      racetrackId: this.deps.racetrackId,
+    };
+    const items = filterByScope(scopeContext, this.collectItems(input.kind));
     const filtered = filterEntityPickerItems(items, input.query, limit);
 
     return {

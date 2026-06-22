@@ -18,7 +18,7 @@ test('wave 02: AppShell exposes notification slot in command shell', async () =>
   assert.match(commandBar, /NotificationCenter/);
   assert.match(notificationCenter, /export function NotificationCenter/);
   assert.match(notificationCenter, /aria-label="Notifications"/);
-  assert.match(notificationCenter, /\/notifications\/inbox/);
+  assert.match(notificationCenter, /apiPaths\.notifications\.inbox/);
 });
 
 test('wave 02: workspace headers show support status badges for every route', async () => {
@@ -74,7 +74,7 @@ test('wave 02: navigation groups and KPI strip components are wired', async () =
   const commandPanels = await source('src/workspaces/views/commandPanels.tsx');
 
   assert.match(validate, /navigationGroups/);
-  assert.match(shell, /navigationGroupOrderForRole/);
+  assert.match(shell, /useRoleWorkspace/);
   assert.match(kpiStrip, /export function KpiStrip/);
   assert.match(commandPanels, /KpiStrip/);
   assert.match(states, /export function Skeleton/);

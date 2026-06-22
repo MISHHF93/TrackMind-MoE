@@ -242,7 +242,7 @@ export const rolePermissions: Record<Role, Permission[]> = {
     'read:any', 'executive:read', 'analytics:read', 'kpi:read', 'compliance:report', 'audit:read', 'finance:payout', 'incident:manage',
   ],
   'read-only-auditor': [
-    'read:any', 'audit:read', 'compliance:report', 'artifact:read', 'data-hub:read', 'kpi:read', 'analytics:read', 'vet:review',
+    'read:any', 'audit:read', 'compliance:report', 'artifact:read', 'data-hub:read', 'kpi:read', 'analytics:read', 'vet:review', 'security:read',
   ],
   'data-analytics-user': [
     'read:any', 'analytics:read', 'kpi:read', 'data-hub:read', 'artifact:read', 'staff:task',

@@ -480,6 +480,7 @@ export interface TenantRbacPolicyDto {
   roles: string[];
   requiresApproval: boolean;
   privileged: boolean;
+  effect?: 'allow' | 'deny';
   updatedAt: string;
 }
 

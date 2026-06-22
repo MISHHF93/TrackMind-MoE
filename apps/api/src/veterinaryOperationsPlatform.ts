@@ -1,5 +1,6 @@
 import type { Role } from '@trackmind/shared';
 import { veterinaryPrivacyScopesByRole } from '@trackmind/shared';
+import { assertEntityAccess } from './platform/entityAccessGuard.js';
 import type {
   ClearanceWorkflowDto,
   ClearanceWorkflowStatus,
@@ -205,6 +206,7 @@ export class VeterinaryOperationsPlatform {
   constructor(private readonly deps: VeterinaryOperationsDeps = {}) {}
 
   workspace(now = new Date().toISOString(), access: VeterinaryAccessContext): VeterinaryOperationsWorkspaceDto {
+    assertEntityAccess(access.role, 'veterinary', 'view');
     this.syncFromEquine(now);
     const privacy = privacyContextForRole(access.role);
     const cases = this.repository.list({ tenantId: this.deps.tenantId, racetrackId: this.deps.racetrackId })
@@ -231,6 +233,7 @@ export class VeterinaryOperationsPlatform {
   }
 
   getCase(horseId: string, access: VeterinaryAccessContext, now = new Date().toISOString()): ManagedHorseVeterinaryCaseDto | undefined {
+    assertEntityAccess(access.role, 'veterinary', 'view');
     this.syncFromEquine(now);
     const record = this.repository.get(horseId);
     if (!record) return undefined;
@@ -495,12 +498,14 @@ export class VeterinaryOperationsPlatform {
   }
 
   private assertVeterinaryWrite(access: VeterinaryAccessContext): void {
+    assertEntityAccess(access.role, 'veterinary', 'create');
     if (!['veterinarian', 'platform-super-admin', 'compliance-officer'].includes(access.role)) {
       throw new Error('Veterinary write operations require veterinarian role');
     }
   }
 
   private assertCareTeamWrite(access: VeterinaryAccessContext): void {
+    assertEntityAccess(access.role, 'welfare', 'create');
     if (!['veterinarian', 'platform-super-admin', 'compliance-officer', 'steward', 'facilities-manager', 'organization-admin'].includes(access.role)) {
       throw new Error('Care-team write operations require veterinarian or care-team role');
     }

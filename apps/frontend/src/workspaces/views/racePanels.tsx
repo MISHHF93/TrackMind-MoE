@@ -22,8 +22,13 @@ import { EntityFormAction } from '@/features/data-entry/TrackMindFormDialog';
 import type { WorkspaceAction } from '@/design/components/workspace';
 import { authorizeApprovalExecution, requestRaceStart, requestRaceStop, requestScratch, type ApprovalTokenPayload } from '@/api/mutations';
 
-export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+import type { WorkspacePanelProps } from './workspacePanelTypes';
+
+export function RaceDayPanels({ results, role: roleProp }: WorkspacePanelProps): ReactElement {
   const { session } = useTenantSession();
+  const role = roleProp ?? session.role;
+  const canRunRaceCommand = role === 'race-day-operations-manager' || role === 'platform-super-admin';
+  const isGateRole = role === 'starter-official' || role === 'paddock-official';
   const queryClient = useQueryClient();
   const [dialog, setDialog] = useState<{ open: boolean; action?: WorkspaceAction }>({ open: false });
   const [commandMessage, setCommandMessage] = useState<string | null>(null);
@@ -264,6 +269,8 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
           { id: 'warnings', label: 'Warnings', value: String(warnings.length), status: warnings.length > 0 ? 'warning' : 'nominal' },
         ]}
       />
+      {canRunRaceCommand ? (
+      <>
       <SectionPanel title="Race command target" description="Select the active race for stop, scratch, and gate command actions.">
         <div className="flex flex-wrap items-center gap-2">
           <label className="text-sm text-[var(--muted-foreground)]" htmlFor="race-target-select">Race</label>
@@ -317,7 +324,11 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
         description="Bulk race entries, jockey assignments, and status updates with validation preview and partial commit."
         operationIds={['race-entries', 'jockey-assignments', 'status-updates']}
       />
+      </>
+      ) : null}
+      {(canRunRaceCommand || isGateRole) ? (
       <RaceDayQuickEntryConsole horses={raceHorseOptions} defaultRaceId={defaultRaceTarget} />
+      ) : null}
       <div className="grid gap-4 xl:grid-cols-2">
         <SectionPanel title="Gate readiness" description="Paddock gate checks and starter race readiness indicators from live API feeds.">
           {commandMessage ? (

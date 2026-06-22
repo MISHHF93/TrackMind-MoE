@@ -1,28 +1,45 @@
+import { normalizeRole, type Role } from '@trackmind/shared';
+import { canRoleViewPrivacyScope } from '@trackmind/shared';
 import type { EquineRequestActor, FilteredHorseProfile, HorseModel } from './types.js';
 
 const clone = <T>(value: T): T => value === undefined ? value : JSON.parse(JSON.stringify(value)) as T;
 
+function canonicalRole(actor: EquineRequestActor): Role {
+  return normalizeRole(actor.role) ?? 'staff-limited';
+}
+
 export function canEditVeterinary(actor: EquineRequestActor): boolean {
-  return actor.role === 'veterinarian';
+  return canonicalRole(actor) === 'veterinarian';
 }
 
 export function canEditEligibility(actor: EquineRequestActor): boolean {
-  return actor.role === 'steward';
+  return canonicalRole(actor) === 'steward';
 }
 
 export function assertHorseAccess(horse: HorseModel, actor: EquineRequestActor): void {
-  if (actor.role === 'trainer') {
-    if (!actor.trainerId || !horse.trainerIds.includes(actor.trainerId)) throw new Error('Trainer can only access assigned horses');
+  const role = canonicalRole(actor);
+  const legacyRole = actor.role?.toLowerCase();
+  if (legacyRole === 'owner' || (role === 'staff-limited' && actor.ownerId)) {
+    if (!actor.ownerId) {
+      throw new Error('Owner can only access owned horses');
+    }
+    if (!horse.ownershipHistory.some((owner) => owner.owner_id === actor.ownerId && !owner.ownership_period.to)) {
+      throw new Error('Owner can only access owned horses');
+    }
   }
-  if (actor.role === 'owner') {
-    if (!actor.ownerId || !horse.ownershipHistory.some((owner) => owner.owner_id === actor.ownerId && !owner.ownership_period.to)) throw new Error('Owner can only access owned horses');
+  if (role === 'horse-operations-coordinator') {
+    if (!actor.trainerId || !horse.trainerIds.includes(actor.trainerId)) {
+      throw new Error('Horse operations coordinator can only access assigned horses');
+    }
   }
 }
 
 export function filterHorseProfile(horse: HorseModel, actor: EquineRequestActor): FilteredHorseProfile {
   assertHorseAccess(horse, actor);
+  const role = canonicalRole(actor);
   const base = { horseId: horse.identity.horseId, role: actor.role, identity: { horseId: horse.identity.horseId, name: horse.identity.name }, privacy: { scope: actor.role, redactedFields: [] as string[], reason: '' } };
-  if (actor.role === 'veterinarian') {
+
+  if (role === 'veterinarian' || canRoleViewPrivacyScope(role, 'veterinary-confidential')) {
     return {
       ...base,
       identity: clone(horse.identity),
@@ -35,7 +52,7 @@ export function filterHorseProfile(horse: HorseModel, actor: EquineRequestActor)
       privacy: { scope: actor.role, redactedFields: [], reason: 'Veterinarian has full medical access and may add veterinary records.' },
     };
   }
-  if (actor.role === 'steward') {
+  if (role === 'steward') {
     return {
       ...base,
       identity: { ...base.identity, registrationNumber: horse.identity.registrationNumber },
@@ -46,7 +63,7 @@ export function filterHorseProfile(horse: HorseModel, actor: EquineRequestActor)
       privacy: { scope: actor.role, redactedFields: ['veterinary.examination_records', 'veterinary.medication_history', 'veterinary.injury_reports.diagnosis'], reason: 'Steward view includes eligibility flags and race restrictions but no medical details.' },
     };
   }
-  if (actor.role === 'trainer') {
+  if (role === 'horse-operations-coordinator') {
     return {
       ...base,
       identity: { ...base.identity, microchip: horse.identity.microchip, registrationNumber: horse.identity.registrationNumber },
@@ -54,10 +71,10 @@ export function filterHorseProfile(horse: HorseModel, actor: EquineRequestActor)
       welfare: { wellnessScores: horse.welfare.wellnessScores.slice(-1), retirementStatus: horse.welfare.retirementStatus, transportLogs: clone(horse.welfare.transportLogs) },
       eligibility: { eligibilityFlags: horse.eligibility.eligibilityFlags.filter((flag) => flag.includes('exam') || flag.includes('trainer-notice')), raceRestrictions: [...horse.eligibility.raceRestrictions], scratchStatus: horse.eligibility.scratchStatus },
       veterinary: 'redacted',
-      privacy: { scope: actor.role, redactedFields: ['diagnosis', 'medication_history', 'injury_reports'], reason: 'Trainer sees assigned horse operational notices and required exams only.' },
+      privacy: { scope: actor.role, redactedFields: ['diagnosis', 'medication_history', 'injury_reports'], reason: 'Horse operations coordinator sees assigned horse operational notices and required exams only.' },
     };
   }
-  if (actor.role === 'owner') {
+  if (role === 'staff-limited' && actor.ownerId) {
     return {
       ...base,
       identity: { ...base.identity, breed: horse.identity.breed, registrationNumber: horse.identity.registrationNumber, pedigree: horse.identity.pedigree },
@@ -67,7 +84,7 @@ export function filterHorseProfile(horse: HorseModel, actor: EquineRequestActor)
       privacy: { scope: actor.role, redactedFields: ['diagnosis', 'medication_history', 'injury_reports', 'eligibility.internal-flags'], reason: 'Owner sees basic wellness and competition results without diagnosis.' },
     };
   }
-  if (actor.role === 'regulator') {
+  if (role === 'read-only-auditor') {
     return {
       ...base,
       identity: { horseId: horse.identity.horseId, breed: horse.identity.breed },
@@ -75,7 +92,7 @@ export function filterHorseProfile(horse: HorseModel, actor: EquineRequestActor)
       veterinary: 'redacted',
       eligibility: { hisaCompliance: horse.eligibility.hisaCompliance, scratchStatus: horse.eligibility.scratchStatus, eligibilityFlags: [...horse.eligibility.eligibilityFlags], updatedAt: horse.eligibility.updatedAt },
       audit: { available: true, anonymized: true },
-      privacy: { scope: actor.role, redactedFields: ['name', 'owner identity', 'trainer identity', 'medical detail'], reason: 'Regulator view prioritizes audit log and anonymized aggregates.' },
+      privacy: { scope: actor.role, redactedFields: ['name', 'owner identity', 'trainer identity', 'medical detail'], reason: 'Auditor view prioritizes audit log and anonymized aggregates.' },
     };
   }
   return {

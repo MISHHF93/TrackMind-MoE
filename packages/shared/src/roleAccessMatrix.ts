@@ -1,3 +1,4 @@
+import type { DataEntryEntityKind } from './dataEntryFramework.js';
 import type { KPIDomain } from './kpiArtifacts.js';
 import type {
   Permission,
@@ -13,6 +14,7 @@ import {
   canRoleRequestApprovalAction,
   frontendRoutePermissionRegistry,
   hasPermission,
+  normalizeRole,
   rolePermissions,
   roles,
   rolesWithPermission,
@@ -183,6 +185,7 @@ export function rolesForEntityAction(domain: EntityDomain, action: EntityAction)
 }
 
 export function canRoleViewKpiDomain(role: Role, domain: KPIDomain): boolean {
+  if (hasPermission(role, 'kpi:admin')) return true;
   return visibleKpiDomainsForRole(role).includes(domain);
 }
 
@@ -303,4 +306,57 @@ export function rolePermissionSummary(role: Role): {
     auditExport: canRoleExportAudit(role),
     privacyScopes: binding?.privacyScopes ?? ['public'],
   };
+}
+
+const dataEntryKindToEntityDomain: Partial<Record<DataEntryEntityKind, EntityDomain>> = {
+  horse: 'operational',
+  'horse-ownership': 'operational',
+  'stable-assignment': 'facilities',
+  'race-eligibility': 'operational',
+  'transport-record': 'operational',
+  'workout-record': 'operational',
+  'retirement-record': 'welfare',
+  race: 'operational',
+  'race-card': 'operational',
+  'race-card-conditions': 'operational',
+  'race-card-classification': 'operational',
+  'race-card-purse': 'financial',
+  'race-card-entry': 'operational',
+  'race-card-entry-trainer': 'operational',
+  'race-card-post-position': 'operational',
+  'race-card-lifecycle': 'operational',
+  'unified-incident': 'operational',
+  incident: 'operational',
+  approval: 'compliance',
+  'approval-request-composer': 'compliance',
+  'audit-note': 'compliance',
+  'operational-note': 'operational',
+  'veterinary-observation': 'veterinary',
+  'welfare-observation': 'welfare',
+  'trainer-assignment': 'operational',
+  'jockey-assignment': 'operational',
+  'paddock-record': 'operational',
+  'security-incident': 'security',
+  'security-event-entry': 'security',
+  'facilities-inspection': 'facilities',
+  'facilities-incident': 'facilities',
+  'facilities-maintenance': 'facilities',
+  'compliance-evidence': 'compliance',
+  'kpi-definition': 'platform',
+  'administrative-record': 'platform',
+  'federation-metadata': 'platform',
+};
+
+export function dataEntryEntityDomain(entityKind: DataEntryEntityKind): EntityDomain {
+  return dataEntryKindToEntityDomain[entityKind] ?? 'operational';
+}
+
+export function canRoleAccessDataEntryEntity(
+  role: Role | string,
+  entityKind: DataEntryEntityKind,
+  mode: 'create' | 'edit' | 'view',
+): boolean {
+  const canonical = normalizeRole(role) ?? 'staff-limited';
+  const action: EntityAction = mode === 'view' ? 'view' : mode === 'edit' ? 'edit' : 'create';
+  return canRoleAccessEntity(canonical, dataEntryEntityDomain(entityKind), action);
 }

@@ -3,8 +3,10 @@ import { useSearchParams } from 'react-router-dom';
 import type { Role } from '@trackmind/shared';
 import { backendSupportLabels } from '@/domain/support';
 import { extractApprovalControls, roleCanUseAction } from '@/domain/approvalControls';
+import { mergeRoleQuickActions } from '@/domain/roleQuickActions';
 import { buildRouteActions, roleFilterActions } from '@/domain/routeActions';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
+import { useRoleWorkspace } from '@/hooks/useRoleWorkspace';
 import { routeById, type DomainRouteId } from '@/routes/routes';
 import { useWorkspaceData, extractArray, stringField, type WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { useWorkspaceContext } from '@/hooks/useWorkspaceContext';
@@ -67,7 +69,7 @@ function buildMetrics(routeId: DomainRouteId, results: Array<{ path: string; sta
   return metrics.slice(0, 6);
 }
 
-function buildQueue(routeId: DomainRouteId, results: WorkspaceDataResult[]): WorkspaceQueueItem[] {
+function buildQueue(routeId: DomainRouteId, results: WorkspaceDataResult[], role: Role, notificationChannels: readonly string[]): WorkspaceQueueItem[] {
   const items: WorkspaceQueueItem[] = [];
 
   for (const result of results) {
@@ -150,7 +152,12 @@ function buildQueue(routeId: DomainRouteId, results: WorkspaceDataResult[]): Wor
     });
   }
 
-  return items.slice(0, 12);
+  return items
+    .filter((item) => {
+      const channel = item.itemKind ?? 'operations';
+      return notificationChannels.some((allowed) => channel.includes(allowed) || allowed.includes(channel));
+    })
+    .slice(0, 12);
 }
 
 function buildAdvisories(results: WorkspaceDataResult[]): WorkspaceAdvisory[] {
@@ -170,14 +177,16 @@ function buildAdvisories(results: WorkspaceDataResult[]): WorkspaceAdvisory[] {
   return advisories.slice(0, 6);
 }
 
-function buildActions(routeId: DomainRouteId, results: WorkspaceDataResult[], role: Role) {
+function buildActions(routeId: DomainRouteId, results: WorkspaceDataResult[], role: Role, quickActions: readonly string[]) {
   const backendActions = extractApprovalControls(results);
-  return roleFilterActions(buildRouteActions(routeId, results, backendActions, role), role, roleCanUseAction);
+  const routeActions = roleFilterActions(buildRouteActions(routeId, results, backendActions, role), role, roleCanUseAction);
+  return mergeRoleQuickActions(routeId, routeActions, quickActions);
 }
 
 export function WorkspacePage({ routeId }: { routeId: DomainRouteId }): ReactElement {
   const route = routeById[routeId];
   const { session } = useTenantSession();
+  const roleWorkspace = useRoleWorkspace();
   const { data, isLoading, isError, error, refetch } = useWorkspaceData(routeId);
   const { setWorkspaceState } = useWorkspaceContext();
   const [searchParams] = useSearchParams();
@@ -191,9 +200,9 @@ export function WorkspacePage({ routeId }: { routeId: DomainRouteId }): ReactEle
     setWorkspaceState({
       posture,
       postureLabel: errors > 0 ? 'Degraded — some backend feeds unavailable' : `${route.label} operating normally`,
-      primaryActions: buildActions(routeId, data, session.role),
+      primaryActions: buildActions(routeId, data, session.role, roleWorkspace.quickActions),
     });
-  }, [data, route.label, routeId, session.role, setWorkspaceState]);
+  }, [data, route.label, routeId, session.role, roleWorkspace.quickActions, setWorkspaceState]);
 
   if (isLoading) return <LoadingState label={`Loading ${route.label}…`} />;
 
@@ -217,7 +226,7 @@ export function WorkspacePage({ routeId }: { routeId: DomainRouteId }): ReactEle
   }
 
   const metrics = buildMetrics(routeId, results);
-  const queue = buildQueue(routeId, results);
+  const queue = buildQueue(routeId, results, session.role, roleWorkspace.notificationChannels);
   const advisories = buildAdvisories(results);
   const hasErrors = results.some((item) => item.status === 'error');
 
@@ -239,7 +248,7 @@ export function WorkspacePage({ routeId }: { routeId: DomainRouteId }): ReactEle
         <DegradedStateBanner message="Some backend feeds are unavailable. The console remains accessible in degraded mode." />
       ) : null}
 
-      <WorkspaceDomainPanels routeId={routeId} results={results} />
+      <WorkspaceDomainPanels routeId={routeId} results={results} role={session.role} kpiDomains={roleWorkspace.kpiDomains} />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <PriorityQueue title="Cross-console queue" items={queue} emptyLabel="No queue items returned from backend feeds." />

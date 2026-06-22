@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { filterKpisForRole, type Role } from '@trackmind/shared';
 import { KpiStrip } from '@/design/components/kpi-strip';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
 import { SectionPanel } from '@/design/components/section-panel';
@@ -11,6 +12,7 @@ import { feedFromIndex, indexWorkspaceFeeds } from '../feedUtils';
 import { flattenKpiItems } from '../feedPresenters';
 import { AdminFoundationPanels } from './platformPanels';
 import { EntityFormAction } from '@/features/data-entry/TrackMindFormDialog';
+import type { WorkspacePanelProps } from './workspacePanelTypes';
 
 const widgetRouteMap: Record<string, string> = {
   stewards: '/stewarding',
@@ -22,7 +24,7 @@ const widgetRouteMap: Record<string, string> = {
   facilities: '/facilities',
 };
 
-export function CommandCenterPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+export function CommandCenterPanels({ results, role = 'platform-super-admin' }: WorkspacePanelProps): ReactElement {
   const feeds = useMemo(() => indexWorkspaceFeeds(results), [results]);
   const command = feedFromIndex<Record<string, unknown>>(feeds, '/operations/command-center');
   const health = feedFromIndex<Record<string, unknown>>(feeds, '/platform/health');
@@ -32,7 +34,10 @@ export function CommandCenterPanels({ results }: { results: WorkspaceDataResult[
   const liveEvents = extractArray<Record<string, unknown>>(command, 'liveEvents');
   const services = extractArray<Record<string, unknown>>(health, 'services');
   const kpiItems = extractArray<Record<string, unknown>>(kpis, 'kpis');
-  const flatKpis = flattenKpiItems(kpiItems);
+  const flatKpis = filterKpisForRole(
+    flattenKpiItems(kpiItems).map((kpi) => ({ ...kpi, domain: kpi.id.split('-')[1] })),
+    role as Role,
+  );
 
   return (
     <div className="space-y-4">
@@ -119,7 +124,7 @@ export function CommandCenterPanels({ results }: { results: WorkspaceDataResult[
   );
 }
 
-export function AdminPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+export function AdminPanels({ results }: WorkspacePanelProps): ReactElement {
   return (
     <div className="space-y-4">
       <SectionPanel title="Administration actions" description="Platform identity, modules, and environment controls.">

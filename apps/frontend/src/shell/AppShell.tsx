@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { navigationGroupOrderForRole } from '@trackmind/shared';
 import { backendSupportLabels, canAccessRoute } from '@/domain/support';
 import { useModuleEnablement } from '@/hooks/useModuleEnablement';
+import { useRoleWorkspace } from '@/hooks/useRoleWorkspace';
 import { moduleKeyForRoute, routes, type AppRoute } from '@/routes/routes';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { useWorkspaceContext } from '@/hooks/useWorkspaceContext';
@@ -24,10 +24,11 @@ export function AppShell(): ReactElement {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { status, lastHeartbeat } = useEventStream();
   const { enabledModules } = useModuleEnablement();
+  const { navigationGroupOrder } = useRoleWorkspace();
 
   const navigationOrder = useMemo(
-    () => navigationGroupOrderForRole(session.role),
-    [session.role],
+    () => navigationGroupOrder,
+    [navigationGroupOrder],
   );
 
   const visibleRoutes = routes.filter((route) =>
@@ -83,7 +84,7 @@ export function AppShell(): ReactElement {
         <ActionDock actions={primaryActions} />
         <LiveStatusBar status={status} lastHeartbeat={lastHeartbeat} />
       </div>
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} routes={visibleRoutes} onNavigate={navigate} initialQuery={searchQuery} />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} routes={visibleRoutes} onNavigate={navigate} initialQuery={searchQuery} role={session.role} />
       <MoEChatPanel />
     </div>
   );

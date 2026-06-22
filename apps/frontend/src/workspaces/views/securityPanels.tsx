@@ -22,7 +22,13 @@ function securityData(results: WorkspaceDataResult[]) {
   return feedData<Record<string, unknown>>(results, '/security-operations/workspace');
 }
 
-export function SecurityPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+import { hasPermission } from '@trackmind/shared';
+import type { WorkspacePanelProps } from './workspacePanelTypes';
+
+export function SecurityPanels({ results, role: roleProp }: WorkspacePanelProps): ReactElement {
+  const { session } = useTenantSession();
+  const role = roleProp ?? session.role;
+  const canViewSensitive = hasPermission(role, 'security:sensitive-read');
   const data = securityData(results);
   const zonesLive = feedData<Record<string, unknown>>(results, '/security-operations/zones/live');
   const cameraReadiness = feedData<Record<string, unknown>>(results, '/security-operations/cameras/readiness');
@@ -40,11 +46,16 @@ export function SecurityPanels({ results }: { results: WorkspaceDataResult[] }):
 
   return (
     <div className="space-y-4">
+      {!canViewSensitive ? (
+        <p className="text-sm text-[var(--muted-foreground)]">Sensitive security fields are masked for your role. Request governed sensitive-read approval for full visibility.</p>
+      ) : null}
+      {(role === 'security-manager' || role === 'platform-super-admin') ? (
       <SecurityEventEntryConsole
         accessEvents={access}
         incidents={incidents}
         escalations={escalations}
       />
+      ) : null}
       <KpiStrip
         items={[
           { id: 'coverage', label: 'Security coverage', value: `${String(securityKpis?.coveragePercent ?? '—')}%`, status: Number(securityKpis?.coveragePercent ?? 100) < 90 ? 'warning' : 'nominal' },

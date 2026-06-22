@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react';
+import type { KPIDomain, Role } from '@trackmind/shared';
 import type { DomainRouteId } from '@/domain/support';
 import { EmptyState } from '@/design/components/states';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
@@ -18,57 +19,62 @@ import { AnalyticsPanels, FanExperiencePanels, NotificationsPanels } from './pla
 export function WorkspaceDomainPanels({
   routeId,
   results,
+  role,
+  kpiDomains,
 }: {
   routeId: DomainRouteId;
   results: WorkspaceDataResult[];
+  role: Role;
+  kpiDomains: readonly KPIDomain[];
 }): ReactElement {
+  const panelProps = { results, role, kpiDomains };
   switch (routeId) {
     case 'dashboard':
-      return <CommandCenterPanels results={results} />;
+      return <CommandCenterPanels {...panelProps} />;
     case 'admin':
-      return <AdminPanels results={results} />;
+      return <AdminPanels {...panelProps} />;
     case 'raceDay':
-      return <RaceDayPanels results={results} />;
+      return <RaceDayPanels {...panelProps} />;
     case 'surface':
-      return <SurfacePanels results={results} />;
+      return <SurfacePanels {...panelProps} />;
     case 'equine':
-      return <EquinePanels results={results} />;
+      return <EquinePanels {...panelProps} />;
     case 'stewarding':
-      return <StewardingPanels results={results} />;
+      return <StewardingPanels {...panelProps} />;
     case 'approvals':
-      return <ApprovalsWorkspacePanels results={results} />;
+      return <ApprovalsWorkspacePanels {...panelProps} />;
     case 'audit':
-      return <AuditPanels results={results} />;
+      return <AuditPanels {...panelProps} />;
     case 'compliance':
-      return <CompliancePanels results={results} />;
+      return <CompliancePanels {...panelProps} />;
     case 'security':
-      return <SecurityPanels results={results} />;
+      return <SecurityPanels {...panelProps} />;
     case 'incidents':
-      return <IncidentPanels results={results} />;
+      return <IncidentPanels {...panelProps} />;
     case 'emergency':
-      return <EmergencyPanels results={results} />;
+      return <EmergencyPanels {...panelProps} />;
     case 'facilities':
-      return <FacilitiesPanels results={results} />;
+      return <FacilitiesPanels {...panelProps} />;
     case 'workforce':
-      return <WorkforcePanels results={results} />;
+      return <WorkforcePanels {...panelProps} />;
     case 'digitalTwin':
-      return <DigitalTwinPanels results={results} />;
+      return <DigitalTwinPanels {...panelProps} />;
     case 'ticketing':
-      return <TicketingPanels results={results} />;
+      return <TicketingPanels {...panelProps} />;
     case 'finance':
-      return <FinancePanels results={results} />;
+      return <FinancePanels {...panelProps} />;
     case 'federation':
-      return <FederationPanels results={results} />;
+      return <FederationPanels {...panelProps} />;
     case 'dataHub':
-      return <DataHubPanels results={results} />;
+      return <DataHubPanels {...panelProps} />;
     case 'settings':
-      return <SettingsPanels results={results} />;
+      return <SettingsPanels {...panelProps} />;
     case 'analytics':
-      return <AnalyticsPanels results={results} />;
+      return <AnalyticsPanels {...panelProps} />;
     case 'fanExperience':
-      return <FanExperiencePanels results={results} />;
+      return <FanExperiencePanels {...panelProps} />;
     case 'notifications':
-      return <NotificationsPanels results={results} />;
+      return <NotificationsPanels {...panelProps} />;
     default: {
       const unknownRoute: never = routeId;
       return (

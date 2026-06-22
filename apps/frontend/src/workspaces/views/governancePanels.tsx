@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Role } from '@trackmind/shared';
-import { complianceMutationRoles } from '@trackmind/shared';
+import { canRoleExportAudit, complianceMutationRoles } from '@trackmind/shared';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { KpiStrip } from '@/design/components/kpi-strip';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
@@ -28,7 +28,12 @@ function canMutateCompliance(role: Role): boolean {
   return complianceMutationRoles.includes(role);
 }
 
-export function AuditPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+import type { WorkspacePanelProps } from './workspacePanelTypes';
+
+export function AuditPanels({ results, role: roleProp }: WorkspacePanelProps): ReactElement {
+  const { session } = useTenantSession();
+  const role = roleProp ?? session.role;
+  const canExport = canRoleExportAudit(role);
   const notesJournal = feedData<Record<string, unknown>>(results, '/operational-notes/journal');
   const operationalNotes = extractArray<Record<string, unknown>>(notesJournal, 'notes');
   const events = results.flatMap((item) => {
@@ -48,6 +53,13 @@ export function AuditPanels({ results }: { results: WorkspaceDataResult[] }): Re
           { id: 'critical', label: 'Critical', value: String(critical), status: critical > 0 ? 'critical' : 'nominal' },
         ]}
       />
+      {canExport ? (
+        <SectionPanel title="Audit export" description="Export governed audit evidence packages when authorized.">
+          <Button size="sm" variant="governance" asChild>
+            <a href="/audit?focus=export">Open audit export console</a>
+          </Button>
+        </SectionPanel>
+      ) : null}
       <SectionPanel title="Legacy audit note" description="Simple audit note form — prefer unified operational notes above.">
         <EntityFormAction entityKind="audit-note" label="Record audit note" />
       </SectionPanel>

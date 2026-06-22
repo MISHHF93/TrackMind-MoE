@@ -4,6 +4,8 @@ export * from './roleOperatingModel.js';
 
 export * from './roleAccessMatrix.js';
 
+export * from './roleResonanceMatrix.js';
+
 export * from './identityGovernance.js';
 
 export * from './entityResolution.js';

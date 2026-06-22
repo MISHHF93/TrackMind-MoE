@@ -1,4 +1,6 @@
 import type { CanonicalEventRef, Permission, Role, SecurityEvent as CanonicalSecurityEvent } from '@trackmind/shared';
+import { normalizeRole } from '@trackmind/shared';
+import { assertEntityAccess } from './platform/entityAccessGuard.js';
 import type { CentralizedApprovalService } from './approvals.js';
 import { ApprovalStore, type HumanApprovalRecord } from './approvals.js';
 import { ImmutableAuditLog, type AuditLogEntry } from './auditLog.js';
@@ -348,6 +350,8 @@ export class SecurityOperationsService {
 
   getWorkspace(actor: SecurityActor): SecurityOperationsWorkspace {
     this.require(actor, 'security:read');
+    const actorRole = actor.roles?.[0] ?? normalizeRole(actor.id) ?? 'security-manager';
+    assertEntityAccess(actorRole, 'security', 'view');
     const sensitive = this.canReadSensitive(actor);
     this.audit(sensitive ? 'sensitive-fields.accessed' : 'sensitive-fields.masked', actor.id, 'security-operations-workspace', sensitive ? this.sensitiveFieldNames() : []);
     return {

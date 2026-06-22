@@ -31,8 +31,13 @@ function profilePrivacy(profile: Record<string, unknown> | undefined): Record<st
   return isRecord(privacy) ? privacy : undefined;
 }
 
-export function EquinePanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+import type { WorkspacePanelProps } from './workspacePanelTypes';
+
+export function EquinePanels({ results, role: roleProp }: WorkspacePanelProps): ReactElement {
   const queryClient = useQueryClient();
+  const role = roleProp ?? 'staff-limited';
+  const canViewMedical = role === 'veterinarian' || role === 'equine-welfare-officer' || role === 'compliance-officer' || role === 'platform-super-admin';
+  const canManageHorseOps = role === 'horse-operations-coordinator' || role === 'racetrack-admin' || role === 'platform-super-admin';
   const [eligibilityMessage, setEligibilityMessage] = useState<string | null>(null);
   const profile = feedData<Record<string, unknown>>(results, '/horses/horse-1/profile');
   const eligibilityFeed = feedData<Record<string, unknown>>(results, '/horses/horse-1/eligibility');
@@ -96,6 +101,8 @@ export function EquinePanels({ results }: { results: WorkspaceDataResult[] }): R
           { id: 'welfare', label: 'Welfare score', value: welfare?.overallScore != null ? String(welfare.overallScore) : '—' },
         ]}
       />
+      {canManageHorseOps ? (
+      <>
       <HorseDataEntryHub
         profile={profile}
         registry={registry}
@@ -108,11 +115,15 @@ export function EquinePanels({ results }: { results: WorkspaceDataResult[] }): R
         description="Bulk horse imports, trainer assignments, and paddock/eligibility status updates with preview and partial commit."
         operationIds={['horse-import', 'trainer-assignments', 'status-updates']}
       />
+      </>
+      ) : null}
+      {canViewMedical ? (
       <EquineObservationConsole
         horseId={String(identity?.horseId ?? profile?.horseId ?? 'horse-1')}
         veterinaryObservations={veterinaryObservations}
         welfareObservations={welfareObservations}
       />
+      ) : null}
       <SectionPanel title="Privacy scope" description="Role-based veterinary and eligibility visibility enforced server-side.">
         <RecordTable
           columns={[

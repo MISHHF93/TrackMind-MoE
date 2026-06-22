@@ -2,6 +2,15 @@ import { routeApiPathGroups } from '@/api/paths';
 import type { DomainRouteId, NavigationGroup } from '@/domain/support';
 import { gatedRouteModules } from '@/routes/routeModules';
 import { routes, type AppRoute } from '@/routes/routes';
+import {
+  apiEndpointContracts,
+  assignableRoles,
+  frontendRoutePermissionRegistry,
+  roleCapabilityBindings,
+  roles,
+  validateRoleResonanceMatrix,
+  viewerRolesForRoute,
+} from '@trackmind/shared';
 
 export const navigationGroups = [
   'Command',
@@ -125,6 +134,47 @@ export function validateRouteInventory(source: {
     if (moduleKey !== routeId) {
       errors.push(`gated module key mismatch for ${routeId}: expected ${routeId}, got ${moduleKey}`);
     }
+  }
+
+  return errors;
+}
+
+/** Validates role resonance, route permissions, and API contract parity. */
+export function validateRoleRouteResonance(): string[] {
+  const errors: string[] = [...validateRoleResonanceMatrix()];
+
+  for (const route of routes) {
+    const registryPermission = frontendRoutePermissionRegistry[route.id as keyof typeof frontendRoutePermissionRegistry];
+    if (registryPermission && registryPermission !== route.requiredPermission) {
+      errors.push(`route ${route.id}: requiredPermission mismatch (routes.ts=${route.requiredPermission}, registry=${registryPermission})`);
+    }
+    const viewers = viewerRolesForRoute(route.id);
+    if (viewers.length === 0 && route.id !== 'settings') {
+      errors.push(`route ${route.id}: no role has viewer access`);
+    }
+  }
+
+  for (const contract of apiEndpointContracts) {
+    if (!contract.requiredPermission) {
+      errors.push(`API ${contract.method} ${contract.path}: missing requiredPermission`);
+    }
+    if (contract.roles !== 'authenticated' && contract.roles.length === 0) {
+      errors.push(`API ${contract.method} ${contract.path}: empty role allowlist`);
+    }
+  }
+
+  for (const role of assignableRoles) {
+    const binding = roleCapabilityBindings[role];
+    if (!binding.viewerRoutes.includes(binding.homeRouteId)) {
+      errors.push(`${role}: home route ${binding.homeRouteId} not in viewerRoutes`);
+    }
+  }
+
+  if (assignableRoles.length !== 20) {
+    errors.push(`expected 20 assignable roles, found ${assignableRoles.length}`);
+  }
+  if (roles.length !== 21) {
+    errors.push(`expected 21 total roles, found ${roles.length}`);
   }
 
   return errors;

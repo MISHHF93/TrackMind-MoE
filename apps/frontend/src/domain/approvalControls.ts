@@ -47,6 +47,10 @@ export function extractApprovalControls(results: WorkspaceDataResult[]): Workspa
 }
 
 export function roleCanUseAction(action: WorkspaceAction, role: Role): boolean {
+  if (role === 'support-operator' && action.protectedAction) {
+    const regulated = ['payout', 'medication-decision', 'clear-vet-flag', 'veterinary-clearance', 'disciplinary-decision', 'steward-ruling', 'steward-decision', 'race-start', 'race-stop'];
+    if (regulated.includes(action.protectedAction)) return false;
+  }
   if (action.id === 'audit-export' && !canRoleExportAudit(role)) {
     return false;
   }

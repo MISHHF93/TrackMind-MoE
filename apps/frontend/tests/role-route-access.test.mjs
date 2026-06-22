@@ -61,9 +61,21 @@ test('data analytics user can access data hub', () => {
   assert.equal(canRoleViewRoute('data-analytics-user', 'stewarding'), false);
 });
 
+test('organization admin lands on executive analytics workspace', () => {
+  assert.equal(homeRouteForRole('organization-admin'), 'analytics');
+  assert.ok(canRoleViewRoute('organization-admin', 'analytics'));
+  assert.ok(canRoleViewRoute('organization-admin', 'admin'));
+});
+
 test('racetrack admin cannot access platform admin workspace', () => {
   assert.equal(canRoleViewRoute('racetrack-admin', 'admin'), false);
-  assert.equal(canRoleViewRoute('organization-admin', 'admin'), true);
+});
+
+test('all assignable roles have accessible home routes', () => {
+  for (const role of assignableRoles) {
+    const homeRoute = homeRouteForRole(role);
+    assert.ok(canRoleViewRoute(role, homeRoute), `${role} home ${homeRoute}`);
+  }
 });
 
 test('every workspace route has buildRouteActions entries', async () => {

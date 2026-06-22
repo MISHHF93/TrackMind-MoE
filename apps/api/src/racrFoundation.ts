@@ -1,4 +1,5 @@
 import { InMemoryEventBus, type RaceDayEvent } from './eventBus.js';
+import { normalizeRole, type Role } from '@trackmind/shared';
 
 export type RacrAssetClass = 'physical' | 'digital' | 'biological' | 'operational' | 'regulatory' | 'ai-agent';
 export type RacrLifecycleState = 'draft' | 'pending-approval' | 'active' | 'maintenance' | 'suspended' | 'retired' | 'deleted';
@@ -109,6 +110,39 @@ const permissionMatrix: Record<RacrAction, RacrRole[]> = {
 
 export function authorizeRacrAction(actor: RacrActor, action: RacrAction): boolean {
   return actor.roles.some((role) => permissionMatrix[action].includes(role));
+}
+
+/** Maps canonical platform roles to RACR namespace roles for asset registry authorization. */
+export function racrRoleFromCanonicalRole(role: Role | string): RacrRole[] {
+  const canonical = typeof role === 'string' ? (normalizeRole(role) ?? 'staff-limited') : role;
+  const mapping: Partial<Record<Role, RacrRole[]>> = {
+    'platform-super-admin': ['registry-admin', 'compliance-officer', 'ai-governance'],
+    'organization-admin': ['registry-admin', 'compliance-officer'],
+    'racetrack-admin': ['registry-admin', 'track-ops', 'asset-owner'],
+    'race-day-operations-manager': ['track-ops', 'viewer'],
+    steward: ['steward', 'viewer'],
+    'starter-official': ['track-ops', 'viewer'],
+    'paddock-official': ['viewer'],
+    'equine-welfare-officer': ['viewer'],
+    veterinarian: ['veterinarian', 'viewer'],
+    'horse-operations-coordinator': ['asset-owner', 'viewer'],
+    'security-manager': ['security-ops', 'viewer'],
+    'facilities-manager': ['track-ops', 'asset-owner', 'viewer'],
+    'compliance-officer': ['compliance-officer', 'viewer'],
+    'finance-manager': ['viewer'],
+    'ticketing-fan-manager': ['viewer'],
+    executive: ['viewer'],
+    'read-only-auditor': ['viewer'],
+    'data-analytics-user': ['viewer'],
+    'support-operator': ['registry-admin', 'viewer'],
+    'staff-limited': ['viewer'],
+    'ai-safety-agent': ['ai-governance', 'viewer'],
+  };
+  return mapping[canonical] ?? ['viewer'];
+}
+
+export function racrActorFromCanonicalRole(actorId: string, role: Role | string, tenantId?: string): RacrActor {
+  return { id: actorId, roles: racrRoleFromCanonicalRole(role), tenantId };
 }
 
 export function validateRacrAsset(asset: RacrAssetVersion): { valid: boolean; errors: string[] } {

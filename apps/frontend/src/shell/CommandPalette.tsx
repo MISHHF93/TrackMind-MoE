@@ -1,4 +1,6 @@
-import { useEffect, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import type { Role } from '@trackmind/shared';
+import { canAccessEntityPickerKind, isEntityPickerKind, mapGraphKindToEntityPickerKind } from '@trackmind/shared';
 import type { AppRoute } from '@/routes/routes';
 import { useGlobalSearch } from '@/hooks/useGlobalSearch';
 
@@ -8,15 +10,22 @@ export function CommandPalette({
   routes,
   onNavigate,
   initialQuery = '',
+  role,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   routes: AppRoute[];
   onNavigate: (path: string) => void;
   initialQuery?: string;
+  role: Role;
 }): ReactElement | null {
   const [query, setQuery] = useState(initialQuery);
   const { results: globalResults, loading } = useGlobalSearch(query, open);
+  const filteredGlobalResults = useMemo(() => globalResults.filter((result) => {
+    const pickerKind = mapGraphKindToEntityPickerKind(result.kind) ?? (isEntityPickerKind(result.kind) ? result.kind : undefined);
+    if (!pickerKind) return true;
+    return canAccessEntityPickerKind(pickerKind, role);
+  }), [globalResults, role]);
 
   useEffect(() => {
     if (open) setQuery(initialQuery);
@@ -46,11 +55,11 @@ export function CommandPalette({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        {globalResults.length > 0 ? (
+        {filteredGlobalResults.length > 0 ? (
           <div className="border-b border-[var(--border)] p-2">
             <p className="px-3 py-1 text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Global results</p>
             <ul className="max-h-40 overflow-y-auto">
-              {globalResults.map((result) => (
+              {filteredGlobalResults.map((result) => (
                 <li key={result.id}>
                   <button
                     type="button"

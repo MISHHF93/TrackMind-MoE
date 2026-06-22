@@ -47,7 +47,18 @@ export interface BarnIntegrationSignal { id: string; service: 'asset-registry' |
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const id = (p: string) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const barnEvents: BarnEventType[] = ['barn.created', 'barn.asset.synced', 'barn.horse.assigned', 'barn.horse.moved', 'barn.access.recorded', 'barn.inspected', 'barn.restriction.created', 'barn.trainer.assigned', 'barn.veterinary-visit.recorded', 'barn.facility-readiness.evaluated', 'barn.incident.linked', 'digital-twin.state.patch'];
-const equineRoles = ['trainer', 'veterinarian', 'horse-operations-coordinator', 'steward', 'compliance-officer', 'equine-welfare-officer', 'transport-coordinator', 'auditor', 'ai-agent'] as const;
+type EquineRole = EquineActor['roles'][number];
+const equineActorRoles: EquineRole[] = [
+  'horse-operations-coordinator', 'veterinarian', 'steward', 'compliance-officer',
+  'equine-welfare-officer', 'transport-coordinator', 'trainer', 'auditor',
+];
+const barnRoleToEquineRole = (role: Role): EquineRole | undefined => {
+  if (equineActorRoles.includes(role as EquineRole)) return role as EquineRole;
+  if (role === 'platform-super-admin' || role === 'organization-admin' || role === 'racetrack-admin' || role === 'paddock-official' || role === 'facilities-manager') {
+    return 'horse-operations-coordinator';
+  }
+  return undefined;
+};
 const rolePermissions: Record<Role, BarnPermission[]> = {
   'platform-super-admin': ['barn:read', 'barn:manage', 'stall:assign', 'movement:record', 'access:record', 'inspection:perform', 'vet:record', 'restriction:manage'],
   'organization-admin': ['barn:read', 'barn:manage', 'stall:assign', 'movement:record', 'access:record', 'inspection:perform', 'restriction:manage'],
@@ -491,7 +502,10 @@ export class CoordinatedBarnOperationsService {
   }
 
   private equineActor(actor: BarnActor): EquineActor {
-    const mapped = actor.roles.filter((role) => (equineRoles as readonly string[]).includes(role)) as EquineActor['roles'];
+    const mapped: EquineRole[] = [...new Set(actor.roles.flatMap((role) => {
+      const equineRole = barnRoleToEquineRole(role);
+      return equineRole ? [equineRole] : [];
+    }))];
     return { id: actor.id, tenantId: actor.tenantId, human: actor.human ?? true, roles: mapped.length ? mapped : ['horse-operations-coordinator'] };
   }
 

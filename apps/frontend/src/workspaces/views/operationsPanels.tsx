@@ -24,8 +24,12 @@ function defaultAssetId(assets: Record<string, unknown>[], selectedAssetId?: str
   return first ? String(first.assetId ?? '') : 'GRANDSTAND_HVAC_01';
 }
 
-export function FacilitiesPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+import type { WorkspacePanelProps } from './workspacePanelTypes';
+
+export function FacilitiesPanels({ results, role: roleProp }: WorkspacePanelProps): ReactElement {
   const { session } = useTenantSession();
+  const role = roleProp ?? session.role;
+  const canManageFacilities = role === 'facilities-manager' || role === 'racetrack-admin' || role === 'platform-super-admin';
   const data = feedData<Record<string, unknown>>(results, '/facilities-maintenance/workspace');
   const readiness = data && typeof data.readiness === 'object' ? data.readiness as Record<string, unknown> : undefined;
   const assets = extractArray<Record<string, unknown>>(data, 'assets');
@@ -100,6 +104,7 @@ export function FacilitiesPanels({ results }: { results: WorkspaceDataResult[] }
         </SectionPanel>
       ) : null}
       <div className="grid gap-4 xl:grid-cols-2">
+        {canManageFacilities ? (
         <SectionPanel title="Maintenance scheduling" description="Approval-gated maintenance schedule requests; operational impact requires human authorization.">
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -124,6 +129,7 @@ export function FacilitiesPanels({ results }: { results: WorkspaceDataResult[] }
             {scheduleMessage ? <p className="text-xs text-[var(--muted-foreground)]">{scheduleMessage}</p> : null}
           </div>
         </SectionPanel>
+        ) : null}
         <SectionPanel title="Facility incidents" description="Report facility incidents with audit and event linkage.">
           <div className="flex flex-wrap items-center gap-2">
             <Button

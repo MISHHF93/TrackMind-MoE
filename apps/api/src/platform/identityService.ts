@@ -68,6 +68,17 @@ const seedPolicies = (): TenantRbacPolicyDto[] => [
     privileged: true,
     updatedAt: '2026-01-01T00:00:00.000Z',
   },
+  {
+    id: 'policy-support-deny-regulated',
+    tenantId: 'trackmind',
+    name: 'Support operator regulated action deny',
+    permissions: ['vet:clear-flag', 'finance:payout', 'discipline:issue', 'audit:export'],
+    roles: ['support-operator'],
+    requiresApproval: false,
+    privileged: true,
+    effect: 'deny',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  },
 ];
 
 export class IdentityService {
@@ -229,10 +240,12 @@ export class IdentityService {
 
   evaluatePolicy(tenantId: string, role: Role, permission: Permission): boolean {
     const policies = this.rbacPolicies.filter((p) => p.tenantId === tenantId);
-    const rolePolicyMatch = policies.some(
+    const matching = policies.filter(
       (p) => p.permissions.includes(permission) && (!p.roles.length || p.roles.includes(role)),
     );
-    return rolePolicyMatch || (rolePermissions[role]?.includes(permission) ?? false);
+    if (matching.some((p) => p.effect === 'deny')) return false;
+    const rolePolicyAllow = matching.some((p) => (p.effect ?? 'allow') === 'allow');
+    return rolePolicyAllow || (rolePermissions[role]?.includes(permission) ?? false);
   }
 
   issueSession(userId: string): TenantSessionDto {

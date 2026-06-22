@@ -435,7 +435,10 @@ function KpiAdminPanels({ results }: { results: WorkspaceDataResult[] }): ReactE
   );
 }
 
-export function AnalyticsPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+import { filterKpisForRole } from '@trackmind/shared';
+import type { WorkspacePanelProps } from './workspacePanelTypes';
+
+export function AnalyticsPanels({ results, role = 'data-analytics-user' }: WorkspacePanelProps): ReactElement {
   const workspaceFeed = feedData<Record<string, unknown>>(results, '/analytics/workspace');
   const {
     workspace: streamedWorkspace,
@@ -448,7 +451,13 @@ export function AnalyticsPanels({ results }: { results: WorkspaceDataResult[] })
   const searchFeed = feedData<Record<string, unknown>>(results, '/search/global');
   const federationAggregation = feedData<unknown>(results, '/federation/kpi-aggregation');
   const summary = extractArray<Record<string, unknown>>(workspace, 'executiveSummary');
-  const trends = extractArray<Record<string, unknown>>(workspace, 'kpiTrends');
+  const trends = filterKpisForRole(
+    extractArray<Record<string, unknown>>(workspace, 'kpiTrends').map((t) => ({
+      ...t,
+      domain: typeof t.domain === 'string' ? t.domain : undefined,
+    })),
+    role,
+  );
   const benchmarks = extractArray<Record<string, unknown>>(workspace, 'federationBenchmarks');
   const forecasting = workspace?.forecastingReadiness as Record<string, unknown> | undefined;
   const graphNodes = extractArray<Record<string, unknown>>(knowledgeGraph, 'nodes');

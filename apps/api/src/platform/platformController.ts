@@ -1,4 +1,4 @@
-import { hasPermission, isRole, type AuditEventDto, type FederationWorkspaceDto, type IncidentDto, type KPIArtifact, type Role } from '@trackmind/shared';
+import { hasPermission, isRole, canRoleExportAudit, normalizeRole, type AuditEventDto, type FederationWorkspaceDto, type IncidentDto, type KPIArtifact, type Role } from '@trackmind/shared';
 import type { CentralizedApprovalService } from '../approvals.js';
 import type { ImmutableAuditLog } from '../auditLog.js';
 import type { RacingDataApiFacadeState } from '../racingDataApiHub.js';
@@ -366,6 +366,9 @@ export function handlePlatformRequest(
     };
     const fallbackEvents = state.auditEvents as AuditEventDto[];
     if (query.action === 'export') {
+      if (!actorRole || !canRoleExportAudit(actorRole)) {
+        return { status: 403, body: { ok: false, error: { code: 'audit_export_denied', message: `Role ${actorRole ?? 'unknown'} cannot export audit evidence` } } };
+      }
       if (!platform.auditVault.enabled) {
         return { status: 503, body: { ok: false, error: { code: 'audit_vault_disabled', message: 'External audit vault is not enabled.' } } };
       }
@@ -382,6 +385,9 @@ export function handlePlatformRequest(
     };
   }
   if (method === 'GET' && path === '/audit/exports') {
+    if (!actorRole || !canRoleExportAudit(actorRole)) {
+      return { status: 403, body: { ok: false, error: { code: 'audit_export_denied', message: `Role ${actorRole ?? 'unknown'} cannot export audit evidence` } } };
+    }
     const exportId = searchParams.get('exportId') ?? undefined;
     if (exportId) {
       const descriptor = platform.auditVault.getExport(exportId);

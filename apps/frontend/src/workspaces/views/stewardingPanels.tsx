@@ -18,8 +18,13 @@ import {
 } from '@/api/mutations';
 import { feedData } from '../feedUtils';
 
-export function StewardingPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+import type { WorkspacePanelProps } from './workspacePanelTypes';
+
+export function StewardingPanels({ results, role: roleProp }: WorkspacePanelProps): ReactElement {
   const { session } = useTenantSession();
+  const role = roleProp ?? session.role;
+  const canDraftRuling = role === 'steward' || role === 'platform-super-admin';
+  const isReadOnlyAuditor = role === 'read-only-auditor';
   const queryClient = useQueryClient();
   const [rulingMessage, setRulingMessage] = useState<string | null>(null);
   const inquiriesData = feedData<Record<string, unknown>>(results, '/stewarding/inquiries');
@@ -78,7 +83,7 @@ export function StewardingPanels({ results }: { results: WorkspaceDataResult[] }
       return issueStewardFinalRuling(inquiryId, {
         id: `final-${Date.now().toString(36)}`,
         issuedBy: session.role,
-        issuedByRole: session.role === 'platform-super-admin' ? 'platform-super-admin' : 'steward',
+        issuedByRole: session.role === 'platform-super-admin' ? 'admin' : 'steward',
         issuedAt: new Date().toISOString(),
         decision: String(humanDraft?.recommendation ?? 'Official steward ruling recorded without official result mutation'),
         rationale: String(humanDraft?.rationale ?? 'Human steward panel reviewed evidence and rule references.'),
@@ -163,7 +168,9 @@ export function StewardingPanels({ results }: { results: WorkspaceDataResult[] }
         title="Final ruling"
         description="Human-only final steward ruling with verified approval token. AI cannot issue official rulings or modify official results."
       >
-        {finalRuling ? (
+        {isReadOnlyAuditor ? (
+          <p className="text-sm text-muted-foreground">Read-only auditor view — ruling drafts and finalization are disabled.</p>
+        ) : finalRuling ? (
           <div className="space-y-2 text-sm">
             <Badge variant="outline">Finalized</Badge>
             <p>{String(finalRuling.decision ?? 'Final ruling recorded')}</p>
@@ -171,7 +178,7 @@ export function StewardingPanels({ results }: { results: WorkspaceDataResult[] }
               Issued by {String(finalRuling.issuedBy ?? 'steward')} · official results unchanged
             </p>
           </div>
-        ) : (
+        ) : canDraftRuling ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
               {approvalRequestId
@@ -193,6 +200,8 @@ export function StewardingPanels({ results }: { results: WorkspaceDataResult[] }
             </div>
             {rulingMessage ? <p className="text-sm text-muted-foreground">{rulingMessage}</p> : null}
           </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Your role can review steward inquiries but cannot draft or finalize rulings.</p>
         )}
       </SectionPanel>
       <div className="grid gap-4 xl:grid-cols-2">

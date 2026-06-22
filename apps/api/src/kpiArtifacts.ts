@@ -1,5 +1,6 @@
 import {
   createModelReadableKPIContext,
+  canRoleViewKpiDomain,
   hasPermission,
   registerFacilitiesKpiPack,
   registerSafetyKpiPack,
@@ -171,6 +172,7 @@ export function filterKPIWorkspace(workspace: KPIWorkspaceDto, principal: KPIVis
     if (kpi.visibility === 'veterinary-restricted' && role !== 'veterinarian' && role !== 'platform-super-admin') return false;
     if (kpi.visibility === 'restricted' && role !== 'platform-super-admin' && role !== kpi.ownerRole) return false;
     if (kpi.requiredPermission && !hasPermission(role, kpi.requiredPermission)) return false;
+    if (!canRoleViewKpiDomain(role, kpi.domain)) return false;
     return true;
   });
   return {

@@ -1,5 +1,6 @@
 import { useState, type ReactElement } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { canRoleReceiveNotification } from '@trackmind/shared';
 import { getJson } from '@/api/client';
 import { apiPaths } from '@/api/paths';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
@@ -10,12 +11,12 @@ type NotificationItem = {
   message: string;
   severity: string;
   status: string;
+  category?: string;
 };
 
 export function NotificationCenter(): ReactElement {
   const { session } = useTenantSession();
   const [open, setOpen] = useState(false);
-  // Live inbox feed: /notifications/inbox
   const inboxPath = `${apiPaths.notifications.inbox}?role=${session.role}`;
 
   const inboxQuery = useQuery({
@@ -23,7 +24,12 @@ export function NotificationCenter(): ReactElement {
     queryFn: async () => {
       const result = await getJson<{ notifications?: NotificationItem[] }>(inboxPath);
       if (result.status !== 'ready' || !result.data) return [] as NotificationItem[];
-      return (result.data.notifications ?? []).filter((notification) => notification.status === 'unread');
+      return (result.data.notifications ?? [])
+        .filter((notification) => notification.status === 'unread')
+        .filter((notification) => {
+          const channel = notification.category ?? 'operations';
+          return canRoleReceiveNotification(session.role, channel);
+        });
     },
     staleTime: 30_000,
     retry: 1,

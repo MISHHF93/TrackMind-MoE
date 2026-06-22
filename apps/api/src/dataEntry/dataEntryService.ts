@@ -21,6 +21,7 @@ import {
   canAccessForm,
   buildDataEntryPipelinePlan,
   mergePipelineIntoMutationResult,
+  canRoleAccessDataEntryEntity,
   type DataEntryDraftStatus,
 } from '@trackmind/shared';
 import {
@@ -103,6 +104,7 @@ export class DataEntryService {
   listForms(scope: DataEntryScope) {
     return listDataEntryFormDefinitions()
       .filter((definition) => canAccessForm(definition, scope.role))
+      .filter((definition) => canRoleAccessDataEntryEntity(scope.role, definition.entityKind, 'view'))
       .map((definition) => ({
         entityKind: definition.entityKind,
         displayName: definition.displayName,
@@ -118,6 +120,9 @@ export class DataEntryService {
     const definition = getDataEntryFormDefinition(entityKind, mode);
     if (!canAccessForm(definition, scope.role)) {
       throw new Error(`Role ${scope.role} cannot access ${entityKind} form`);
+    }
+    if (!canRoleAccessDataEntryEntity(scope.role, entityKind, mode === 'edit' ? 'edit' : 'create')) {
+      throw new Error(`Role ${scope.role} cannot access ${entityKind} entity domain`);
     }
     return {
       ...definition,
@@ -136,6 +141,9 @@ export class DataEntryService {
     const definition = getDataEntryFormDefinition(entityKind, mode);
     if (!canAccessForm(definition, scope.role)) {
       return { valid: false, errors: [`Role ${scope.role} cannot access ${entityKind} form`], normalizedValues: {} };
+    }
+    if (!canRoleAccessDataEntryEntity(scope.role, entityKind, mode === 'edit' ? 'edit' : 'create')) {
+      return { valid: false, errors: [`Role ${scope.role} cannot access ${entityKind} entity domain`], normalizedValues: {} };
     }
     if (quality?.references || quality?.baseline || quality?.batchValues) {
       return this.validateWithQuality(entityKind, values, scope, mode, quality);
@@ -327,6 +335,9 @@ export class DataEntryService {
     const definition = getDataEntryFormDefinition(entityKind, mode);
     if (!canAccessForm(definition, scope.role)) {
       throw new Error(`Role ${scope.role} cannot submit ${entityKind} form`);
+    }
+    if (!canRoleAccessDataEntryEntity(scope.role, entityKind, mode === 'edit' ? 'edit' : 'create')) {
+      throw new Error(`Role ${scope.role} cannot submit ${entityKind} entity domain`);
     }
 
     const validation = this.validate(entityKind, values, scope, mode, quality);

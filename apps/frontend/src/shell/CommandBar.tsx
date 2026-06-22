@@ -4,6 +4,7 @@ import { RoleSwitcher } from '@/auth/role-switcher';
 import { TenantRacetrackScopePicker } from '@/auth/TenantRacetrackScopePicker';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { roleDisplayName } from '@/domain/support';
+import { useRoleWorkspace } from '@/hooks/useRoleWorkspace';
 import { PostureBadge } from '@/design/components/badge';
 import type { OpsPosture } from '@/design/components/workspace';
 import { NotificationCenter } from './NotificationCenter';
@@ -22,14 +23,16 @@ export function CommandBar({
   onOpenPalette: () => void;
 }): ReactElement {
   const { session } = useTenantSession();
+  const { category } = useRoleWorkspace();
 
   return (
     <header className="sticky top-0 z-30 shell-chrome border-b px-4 py-3">
       <div className="flex flex-wrap items-center gap-3 justify-between">
         <div className="flex items-center gap-3 min-w-0">
           <PostureBadge posture={posture} label={postureLabel} onChrome />
-          <div className="hidden md:flex text-xs">
+          <div className="hidden md:flex text-xs gap-2">
             <span className="scope-chip">Role <strong>{roleDisplayName(session.role)}</strong></span>
+            <span className="scope-chip capitalize">{category.replace('-', ' ')}</span>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-1 md:flex-none md:min-w-[18rem]">

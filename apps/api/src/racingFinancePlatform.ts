@@ -13,8 +13,10 @@ import type {
   RacingFinancePayoutQueueItemDto,
   SettlementAdapterRegistry,
   TicketRevenueDto,
+  Role,
 } from '@trackmind/shared';
-import { racingFinanceAuditabilityStatement } from '@trackmind/shared';
+import { normalizeRole, racingFinanceAuditabilityStatement } from '@trackmind/shared';
+import { assertEntityAccess } from './platform/entityAccessGuard.js';
 import type { ImmutableAuditLog } from './auditLog.js';
 import type { ApprovalToken, CentralizedApprovalService } from './approvals.js';
 import { createSettlementAdapterRegistry } from './settlementAdapter.js';
@@ -237,7 +239,9 @@ export class RacingFinancePlatform {
     return this.commit('racing-finance.hospitality-revenue.recorded', `Recorded hospitality revenue ${revenue.packageName}`, auditId, revenue.revenueId, actor);
   }
 
-  requestPayout(amount: number, recipientLabel: string, actor = 'finance-manager'): RacingFinanceMutationResultDto {
+  requestPayout(amount: number, recipientLabel: string, actor: Role | string = 'finance-manager'): RacingFinanceMutationResultDto {
+    const role = typeof actor === 'string' ? (normalizeRole(actor) ?? 'finance-manager') : actor;
+    assertEntityAccess(role, 'financial', 'create');
     if (!this.deps.approvalService) throw new Error('Approval service integration required for payout workflows');
     const auditId = id('audit-finance');
     const payoutId = id('payout');
@@ -256,7 +260,9 @@ export class RacingFinancePlatform {
     return { ...result, approvalRequestId: approval.id, approvalRequired: true };
   }
 
-  releasePayout(payoutId: string, actor = 'finance-manager', options: { approvalToken?: ApprovalToken } = {}): RacingFinanceMutationResultDto {
+  releasePayout(payoutId: string, actor: Role | string = 'finance-manager', options: { approvalToken?: ApprovalToken } = {}): RacingFinanceMutationResultDto {
+    const role = typeof actor === 'string' ? (normalizeRole(actor) ?? 'finance-manager') : actor;
+    assertEntityAccess(role, 'financial', 'edit');
     if (!this.deps.approvalService) throw new Error('Approval service integration required for payout workflows');
     const payout = this.state.payouts.find((entry) => entry.id === payoutId);
     if (!payout) throw new Error(`Unknown payout ${payoutId}`);
