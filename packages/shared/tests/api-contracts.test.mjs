@@ -1,11 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { apiContractSchemas, apiEndpointContracts, auditExportPermissionRegistry, frontendRoutePermissionRegistry, hasPermission, modelReadableKpiAllowedUses, normalizeApprovalStatus, permissionForApiEndpoint, permissionRegistry, rolesWithPermission, validateAuditEventContract, validateContract, validateModelReadableKPIContext, workflowPermissionRegistry } from '../dist/index.js';
+import { apiContractSchemas, apiEndpointContracts, auditExportPermissionRegistry, analyticsWorkspaceStreamEventTypes, analyticsWorkspaceStreamPath, buildAnalyticsWorkspaceStreamSource, buildIncidentTimelineStreamSource, frontendRoutePermissionRegistry, hasPermission, incidentTimelineStreamEventTypes, incidentTimelineStreamPath, modelReadableKpiAllowedUses, normalizeApprovalStatus, permissionForApiEndpoint, permissionRegistry, rolesWithPermission, validateAuditEventContract, validateContract, validateModelReadableKPIContext, workflowPermissionRegistry } from '../dist/index.js';
 
 const externalOrDeferredResponseSchemas = new Set([
   'ProviderConfig',
   'ProviderStatus',
-  'RacingDataDraftResultDto',
   'IngestionJob',
   'RawProviderPayload',
   'CanonicalRacingDataEnvelope',
@@ -177,6 +176,28 @@ test('racing data workspace aggregate route has a first-class shared contract', 
   assert.ok(apiEndpointContracts.some((endpoint) => endpoint.path === '/api/v1/racing-data' && endpoint.response === 'RacingDataWorkspaceDto'));
 });
 
+test('racing data entity resolution review draft route is draft-only', () => {
+  const draft = {
+    accepted: true,
+    draftId: 'racing-data-draft-1',
+    approvalRequired: true,
+    audited: true,
+    executionAllowed: false,
+    externalCallsPerformed: false,
+    scrapingPerformed: false,
+    eventType: 'racing-data.entity-resolution.review.draft.created',
+    providerId: 'provider-official-feed',
+    message: 'Racing Data API Hub entity-resolution review draft accepted for human approval and license review only. No scraping, external provider call, data export, Digital Twin mutation, or unsafe state change was performed.',
+    governance: { stateChangingOperation: true, draftOnly: true, licenseReviewRequired: true, humanApprovalRequired: true },
+    mock: false,
+  };
+  assert.deepEqual(validateContract('RacingDataDraftResultDto', draft, apiContractSchemas.RacingDataDraftResultDto), { valid: true, errors: [] });
+  const endpoint = apiEndpointContracts.find((entry) => entry.operationId === 'createRacingDataEntityResolutionReviewDraft');
+  assert.equal(endpoint?.path, '/api/v1/racing-data/entity-resolution/review');
+  assert.equal(endpoint?.method, 'POST');
+  assert.match(endpoint?.description ?? '', /draft only/i);
+});
+
 test('shared API contract schemas cover race office, readiness, facilities, surface, finance, track configuration, stewarding, barn, asset, and workflow DTOs', () => {
   for (const schemaName of ['EventRefDto','RaceMeetDto','RaceDayDto','RaceOfficeWorkspaceDto','RaceDayReadinessDashboardDto','FacilitiesMaintenanceWorkspaceDto','FinanceTicketingWorkspaceDto','SurfaceIntelligenceDto','TrackMapDto','TrackConfigurationSummaryDto','TrackConfigurationWorkOrderDto','TrackConfigurationVerificationDto','StewardCenterDto','StreamingDataSourceDto','StreamingDataSnapshotDto','DomainAssetDto','BarnDto','StallDto','TrackFacilityDto','BarnOperationsDto','WorkflowContractDto','WorkflowTemplateRegistryDto','UniversalArtifactRegistryDto','UniversalArtifactSchemaCatalogDto','UniversalArtifactTrainingInputsDto','UniversalArtifactStorageMapDto','UniversalArtifactDraftRegistrationResultDto']) {
     assert.ok(apiContractSchemas[schemaName], `${schemaName} missing`);
@@ -246,6 +267,38 @@ test('shared contracts define stream readiness and approval-only mutation bounda
   assert.equal(streamEndpoint?.path, '/api/v1/events/stream');
   assert.equal(streamEndpoint?.method, 'GET');
   assert.match(streamEndpoint?.description ?? '', /never safe for safety-critical state mutation/);
+
+  const incidentTimelineStreamEndpoint = apiEndpointContracts.find((endpoint) => endpoint.operationId === 'streamIncidentTimeline');
+  assert.equal(incidentTimelineStreamEndpoint?.path, '/api/v1/incidents/{incidentId}/timeline/stream');
+  assert.equal(incidentTimelineStreamEndpoint?.method, 'GET');
+  assert.equal(incidentTimelineStreamEndpoint?.response, 'ServerSentEventStream');
+  assert.ok(incidentTimelineStreamEndpoint?.emits.includes('snapshot'));
+  assert.ok(incidentTimelineStreamEndpoint?.emits.includes('heartbeat'));
+  assert.ok(incidentTimelineStreamEndpoint?.audits.includes('incident.timeline.stream'));
+  assert.match(incidentTimelineStreamEndpoint?.description ?? '', /never safe for safety-critical state mutation/);
+
+  assert.deepEqual(incidentTimelineStreamEventTypes, ['snapshot', 'heartbeat', 'update']);
+  assert.equal(incidentTimelineStreamPath('inc-1'), '/api/v1/incidents/inc-1/timeline/stream');
+  assert.deepEqual(
+    validateContract('StreamingDataSourceDto', buildIncidentTimelineStreamSource('inc-1'), apiContractSchemas.StreamingDataSourceDto),
+    { valid: true, errors: [] },
+  );
+
+  const analyticsWorkspaceStreamEndpoint = apiEndpointContracts.find((endpoint) => endpoint.operationId === 'streamAnalyticsWorkspace');
+  assert.equal(analyticsWorkspaceStreamEndpoint?.path, '/api/v1/analytics/workspace/stream');
+  assert.equal(analyticsWorkspaceStreamEndpoint?.method, 'GET');
+  assert.equal(analyticsWorkspaceStreamEndpoint?.response, 'ServerSentEventStream');
+  assert.ok(analyticsWorkspaceStreamEndpoint?.emits.includes('snapshot'));
+  assert.ok(analyticsWorkspaceStreamEndpoint?.emits.includes('heartbeat'));
+  assert.ok(analyticsWorkspaceStreamEndpoint?.audits.includes('analytics.workspace.stream'));
+  assert.match(analyticsWorkspaceStreamEndpoint?.description ?? '', /never safe for safety-critical state mutation/);
+
+  assert.deepEqual(analyticsWorkspaceStreamEventTypes, ['snapshot', 'heartbeat']);
+  assert.equal(analyticsWorkspaceStreamPath(), '/api/v1/analytics/workspace/stream');
+  assert.deepEqual(
+    validateContract('StreamingDataSourceDto', buildAnalyticsWorkspaceStreamSource(), apiContractSchemas.StreamingDataSourceDto),
+    { valid: true, errors: [] },
+  );
 
   const controlledActionEndpoint = apiEndpointContracts.find((endpoint) => endpoint.operationId === 'requestControlledAction');
   assert.equal(controlledActionEndpoint?.path, '/api/v1/approvals/controlled-actions');
@@ -368,6 +421,17 @@ test('platform health contract covers operational, frontend, dependency, and dep
     telemetrySchema: { version: 'platform-observability.v1', requiredSignals: ['log','metric','trace','frontend-error'], consistent: true },
     signals: [{ kind: 'frontend-error', name: 'frontend.error.reported', serviceId: 'dashboard', severity: 'warning', traceId: 'trace-ui', attributes: { route: '/platform-health' }, timestamp: '2026-06-14T12:00:00.000Z' }],
     deploymentBoundary: { providerStyle: 'Azure Front Door-style edge', assumptions: ['HTTPS','managed TLS','WAF','global routing','centralized access logs','centralized security logs','frontend-error logs'], loggingSignals: ['access','application','security','frontend-error'], routingBoundary: 'Internet-facing frontend edge.', implemented: false, copyOnly: true, claim: 'Metadata only; not proof of configured infrastructure.' },
+    dependencyMatrix: {
+      generatedAt: '2026-06-14T12:00:00.000Z',
+      overallStatus: 'degraded',
+      probes: [
+        { id: 'postgres', label: 'PostgreSQL persistence', status: 'healthy', required: false, latencyMs: 1, lastCheckedAt: '2026-06-14T12:00:00.000Z', detail: 'In-memory persistence mode; postgres probe nominal.' },
+        { id: 'event-bus', label: 'Universal event bus', status: 'degraded', required: true, latencyMs: 1, lastCheckedAt: '2026-06-14T12:00:00.000Z', detail: 'Event bus dependency not wired; reporting degraded readiness metadata.' },
+        { id: 'repository', label: 'Repository backing store', status: 'healthy', required: true, latencyMs: 1, lastCheckedAt: '2026-06-14T12:00:00.000Z', detail: 'Repository abstraction ready; no persisted namespaces yet.' },
+        { id: 'external-connectors', label: 'External data connectors', status: 'degraded', required: false, latencyMs: 1, lastCheckedAt: '2026-06-14T12:00:00.000Z', detail: 'No external connector registry wired; connector health metadata unavailable.' },
+      ],
+      azureTelemetry: { enabled: false, connectionConfigured: false, adapter: 'stub', exportedSignals: 0, claim: 'Azure Application Insights adapter disabled until APPLICATIONINSIGHTS_CONNECTION_STRING is configured.' },
+    },
   };
 
   assert.deepEqual(validateContract('PlatformHealthWorkspaceDto', platformHealth, apiContractSchemas.PlatformHealthWorkspaceDto), { valid: true, errors: [] });

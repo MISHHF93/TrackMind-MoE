@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { PlatformObservabilityService, createMockPlatformHealth, UniversalEventBus, ImmutableAuditLog, CentralizedApprovalService } from '../dist/index.js';
+import { PlatformObservabilityService, AzureApplicationInsightsAdapter, DependencyProbeRegistry, createMockPlatformHealth, UniversalEventBus, ImmutableAuditLog, CentralizedApprovalService } from '../dist/index.js';
 
 test('platform health endpoint model reports core dependencies and health dimensions', () => {
   const health = createMockPlatformHealth();
@@ -16,6 +16,65 @@ test('platform health endpoint model reports core dependencies and health dimens
   assert.ok(health.deploymentBoundary.assumptions.includes('WAF'));
   assert.ok(health.deploymentBoundary.loggingSignals.includes('frontend-error'));
   assert.match(health.deploymentBoundary.claim, /not proof of configured infrastructure/);
+  assert.ok(health.dependencyMatrix);
+  assert.equal(health.dependencyMatrix.probes.length, 4);
+  for (const probeId of ['postgres', 'event-bus', 'repository', 'external-connectors']) {
+    assert.ok(health.dependencyMatrix.probes.some((probe) => probe.id === probeId), `missing probe ${probeId}`);
+  }
+});
+
+test('dependency probe registry evaluates postgres, event bus, repository, and external connectors', () => {
+  const eventBus = new UniversalEventBus();
+  const registry = new DependencyProbeRegistry({
+    eventBus,
+    repositoryEnvironment: {
+      mode: 'postgres',
+      wired: true,
+      postgresReady: false,
+      usingFallback: true,
+      pgClientAvailable: false,
+      namespaces: { 'platform.tenants': { recordCount: 2 } },
+    },
+    externalConnectors: [
+      { connectorId: 'provider-official-feed', status: 'healthy', latencyMs: 118 },
+      { connectorId: 'provider-restricted-odds', status: 'suspended', latencyMs: 0 },
+    ],
+  });
+  const matrix = registry.runAll();
+  assert.equal(matrix.probes.length, 4);
+  assert.equal(matrix.probes.find((probe) => probe.id === 'postgres')?.status, 'degraded');
+  assert.equal(matrix.probes.find((probe) => probe.id === 'event-bus')?.status, 'healthy');
+  assert.equal(matrix.probes.find((probe) => probe.id === 'repository')?.status, 'degraded');
+  assert.equal(matrix.probes.find((probe) => probe.id === 'external-connectors')?.status, 'degraded');
+  assert.equal(matrix.azureTelemetry.adapter, 'stub');
+  assert.equal(matrix.azureTelemetry.enabled, false);
+});
+
+test('azure application insights adapter remains stubbed unless connection string is configured', () => {
+  AzureApplicationInsightsAdapter.resetForTests();
+  const previous = process.env.APPLICATIONINSIGHTS_CONNECTION_STRING;
+  delete process.env.APPLICATIONINSIGHTS_CONNECTION_STRING;
+  try {
+    const obs = new PlatformObservabilityService();
+    obs.recordApiLatency('api-gateway', '/api/v1/platform/health', 90);
+    const disabled = obs.health().dependencyMatrix.azureTelemetry;
+    assert.equal(disabled.enabled, false);
+    assert.equal(disabled.exportedSignals, 0);
+
+    process.env.APPLICATIONINSIGHTS_CONNECTION_STRING = 'InstrumentationKey=test-key';
+    AzureApplicationInsightsAdapter.resetForTests();
+    const enabledObs = new PlatformObservabilityService();
+    enabledObs.recordApiLatency('api-gateway', '/api/v1/platform/health', 90);
+    const enabled = enabledObs.health().dependencyMatrix.azureTelemetry;
+    assert.equal(enabled.enabled, true);
+    assert.equal(enabled.connectionConfigured, true);
+    assert.equal(enabled.exportedSignals, 1);
+    assert.match(enabled.claim, /stub/);
+  } finally {
+    if (previous === undefined) delete process.env.APPLICATIONINSIGHTS_CONNECTION_STRING;
+    else process.env.APPLICATIONINSIGHTS_CONNECTION_STRING = previous;
+    AzureApplicationInsightsAdapter.resetForTests();
+  }
 });
 
 test('telemetry schema consistency requires traceable logs metrics traces and frontend errors', () => {

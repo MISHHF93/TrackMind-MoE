@@ -1,9 +1,26 @@
 import type { ReactElement } from 'react';
+import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTenantSession } from '@/auth/TenantSessionProvider';
+import { actionDisabledReason, extractApprovalControls, roleCanUseAction } from '@/domain/approvalControls';
+import { Badge } from '@/design/components/badge';
+import { Button } from '@/design/components/button';
 import { KpiStrip } from '@/design/components/kpi-strip';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
 import { SectionPanel } from '@/design/components/section-panel';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
+import {
+  authorizeApprovalExecution,
+  draftEntityResolutionReview,
+  invokeRacingDataProvider,
+  releaseFinancePayout,
+  requestPurseRelease,
+  requestRacingFinancePayout,
+  type ApprovalTokenPayload,
+} from '@/api/mutations';
+import { GovernedActionDialog } from '@/features/approvals/GovernedActionDialog';
+import type { WorkspaceAction } from '@/design/components/workspace';
 import { feedData, formatCents } from '../feedUtils';
 
 function formatUsd(amount: unknown): string {
@@ -18,6 +35,8 @@ export function TicketingPanels({ results }: { results: WorkspaceDataResult[] })
   const attendance = (workspace?.attendance ?? {}) as Record<string, unknown>;
   const revenueLinkage = extractArray<Record<string, unknown>>(workspace, 'revenueLinkage');
   const ticketingRevenue = revenueLinkage.find((link) => link.source === 'ticketing');
+  const ticketingConnector = (workspace?.ticketingConnector ?? capacity?.ticketingConnector ?? {}) as Record<string, unknown>;
+  const connectorAdapters = extractArray<Record<string, unknown>>(ticketingConnector, 'adapters');
 
   return (
     <div className="space-y-4">
@@ -27,9 +46,25 @@ export function TicketingPanels({ results }: { results: WorkspaceDataResult[] })
           { id: 'available', label: 'Available', value: String(ticketInventory.available ?? '—') },
           { id: 'held', label: 'Held', value: String(ticketInventory.held ?? '—') },
           { id: 'attendance', label: 'Gate attendance', value: String(attendance.current ?? capacity?.current ?? '—') },
+          { id: 'connector', label: 'Connector', value: String(ticketingConnector.overallStatus ?? '—'), detail: ticketingConnector.degraded ? 'Degraded' : 'Synced' },
           { id: 'revenue', label: 'Ticketing revenue today', value: ticketingRevenue?.amountToday != null ? formatUsd(ticketingRevenue.amountToday) : '—' },
         ]}
       />
+      <SectionPanel title="Ticketing connector status" description="External ticketing provider sync for inventory and attendance.">
+        <RecordTable
+          columns={[
+            { key: 'adapter', label: 'Adapter' },
+            { key: 'vendor', label: 'Vendor' },
+            { key: 'status', label: 'Status' },
+          ]}
+          rows={mapRecords(connectorAdapters, (adapter) => ({
+            adapter: String(adapter.adapterId ?? '—'),
+            vendor: String(adapter.vendor ?? '—'),
+            status: String(adapter.status ?? '—'),
+          }))}
+          emptyLabel="No ticketing connectors registered."
+        />
+      </SectionPanel>
       <div className="grid gap-4 xl:grid-cols-2">
         <SectionPanel title="Ticket inventory" description="Inventory counts owned by fan experience operations, not finance workspace.">
           <RecordTable
@@ -63,6 +98,10 @@ export function TicketingPanels({ results }: { results: WorkspaceDataResult[] })
 }
 
 export function FinancePanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+  const { session } = useTenantSession();
+  const queryClient = useQueryClient();
+  const [dialog, setDialog] = useState<{ open: boolean; action?: WorkspaceAction }>({ open: false });
+  const [queueMessage, setQueueMessage] = useState<string | null>(null);
   const workspace = feedData<Record<string, unknown>>(results, '/finance/workspace');
   const dashboard = workspace?.dashboard as Record<string, unknown> | undefined;
   const kpiPanels = extractArray<Record<string, unknown>>(dashboard, 'panels');
@@ -78,7 +117,99 @@ export function FinancePanels({ results }: { results: WorkspaceDataResult[] }): 
   const ticketRevenue = extractArray<Record<string, unknown>>(workspace, 'ticketRevenue');
   const hospitalityRevenue = extractArray<Record<string, unknown>>(workspace, 'hospitalityRevenue');
   const payouts = extractArray<Record<string, unknown>>(workspace, 'payouts');
+  const payoutQueue = extractArray<Record<string, unknown>>(workspace, 'payoutQueue');
+  const workspaceControls = extractArray<Record<string, unknown>>(workspace, 'approvalControls');
   const auditTrail = extractArray<Record<string, unknown>>(workspace, 'auditTrail');
+  const settlement = workspace?.settlement as Record<string, unknown> | undefined;
+  const settlementAdapters = extractArray<Record<string, unknown>>(settlement, 'adapters');
+  const settlementEntries = extractArray<Record<string, unknown>>(settlement, 'entries');
+
+  const financeControls: WorkspaceAction[] = [
+    ...extractApprovalControls(results),
+    ...workspaceControls.map((control) => ({
+      id: String(control.id ?? control.action ?? 'finance-control'),
+      label: String(control.label ?? 'Finance approval'),
+      detail: String(control.reason ?? guardrails?.guardrailStatement ?? 'Approval-governed payout workflow.'),
+      protectedAction: String(control.action ?? 'payout'),
+      target: String(control.target ?? 'new-payout'),
+      approvalApi: 'controlled-actions' as const,
+      requiredRoles: Array.isArray(control.requiredRoles) ? control.requiredRoles.filter((role): role is string => typeof role === 'string') : ['admin', 'finance'],
+    })),
+  ];
+
+  const releaseMutation = useMutation({
+    mutationFn: async (item: Record<string, unknown>) => {
+      const approvalRequestId = String(item.approvalRequestId ?? '');
+      const kind = String(item.kind ?? 'payout');
+      const itemId = String(item.id ?? item.reference ?? '');
+      if (!approvalRequestId) throw new Error('Approval request id is required before authorized release.');
+      const authorized = await authorizeApprovalExecution(approvalRequestId);
+      const token = authorized.approvalToken;
+      if (!token) throw new Error('Approval token was not issued. Complete steward and finance approvals first.');
+      if (kind === 'purse') {
+        return requestPurseRelease(itemId, { approvalToken: token as ApprovalTokenPayload, actor: session.role });
+      }
+      return releaseFinancePayout(itemId, token as ApprovalTokenPayload, session.role);
+    },
+    onSuccess: () => {
+      setQueueMessage('Authorized release submitted with verified approval token.');
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+  });
+
+  const requestPayoutMutation = useMutation({
+    mutationFn: () => requestRacingFinancePayout({ amount: 8500, recipientLabel: 'Trainer settlement', actor: session.role }),
+    onSuccess: () => {
+      setQueueMessage('Payout request submitted for dual-control approval.');
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+  });
+
+  const requestPurseReleaseMutation = useMutation({
+    mutationFn: (purseId: string) => requestPurseRelease(purseId, { actor: session.role }),
+    onSuccess: () => {
+      setQueueMessage('Purse release submitted for dual-control approval.');
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+  });
+
+  const handleFinanceControl = (control: WorkspaceAction) => {
+    if (control.target === 'new-payout') {
+      void requestPayoutMutation.mutate();
+      return;
+    }
+    const purseMatch = purses.find((purse) => String(purse.purseId) === control.target && purse.status === 'allocated');
+    if (purseMatch) {
+      void requestPurseReleaseMutation.mutate(String(purseMatch.purseId));
+      return;
+    }
+    setDialog({ open: true, action: control });
+  };
+
+  const queueRows = payoutQueue.length
+    ? payoutQueue
+    : [
+        ...purses.map((purse) => ({
+          id: purse.purseId,
+          kind: 'purse',
+          reference: purse.raceId,
+          label: `Race ${purse.raceNumber ?? purse.raceId} purse`,
+          amount: purse.allocatedAmount,
+          status: purse.status,
+          approvalRequestId: purse.approvalRequestId,
+          approvalRequired: purse.status !== 'released',
+        })),
+        ...payouts.map((payout) => ({
+          id: payout.id,
+          kind: 'payout',
+          reference: payout.id,
+          label: `Payout ${payout.id}`,
+          amount: payout.amount,
+          status: payout.status,
+          approvalRequestId: payout.approvalId,
+          approvalRequired: payout.status !== 'released',
+        })),
+      ];
 
   return (
     <div className="space-y-4">
@@ -109,6 +240,40 @@ export function FinancePanels({ results }: { results: WorkspaceDataResult[] }): 
         />
       </SectionPanel>
       <div className="grid gap-4 xl:grid-cols-2">
+        <SectionPanel title="GL & settlement sync" description="Ledger read model stub from GL, settlement, and payout-rail adapters.">
+          <RecordTable
+            columns={[
+              { key: 'adapter', label: 'Adapter' },
+              { key: 'kind', label: 'Kind' },
+              { key: 'vendor', label: 'Vendor' },
+              { key: 'status', label: 'Status' },
+              { key: 'lastSync', label: 'Last sync' },
+            ]}
+            rows={settlementAdapters.length
+              ? mapRecords(settlementAdapters, (adapter) => ({
+                  adapter: String(adapter.adapterId ?? '—'),
+                  kind: String(adapter.kind ?? '—'),
+                  vendor: String(adapter.vendor ?? '—'),
+                  status: String(adapter.status ?? '—'),
+                  lastSync: String(adapter.lastSyncAt ?? '—'),
+                }))
+              : [{ adapter: '—', kind: '—', vendor: '—', status: '—', lastSync: '—' }]}
+          />
+          <RecordTable
+            columns={[
+              { key: 'metric', label: 'Metric' },
+              { key: 'value', label: 'Value' },
+            ]}
+            rows={[
+              { metric: 'Sync status', value: String(settlement?.syncStatus ?? '—') },
+              { metric: 'Coverage', value: settlement?.coveragePct != null ? `${settlement.coveragePct}%` : '—' },
+              { metric: 'Pending postings', value: String(settlement?.pendingPostings ?? '—') },
+              { metric: 'Exceptions', value: String(settlement?.exceptionCount ?? '—') },
+              { metric: 'Ledger entries', value: String(settlementEntries.length || '—') },
+              { metric: 'Last successful sync', value: String(settlement?.lastSuccessfulSyncAt ?? '—') },
+            ]}
+          />
+        </SectionPanel>
         <SectionPanel title="Revenue & settlement" description="Ticket and hospitality revenue read models linked to fan experience.">
           <RecordTable
             columns={[
@@ -160,28 +325,122 @@ export function FinancePanels({ results }: { results: WorkspaceDataResult[] }): 
           />
         </SectionPanel>
         <SectionPanel title="Payout governance" description={String(guardrails?.guardrailStatement ?? 'Approval-governed purse releases and payouts.')}>
+          {queueMessage ? <p className="mb-3 text-sm text-[var(--status-nominal)]">{queueMessage}</p> : null}
+          {releaseMutation.isError ? (
+            <p className="mb-3 text-sm text-[var(--status-critical)]">{(releaseMutation.error as Error).message}</p>
+          ) : null}
+          {requestPurseReleaseMutation.isError ? (
+            <p className="mb-3 text-sm text-[var(--status-critical)]">{(requestPurseReleaseMutation.error as Error).message}</p>
+          ) : null}
           <RecordTable
             columns={[
               { key: 'type', label: 'Type' },
               { key: 'reference', label: 'Reference' },
               { key: 'amount', label: 'Amount' },
               { key: 'status', label: 'Status' },
+              { key: 'approval', label: 'Approval' },
+              { key: 'action', label: 'Action' },
             ]}
-            rows={mapRecords(
-              [
-                ...purses.map((purse) => ({ type: 'purse', reference: purse.raceId, amount: purse.allocatedAmount, status: purse.status })),
-                ...payouts.map((payout) => ({ type: 'payout', reference: payout.id, amount: payout.amount, status: payout.status })),
-              ],
-              (entry) => ({
-                type: String(entry.type ?? '—'),
-                reference: String(entry.reference ?? '—'),
+            rows={mapRecords(queueRows, (entry) => {
+              const status = String(entry.status ?? '—');
+              const approvalRequestId = entry.approvalRequestId ? String(entry.approvalRequestId) : undefined;
+              const canRelease = Boolean(approvalRequestId) && status === 'pending-approval';
+              const canRequest = status === 'allocated' || (entry.kind === 'payout' && !approvalRequestId && status !== 'released');
+              return {
+                type: String(entry.kind ?? entry.type ?? '—'),
+                reference: String(entry.reference ?? entry.label ?? entry.id ?? '—'),
                 amount: formatUsd(entry.amount),
-                status: String(entry.status ?? '—'),
-              }),
-            )}
+                status,
+                approval: approvalRequestId ?? (entry.approvalRequired === false ? '—' : 'required'),
+                action: canRelease ? 'submit-authorized-release' : canRequest ? 'request-approval' : '—',
+              };
+            })}
           />
+          <div className="mt-4 space-y-3">
+            <p className="text-xs text-[var(--muted-foreground)]">
+              Request approval via the controls below, complete steward and finance decisions in Approvals, then submit authorized release with a verified approval token.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="governance"
+                disabled={requestPayoutMutation.isPending || !roleCanUseAction({ id: 'finance-new-payout', label: 'Request new payout', requiredRoles: ['admin', 'finance'] }, session.role)}
+                onClick={() => void requestPayoutMutation.mutate()}
+              >
+                Request new payout
+              </Button>
+              {queueRows
+                .filter((item) => String(item.kind) === 'purse' && String(item.status) === 'allocated')
+                .slice(0, 4)
+                .map((item) => (
+                  <Button
+                    key={`request-${String(item.id ?? item.reference)}`}
+                    size="sm"
+                    variant="governance"
+                    disabled={requestPurseReleaseMutation.isPending || !roleCanUseAction({ id: 'finance-purse-release', label: 'Request purse release', requiredRoles: ['admin', 'finance'] }, session.role)}
+                    onClick={() => requestPurseReleaseMutation.mutate(String(item.id ?? item.reference))}
+                  >
+                    Request purse release ({String(item.reference ?? item.id)})
+                  </Button>
+                ))}
+              {queueRows
+                .filter((item) => item.approvalRequestId && String(item.status) === 'pending-approval')
+                .slice(0, 4)
+                .map((item) => (
+                  <Button
+                    key={String(item.id ?? item.reference)}
+                    size="sm"
+                    variant="governance"
+                    disabled={releaseMutation.isPending || !roleCanUseAction({ id: 'finance-release', label: 'Submit authorized release', requiredRoles: ['admin', 'finance'] }, session.role)}
+                    onClick={() => releaseMutation.mutate(item)}
+                  >
+                    Submit authorized release ({String(item.kind ?? 'payout')})
+                  </Button>
+                ))}
+            </div>
+          </div>
+        </SectionPanel>
+        <SectionPanel title="Finance approval controls" description="Create approval requests through the centralized approvals API. Execution remains locked until authorized.">
+          {financeControls.length === 0 ? (
+            <p className="text-sm text-[var(--muted-foreground)]">No finance approval controls returned from /finance/workspace.</p>
+          ) : (
+            <ul className="space-y-2">
+              {financeControls.map((control) => {
+                const disabled = !roleCanUseAction(control, session.role);
+                return (
+                  <li key={control.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium">{control.label}</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">{control.target}</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="governance"
+                      disabled={disabled}
+                      title={disabled ? actionDisabledReason(control, session.role) : control.detail}
+                      onClick={() => handleFinanceControl(control)}
+                    >
+                      Request approval
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </SectionPanel>
       </div>
+      {dialog.action?.protectedAction ? (
+        <GovernedActionDialog
+          open={dialog.open}
+          onOpenChange={(open) => setDialog({ open, action: open ? dialog.action : undefined })}
+          title={dialog.action.label}
+          description={dialog.action.detail ?? 'Request human approval for this protected finance action.'}
+          protectedAction={dialog.action.protectedAction}
+          target={dialog.action.target ?? dialog.action.id}
+          approvalApi={dialog.action.approvalApi}
+          onSubmitted={() => setQueueMessage('Approval request submitted. Complete steward and finance approvals before release.')}
+        />
+      ) : null}
       <SectionPanel title="Finance audit trail" description="Hash-chained financial mutations with approval evidence.">
         <RecordTable
           columns={[
@@ -299,6 +558,13 @@ export function FederationPanels({ results }: { results: WorkspaceDataResult[] }
 }
 
 export function DataHubPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+  const queryClient = useQueryClient();
+  const { session } = useTenantSession();
+  const [reviewMessage, setReviewMessage] = useState<string | null>(null);
+  const [invokeMessage, setInvokeMessage] = useState<string | null>(null);
+  const [activeClusterId, setActiveClusterId] = useState<string | null>(null);
+  const [activeProviderId, setActiveProviderId] = useState<string | null>(null);
+  const [reviewRationale, setReviewRationale] = useState('');
   const data = feedData<Record<string, unknown>>(results, '/racing-data');
   const entityResolution = feedData<Record<string, unknown>>(results, '/racing-data/entity-resolution');
   const providers = extractArray<Record<string, unknown>>(data, 'providers');
@@ -306,6 +572,42 @@ export function DataHubPanels({ results }: { results: WorkspaceDataResult[] }): 
   const quality = extractArray<Record<string, unknown>>(data, 'qualityReports');
   const resolution = extractArray<Record<string, unknown>>(data, 'entityResolutionQueue');
   const clusters = resolution.length > 0 ? resolution : extractArray<Record<string, unknown>>(entityResolution, 'clusters');
+  const defaultProviderId = String(providers[0]?.providerId ?? 'provider-official-feed');
+  const directMutationAllowed = entityResolution?.directMutationAllowed === true;
+  const canDraftReview = session.role === 'admin' || session.role === 'compliance-officer' || session.role === 'racing-secretary';
+  const canInvokeProvider = session.role === 'admin' || session.role === 'compliance-officer';
+
+  const draftReview = useMutation({
+    mutationFn: (input: { providerId: string; entityId: string; resolutionId?: string; rationale?: string }) =>
+      draftEntityResolutionReview(input),
+    onSuccess: (response) => {
+      setReviewMessage(
+        `${response.message} Draft ${response.draftId} recorded; approval required before any canonical identity merge.`,
+      );
+      setReviewRationale('');
+      setActiveClusterId(null);
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+    onError: (error: Error) => {
+      setReviewMessage(error.message);
+      setActiveClusterId(null);
+    },
+  });
+
+  const invokeProvider = useMutation({
+    mutationFn: (providerId: string) => invokeRacingDataProvider(providerId),
+    onSuccess: (response) => {
+      setInvokeMessage(
+        `Provider ${response.providerId} simulated ${response.recordsProcessed} record(s) at ${response.executedAt}. Audit ${response.auditId}; ${response.rateLimit.remaining} licensed pull(s) remaining in window.`,
+      );
+      setActiveProviderId(null);
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+    onError: (error: Error) => {
+      setInvokeMessage(error.message);
+      setActiveProviderId(null);
+    },
+  });
 
   return (
     <div className="space-y-4">
@@ -318,7 +620,7 @@ export function DataHubPanels({ results }: { results: WorkspaceDataResult[] }): 
         ]}
       />
       <div className="grid gap-4 xl:grid-cols-2">
-        <SectionPanel title="Data providers">
+        <SectionPanel title="Data providers" description="Licensed provider adapters; invoke runs a local simulation only with no external calls.">
           <RecordTable
             columns={[
               { key: 'provider', label: 'Provider' },
@@ -331,6 +633,53 @@ export function DataHubPanels({ results }: { results: WorkspaceDataResult[] }): 
               status: String(p.status ?? '—'),
             }))}
           />
+          {providers.length > 0 ? (
+            <div className="mt-4 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="maroon">Simulation only</Badge>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  Provider invoke simulates adapter ingestion locally; no scraping, external provider calls, or canonical state mutation occurs.
+                </p>
+              </div>
+              <ul className="space-y-2">
+                {providers.slice(0, 8).map((provider, index) => {
+                  const providerId = String(provider.providerId ?? provider.id ?? `provider-${index + 1}`);
+                  const pending = invokeProvider.isPending && activeProviderId === providerId;
+                  return (
+                    <li
+                      key={providerId}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">{providerId}</p>
+                        <p className="text-xs text-[var(--muted-foreground)]">
+                          {String(provider.status ?? 'registered')} · {String(
+                            provider.license && typeof provider.license === 'object'
+                              ? (provider.license as Record<string, unknown>).licenseStatus
+                              : 'license posture unknown',
+                          )}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="governance"
+                        disabled={pending || !canInvokeProvider}
+                        title={canInvokeProvider ? 'Simulate licensed adapter invoke locally' : 'Requires admin or compliance-officer role'}
+                        onClick={() => {
+                          setInvokeMessage(null);
+                          setActiveProviderId(providerId);
+                          invokeProvider.mutate(providerId);
+                        }}
+                      >
+                        Invoke provider adapter
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+              {invokeMessage ? <p className="text-xs text-[var(--muted-foreground)]">{invokeMessage}</p> : null}
+            </div>
+          ) : null}
         </SectionPanel>
         <SectionPanel title="Ingestion jobs">
           <RecordTable
@@ -367,6 +716,76 @@ export function DataHubPanels({ results }: { results: WorkspaceDataResult[] }): 
           }))}
           emptyLabel="No entity resolution candidates in queue."
         />
+        {clusters.length > 0 && !directMutationAllowed ? (
+          <div className="mt-4 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="maroon">Draft only</Badge>
+              <p className="text-xs text-[var(--muted-foreground)]">
+                Review drafts create approval records only; canonical identity and operational records are not mutated locally.
+              </p>
+            </div>
+            <label className="block text-xs text-[var(--muted-foreground)]">
+              Optional review rationale
+              <textarea
+                className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-sm"
+                rows={2}
+                value={reviewRationale}
+                placeholder="Document why this cluster needs human review (not persisted until draft is approved)."
+                onChange={(event) => setReviewRationale(event.target.value)}
+              />
+            </label>
+            <ul className="space-y-2">
+              {clusters.slice(0, 8).map((cluster, index) => {
+                const entityId = String(cluster.canonicalId ?? cluster.entityId ?? cluster.resolutionId ?? `entity-${index + 1}`);
+                const resolutionId = String(cluster.resolutionId ?? entityId);
+                const providerId = String(cluster.providerId ?? defaultProviderId);
+                const pending = draftReview.isPending && activeClusterId === resolutionId;
+                const reviewRequired = cluster.reviewRequired === true || String(cluster.decision ?? '').includes('review');
+                const confidencePct = cluster.confidence != null || cluster.matchConfidence != null
+                  ? Math.round(Number(cluster.confidence ?? cluster.matchConfidence) * 100)
+                  : null;
+                return (
+                  <li
+                    key={resolutionId}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2"
+                  >
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium">{entityId}</p>
+                        {reviewRequired ? <Badge variant="maroon">Review required</Badge> : null}
+                        {confidencePct != null ? (
+                          <Badge variant="secondary">{confidencePct}% confidence</Badge>
+                        ) : null}
+                      </div>
+                      <p className="text-xs text-[var(--muted-foreground)]">
+                        {String(cluster.entityType ?? 'entity')} · {String(cluster.decision ?? cluster.status ?? 'review queue')}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="governance"
+                      disabled={pending || !canDraftReview}
+                      title={canDraftReview ? 'POST /racing-data/entity-resolution/review' : 'Requires admin, compliance-officer, or racing-secretary role'}
+                      onClick={() => {
+                        setReviewMessage(null);
+                        setActiveClusterId(resolutionId);
+                        draftReview.mutate({
+                          providerId,
+                          entityId,
+                          resolutionId,
+                          rationale: reviewRationale.trim() || undefined,
+                        });
+                      }}
+                    >
+                      Draft entity resolution review
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+            {reviewMessage ? <p className="text-xs text-[var(--muted-foreground)]">{reviewMessage}</p> : null}
+          </div>
+        ) : null}
       </SectionPanel>
       <SectionPanel title="Data quality reports">
         <RecordTable

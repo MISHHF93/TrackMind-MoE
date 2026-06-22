@@ -1094,6 +1094,13 @@ test('runtime API facade exposes platform health and event stream heartbeat', as
   assert.equal(platform.body.overallStatus, 'degraded');
   assert.equal(platform.body.frontend.degradedMode, true);
   assert.ok(platform.body.signals.length > 0);
+  assert.ok(platform.body.dependencyMatrix);
+  assert.equal(platform.body.dependencyMatrix.probes.length, 4);
+  assert.ok(platform.body.dependencyMatrix.probes.some((probe) => probe.id === 'postgres'));
+  assert.ok(platform.body.dependencyMatrix.probes.some((probe) => probe.id === 'event-bus'));
+  assert.ok(platform.body.dependencyMatrix.probes.some((probe) => probe.id === 'repository'));
+  assert.ok(platform.body.dependencyMatrix.probes.some((probe) => probe.id === 'external-connectors'));
+  assert.equal(platform.body.dependencyMatrix.azureTelemetry.adapter, 'stub');
 
   const stream = await handleApiRequest('GET', '/api/v1/events/stream');
   assert.equal(stream.status, 200);

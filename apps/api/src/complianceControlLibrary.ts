@@ -1,4 +1,5 @@
-import { AuditEvidenceCollectionVault, ImmutableAuditLog, type AuditLogEntry } from './auditLog.js';
+import { appendAudit, type AuditAppendTarget } from './auditAdapter.js';
+import { AuditEvidenceCollectionVault, ImmutableAuditLog, type AuditLogEntry, type AuditRecordInput } from './auditLog.js';
 import { type EventContract, type UniversalEventBus } from './eventBus.js';
 import { WorkflowOrchestrationEngine, type WorkflowDefinition, type WorkflowInstance } from './workflowEngine.js';
 import type { CanonicalEventRef, Role } from '@trackmind/shared';
@@ -64,7 +65,7 @@ export const complianceEventContracts: EventContract[] = [
 ];
 
 export class ComplianceControlLibrary {
-  readonly audit = new ImmutableAuditLog();
+  private readonly internalAudit = new ImmutableAuditLog();
   readonly evidenceVault = new AuditEvidenceCollectionVault();
   readonly workflows = new WorkflowOrchestrationEngine();
   private frameworks = new Map(complianceFrameworkPlaceholders.map((f) => [f.id, f]));
@@ -80,11 +81,23 @@ export class ComplianceControlLibrary {
   private accreditationPrograms = new Map<string, AccreditationProgram>();
   private auditReadinessEvents: ComplianceAuditEvent[] = [];
 
-  constructor(private readonly tenantId = 'track-1', private readonly deps: { eventBus?: UniversalEventBus } = {}) {
+  constructor(private readonly tenantId = 'track-1', private readonly deps: { eventBus?: UniversalEventBus; audit?: AuditAppendTarget } = {}) {
     this.workflows.register(complianceEvidenceWorkflow(tenantId));
     this.workflows.register(complianceCorrectiveActionWorkflow(tenantId));
     this.workflows.register(accreditationReadinessWorkflow(tenantId));
     if (deps.eventBus) registerComplianceEventContracts(deps.eventBus);
+  }
+
+  get audit(): ImmutableAuditLog {
+    return this.deps.audit?.ledger ?? this.internalAudit;
+  }
+
+  private appendComplianceAudit(record: AuditRecordInput): AuditLogEntry {
+    if (this.deps.audit) {
+      appendAudit(this.deps.audit, record);
+      return this.deps.audit.ledger.all().find((entry) => entry.id === record.id) ?? this.deps.audit.ledger.all().at(-1)!;
+    }
+    return this.internalAudit.append(record);
   }
 
   listFrameworks() { return [...this.frameworks.values()].map((v) => ({ ...v, domains: [...v.domains] })); }
@@ -197,6 +210,10 @@ export class ComplianceControlLibrary {
     const action = this.actions.get(id);
     if (!action) throw new Error(`Unknown corrective action ${id}`);
     return structuredClone(action);
+  }
+
+  closeCorrectiveAction(id: string, actor: string, now = new Date().toISOString()) {
+    return this.updateCorrectiveAction(id, { status: 'done' }, actor, now);
   }
 
   updateCorrectiveAction(id: string, patch: Partial<Pick<CorrectiveAction, 'ownerId' | 'action' | 'dueAt' | 'status' | 'approvalRequestId'>>, actor: string, now = new Date().toISOString()) {
@@ -361,7 +378,7 @@ export class ComplianceControlLibrary {
     const readinessScore = program.readinessScore ?? this.readiness(program.requiredControlIds).score;
     const full = { ...program, frameworkIds: [...program.frameworkIds], requiredControlIds: [...program.requiredControlIds], evidencePackageIds: [...program.evidencePackageIds], readinessScore, readinessOnly: true as const, externalCertificationClaimed: false as const };
     this.accreditationPrograms.set(full.id, full);
-    const audit = this.audit.append({ id: `audit-accreditation-${this.audit.all().length + 1}`, type: 'regulatory-activity', actor: 'compliance-system', timestamp: new Date().toISOString(), subjectId: full.id, tenantId: this.tenantId, severity: readinessScore >= 85 ? 'info' : 'warning', regulations: full.frameworkIds, payload: { action: 'accreditation.readiness.updated', programId: full.id, readinessScore } });
+    const audit = this.appendComplianceAudit({ id: `audit-accreditation-${this.audit.all().length + 1}`, type: 'regulatory-activity', actor: 'compliance-system', timestamp: new Date().toISOString(), subjectId: full.id, tenantId: this.tenantId, severity: readinessScore >= 85 ? 'info' : 'warning', regulations: full.frameworkIds, action: 'accreditation.readiness.updated', actionClass: 'compliance', payload: { action: 'accreditation.readiness.updated', programId: full.id, readinessScore } });
     this.recordReadinessEvent('compliance.accreditation.readiness.updated', audit.timestamp, full.frameworkIds, audit.id);
     void this.publish('compliance.accreditation.readiness.updated', { programId: full.id, frameworkIds: full.frameworkIds, readinessScore }, undefined, audit, audit.timestamp);
     return structuredClone(full);
@@ -420,7 +437,22 @@ export class ComplianceControlLibrary {
       if ((action.status === 'open' || action.status === 'in-progress') && Date.parse(action.dueAt) < dueMs) action.status = 'overdue';
     }
   }
-  private auditControl(controlId: string, actor: string, timestamp: string, action: string, regulations: string[], evidenceIds: string[] = []): AuditLogEntry { return this.audit.append({ id: `audit-compliance-${this.audit.all().length + 1}`, type: 'regulatory-activity', actor, timestamp, subjectId: controlId, tenantId: this.tenantId, severity: 'info', regulations, evidenceIds, payload: { action, controlId } }); }
+  private auditControl(controlId: string, actor: string, timestamp: string, action: string, regulations: string[], evidenceIds: string[] = []): AuditLogEntry {
+    return this.appendComplianceAudit({
+      id: `audit-compliance-${this.audit.all().length + 1}`,
+      type: 'regulatory-activity',
+      actor,
+      timestamp,
+      subjectId: controlId,
+      tenantId: this.tenantId,
+      severity: 'info',
+      regulations,
+      evidenceIds,
+      action,
+      actionClass: 'compliance',
+      payload: { action, controlId },
+    });
+  }
   private recordReadinessEvent(type: ComplianceAuditEvent['type'], occurredAt: string, frameworkIds: ComplianceFrameworkId[], auditRecordId: string, controlId?: string, workflowInstanceId?: string, approvalRequestId?: string) { const eventId = `compliance-event-${this.auditReadinessEvents.length + 1}`; this.auditReadinessEvents.push({ eventId, eventType: `${type}.v1` as CanonicalEventRef['eventType'], tenantId: this.tenantId, racetrackId: 'main-track', actorId: 'compliance-control-library', source: 'compliance-control-library', timestamp: occurredAt, version: 1, id: eventId, type, occurredAt, frameworkIds: [...frameworkIds], controlId, auditRecordId, workflowInstanceId, approvalRequestId }); }
   private reviewCadenceForControls(controlIds: string[]): ReviewCadence {
     const cadences = controlIds.flatMap((controlId) => [...this.obligations.values()].filter((obligation) => obligation.controlIds.includes(controlId)).map((obligation) => obligation.dueCadence));
@@ -497,8 +529,8 @@ export function accreditationReadinessWorkflow(tenantId: string): WorkflowDefini
 
 export function registerComplianceEventContracts(bus: UniversalEventBus): void { for (const contract of complianceEventContracts) bus.registerEvent(contract); }
 
-export function seededComplianceLibrary(tenantId = 'track-1') {
-  const lib = new ComplianceControlLibrary(tenantId);
+export function seededComplianceLibrary(tenantId = 'track-1', options: { audit?: AuditAppendTarget } = {}) {
+  const lib = new ComplianceControlLibrary(tenantId, options);
   lib.addOwner({ id: 'owner-compliance', displayName: 'Compliance Officer', role: 'compliance-officer', permissions: ['read','collect-evidence','assess','approve-action'] });
   lib.addOwner({ id: 'owner-auditor', displayName: 'Read-only Auditor', role: 'read-only-auditor', permissions: ['read'] });
   lib.addOwner({ id: 'owner-security', displayName: 'Security Control Owner', role: 'security', permissions: ['read','collect-evidence','assess'] });

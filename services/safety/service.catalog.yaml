@@ -7,8 +7,32 @@ service:
   tenantIsolation: required
   currentReferenceImplementation:
     - apps/api/src/services/safetyService.ts
+    - apps/api/src/services/safetyEmergencyBoundary.ts
+    - apps/api/src/emergencyOperations.ts
+    - apps/api/src/emergencyOperationsService.ts
     - apps/api/src/safetyIntelligence
     - apps/api/src/telemetry
+  runtimeDelegation:
+    mode: facade-to-reference
+    readModels:
+      emergencyOperationsWorkspace:
+        facadeRoute: GET /api/v1/emergency-operations/workspace
+        serviceRoute: GET /services/safety/emergency-operations/workspace
+        contract: services/safety/src/emergencyOperationsReadModel.ts
+        handler: apps/api/src/services/safetyEmergencyBoundary.ts
+        platform: apps/api/src/emergencyOperations.ts
+    mutations:
+      handler: apps/api/src/emergencyOperationsService.ts
+      safetyEvidence: apps/api/src/services/safetyService.ts
+      facadeRoutes:
+        - POST /api/v1/emergency-operations/workflows
+        - POST /api/v1/emergency-operations/workflows/{workflowId}/communications
+        - POST /api/v1/emergency-operations/drills
+        - POST /api/v1/emergency-operations/drills/{drillId}/complete
+        - POST /api/v1/emergency-operations/after-action-reports
+      enforcements:
+        - incident-commander role check
+        - post-action-evidence posture
   humanApprovalRequiredFor:
     - emergency-action
     - race-stop

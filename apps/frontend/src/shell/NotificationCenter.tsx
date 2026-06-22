@@ -1,5 +1,7 @@
-import { useEffect, useState, type ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { getJson } from '@/api/client';
+import { apiPaths } from '@/api/paths';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 
 type NotificationItem = {
@@ -12,18 +14,22 @@ type NotificationItem = {
 
 export function NotificationCenter(): ReactElement {
   const { session } = useTenantSession();
-  const [items, setItems] = useState<NotificationItem[]>([]);
   const [open, setOpen] = useState(false);
+  // Live inbox feed: /notifications/inbox
+  const inboxPath = `${apiPaths.notifications.inbox}?role=${session.role}`;
 
-  useEffect(() => {
-    void getJson<{ notifications?: NotificationItem[] }>(`/notifications/inbox?role=${session.role}`)
-      .then((result) => {
-        if (result.status === 'ready' && result.data) {
-          setItems((result.data.notifications ?? []).filter((n) => n.status === 'unread'));
-        }
-      })
-      .catch(() => setItems([]));
-  }, [session.role]);
+  const inboxQuery = useQuery({
+    queryKey: ['api', inboxPath, session.sessionKey],
+    queryFn: async () => {
+      const result = await getJson<{ notifications?: NotificationItem[] }>(inboxPath);
+      if (result.status !== 'ready' || !result.data) return [] as NotificationItem[];
+      return (result.data.notifications ?? []).filter((notification) => notification.status === 'unread');
+    },
+    staleTime: 30_000,
+    retry: 1,
+  });
+
+  const items = inboxQuery.data ?? [];
 
   return (
     <div className="relative">

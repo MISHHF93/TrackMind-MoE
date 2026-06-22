@@ -4,21 +4,47 @@ import { mapRecords, RecordTable } from '@/design/components/record-table';
 import { SectionPanel } from '@/design/components/section-panel';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
+import { isRecord } from '@/lib/utils';
 import { feedData } from '../feedUtils';
 
+function buildEligibilityRules(eligibilityFeed: Record<string, unknown> | undefined): Record<string, unknown>[] {
+  if (!eligibilityFeed) return [];
+  const failedRules = extractArray<unknown>(eligibilityFeed, 'failedRules').map((rule) => String(rule));
+  const warnings = extractArray<unknown>(eligibilityFeed, 'warnings').map((rule) => String(rule));
+  return [
+    ...failedRules.map((rule) => ({ rule, status: 'fail', detail: 'Failed eligibility check' })),
+    ...warnings.map((rule) => ({ rule, status: 'watch', detail: 'Advisory warning' })),
+  ];
+}
+
+function profileVetStatus(profile: Record<string, unknown> | undefined): string {
+  if (!profile) return '—';
+  const veterinary = profile.veterinary;
+  if (veterinary === 'redacted') return 'restricted';
+  if (isRecord(veterinary)) {
+    const exams = extractArray(veterinary, 'examination_records');
+    if (exams.length > 0) return 'exam-on-file';
+  }
+  return '—';
+}
+
+function profilePrivacy(profile: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  const privacy = profile?.privacy;
+  return isRecord(privacy) ? privacy : undefined;
+}
+
 export function EquinePanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
-  const horse = feedData<Record<string, unknown>>(results, '/equine-intelligence/horses');
   const profile = feedData<Record<string, unknown>>(results, '/horses/horse-1/profile');
   const eligibilityFeed = feedData<Record<string, unknown>>(results, '/horses/horse-1/eligibility');
+  const auditFeed = feedData<Record<string, unknown>>(results, '/horses/horse-1/audit');
   const barn = feedData<Record<string, unknown>>(results, '/barn-operations/workspace');
   const registry = feedData<Record<string, unknown>>(results, '/horse-registry/workspace');
   const trainers = feedData<Record<string, unknown>>(results, '/trainer-management/workspace');
   const jockeys = feedData<Record<string, unknown>>(results, '/jockey-management/workspace');
   const veterinary = feedData<Record<string, unknown>>(results, '/veterinary-operations/workspace');
   const welfare = feedData<Record<string, unknown>>(results, '/equine-welfare/workspace');
-  const welfareAudit = feedData<Record<string, unknown>>(results, '/equine-welfare/audit-trail');
 
-  const eligibilityRules = extractArray<Record<string, unknown>>(horse, 'eligibilityRules');
+  const eligibilityRules = buildEligibilityRules(eligibilityFeed);
   const stalls = extractArray<Record<string, unknown>>(barn, 'stalls');
   const movements = extractArray<Record<string, unknown>>(barn, 'movements');
   const vetVisits = extractArray<Record<string, unknown>>(barn, 'vetVisits');
@@ -27,24 +53,48 @@ export function EquinePanels({ results }: { results: WorkspaceDataResult[] }): R
   const jockeyProfiles = extractArray<Record<string, unknown>>(jockeys, 'jockeys');
   const vetCases = extractArray<Record<string, unknown>>(veterinary, 'cases');
   const welfareIndicators = extractArray<Record<string, unknown>>(welfare, 'indicators');
-  const auditRecords = extractArray<Record<string, unknown>>(welfareAudit, 'records');
+  const equineAuditRecords = extractArray<Record<string, unknown>>(auditFeed, 'events');
 
-  const vetStatus = horse && typeof horse.veterinaryStatus === 'object' ? horse.veterinaryStatus as Record<string, unknown> : undefined;
-  const eligibility = horse && typeof horse.eligibilityStatus === 'object' ? horse.eligibilityStatus as Record<string, unknown> : undefined;
+  const identity = profile?.identity && typeof profile.identity === 'object' ? profile.identity as Record<string, unknown> : undefined;
   const ownership = profile?.ownershipHistory ?? profile?.ownership;
   const ownershipCount = Array.isArray(ownership) ? ownership.length : 0;
+  const eligibilityStatus = eligibilityFeed?.status && typeof eligibilityFeed.status === 'object'
+    ? eligibilityFeed.status as Record<string, unknown>
+    : undefined;
+  const privacy = profilePrivacy(profile);
+  const redactedFields = extractArray<unknown>(privacy, 'redactedFields').map((field) => String(field));
+  const auditVerification = auditFeed?.verification && typeof auditFeed.verification === 'object'
+    ? auditFeed.verification as Record<string, unknown>
+    : undefined;
 
   return (
     <div className="space-y-4">
       <KpiStrip
         items={[
-          { id: 'horse', label: 'Horse', value: String(horse?.name ?? horse?.horseId ?? profile?.horseId ?? 'horse-1') },
-          { id: 'vet', label: 'Vet status', value: String(vetStatus?.status ?? eligibilityFeed?.status ?? '—') },
-          { id: 'eligible', label: 'Eligibility', value: String(eligibility?.status ?? eligibilityFeed?.eligible ?? '—') },
+          { id: 'horse', label: 'Horse', value: String(identity?.name ?? profile?.horseId ?? 'horse-1') },
+          { id: 'scope', label: 'Privacy scope', value: String(privacy?.scope ?? profile?.role ?? '—') },
+          { id: 'vet', label: 'Vet status', value: profileVetStatus(profile) },
+          { id: 'eligible', label: 'Eligibility', value: String(eligibilityFeed?.eligible ?? '—') },
           { id: 'registry', label: 'Registry horses', value: String(horses.length) },
           { id: 'welfare', label: 'Welfare score', value: welfare?.overallScore != null ? String(welfare.overallScore) : '—' },
         ]}
       />
+      <SectionPanel title="Privacy scope" description="Role-based veterinary and eligibility visibility enforced server-side.">
+        <RecordTable
+          columns={[
+            { key: 'field', label: 'Field' },
+            { key: 'value', label: 'Value' },
+          ]}
+          rows={[
+            { field: 'Viewer role', value: String(profile?.role ?? '—') },
+            { field: 'Privacy scope', value: String(privacy?.scope ?? '—') },
+            { field: 'Redacted fields', value: redactedFields.length > 0 ? redactedFields.join(', ') : 'none' },
+            { field: 'Policy reason', value: String(privacy?.reason ?? '—') },
+            { field: 'Veterinary visibility', value: profileVetStatus(profile) },
+            { field: 'Audit chain valid', value: auditVerification?.valid === true ? 'verified' : auditVerification?.valid === false ? 'invalid' : '—' },
+          ]}
+        />
+      </SectionPanel>
       <div className="grid gap-4 xl:grid-cols-2">
         <SectionPanel title="Horse registry" description="Lifecycle registration and identity records.">
           <RecordTable
@@ -54,11 +104,11 @@ export function EquinePanels({ results }: { results: WorkspaceDataResult[] }): R
               { key: 'trainer', label: 'Trainer' },
             ]}
             rows={mapRecords(horses, (h) => {
-              const identity = h.identity && typeof h.identity === 'object' ? h.identity as Record<string, unknown> : h;
+              const horseIdentity = h.identity && typeof h.identity === 'object' ? h.identity as Record<string, unknown> : h;
               return {
-                horse: String(identity.name ?? identity.horseId ?? h.name ?? h.horseId ?? '—'),
-                status: String(identity.lifecycleStatus ?? h.status ?? h.registrationStatus ?? '—'),
-                trainer: String(h.trainerId ?? h.trainerName ?? identity.trainerId ?? '—'),
+                horse: String(horseIdentity.name ?? horseIdentity.horseId ?? h.name ?? h.horseId ?? '—'),
+                status: String(horseIdentity.lifecycleStatus ?? h.status ?? h.registrationStatus ?? '—'),
+                trainer: String(h.trainerId ?? h.trainerName ?? horseIdentity.trainerId ?? '—'),
               };
             })}
             emptyLabel="No registry horses returned."
@@ -75,6 +125,7 @@ export function EquinePanels({ results }: { results: WorkspaceDataResult[] }): R
               { field: 'Eligible', value: String(eligibilityFeed?.eligible ?? '—') },
               { field: 'Failed rules', value: String(extractArray(eligibilityFeed, 'failedRules').length) },
               { field: 'Warnings', value: String(extractArray(eligibilityFeed, 'warnings').length) },
+              { field: 'Scratch status', value: String(eligibilityStatus?.scratchStatus ?? '—') },
             ]}
           />
         </SectionPanel>
@@ -91,6 +142,7 @@ export function EquinePanels({ results }: { results: WorkspaceDataResult[] }): R
             status: String(r.status ?? (r.passed === true ? 'pass' : r.passed === false ? 'fail' : '—')),
             detail: String(r.detail ?? r.reason ?? '—'),
           }))}
+          emptyLabel="No eligibility rules returned."
         />
       </SectionPanel>
       <div className="grid gap-4 xl:grid-cols-2">
@@ -148,19 +200,19 @@ export function EquinePanels({ results }: { results: WorkspaceDataResult[] }): R
             emptyLabel="No welfare indicators."
           />
         </SectionPanel>
-        <SectionPanel title="Welfare audit trail" description="Hash-chained welfare audit references.">
+        <SectionPanel title="Equine privacy audit" description="Hash-chained equine profile and eligibility audit events.">
           <RecordTable
             columns={[
               { key: 'action', label: 'Action' },
               { key: 'actor', label: 'Actor' },
               { key: 'time', label: 'Time' },
             ]}
-            rows={mapRecords(auditRecords, (r) => ({
-              action: String(r.action ?? '—'),
-              actor: String(r.actor ?? r.actorId ?? '—'),
-              time: String(r.timestamp ?? '—'),
+            rows={mapRecords(equineAuditRecords, (r) => ({
+              action: String(r.type ?? r.action ?? '—'),
+              actor: String(r.actorId ?? r.actor ?? '—'),
+              time: String(r.occurredAt ?? r.timestamp ?? '—'),
             }))}
-            emptyLabel="No welfare audit records."
+            emptyLabel="No equine audit records."
           />
         </SectionPanel>
       </div>

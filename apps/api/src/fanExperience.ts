@@ -1,11 +1,122 @@
-import type { FanExperienceRequestResultDto } from '@trackmind/shared';
+import type {
+  FanExperienceOperationsDto,
+  FanExperienceRequestResultDto,
+  FanExperienceTicketingConnectorDto,
+  TicketingAdapterRegistry,
+} from '@trackmind/shared';
 import type { FanExperiencePlatform } from './fanExperiencePlatform.js';
+import type { ImmutableAuditLog } from './auditLog.js';
 
 type HttpMethod = 'GET' | 'POST';
 type HandlerResult = { status: number; body: unknown } | undefined;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const auditId = () => `audit-ticketing-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+export interface FanExperienceApiOptions {
+  ticketing?: TicketingAdapterRegistry;
+  auditLog?: ImmutableAuditLog;
+}
+
+function sourceLabel(degraded: boolean, connected: boolean): FanExperienceTicketingConnectorDto['inventorySource'] {
+  if (!connected) return 'platform';
+  return degraded ? 'degraded-connector' : 'connector';
+}
+
+function enrichWorkspaceWithTicketingConnector(
+  workspace: FanExperienceOperationsDto,
+  options: FanExperienceApiOptions | undefined,
+  now: string,
+): FanExperienceOperationsDto {
+  const ticketing = options?.ticketing;
+  if (!ticketing) {
+    return {
+      ...workspace,
+      ticketingConnector: {
+        overallStatus: 'disconnected',
+        degraded: true,
+        adapters: [],
+        lastSyncAt: now,
+        inventorySource: 'platform',
+        attendanceSource: 'platform',
+        syncAuditIds: [],
+      },
+    };
+  }
+
+  const snapshot = ticketing.syncAll(now);
+  const syncAuditIds: string[] = [];
+  const connected = snapshot.overallStatus === 'connected' || snapshot.overallStatus === 'degraded';
+  const inventorySource = sourceLabel(snapshot.degraded, connected);
+  const attendanceSource = sourceLabel(snapshot.degraded, connected);
+
+  if (options?.auditLog) {
+    const id = auditId();
+    options.auditLog.append({
+      id,
+      type: 'data-change',
+      actor: 'ticketing-connector',
+      timestamp: now,
+      subjectId: workspace.racetrackId,
+      payload: {
+        action: 'fan-experience.ticketing.sync',
+        overallStatus: snapshot.overallStatus,
+        degraded: snapshot.degraded,
+        inventorySource,
+        attendanceSource,
+        adapters: snapshot.adapters.map((adapter) => adapter.adapterId),
+      },
+      tenantId: workspace.tenantId,
+      severity: snapshot.degraded ? 'warning' : 'info',
+      regulations: ['SOC-2'],
+    });
+    syncAuditIds.push(id);
+  }
+
+  let ticketInventory = workspace.ticketInventory;
+  let attendance = workspace.attendance;
+  let attendanceTracking = workspace.attendanceTracking;
+
+  if (connected && snapshot.inventory) {
+    ticketInventory = {
+      available: snapshot.inventory.available,
+      sold: snapshot.inventory.sold,
+      held: snapshot.inventory.held,
+    };
+  }
+  if (connected && snapshot.attendance) {
+    const utilizationPercent = Math.round((snapshot.attendance.current / snapshot.attendance.capacity) * 100);
+    attendance = {
+      current: snapshot.attendance.current,
+      capacity: snapshot.attendance.capacity,
+      utilizationPercent,
+    };
+    attendanceTracking = {
+      ...workspace.attendanceTracking,
+      current: snapshot.attendance.current,
+      capacity: snapshot.attendance.capacity,
+      utilizationPercent,
+    };
+  }
+
+  return {
+    ...workspace,
+    ticketInventory,
+    attendance,
+    attendanceTracking,
+    ticketingConnector: {
+      overallStatus: snapshot.overallStatus,
+      degraded: snapshot.degraded,
+      adapters: snapshot.adapters,
+      lastSyncAt: snapshot.generatedAt,
+      inventorySource,
+      attendanceSource,
+      syncAuditIds,
+    },
+  };
+}
 
 export type FanExperienceRequestType =
   | 'refund'
@@ -60,19 +171,22 @@ export function handleFanExperienceApiRequest(
   service: FanExperiencePlatform,
   searchParams: URLSearchParams,
   now: () => string,
+  options?: FanExperienceApiOptions,
 ): HandlerResult {
   if (method === 'GET' && path === '/fan-experience/workspace') {
-    return { status: 200, body: service.workspace(now()) };
+    const workspace = enrichWorkspaceWithTicketingConnector(service.workspace(now()), options, now());
+    return { status: 200, body: workspace };
   }
   if (method === 'GET' && path === '/fan-experience/dashboard') {
-    return { status: 200, body: service.kpiDashboard(now()) };
+    const workspace = enrichWorkspaceWithTicketingConnector(service.workspace(now()), options, now());
+    return { status: 200, body: workspace.dashboard };
   }
   if (method === 'GET' && path === '/fan-experience/audit-trail') {
     const eventId = searchParams.get('eventId') ?? undefined;
     return { status: 200, body: service.auditTrail(eventId, now()) };
   }
   if (method === 'GET' && path === '/fan-experience/attendance') {
-    const workspace = service.workspace(now());
+    const workspace = enrichWorkspaceWithTicketingConnector(service.workspace(now()), options, now());
     return {
       status: 200,
       body: {
@@ -80,12 +194,13 @@ export function handleFanExperienceApiRequest(
         attendance: workspace.attendance,
         attendanceTracking: workspace.attendanceTracking,
         crowdDensity: workspace.crowdDensity,
+        ticketingConnector: workspace.ticketingConnector,
         mock: false,
       },
     };
   }
   if (method === 'GET' && path === '/fan-experience/capacity') {
-    const workspace = service.workspace(now());
+    const workspace = enrichWorkspaceWithTicketingConnector(service.workspace(now()), options, now());
     return {
       status: 200,
       body: {
@@ -95,6 +210,7 @@ export function handleFanExperienceApiRequest(
         utilizationPercent: workspace.attendance.utilizationPercent,
         ticketInventory: workspace.ticketInventory,
         zones: workspace.attendanceTracking.zones,
+        ticketingConnector: workspace.ticketingConnector,
         mock: false,
       },
     };

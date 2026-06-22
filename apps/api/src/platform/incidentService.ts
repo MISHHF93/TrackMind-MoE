@@ -1,11 +1,47 @@
-import type { IncidentDto, PostIncidentReviewDto } from '@trackmind/shared';
+import type { IncidentDto, IncidentTimelineDto, PostIncidentReviewDto } from '@trackmind/shared';
 import { SAFETY_KPI_PACK_ID, type SafetyKpiPackSnapshot } from '@trackmind/shared';
 import type { AuditAppendTarget } from '../auditAdapter.js';
 import { appendAudit } from '../auditAdapter.js';
 import type { UniversalEventBus } from '../eventBus.js';
-import { createRepository, type KeyValueRepository } from '../repository/index.js';
+import { createNamespacedRepository, type KeyValueRepository } from '../repository/repositoryAdapter.js';
+import { notificationFramework } from './notificationFramework.js';
 
 const now = () => new Date().toISOString();
+
+const seedIncidents = (): Array<IncidentDto & { id: string }> => {
+  const ts = now();
+  return [
+    {
+      id: 'inc-1',
+      tenantId: 'trackmind',
+      racetrackId: 'main-track',
+      title: 'Loose horse near paddock',
+      description: 'Horse broke halter near paddock gate B.',
+      severity: 'high',
+      status: 'triaged',
+      category: 'safety',
+      reportedBy: 'security-officer',
+      assignedTo: 'incident-commander',
+      timeline: [{ at: ts, action: 'reported', actor: 'security-officer' }],
+      auditIds: ['audit-inc-1'],
+      eventIds: ['event-inc-1'],
+      createdAt: ts,
+      updatedAt: ts,
+      mock: false,
+    },
+  ];
+};
+
+const INCIDENT_EVENT_TYPES = [
+  'incident.reported.v1',
+  'incident.updated.v1',
+  'incident.triaged.v1',
+  'incident.resolved.v1',
+  'incident.post-incident-review.submitted.v1',
+  'incident.timeline.updated.v1',
+] as const;
+
+export type IncidentTimelineStreamListener = (timeline: IncidentTimelineDto) => void;
 
 export interface IncidentServiceDependencies {
   audit?: AuditAppendTarget;
@@ -32,30 +68,13 @@ export interface SafetyKpiPackInput {
 
 export class IncidentService {
   readonly incidents: KeyValueRepository<IncidentDto & { id: string }>;
-  private reviews = new Map<string, PostIncidentReviewDto>();
+  private readonly reviews: KeyValueRepository<PostIncidentReviewDto & { id: string }>;
+  private timelineListeners = new Map<string, Set<IncidentTimelineStreamListener>>();
 
   constructor(private readonly deps: IncidentServiceDependencies = {}) {
-    const ts = now();
-    this.incidents = createRepository([
-      {
-        id: 'inc-1',
-        tenantId: 'trackmind',
-        racetrackId: 'main-track',
-        title: 'Loose horse near paddock',
-        description: 'Horse broke halter near paddock gate B.',
-        severity: 'high',
-        status: 'triaged',
-        category: 'safety',
-        reportedBy: 'security-officer',
-        assignedTo: 'incident-commander',
-        timeline: [{ at: ts, action: 'reported', actor: 'security-officer' }],
-        auditIds: ['audit-inc-1'],
-        eventIds: ['event-inc-1'],
-        createdAt: ts,
-        updatedAt: ts,
-        mock: false,
-      },
-    ]);
+    this.incidents = createNamespacedRepository('platform.incidents', seedIncidents());
+    this.reviews = createNamespacedRepository('platform.incident-reviews', []);
+    this.registerEventSchemas();
   }
 
   list(): IncidentDto[] {
@@ -64,6 +83,65 @@ export class IncidentService {
 
   get(id: string): IncidentDto | undefined {
     return this.incidents.get(id);
+  }
+
+  getTimeline(id: string, since?: string): IncidentTimelineDto | undefined {
+    const incident = this.incidents.get(id);
+    if (!incident) return undefined;
+    const entries = since
+      ? incident.timeline.filter((entry) => entry.at > since)
+      : [...incident.timeline];
+    return {
+      incidentId: id,
+      generatedAt: now(),
+      revision: incident.timeline.length,
+      updatedAt: incident.updatedAt,
+      status: incident.status,
+      entries,
+      since: since ?? null,
+      hasMore: false,
+      mock: false,
+    };
+  }
+
+  subscribeTimeline(incidentId: string, listener: IncidentTimelineStreamListener): () => void {
+    const listeners = this.timelineListeners.get(incidentId) ?? new Set<IncidentTimelineStreamListener>();
+    listeners.add(listener);
+    this.timelineListeners.set(incidentId, listeners);
+    return () => listeners.delete(listener);
+  }
+
+  buildTimelineStreamBody(incidentId: string): string | undefined {
+    const timeline = this.getTimeline(incidentId);
+    if (!timeline) return undefined;
+    return this.formatTimelineStreamBody(timeline);
+  }
+
+  private formatTimelineStreamBody(timeline: IncidentTimelineDto): string {
+    const payload = JSON.stringify(timeline);
+    const heartbeat = JSON.stringify({
+      time: timeline.generatedAt,
+      incidentId: timeline.incidentId,
+      revision: timeline.revision,
+    });
+    return `event: snapshot\ndata: ${payload}\n\nevent: heartbeat\ndata: ${heartbeat}\n\n`;
+  }
+
+  private emitTimelineUpdate(incidentId: string, actor: string, auditId: string): void {
+    const timeline = this.getTimeline(incidentId);
+    if (!timeline) return;
+    for (const listener of this.timelineListeners.get(incidentId) ?? []) {
+      listener(timeline);
+    }
+    const eventId = `event-${incidentId}-timeline-${Date.now().toString(36)}`;
+    this.publishEvent(
+      'incident.timeline.updated.v1',
+      incidentId,
+      actor,
+      { revision: timeline.revision, status: timeline.status, entryCount: timeline.entries.length },
+      auditId,
+      eventId,
+    );
   }
 
   create(input: Omit<IncidentDto, 'id' | 'createdAt' | 'updatedAt' | 'timeline' | 'auditIds' | 'eventIds' | 'mock'>): IncidentDto {
@@ -82,7 +160,9 @@ export class IncidentService {
     };
     this.incidents.upsert({ ...record, id });
     this.recordAudit('incident.reported', input.reportedBy, id, { severity: input.severity, title: input.title }, auditId);
-    this.publishEvent('incident.reported.v1', id, input.reportedBy, { severity: input.severity, category: input.category }, auditId, eventId);
+    this.publishEvent('incident.reported.v1', id, input.reportedBy, { severity: input.severity, category: input.category, status: 'reported' }, auditId, eventId);
+    this.dispatchIncidentNotification('reported', record, input.reportedBy);
+    this.emitTimelineUpdate(id, input.reportedBy, auditId);
     return record;
   }
 
@@ -105,17 +185,35 @@ export class IncidentService {
     this.incidents.upsert({ ...updated, id });
     this.recordAudit('incident.updated', actor, id, { status: updated.status, severity: updated.severity }, auditId);
     this.publishEvent('incident.updated.v1', id, actor, { status: updated.status, severity: updated.severity }, auditId, eventId);
+    if (patch.status && ['resolved', 'closed'].includes(patch.status)) {
+      this.publishEvent('incident.resolved.v1', id, actor, { status: updated.status, severity: updated.severity }, auditId, `event-${id}-resolved-${Date.now().toString(36)}`);
+      this.dispatchIncidentNotification('resolved', updated, actor);
+    }
+    this.emitTimelineUpdate(id, actor, auditId);
     return updated;
   }
 
   triage(id: string, input: TriageIncidentInput): IncidentDto {
-    return this.update(id, {
+    const updated = this.update(id, {
       status: 'triaged',
       severity: input.severity,
       assignedTo: input.assignedTo,
       note: input.note ?? `Triaged as ${input.severity}`,
       actor: input.actor,
     });
+    const auditId = `audit-${id}-triage-${Date.now().toString(36)}`;
+    const eventId = `event-${id}-triaged-${Date.now().toString(36)}`;
+    this.recordAudit('incident.triaged', input.actor, id, { severity: input.severity, assignedTo: input.assignedTo }, auditId);
+    this.publishEvent('incident.triaged.v1', id, input.actor, { severity: input.severity, assignedTo: input.assignedTo, status: 'triaged' }, auditId, eventId);
+    this.dispatchIncidentNotification('triaged', updated, input.actor);
+    const triaged: IncidentDto = {
+      ...updated,
+      auditIds: [...updated.auditIds, auditId],
+      eventIds: [...updated.eventIds, eventId],
+      updatedAt: now(),
+    };
+    this.incidents.upsert({ ...triaged, id });
+    return triaged;
   }
 
   submitPostIncidentReview(id: string, input: PostIncidentReviewInput): { incident: IncidentDto; review: PostIncidentReviewDto } {
@@ -142,7 +240,7 @@ export class IncidentService {
       submittedAt: now(),
       mock: false,
     };
-    this.reviews.set(reviewId, review);
+    this.reviews.upsert({ ...review, id: reviewId });
     const timeline = [...existing.timeline, { at: now(), action: 'post-incident-review:submitted', actor: input.submittedBy }];
     const incident: IncidentDto = {
       ...existing,
@@ -154,12 +252,13 @@ export class IncidentService {
     };
     this.incidents.upsert({ ...incident, id });
     this.recordAudit('incident.post-incident-review.submitted', input.submittedBy, id, { reviewId, findings: input.findings.length }, auditId);
-    this.publishEvent('incident.post-incident-review.submitted.v1', id, input.submittedBy, { reviewId }, auditId, eventId);
+    this.publishEvent('incident.post-incident-review.submitted.v1', id, input.submittedBy, { reviewId, status: incident.status, severity: incident.severity }, auditId, eventId);
+    this.emitTimelineUpdate(id, input.submittedBy, auditId);
     return { incident, review };
   }
 
   listPostIncidentReviews(incidentId?: string): PostIncidentReviewDto[] {
-    const reviews = [...this.reviews.values()];
+    const reviews = this.reviews.list();
     return incidentId ? reviews.filter((review) => review.incidentId === incidentId) : reviews;
   }
 
@@ -191,6 +290,43 @@ export class IncidentService {
       ],
       mock: false,
     };
+  }
+
+  private dispatchIncidentNotification(phase: 'reported' | 'triaged' | 'resolved', incident: IncidentDto, actor: string): void {
+    const severity = incident.severity === 'critical' || incident.severity === 'high'
+      ? 'critical'
+      : incident.severity === 'medium'
+        ? 'warning'
+        : 'info';
+    const titles: Record<typeof phase, string> = {
+      reported: `Incident reported: ${incident.title}`,
+      triaged: `Incident triaged: ${incident.title}`,
+      resolved: `Incident resolved: ${incident.title}`,
+    };
+    notificationFramework.dispatch({
+      category: 'incident',
+      title: titles[phase],
+      message: `${incident.description} (actor: ${actor}, status: ${incident.status})`,
+      targetRoles: ['security', 'steward', 'incident-commander', 'admin'],
+      severity,
+      correlationId: incident.id,
+    });
+  }
+
+  private registerEventSchemas(): void {
+    if (!this.deps.eventBus) return;
+    const owner = { service: 'incident-service', team: 'safety-operations', accountableRole: 'incident-commander' };
+    INCIDENT_EVENT_TYPES.forEach((type) => {
+      this.deps.eventBus?.registerEvent({
+        type,
+        version: 1,
+        description: `Incident lifecycle ${type}`,
+        owner,
+        payloadFields: ['subjectId', 'auditId'],
+        compliance: 'regulated',
+        operationalMetadata: { humanAuthority: true, aiMayBlock: false },
+      });
+    });
   }
 
   private recordAudit(action: string, actor: string, subjectId: string, payload: Record<string, unknown>, auditId: string) {

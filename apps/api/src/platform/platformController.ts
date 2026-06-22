@@ -2,7 +2,7 @@ import { hasPermission, isRole, type AuditEventDto, type FederationWorkspaceDto,
 import type { CentralizedApprovalService } from '../approvals.js';
 import type { ImmutableAuditLog } from '../auditLog.js';
 import type { RacingDataApiFacadeState } from '../racingDataApiHub.js';
-import { buildKpiTrendsFromArtifacts, createAnalyticsWorkspace } from './analyticsService.js';
+import { buildAnalyticsWorkspaceStreamBody, buildKpiTrendsFromArtifacts, createAnalyticsWorkspace } from './analyticsService.js';
 import {
   buildDomainOwnershipRegistry,
   buildExecutiveScorecard,
@@ -13,10 +13,12 @@ import {
   validateGovernanceLineage,
 } from './governancePlatformService.js';
 import { createAIModelCardRegistry, createAIModelCardList, createAIGovernanceKpiPack, createAIPromptCardList, aiModelCardRegistryStore } from './aiRegistryService.js';
-import { createAuditPersistenceAdapter } from '../auditAdapter.js';
+import { appendAudit, createAuditPersistenceAdapter } from '../auditAdapter.js';
+import { createAuditVaultAdapter, type AuditVaultAdapter } from '../auditVaultAdapter.js';
 import { DurableApprovalStore } from './approvalStore.js';
 import { runApprovalEscalationCycle } from './approvalEscalationWorker.js';
-import { federationKpiAggregation, executeProviderAdapter } from './dataHubAdapter.js';
+import { federationKpiAggregation, invokeProviderAdapter, toInvokeResult } from './dataHubAdapter.js';
+import { createRacingDataLicenseDenied } from '../racingDataApiHub.js';
 import { globalSearch } from './globalSearchService.js';
 import { IdentityService } from './identityService.js';
 import { IncidentService } from './incidentService.js';
@@ -31,14 +33,18 @@ import { createCustomerManagementServices, handleCustomerManagementRequest, type
 import { createNexusPlatformExpansionServices, handleNexusPlatformExpansionRequest, type NexusPlatformExpansionServices } from './nexusPlatformExpansionController.js';
 import { FeatureFlagService } from './featureFlags.js';
 import { TenantService } from './tenantService.js';
+import type { UniversalEventBus } from '../eventBus.js';
 
 type HttpMethod = 'GET' | 'POST';
-type HandlerResult = { status: number; body: unknown } | undefined;
+type HandlerResult = { status: number; body: unknown; headers?: Record<string, string> } | undefined;
 
 export interface PlatformState {
   auditEvents: AuditEventDto[];
   auditLedger: ImmutableAuditLog;
+  auditAdapter?: ReturnType<typeof createAuditPersistenceAdapter>;
+  auditVault?: AuditVaultAdapter;
   approvalService: CentralizedApprovalService;
+  eventBus?: UniversalEventBus;
   kpis: { kpis?: KPIArtifact[] };
   racingData: RacingDataApiFacadeState;
   federation: Record<string, unknown>;
@@ -53,6 +59,7 @@ export interface PlatformServices {
   incidents: IncidentService;
   approvalStore: DurableApprovalStore;
   auditAdapter: ReturnType<typeof createAuditPersistenceAdapter>;
+  auditVault: AuditVaultAdapter;
   commercialization: CommercializationServices;
   customerManagement: CustomerManagementServices;
   nexusExpansion: NexusPlatformExpansionServices;
@@ -100,13 +107,17 @@ export function createPlatformServices(state: PlatformState): PlatformServices {
   const tenant = new TenantService();
   const featureFlags = new FeatureFlagService();
   const identity = new IdentityService();
+  const auditAdapter = state.auditAdapter ?? createAuditPersistenceAdapter(state.auditLedger);
+  auditAdapter.syncFromLedger(state.auditEvents);
+  const auditVault = state.auditVault ?? createAuditVaultAdapter();
+  auditVault.syncFromEvents(state.auditEvents);
+  const auditTarget = { ledger: state.auditLedger, adapter: auditAdapter, vault: auditVault, mock: false };
   const incidents = new IncidentService({
-    audit: { ledger: state.auditLedger, adapter: createAuditPersistenceAdapter(state.auditLedger as any), mock: false },
+    audit: auditTarget,
+    eventBus: state.eventBus,
   });
   const approvalStore = new DurableApprovalStore(state.approvalService);
-  const auditAdapter = createAuditPersistenceAdapter(state.auditLedger);
-  auditAdapter.syncFromLedger(state.auditEvents);
-  const base = { tenant, featureFlags, identity, incidents, approvalStore, auditAdapter };
+  const base = { tenant, featureFlags, identity, incidents, approvalStore, auditAdapter, auditVault };
   const commercialization = createCommercializationServices(tenant);
   const customerManagement = createCustomerManagementServices(tenant, commercialization);
   const nexusExpansion = createNexusPlatformExpansionServices(tenant, featureFlags, incidents, commercialization, customerManagement, state);
@@ -116,6 +127,75 @@ export function createPlatformServices(state: PlatformState): PlatformServices {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function recordRacingDataProviderAudit(
+  platform: PlatformServices,
+  state: PlatformState,
+  providerId: string,
+  actor: string,
+  tenantId: string,
+  racetrackId: string,
+  payload: Record<string, unknown>,
+): AuditEventDto {
+  const auditId = `audit-racing-data-provider-${providerId}-${Date.now().toString(36)}`;
+  const audit = appendAudit(
+    { ledger: state.auditLedger, adapter: platform.auditAdapter, vault: platform.auditVault },
+    {
+      id: auditId,
+      type: 'data-change' as const,
+      actor,
+      actorType: 'human' as const,
+      timestamp: new Date().toISOString(),
+      action: 'racing-data.provider.invoked',
+      actionClass: 'compliance' as const,
+      subjectId: providerId,
+      payload,
+      correlationId: String(payload.correlationId ?? providerId),
+      tenantId,
+      racetrackId,
+      severity: 'info',
+      regulations: ['RacingDataAPIHub'],
+      evidence: [{ id: providerId, uri: `audit://racing-data/providers/${providerId}`, description: 'Licensed provider adapter simulation invoke' }],
+    },
+  );
+  state.auditEvents.push(audit);
+  return audit;
+}
+
+function recordAiRegistryAudit(
+  platform: PlatformServices,
+  state: PlatformState,
+  action: 'ai.model-card.registered' | 'ai.prompt-card.registered' | 'ai.prompt-lineage.draft.created' | 'ai.prompt-lineage.published',
+  subjectId: string,
+  actor: string,
+  tenantId: string,
+  racetrackId: string,
+  payload: Record<string, unknown>,
+): AuditEventDto {
+  const auditId = `audit-ai-registry-${subjectId}-${Date.now().toString(36)}`;
+  const audit = appendAudit(
+    { ledger: state.auditLedger, adapter: platform.auditAdapter, vault: platform.auditVault },
+    {
+      id: auditId,
+      type: 'ai-recommendation',
+      actor,
+      actorType: 'human',
+      timestamp: new Date().toISOString(),
+      action,
+      actionClass: 'ai',
+      subjectId,
+      payload,
+      correlationId: subjectId,
+      tenantId,
+      racetrackId,
+      severity: 'info',
+      regulations: ['ISO42001', 'NIST-AI-RMF'],
+      evidence: [{ id: subjectId, uri: `audit://ai-governance/${subjectId}`, description: action }],
+    },
+  );
+  state.auditEvents.push(audit);
+  return audit;
 }
 
 export function handlePlatformRequest(
@@ -273,20 +353,61 @@ export function handlePlatformRequest(
     return { status: 201, body: platform.identity.requestAccess(userId, requestedRole, tenantId) };
   }
   if (method === 'GET' && path === '/audit/search') {
+    const query = {
+      actorId: searchParams.get('actorId') ?? undefined,
+      domain: searchParams.get('domain') ?? undefined,
+      correlationId: searchParams.get('correlationId') ?? undefined,
+      from: searchParams.get('from') ?? undefined,
+      to: searchParams.get('to') ?? undefined,
+      limit: searchParams.get('limit') ? Number(searchParams.get('limit')) : undefined,
+      offset: searchParams.get('offset') ? Number(searchParams.get('offset')) : undefined,
+      action: (searchParams.get('action') === 'export' ? 'export' : 'search') as 'search' | 'export',
+      format: (searchParams.get('format') === 'ndjson' ? 'ndjson' : 'json') as 'json' | 'ndjson',
+    };
+    const fallbackEvents = state.auditEvents as AuditEventDto[];
+    if (query.action === 'export') {
+      if (!platform.auditVault.enabled) {
+        return { status: 503, body: { ok: false, error: { code: 'audit_vault_disabled', message: 'External audit vault is not enabled.' } } };
+      }
+      const events = platform.auditAdapter.search(query, fallbackEvents);
+      const exportPackage = platform.auditVault.createExport(
+        { ...query, generatedBy: actorRole ?? 'audit-search' },
+        events,
+      );
+      return { status: 200, body: exportPackage };
+    }
     return {
       status: 200,
-      body: platform.auditAdapter.search(
-        {
-          actorId: searchParams.get('actorId') ?? undefined,
-          domain: searchParams.get('domain') ?? undefined,
-          correlationId: searchParams.get('correlationId') ?? undefined,
-          from: searchParams.get('from') ?? undefined,
-          to: searchParams.get('to') ?? undefined,
-          limit: searchParams.get('limit') ? Number(searchParams.get('limit')) : undefined,
-          offset: searchParams.get('offset') ? Number(searchParams.get('offset')) : undefined,
-        },
-        state.auditEvents as AuditEventDto[],
-      ),
+      body: platform.auditAdapter.search(query, fallbackEvents),
+    };
+  }
+  if (method === 'GET' && path === '/audit/exports') {
+    const exportId = searchParams.get('exportId') ?? undefined;
+    if (exportId) {
+      const descriptor = platform.auditVault.getExport(exportId);
+      if (!descriptor) {
+        return { status: 404, body: { ok: false, error: { code: 'not_found', message: `Unknown audit vault export ${exportId}` } } };
+      }
+      const blob = platform.auditVault.getExportBlob(exportId);
+      if (searchParams.get('download') === 'true' && blob) {
+        return {
+          status: 200,
+          headers: { 'content-type': blob.mimeType, 'content-disposition': `attachment; filename="${exportId}.${descriptor.format === 'ndjson' ? 'ndjson' : 'json'}"` },
+          body: blob.content,
+        };
+      }
+      return { status: 200, body: descriptor };
+    }
+    const limit = searchParams.get('limit') ? Number(searchParams.get('limit')) : undefined;
+    return {
+      status: 200,
+      body: {
+        generatedAt: new Date().toISOString(),
+        exports: platform.auditVault.listExports(limit),
+        vaultEnabled: platform.auditVault.enabled,
+        vaultRecordCount: platform.auditVault.recordCount(),
+        mock: platform.auditVault.mock,
+      },
     };
   }
   if (method === 'GET' && path === '/approvals/durable') {
@@ -444,6 +565,18 @@ export function handlePlatformRequest(
       }),
     };
   }
+  if (method === 'GET' && path === '/analytics/workspace/stream') {
+    const calculated = recalculateAndPersistKpis(state, platform);
+    const executive = buildExecutiveScorecard(calculated);
+    const kpiTrends = buildKpiTrendsFromArtifacts(calculated);
+    const federationAggregation = federationKpiAggregation(state.federation as unknown as FederationWorkspaceDto);
+    const workspace = createAnalyticsWorkspace(kpiTrends, executive, calculated, federationAggregation);
+    return {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream; charset=utf-8' },
+      body: buildAnalyticsWorkspaceStreamBody(workspace),
+    };
+  }
   if (method === 'GET' && path === '/analytics/workspace') {
     const calculated = recalculateAndPersistKpis(state, platform);
     const executive = buildExecutiveScorecard(calculated);
@@ -501,6 +634,26 @@ export function handlePlatformRequest(
       return { status: 404, body: { ok: false, error: { code: 'not_found', message: 'Incident not found' } } };
     }
   }
+  const incidentTimelineStreamMatch = path.match(/^\/incidents\/([^/]+)\/timeline\/stream$/);
+  if (method === 'GET' && incidentTimelineStreamMatch) {
+    const incidentId = decodeURIComponent(incidentTimelineStreamMatch[1]);
+    const body = platform.incidents.buildTimelineStreamBody(incidentId);
+    if (!body) return { status: 404, body: { ok: false, error: { code: 'not_found', message: 'Incident not found' } } };
+    return {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream; charset=utf-8' },
+      body,
+    };
+  }
+  const incidentTimelineMatch = path.match(/^\/incidents\/([^/]+)\/timeline$/);
+  if (method === 'GET' && incidentTimelineMatch) {
+    const incidentId = decodeURIComponent(incidentTimelineMatch[1]);
+    const since = searchParams.get('since') ?? undefined;
+    const timeline = platform.incidents.getTimeline(incidentId, since);
+    return timeline
+      ? { status: 200, body: timeline }
+      : { status: 404, body: { ok: false, error: { code: 'not_found', message: 'Incident not found' } } };
+  }
   const incidentMatch = path.match(/^\/incidents\/([^/]+)$/);
   if (method === 'GET' && incidentMatch) {
     const incident = platform.incidents.get(decodeURIComponent(incidentMatch[1]));
@@ -554,14 +707,36 @@ export function handlePlatformRequest(
   if (method === 'POST' && path === '/ai-governance/model-registry/models') {
     const input = isRecord(body) ? body : {};
     try {
-      return { status: 201, body: aiModelCardRegistryStore.registerModel({
+      const registered = aiModelCardRegistryStore.registerModel({
         id: String(input.id ?? ''),
         name: String(input.name ?? ''),
         version: String(input.version ?? ''),
         riskLevel: String(input.riskLevel ?? 'medium'),
         path: String(input.path ?? ''),
         lastEvaluatedAt: typeof input.lastEvaluatedAt === 'string' ? input.lastEvaluatedAt : undefined,
-      }) };
+      });
+      const audit = recordAiRegistryAudit(
+        platform,
+        state,
+        'ai.model-card.registered',
+        registered.registeredId,
+        actorRole ?? 'compliance-officer',
+        tenantId,
+        racetrackId,
+        {
+          registeredId: registered.registeredId,
+          version: String(input.version ?? ''),
+          reason: typeof input.reason === 'string' ? input.reason : undefined,
+        },
+      );
+      return {
+        status: 201,
+        body: {
+          ...registered,
+          auditId: audit.id,
+          audited: true,
+        },
+      };
     } catch (error) {
       return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: (error as Error).message } } };
     }
@@ -570,21 +745,170 @@ export function handlePlatformRequest(
     const input = isRecord(body) ? body : {};
     try {
       const lineage = Array.isArray(input.lineage) ? input.lineage.map((ref) => String(ref)) : [];
-      return { status: 201, body: aiModelCardRegistryStore.registerPrompt({
+      const registered = aiModelCardRegistryStore.registerPrompt({
         id: String(input.id ?? ''),
         name: String(input.name ?? ''),
         version: String(input.version ?? ''),
         path: String(input.path ?? ''),
         lineage,
-      }) };
+      });
+      const audit = recordAiRegistryAudit(
+        platform,
+        state,
+        'ai.prompt-card.registered',
+        registered.registeredId,
+        actorRole ?? 'compliance-officer',
+        tenantId,
+        racetrackId,
+        {
+          registeredId: registered.registeredId,
+          version: String(input.version ?? ''),
+          lineage,
+          reason: typeof input.reason === 'string' ? input.reason : undefined,
+        },
+      );
+      return {
+        status: 201,
+        body: {
+          ...registered,
+          auditId: audit.id,
+          audited: true,
+        },
+      };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: (error as Error).message } } };
+    }
+  }
+  if (method === 'POST' && path === '/ai-governance/prompt-lineage/drafts') {
+    const input = isRecord(body) ? body : {};
+    try {
+      const lineage = Array.isArray(input.lineage) ? input.lineage.map((ref) => String(ref)) : [];
+      const drafted = aiModelCardRegistryStore.draftPromptLineage({
+        id: String(input.id ?? ''),
+        name: String(input.name ?? ''),
+        version: String(input.version ?? ''),
+        path: String(input.path ?? ''),
+        lineage,
+        reason: typeof input.reason === 'string' ? input.reason : undefined,
+        requestedBy: typeof input.requestedBy === 'string' ? input.requestedBy : actorRole ?? 'compliance-officer',
+      });
+      const audit = recordAiRegistryAudit(
+        platform,
+        state,
+        'ai.prompt-lineage.draft.created',
+        drafted.promptId,
+        actorRole ?? 'compliance-officer',
+        tenantId,
+        racetrackId,
+        {
+          draftId: drafted.draftId,
+          promptId: drafted.promptId,
+          version: String(input.version ?? ''),
+          lineage,
+          reason: typeof input.reason === 'string' ? input.reason : undefined,
+        },
+      );
+      return {
+        status: 202,
+        body: {
+          ...drafted,
+          auditEventIds: [...drafted.auditEventIds, audit.id],
+        },
+      };
+    } catch (error) {
+      return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: (error as Error).message } } };
+    }
+  }
+  const promptLineagePublishMatch = path.match(/^\/ai-governance\/prompt-lineage\/([^/]+)\/publish$/);
+  if (method === 'POST' && promptLineagePublishMatch) {
+    const draftId = decodeURIComponent(promptLineagePublishMatch[1]!);
+    try {
+      const published = aiModelCardRegistryStore.publishPromptLineage(draftId);
+      const audit = recordAiRegistryAudit(
+        platform,
+        state,
+        'ai.prompt-lineage.published',
+        published.registeredId,
+        actorRole ?? 'compliance-officer',
+        tenantId,
+        racetrackId,
+        {
+          draftId: published.draftId,
+          registeredId: published.registeredId,
+        },
+      );
+      return {
+        status: 201,
+        body: {
+          ...published,
+          auditId: audit.id,
+          audited: true,
+        },
+      };
     } catch (error) {
       return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: (error as Error).message } } };
     }
   }
   const providerAdapterMatch = path.match(/^\/racing-data\/providers\/([^/]+)\/invoke$/);
   if (method === 'POST' && providerAdapterMatch) {
-    const result = executeProviderAdapter(decodeURIComponent(providerAdapterMatch[1]), state.racingData);
-    return result ? { status: 202, body: result } : { status: 404, body: { ok: false, error: { code: 'not_found', message: 'Provider not found' } } };
+    const providerId = decodeURIComponent(providerAdapterMatch[1]);
+    const connectorResult = invokeProviderAdapter(providerId, state.racingData);
+    if (!connectorResult.ok) {
+      if (connectorResult.code === 'not_found') {
+        return { status: 404, body: { ok: false, error: { code: 'not_found', message: connectorResult.message } } };
+      }
+      if (connectorResult.code === 'license_not_permitted') {
+        const provider = state.racingData.providers.find((entry) => entry.providerId === providerId);
+        return {
+          status: 403,
+          body: createRacingDataLicenseDenied('provider invoke', provider, connectorResult.details),
+        };
+      }
+      if (connectorResult.code === 'provider_suspended') {
+        return {
+          status: 403,
+          body: {
+            ok: false,
+            error: {
+              code: 'provider_suspended',
+              message: connectorResult.message,
+              details: connectorResult.details,
+            },
+            providerId,
+            externalCallsPerformed: false,
+            scrapingPerformed: false,
+          },
+        };
+      }
+      return {
+        status: 429,
+        body: {
+          ok: false,
+          error: { code: 'rate_limit_exceeded', message: connectorResult.message },
+          providerId,
+          rateLimit: connectorResult.rateLimit,
+          externalCallsPerformed: false,
+          scrapingPerformed: false,
+        },
+      };
+    }
+    const audit = recordRacingDataProviderAudit(
+      platform,
+      state,
+      providerId,
+      actorRole ?? 'compliance-officer',
+      tenantId,
+      racetrackId,
+      {
+        providerId,
+        correlationId: connectorResult.correlationId,
+        recordsProcessed: connectorResult.recordsProcessed,
+        licenseStatus: connectorResult.licenseStatus,
+        rateLimitRemaining: connectorResult.rateLimit.remaining,
+        lineageSourceRefs: connectorResult.lineage.sourceRefs,
+      },
+    );
+    return { status: 202, body: toInvokeResult(connectorResult, audit.id) };
   }
   if (method === 'GET' && path === '/federation/kpi-aggregation') {
     return { status: 200, body: federationKpiAggregation(state.federation as unknown as FederationWorkspaceDto) };
@@ -625,13 +949,60 @@ export function handlePlatformRequest(
       },
     };
   }
+  if (method === 'GET' && path === '/notifications/delivery-audit-trail') {
+    const notificationId = searchParams.get('notificationId') ?? undefined;
+    return {
+      status: 200,
+      body: {
+        generatedAt: new Date().toISOString(),
+        entries: notificationFramework.deliveryAuditTrail(notificationId),
+        mock: false,
+      },
+    };
+  }
+  if (method === 'POST' && path === '/notifications/dispatch') {
+    if (!isRecord(body)) {
+      return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: 'Expected JSON body' } } };
+    }
+    const redispatchId = typeof body.id === 'string' ? body.id : undefined;
+    if (redispatchId) {
+      const channels = Array.isArray(body.channels)
+        ? body.channels.filter((item): item is string => typeof item === 'string')
+        : undefined;
+      const delivery = notificationFramework.redispatch(redispatchId, channels as Parameters<typeof notificationFramework.redispatch>[1]);
+      if (!delivery) return { status: 404, body: { ok: false, error: { code: 'not_found', message: `Notification not found: ${redispatchId}` } } };
+      return { status: 200, body: { ok: true, notificationId: redispatchId, delivery, mock: false } };
+    }
+    const title = String(body.title ?? '');
+    const message = String(body.message ?? '');
+    const category = String(body.category ?? 'platform');
+    const targetRoles = Array.isArray(body.targetRoles)
+      ? body.targetRoles.filter((item): item is string => typeof item === 'string')
+      : [];
+    if (!title || !message || targetRoles.length === 0) {
+      return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: 'title, message, and targetRoles are required' } } };
+    }
+    const channels = Array.isArray(body.channels)
+      ? body.channels.filter((item): item is string => typeof item === 'string')
+      : undefined;
+    const result = notificationFramework.dispatch({
+      category,
+      title,
+      message,
+      targetRoles,
+      severity: typeof body.severity === 'string' ? body.severity : undefined,
+      correlationId: typeof body.correlationId === 'string' ? body.correlationId : undefined,
+      channels: channels as Parameters<typeof notificationFramework.dispatch>[0]['channels'],
+    });
+    return { status: 202, body: { ok: true, ...result, mock: false } };
+  }
   if (method === 'POST' && path === '/notifications/acknowledge') {
     const id = isRecord(body) ? String(body.id ?? '') : '';
     const ok = notificationFramework.acknowledge(id);
     return { status: ok ? 200 : 404, body: { ok, id } };
   }
   if (method === 'GET' && path === '/platform/modules') {
-    const modules = ['dashboard', 'raceDay', 'equine', 'analytics', 'fanExperience', 'incidents', 'finance', 'admin'];
+    const modules = platform.commercialization.planRegistry.listModules().map((module) => module.key);
     const entitlement = platform.commercialization.entitlements.evaluate(organizationId, tenantId);
     return {
       status: 200,

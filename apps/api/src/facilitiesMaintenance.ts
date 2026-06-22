@@ -449,12 +449,14 @@ export class FacilitiesMaintenanceService {
   }
 
   reportFacilityIncident(input: { assetId?: string; title: string; severity: FacilityIncident['severity']; description: string; evidence: string[]; reportedBy: string }, principal: AssetPrincipal): FacilityIncident {
+    const assetId = input.assetId ?? 'facilities-domain';
+    const tenantId = principal.tenantId ?? 'track-1';
     const now = new Date().toISOString();
     const auditId = id('audit-facility-incident');
     const eventId = id('evt-facility-incident');
     const incident: FacilityIncident = {
       id: id('facility-incident'),
-      assetId: input.assetId,
+      assetId,
       title: input.title,
       severity: input.severity,
       status: 'open',
@@ -472,12 +474,12 @@ export class FacilitiesMaintenanceService {
       actor: input.reportedBy,
       timestamp: now,
       payload: incident,
-      subjectId: input.assetId ?? 'facilities-domain',
-      tenantId: principal.tenantId,
+      subjectId: assetId,
+      tenantId,
       severity: input.severity === 'critical' ? 'critical' : input.severity === 'high' ? 'warning' : 'info',
       evidenceIds: incident.evidence,
     });
-    void this.publish('facilities.incident.reported', input.assetId ?? 'facilities-domain', { assetId: input.assetId ?? 'facilities-domain', incident, tenantId: principal.tenantId, actor: input.reportedBy });
+    void this.publish('facilities.incident.reported', assetId, { assetId, incident, tenantId, actor: input.reportedBy });
     return clone(incident);
   }
 

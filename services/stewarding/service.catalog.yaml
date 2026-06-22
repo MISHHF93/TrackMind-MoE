@@ -8,6 +8,13 @@ service:
   currentReferenceImplementation:
     - apps/api/src/stewarding.ts
     - apps/api/src/services/stewardingService.ts
+    - apps/api/src/stewardOperationsPlatform.ts
+  runtimeDelegation:
+    stewardOperationsPlatform:
+      listEvidence: stewardingService.listEvidenceReferences
+      getEvidence: stewardingService.getEvidenceReference
+      addEvidence: stewardingService.uploadEvidenceReference
+      issueFinalRuling: stewardingService.issueFinalRuling
   humanApprovalRequiredFor:
     - steward-decision
     - steward-ruling

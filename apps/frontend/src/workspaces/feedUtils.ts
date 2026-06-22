@@ -11,6 +11,18 @@ export function feedData<T = Record<string, unknown>>(results: WorkspaceDataResu
   return feed?.data as T | undefined;
 }
 
+export function indexWorkspaceFeeds(results: WorkspaceDataResult[]): ReadonlyMap<string, unknown> {
+  const index = new Map<string, unknown>();
+  for (const item of results) {
+    if (item.status === 'ready') index.set(item.path, item.data);
+  }
+  return index;
+}
+
+export function feedFromIndex<T = Record<string, unknown>>(index: ReadonlyMap<string, unknown>, path: string): T | undefined {
+  return index.get(path) as T | undefined;
+}
+
 export function recordsFromFeeds(results: WorkspaceDataResult[], keys: string[]): Record<string, unknown>[] {
   const rows: Record<string, unknown>[] = [];
   for (const result of results) {

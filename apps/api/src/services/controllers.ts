@@ -4,7 +4,8 @@ import { EquineIntelligenceService } from './equineIntelligenceService.js';
 import { FinanceService } from './financeService.js';
 import { SafetyService } from './safetyService.js';
 import { SecurityService } from './securityService.js';
-import { StewardingService } from './stewardingService.js';
+import { StewardingService, createStewardingService } from './stewardingService.js';
+import type { SafetyEmergencyOperationsBoundary } from './safetyEmergencyBoundary.js';
 
 export interface ApiControllerResponse {
   status: number;
@@ -54,11 +55,11 @@ function approvalActorFromBody(body: Record<string, any>) {
   };
 }
 
-export function createApexDomainServices(gateway = new ApexApprovalGateway()): ApexDomainServices {
+export function createApexDomainServices(gateway = new ApexApprovalGateway(), stewardOperations?: import('../stewardOperationsPlatform.js').StewardOperationsPlatform): ApexDomainServices {
   return {
     approvals: gateway,
     safety: new SafetyService(gateway),
-    stewarding: new StewardingService(gateway),
+    stewarding: createStewardingService(gateway, stewardOperations),
     equine: new EquineIntelligenceService(gateway),
     security: new SecurityService(gateway),
     finance: new FinanceService(gateway),
@@ -66,11 +67,19 @@ export function createApexDomainServices(gateway = new ApexApprovalGateway()): A
 }
 
 export class ApexDomainControllers {
+  safetyEmergencyBoundary?: SafetyEmergencyOperationsBoundary;
+
   constructor(readonly services = createApexDomainServices()) {}
 
   async handle(method: string, path: string, body: unknown): Promise<ApiControllerResponse | undefined> {
     const input = isRecord(body) ? body : {};
 
+    if (method === 'GET' && path === '/services/safety/emergency-operations/workspace') {
+      if (!this.safetyEmergencyBoundary) {
+        return { status: 503, body: { ok: false, error: { code: 'safety_boundary_unavailable', message: 'Emergency operations boundary is not configured.' } } };
+      }
+      return { status: 200, body: this.safetyEmergencyBoundary.workspace() };
+    }
     if (method === 'GET' && path === '/services/safety/state') return { status: 200, body: this.services.safety.currentSafetyState() };
     if (method === 'POST' && path === '/services/safety/emergency-actions') {
       return { status: 202, body: await this.services.safety.requestEmergencyAction({ incidentId: stringValue(input.incidentId, 'incident-1'), action: stringValue(input.action, 'emergency-action'), requestedBy: stringValue(input.requestedBy, stringValue(input.actor, 'safety-operator')), evidence: evidenceFromBody(input), context: contextFromBody(input) }) };
@@ -114,6 +123,6 @@ export class ApexDomainControllers {
   }
 }
 
-export function createApexDomainControllers(gateway?: ApexApprovalGateway) {
-  return new ApexDomainControllers(createApexDomainServices(gateway));
+export function createApexDomainControllers(gateway?: ApexApprovalGateway, stewardOperations?: import('../stewardOperationsPlatform.js').StewardOperationsPlatform) {
+  return new ApexDomainControllers(createApexDomainServices(gateway, stewardOperations));
 }

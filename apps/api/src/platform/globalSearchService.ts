@@ -1,6 +1,11 @@
 import type { GlobalSearchResponseDto, GlobalSearchResultDto } from '@trackmind/shared';
 
 const now = () => new Date().toISOString();
+const EMPTY_SEARCH_RESPONSE: GlobalSearchResponseDto = { query: '', results: [], generatedAt: '', mock: false };
+
+function matchesQuery(value: string, q: string): boolean {
+  return value.toLowerCase().includes(q);
+}
 
 export function globalSearch(query: string, sources: {
   horses?: Array<{ id: string; name: string }>;
@@ -13,37 +18,37 @@ export function globalSearch(query: string, sources: {
 }): GlobalSearchResponseDto {
   const q = query.trim().toLowerCase();
   if (!q) {
-    return { query, results: [], generatedAt: now(), mock: false };
+    return { ...EMPTY_SEARCH_RESPONSE, query, generatedAt: now() };
   }
   const results: GlobalSearchResultDto[] = [];
 
   for (const horse of sources.horses ?? []) {
-    if (horse.name.toLowerCase().includes(q) || horse.id.toLowerCase().includes(q)) {
+    if (matchesQuery(horse.name, q) || matchesQuery(horse.id, q)) {
       results.push({ id: horse.id, kind: 'horse', title: horse.name, subtitle: horse.id, path: `/equine-intelligence/horses/${horse.id}`, score: 0.9, mock: false });
     }
   }
   for (const incident of sources.incidents ?? []) {
-    if (incident.title.toLowerCase().includes(q) || incident.id.toLowerCase().includes(q)) {
+    if (matchesQuery(incident.title, q) || matchesQuery(incident.id, q)) {
       results.push({ id: incident.id, kind: 'incident', title: incident.title, path: `/incidents/${incident.id}`, score: 0.85, mock: false });
     }
   }
   for (const event of sources.auditEvents ?? []) {
-    if (event.type.toLowerCase().includes(q) || event.action.toLowerCase().includes(q)) {
+    if (matchesQuery(event.type, q) || matchesQuery(event.action, q)) {
       results.push({ id: event.id, kind: 'audit', title: event.action, subtitle: event.type, path: `/audit/events/${event.id}`, score: 0.7, mock: false });
     }
   }
   for (const kpi of sources.kpis ?? []) {
-    if (kpi.label.toLowerCase().includes(q) || kpi.kpiId.toLowerCase().includes(q)) {
+    if (matchesQuery(kpi.label, q) || matchesQuery(kpi.kpiId, q)) {
       results.push({ id: kpi.kpiId, kind: 'kpi', title: kpi.label, path: `/kpis/${kpi.kpiId}`, score: 0.75, mock: false });
     }
   }
   for (const asset of sources.assets ?? []) {
-    if (asset.label.toLowerCase().includes(q) || asset.id.toLowerCase().includes(q)) {
+    if (matchesQuery(asset.label, q) || matchesQuery(asset.id, q)) {
       results.push({ id: asset.id, kind: 'asset', title: asset.label, path: `/assets/${asset.id}`, score: 0.65, mock: false });
     }
   }
   for (const twin of sources.twins ?? []) {
-    if (twin.label.toLowerCase().includes(q) || twin.id.toLowerCase().includes(q) || (twin.twinType ?? '').toLowerCase().includes(q)) {
+    if (matchesQuery(twin.label, q) || matchesQuery(twin.id, q) || matchesQuery(twin.twinType ?? '', q)) {
       results.push({
         id: twin.id,
         kind: 'asset',
@@ -56,7 +61,7 @@ export function globalSearch(query: string, sources: {
     }
   }
   for (const recommendation of sources.recommendations ?? []) {
-    if (recommendation.title.toLowerCase().includes(q) || recommendation.id.toLowerCase().includes(q)) {
+    if (matchesQuery(recommendation.title, q) || matchesQuery(recommendation.id, q)) {
       results.push({
         id: recommendation.id,
         kind: 'recommendation',

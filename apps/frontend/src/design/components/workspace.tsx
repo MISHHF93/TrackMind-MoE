@@ -29,7 +29,7 @@ export interface WorkspaceAction {
   detail?: string;
   protectedAction?: string;
   target?: string;
-  approvalApi?: 'controlled-actions' | 'track-configuration/draft-requests';
+  approvalApi?: 'controlled-actions' | 'track-configuration/draft-requests' | 'starting-gate-operations/race-start-approval';
   requiredRoles?: string[];
   href?: string;
   variant?: 'default' | 'secondary' | 'outline' | 'governance';

@@ -176,6 +176,33 @@ export interface StewardMutationResultDto {
   mock: false;
 }
 
+export interface IssueStewardFinalRulingRequestDto {
+  id: string;
+  issuedBy: string;
+  issuedByRole: 'steward' | 'admin';
+  issuedAt: string;
+  decision: string;
+  rationale: string;
+  penalties: string[];
+  evidenceIds: string[];
+  ruleIds: string[];
+  tenantId: string;
+  racetrackId: string;
+  approvalToken: {
+    requestId: string;
+    action: string;
+    target: string;
+    tenantId: string;
+    racetrackId: string;
+    issuedAt: string;
+    expiresAt: string;
+    approvedBy: string[];
+    issuedTo?: string;
+  };
+  approvalRequestId?: string;
+  actor?: string;
+}
+
 export interface StewardOperationsAuditTrailDto {
   generatedAt: string;
   schemaVersion: typeof stewardOperationsSchemaVersion;

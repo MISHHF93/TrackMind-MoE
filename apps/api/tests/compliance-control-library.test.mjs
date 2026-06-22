@@ -131,6 +131,11 @@ test('corrective actions support full CRUD lifecycle with audit linkage', () => 
   assert.equal(completed.status, 'done');
   assert.equal(lib.dashboard().findings.find((item) => item.id === finding.id)?.status, 'remediated');
 
+  const reopened = lib.openFinding('ctrl-security-audit', 'low', 'Reopen credential rotation finding');
+  const toClose = lib.createCorrectiveAction(reopened.id, 'owner-security', 'Close after verification', '2026-09-01');
+  const closed = lib.closeCorrectiveAction(toClose.id, 'owner-compliance', '2026-06-21T12:00:00.000Z');
+  assert.equal(closed.status, 'done');
+
   const removed = lib.deleteCorrectiveAction(created.id, 'owner-compliance', '2026-06-22T00:00:00.000Z');
   assert.equal(removed.deleted, true);
   assert.throws(() => lib.getCorrectiveAction(created.id), /Unknown corrective action/);

@@ -112,6 +112,10 @@ export class CompliancePlatformService {
     return this.library.updateCorrectiveAction(id, patch, actor);
   }
 
+  closeCorrectiveAction(id: string, actor: string) {
+    return this.library.closeCorrectiveAction(id, actor);
+  }
+
   deleteCorrectiveAction(id: string, actor: string) {
     return this.library.deleteCorrectiveAction(id, actor);
   }

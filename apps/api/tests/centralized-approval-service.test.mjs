@@ -1,6 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ApprovalStore, CentralizedApprovalService, ImmutableAuditLog, InMemoryEventBus, RaceOperationsPlatform, canonicalApprovalRequest, defaultApprovalPolicies } from '../dist/index.js';
+import {
+  ApprovalStore,
+  CentralizedApprovalService,
+  DurableApprovalStore,
+  ImmutableAuditLog,
+  InMemoryEventBus,
+  InMemoryPostgresRecordStore,
+  RaceOperationsPlatform,
+  canonicalApprovalRequest,
+  defaultApprovalPolicies,
+  getApprovalRepository,
+  initializeRepositoryPersistence,
+  notificationFramework,
+  resetApprovalRepositoryForTests,
+  resetPostgresRecordStoreForTests,
+  resetRepositorySnapshotsForTests,
+  runApprovalEscalationCycle,
+  setPostgresClientAvailableForTests,
+  setPostgresRecordStoreForTests,
+  startApprovalEscalationScheduler,
+} from '../dist/index.js';
 import { protectedActions } from '../../../packages/shared/dist/index.js';
 
 const human = (id, roles) => ({ id, roles, human: true });
@@ -116,4 +136,195 @@ test('terminal approval requests and legacy approval records cannot be bypassed 
   const store = new ApprovalStore();
   assert.throws(() => store.saveApproval({ id: 'ap-ai', recommendationId: 'rec-1', action: 'race-start', status: 'approved', approver: 'ai-copilot', approverRoles: ['steward'], reason: 'autonomous approval', evidence: ['human-approval-record'] }), /AI agents and services cannot approve/);
   assert.throws(() => store.saveApproval({ id: 'ap-service', recommendationId: 'rec-1', action: 'race-start', status: 'approved', approver: 'workflow-service', approverActorType: 'service', approverRoles: ['steward'], reason: 'service approval', evidence: ['human-approval-record'] }), /AI agents and services cannot approve/);
+});
+
+test('durable approval store survives service restart via repository adapter', () => {
+  resetRepositorySnapshotsForTests();
+  resetApprovalRepositoryForTests();
+  const auditLog = new ImmutableAuditLog();
+  const eventBus = new InMemoryEventBus();
+  const service = new CentralizedApprovalService({ auditLog, eventBus });
+  const store = new DurableApprovalStore(service);
+
+  const request = service.createRequest({
+    id: 'approval-restart-central',
+    tenantId: 'tenant-1',
+    racetrackId: 'trk-1',
+    action: 'emergency-action',
+    target: 'gate-restart-central',
+    requestedBy: 'incident-bot',
+    actorType: 'ai-agent',
+    reason: 'gate fault',
+    evidence: ['alarm'],
+    now: '2026-06-13T18:00:00Z',
+  });
+
+  assert.equal(getApprovalRepository().get(request.id)?.request?.target, 'gate-restart-central');
+  assert.equal(store.list().some((item) => item.id === request.id), true);
+
+  const restarted = store.simulateRestart(() => new CentralizedApprovalService({ auditLog: new ImmutableAuditLog(), eventBus: new InMemoryEventBus() }));
+  assert.equal(restarted.hasRequest('approval-restart-central'), true);
+  assert.equal(restarted.getRequest('approval-restart-central').status, 'pending');
+});
+
+test('escalation cycle escalates, expires, and sends approval reminders', () => {
+  resetRepositorySnapshotsForTests();
+  resetApprovalRepositoryForTests();
+  notificationFramework.publish({ category: 'platform', severity: 'info', title: 'reset', message: 'baseline', targetRoles: ['*'] });
+  const beforeCount = notificationFramework.count();
+
+  const service = new CentralizedApprovalService();
+  const store = new DurableApprovalStore(service);
+
+  service.createRequest({
+    id: 'approval-escalate-central',
+    tenantId: 'tenant-1',
+    racetrackId: 'trk-1',
+    action: 'emergency-action',
+    target: 'gate-escalate-central',
+    requestedBy: 'incident-bot',
+    actorType: 'ai-agent',
+    reason: 'gate fault',
+    evidence: ['alarm'],
+    now: '2026-06-13T18:00:00Z',
+  });
+
+  service.createRequest({
+    id: 'approval-expire-central',
+    tenantId: 'tenant-1',
+    racetrackId: 'trk-1',
+    action: 'emergency-action',
+    target: 'gate-expire-central',
+    requestedBy: 'incident-bot',
+    actorType: 'ai-agent',
+    reason: 'gate fault',
+    evidence: ['alarm'],
+    now: '2026-06-13T18:00:00Z',
+  });
+
+  const escalationResult = runApprovalEscalationCycle({
+    approvalService: service,
+    durableStore: store,
+    now: '2026-06-13T18:03:00Z',
+    reminderLeadMinutes: 10,
+  });
+
+  assert.ok(escalationResult.escalated.includes('approval-escalate-central'));
+  assert.equal(service.getRequest('approval-escalate-central').status, 'escalated');
+
+  const expiryResult = runApprovalEscalationCycle({
+    approvalService: service,
+    durableStore: store,
+    now: '2026-06-13T18:06:00Z',
+    reminderLeadMinutes: 10,
+  });
+
+  assert.ok(expiryResult.expired.includes('approval-expire-central'));
+  assert.equal(service.getRequest('approval-expire-central').status, 'expired');
+
+  service.createRequest({
+    id: 'approval-reminder-central',
+    tenantId: 'tenant-1',
+    racetrackId: 'trk-1',
+    action: 'race-stop',
+    target: 'race-reminder-central',
+    requestedBy: 'starter',
+    actorType: 'human',
+    reason: 'stop requested',
+    evidence: ['incident-report'],
+    now: '2026-06-13T18:00:00Z',
+  });
+
+  const reminderResult = runApprovalEscalationCycle({
+    approvalService: service,
+    durableStore: store,
+    now: '2026-06-13T18:04:30Z',
+    reminderLeadMinutes: 5,
+  });
+
+  assert.ok(reminderResult.remindersSent.includes('approval-reminder-central'));
+  assert.ok(notificationFramework.count() > beforeCount);
+  const inbox = notificationFramework.inbox('admin');
+  assert.ok(inbox.notifications.some((item) => item.title.includes('Approval reminder')));
+});
+
+test('escalation scheduler ticks pending approvals on interval', () => {
+  resetApprovalRepositoryForTests();
+  const service = new CentralizedApprovalService();
+  const store = new DurableApprovalStore(service);
+
+  service.createRequest({
+    id: 'approval-scheduler-tick',
+    tenantId: 'tenant-1',
+    racetrackId: 'trk-1',
+    action: 'emergency-action',
+    target: 'gate-scheduler',
+    requestedBy: 'incident-bot',
+    actorType: 'ai-agent',
+    reason: 'gate fault',
+    evidence: ['alarm'],
+    now: '2026-06-13T18:00:00Z',
+  });
+
+  const scheduler = startApprovalEscalationScheduler({
+    approvalService: service,
+    durableStore: store,
+    intervalMs: 60_000,
+    reminderLeadMinutes: 10,
+  });
+
+  const tickResult = scheduler.tick('2026-06-13T18:03:00Z');
+  scheduler.stop();
+  assert.ok(tickResult.escalated.includes('approval-scheduler-tick'));
+});
+
+test('approval repository reloads from postgres when persistence enabled', async () => {
+  resetRepositorySnapshotsForTests();
+  resetPostgresRecordStoreForTests();
+  resetApprovalRepositoryForTests();
+
+  const previousMode = process.env.TRACKMIND_PERSISTENCE_MODE;
+  const previousUrl = process.env.TRACKMIND_DATABASE_URL;
+
+  process.env.TRACKMIND_PERSISTENCE_MODE = 'postgres';
+  process.env.TRACKMIND_DATABASE_URL = 'postgres://trackmind:secret@localhost:5432/trackmind';
+  setPostgresClientAvailableForTests(true);
+  const pgStore = new InMemoryPostgresRecordStore();
+  setPostgresRecordStoreForTests(pgStore);
+
+  const service = new CentralizedApprovalService();
+  new DurableApprovalStore(service);
+  service.createRequest({
+    id: 'approval-pg-central',
+    tenantId: 'tenant-1',
+    racetrackId: 'trk-1',
+    action: 'emergency-action',
+    target: 'gate-pg-central',
+    requestedBy: 'incident-bot',
+    actorType: 'ai-agent',
+    reason: 'gate fault',
+    evidence: ['alarm'],
+    now: '2026-06-13T18:00:00Z',
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  resetRepositorySnapshotsForTests();
+  resetApprovalRepositoryForTests();
+  await initializeRepositoryPersistence();
+
+  const reloaded = getApprovalRepository();
+  assert.equal(reloaded.persistenceMode(), 'postgres');
+  assert.equal(reloaded.get('approval-pg-central')?.request?.target, 'gate-pg-central');
+
+  const hydrated = new CentralizedApprovalService();
+  const store = new DurableApprovalStore(hydrated);
+  assert.equal(hydrated.hasRequest('approval-pg-central'), true);
+  assert.equal(store.list().some((item) => item.id === 'approval-pg-central'), true);
+
+  resetPostgresRecordStoreForTests();
+  if (previousMode === undefined) delete process.env.TRACKMIND_PERSISTENCE_MODE;
+  else process.env.TRACKMIND_PERSISTENCE_MODE = previousMode;
+  if (previousUrl === undefined) delete process.env.TRACKMIND_DATABASE_URL;
+  else process.env.TRACKMIND_DATABASE_URL = previousUrl;
+  resetApprovalRepositoryForTests();
 });

@@ -197,6 +197,7 @@ export const auditExportPermissionRegistry = {
   '/api/v1/audit/forensic-reconstruction': 'audit:export',
   '/api/v1/audit/compliance-export': 'audit:export',
   '/api/v1/audit/legal-holds': 'audit:export',
+  '/api/v1/audit/exports': 'audit:export',
 } as const satisfies Record<string, Permission>;
 
 export function permissionForApiEndpoint(input: { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; path: string; operationId: string }): Permission {
@@ -204,6 +205,9 @@ export function permissionForApiEndpoint(input: { method: 'GET' | 'POST' | 'PATC
   if (input.operationId === 'requestRaceStopCommand') return 'incident:manage';
   if (input.operationId === 'requestRaceScratchCommand') return 'horse:scratch';
   if (input.operationId === 'requestRaceStartCommand') return 'race:request-start';
+  if (input.operationId === 'updateHorseEligibility') return 'discipline:issue';
+  if (input.operationId === 'draftAIPromptLineage') return 'ai:approve';
+  if (input.operationId === 'publishAIPromptLineage') return 'ai:approve';
   if (input.path.includes('/services/safety/')) return 'incident:manage';
   if (input.path.includes('/services/security/')) return input.method === 'GET' ? 'security:read' : 'security:manage';
   if (input.path.includes('/safety-intelligence/hot-path') || input.path.includes('/safety-intelligence/warm-path') || input.path.includes('/safety-intelligence/debrief')) return 'incident:manage';

@@ -41,6 +41,9 @@ test('route constants cover required backend-driven sections', async () => {
   assert.match(paths, /analytics\/workspace/);
   assert.match(paths, /fan-experience\/workspace/);
   assert.match(paths, /notifications\/inbox/);
+  const fanPanels = await source('src/workspaces/views/platformPanels.tsx');
+  assert.match(fanPanels, /Ticketing connector status/);
+  assert.match(fanPanels, /ticketingConnector/);
   assert.match(paths, /search\/global/);
   assert.match(paths, /routeApiPathGroups/);
   assert.match(routes, /backendContractPathsForRoute/);
@@ -101,6 +104,28 @@ test('frontend keeps consoles accessible when API adapters fail', async () => {
   const workspace = await source('src/workspaces/WorkspacePage.tsx');
   assert.match(workspace, /Backend unavailable/);
   assert.match(workspace, /degraded/);
+});
+
+test('frontend surface intelligence paths are wired in routeApiPathGroups', async () => {
+  const paths = await source('src/api/paths.ts');
+  const racePanels = await source('src/workspaces/views/racePanels.tsx');
+  const surfacePanels = await source('src/workspaces/views/surfacePanels.tsx');
+  for (const fragment of [
+    'surface-intelligence/workspace',
+    'track-surface/measurements',
+  ]) {
+    assert.match(paths, new RegExp(fragment.replace('/', '\\/')), `routeApiPathGroups missing ${fragment}`);
+  }
+  assert.match(paths, /raceDay:[\s\S]*surfaceMeasurements/);
+  assert.match(paths, /surface:[\s\S]*measurements/);
+  assert.match(paths, /\[apiPaths\.raceDay\.surface\]: 'live-api'/);
+  assert.match(paths, /\[apiPaths\.raceDay\.surfaceMeasurements\]: 'live-api'/);
+  assert.match(paths, /surface:[\s\S]*workspace: '\/surface-intelligence\/workspace'/);
+  assert.match(paths, /surface:[\s\S]*measurements: '\/track-surface\/measurements'/);
+  assert.match(racePanels, /\/surface-intelligence\/workspace/);
+  assert.match(racePanels, /\/track-surface\/measurements/);
+  assert.match(surfacePanels, /\/surface-intelligence\/workspace/);
+  assert.match(surfacePanels, /\/track-surface\/measurements/);
 });
 
 test('frontend backend route paths are declared in shared endpoint contracts', async () => {
@@ -178,11 +203,39 @@ test('frontend brand design language is defined', async () => {
   assert.match(button, /governance:/);
 });
 
+test('frontend data hub entity resolution review uses draft-only mutation contract', async () => {
+  const panels = await source('src/workspaces/views/businessPanels.tsx');
+  const mutations = await source('src/api/mutations.ts');
+  const paths = await source('src/api/paths.ts');
+  assert.match(panels, /Draft entity resolution review/);
+  assert.match(panels, /Draft only/);
+  assert.match(panels, /Review required/);
+  assert.match(panels, /Optional review rationale/);
+  assert.match(panels, /Invoke provider adapter/);
+  assert.match(panels, /Simulation only/);
+  assert.match(mutations, /draftEntityResolutionReview/);
+  assert.match(mutations, /invokeRacingDataProvider/);
+  assert.match(mutations, /\/racing-data\/entity-resolution\/review/);
+  assert.match(mutations, /\/racing-data\/providers\/\$\{encodeURIComponent\(providerId\)\}\/invoke/);
+  assert.match(paths, /entityResolutionReview: '\/racing-data\/entity-resolution\/review'/);
+  assert.match(paths, /providerInvoke: \(providerId: string\) => `\/racing-data\/providers\/\$\{providerId\}\/invoke`/);
+});
+
 test('frontend includes realtime and assistant integrations', async () => {
   const sseHook = await source('src/hooks/useEventStream.ts');
+  const incidentTimelineHook = await source('src/hooks/useIncidentTimelineStream.ts');
+  const analyticsStreamHook = await source('src/hooks/useAnalyticsStream.ts');
+  const securityPanels = await source('src/workspaces/views/securityPanels.tsx');
+  const platformPanels = await source('src/workspaces/views/platformPanels.tsx');
   const assistant = await source('src/features/assistant/MoEChatPanel.tsx');
   const mutations = await source('src/api/mutations.ts');
   assert.match(sseHook, /createEventSource/);
+  assert.match(incidentTimelineHook, /createIncidentTimelineEventSource/);
+  assert.match(analyticsStreamHook, /createAnalyticsWorkspaceEventSource/);
+  assert.match(securityPanels, /useIncidentTimelineStream/);
+  assert.match(securityPanels, /timeline\/stream/);
+  assert.match(platformPanels, /useAnalyticsStream/);
+  assert.match(platformPanels, /analytics\/workspace\/stream/);
   assert.match(assistant, /sendChatCompletion/);
   assert.match(assistant, /Advisory only/);
   assert.match(mutations, /approveRequest/);

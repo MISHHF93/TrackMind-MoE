@@ -1,6 +1,7 @@
 import type { AuditEventDto, AuditSearchQueryDto } from '@trackmind/shared';
 import type { AuditLogEntry, AuditRecordInput, ImmutableAuditLog } from './auditLog.js';
-import { createRepository } from './repository/index.js';
+import type { AuditVaultAdapter } from './auditVaultAdapter.js';
+import { createNamespacedRepository } from './repository/repositoryAdapter.js';
 
 const exportFields = [
   'auditEventId',
@@ -61,10 +62,11 @@ function domainHaystack(event: AuditEventDto): string {
 }
 
 export class AuditPersistenceAdapter {
-  private persistedEvents: ReturnType<typeof createRepository<AuditEventDto & { id: string }>>;
+  /** `platform.audit` namespace — postgres-backed when `DATABASE_URL` is configured. */
+  private persistedEvents: ReturnType<typeof createNamespacedRepository<AuditEventDto & { id: string }>>;
 
   constructor(private readonly ledger: ImmutableAuditLog) {
-    this.persistedEvents = createRepository([]);
+    this.persistedEvents = createNamespacedRepository('platform.audit', []);
   }
 
   syncFromLedger(fallbackEvents: AuditEventDto[] = []): void {
@@ -114,6 +116,7 @@ export function createAuditPersistenceAdapter(ledger: ImmutableAuditLog): AuditP
 export interface AuditAppendTarget {
   ledger: ImmutableAuditLog;
   adapter?: AuditPersistenceAdapter;
+  vault?: AuditVaultAdapter;
   mock?: boolean;
 }
 
@@ -121,6 +124,9 @@ export function appendAudit(target: AuditAppendTarget, record: AuditRecordInput)
   const entry = target.ledger.append(record);
   const dto = auditLogEntryToDto(entry, target.mock ?? false);
   target.adapter?.appendUnified(dto);
+  if (target.vault?.enabled) {
+    target.vault.appendRecord(dto);
+  }
   return dto;
 }
 

@@ -64,3 +64,13 @@ export function createAnalyticsWorkspace(
     mock: false,
   };
 }
+
+export function buildAnalyticsWorkspaceStreamBody(workspace: AnalyticsWorkspaceDto): string {
+  const payload = JSON.stringify(workspace);
+  const heartbeat = JSON.stringify({
+    time: workspace.generatedAt,
+    revision: workspace.kpiTrends.length,
+    forecastingReadinessScore: workspace.forecastingReadiness.score,
+  });
+  return `event: snapshot\ndata: ${payload}\n\nevent: heartbeat\ndata: ${heartbeat}\n\n`;
+}

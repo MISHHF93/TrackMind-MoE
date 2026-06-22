@@ -1,60 +1,139 @@
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiPaths } from '@/api/paths';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
-import { actionDisabledReason, extractApprovalControls, roleCanUseAction } from '@/domain/approvalControls';
+import { actionDisabledReason, extractApprovalControls, resolveDefaultRaceTarget, roleCanUseAction } from '@/domain/approvalControls';
 import { KpiStrip } from '@/design/components/kpi-strip';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
 import { SectionPanel } from '@/design/components/section-panel';
 import { Button } from '@/design/components/button';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
-import { feedData, numericField } from '../feedUtils';
+import { feedFromIndex, indexWorkspaceFeeds, numericField } from '../feedUtils';
 import { isRecord } from '@/lib/utils';
 import { GovernedActionDialog } from '@/features/approvals/GovernedActionDialog';
 import type { WorkspaceAction } from '@/design/components/workspace';
+import { authorizeApprovalExecution, requestRaceStart, type ApprovalTokenPayload } from '@/api/mutations';
 
 export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
   const { session } = useTenantSession();
+  const queryClient = useQueryClient();
   const [dialog, setDialog] = useState<{ open: boolean; action?: WorkspaceAction }>({ open: false });
-  const raceOffice = feedData<Record<string, unknown>>(results, '/race-operations/race-office');
-  const calendar = feedData<Record<string, unknown>>(results, '/racing-calendar/workspace');
-  const raceCardsWorkspace = feedData<Record<string, unknown>>(results, '/race-cards/workspace');
-  const readiness = feedData<Record<string, unknown>>(results, '/race-day-readiness/dashboard');
-  const surface = feedData<Record<string, unknown>>(results, '/surface-intelligence/workspace');
-  const paddock = feedData<Record<string, unknown>>(results, '/race-operations/paddock');
-  const paddockOps = feedData<Record<string, unknown>>(results, '/paddock-operations/workspace');
-  const startingGate = feedData<Record<string, unknown>>(results, '/race-operations/starting-gate');
-  const startingGateOps = feedData<Record<string, unknown>>(results, '/starting-gate-operations/workspace');
-  const schedule = feedData<Record<string, unknown>>(results, '/race-operations/schedule');
+  const [commandMessage, setCommandMessage] = useState<string | null>(null);
+  const feeds = useMemo(() => indexWorkspaceFeeds(results), [results]);
+  const raceOffice = feedFromIndex<Record<string, unknown>>(feeds, '/race-operations/race-office');
+  const calendar = feedFromIndex<Record<string, unknown>>(feeds, '/racing-calendar/workspace');
+  const raceCardsWorkspace = feedFromIndex<Record<string, unknown>>(feeds, '/race-cards/workspace');
+  const readiness = feedFromIndex<Record<string, unknown>>(feeds, '/race-day-readiness/dashboard');
+  const surface = feedFromIndex<Record<string, unknown>>(feeds, '/surface-intelligence/workspace');
+  const surfaceMeasurements = extractArray<Record<string, unknown>>(
+    feedFromIndex(feeds, '/track-surface/measurements'),
+  );
+  const paddock = feedFromIndex<Record<string, unknown>>(feeds, apiPaths.raceDay.paddock);
+  const startingGate = feedFromIndex<Record<string, unknown>>(feeds, '/race-operations/starting-gate');
+  const startingGateOps = feedFromIndex<Record<string, unknown>>(feeds, '/starting-gate-operations/workspace');
+  const schedule = feedFromIndex<Record<string, unknown>>(feeds, '/race-operations/schedule');
 
   const paddockAssignments = extractArray<Record<string, unknown>>(paddock, 'assignments');
-  const paddockOpsAssignments = paddockAssignments.length
-    ? []
-    : extractArray<Record<string, unknown>>(paddockOps, 'assignments');
   const gateReadiness = isRecord(paddock?.gateReadiness) ? paddock.gateReadiness as Record<string, unknown> : undefined;
   const paddockTimeline = extractArray<Record<string, unknown>>(paddock, 'timeline');
   const scheduleTimeline = extractArray<Record<string, unknown>>(schedule, 'timeline');
+  const scheduleRaces = extractArray<Record<string, unknown>>(schedule, 'races');
   const raceTimeline = [...paddockTimeline, ...scheduleTimeline];
   const gateIndicators = extractArray<Record<string, unknown>>(startingGate, 'raceReadinessIndicators');
   const gateOpsIndicators = gateIndicators.length
     ? []
     : extractArray<Record<string, unknown>>(startingGateOps, 'raceReadinessIndicators');
+  const startingGateAssignments = extractArray<Record<string, unknown>>(startingGate, 'assignments');
+  const startingGateOpsAssignments = extractArray<Record<string, unknown>>(startingGateOps, 'assignments');
   const starterControls = extractArray<Record<string, unknown>>(startingGate, 'approvalControls');
   const gateGuardrails = isRecord(startingGate?.guardrails) ? startingGate.guardrails as Record<string, unknown> : undefined;
   const weatherObservation = isRecord(surface?.weatherObservation) ? surface.weatherObservation as Record<string, unknown> : undefined;
   const surfaceStatusCards = extractArray<Record<string, unknown>>(surface, 'statusCards');
   const primarySurfaceStatus = surfaceStatusCards[0];
 
+  const officeMeets = extractArray<Record<string, unknown>>(raceOffice, 'meets');
+  const officeRaceDays = extractArray<Record<string, unknown>>(raceOffice, 'raceDays');
   const cards = extractArray<Record<string, unknown>>(raceOffice, 'cards');
   const calendarMeets = extractArray<Record<string, unknown>>(calendar, 'meets');
   const raceCards = extractArray<Record<string, unknown>>(raceCardsWorkspace, 'raceCards');
+  const officeReadiness = extractArray<Record<string, unknown>>(raceOffice, 'readiness');
   const lifecycle = extractArray<Record<string, unknown>>(raceOffice, 'lifecycle');
   const approvalControls = extractApprovalControls(results);
   const warnings = extractArray<Record<string, unknown>>(readiness, 'warnings');
   const domainScores = extractArray<Record<string, unknown>>(readiness, 'domainScores');
+  const defaultRaceTarget = resolveDefaultRaceTarget(results);
+
+  const raceStartApprovalAction = (raceId: string): WorkspaceAction => ({
+    id: `gate-race-start-approval-${raceId}`,
+    label: 'Request gate race start approval',
+    detail: 'Request starting-gate race-start approval; does not start the race.',
+    protectedAction: 'race-start',
+    target: raceId,
+    approvalApi: 'starting-gate-operations/race-start-approval',
+    requiredRoles: ['admin', 'steward', 'racing-secretary', 'starter'],
+  });
+
+  const raceStartCommandAction = (raceId: string): WorkspaceAction => ({
+    id: `race-start-command-${raceId}`,
+    label: 'Submit authorized race start command',
+    detail: 'Issue verified approval token and POST race start command metadata.',
+    protectedAction: 'race-start',
+    target: raceId,
+    requiredRoles: ['admin', 'steward', 'racing-secretary', 'starter'],
+  });
+
+  function resolveRaceId(record: Record<string, unknown>): string {
+    return String(record.raceId ?? record.id ?? defaultRaceTarget);
+  }
+
+  function gateStartApprovalIds(raceId: string): string[] {
+    const indicator = [...gateIndicators, ...gateOpsIndicators].find(
+      (entry) => entry.indicator === 'race-start-approval' && resolveRaceId(entry) === raceId,
+    );
+    if (!indicator) return [];
+    const ids = indicator.approvalRequestIds;
+    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
+  }
+
+  function gateStartApprovalRaceIds(): string[] {
+    const fromIndicators = [...gateIndicators, ...gateOpsIndicators]
+      .filter((entry) => entry.indicator === 'race-start-approval')
+      .map((entry) => resolveRaceId(entry));
+    const fromSchedule = scheduleRaces.map((race) => resolveRaceId(race));
+    const fromLifecycle = lifecycle.map((entry) => String(entry.raceId ?? '')).filter(Boolean);
+    return [...new Set([...fromIndicators, ...fromSchedule, ...fromLifecycle, defaultRaceTarget])];
+  }
+
+  const raceStartCommandMutation = useMutation({
+    mutationFn: async (raceId: string) => {
+      const approvalRequestId = gateStartApprovalIds(raceId)[0]
+        ?? lifecycle.find((entry) => String(entry.raceId) === raceId && entry.approvalRequired)?.approvalRequestId;
+      const approvalId = typeof approvalRequestId === 'string' ? approvalRequestId : undefined;
+      if (!approvalId) throw new Error('Request gate race start approval before submitting the race start command.');
+      const authorized = await authorizeApprovalExecution(approvalId);
+      const token = authorized.approvalToken;
+      if (!token) throw new Error('Approval token was not issued. Complete steward, race office, and veterinary approvals first.');
+      return requestRaceStart(raceId, {
+        approvalToken: token as ApprovalTokenPayload,
+        starterId: `${session.role}-operator`,
+      });
+    },
+    onSuccess: () => {
+      setCommandMessage('Race start command submitted with verified approval token.');
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+    onError: (error: Error) => setCommandMessage(error.message),
+  });
 
   const avgScore = numericField(readiness, 'averageScore') ?? numericField(readiness, 'readinessScore');
   const surfaceScore = numericField(surface, 'overallScore');
+  const officeReadyCount = officeReadiness.filter((row) => row.ready === true).length;
+  const stewardControls = approvalControls.filter((control) =>
+    control.requiredRoles?.includes('steward')
+    || ['race-start', 'race-cancellation', 'race-status-change', 'official-results', 'race-office-scratch'].includes(control.protectedAction ?? ''),
+  );
   const raceCommandControls: WorkspaceAction[] = [
     ...approvalControls,
     ...starterControls.map((control) => ({
@@ -64,11 +143,36 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
         ? String(gateGuardrails.guardrailStatement)
         : 'Approval-governed starter workflow; automated race starts remain blocked.',
       protectedAction: String(control.action ?? 'race-start'),
-      target: lifecycle[0]?.raceId ? String(lifecycle[0].raceId) : 'race-7',
+      target: defaultRaceTarget,
       approvalApi: 'controlled-actions' as const,
       requiredRoles: ['admin', 'steward', 'starter'],
     })),
   ];
+
+  function formatCardConditions(card: Record<string, unknown>): string {
+    if (typeof card.classification === 'string') return card.classification;
+    const conditions = isRecord(card.conditions) ? card.conditions : undefined;
+    if (!conditions) return '—';
+    const parts = [
+      conditions.classLevel,
+      conditions.surface,
+      conditions.distanceFurlongs != null ? `${conditions.distanceFurlongs}f` : undefined,
+    ].filter(Boolean);
+    return parts.length ? parts.map(String).join(' · ') : '—';
+  }
+
+  function formatApprovalSummary(approvals: unknown): string {
+    if (!isRecord(approvals)) return '—';
+    const entries = Object.entries(approvals);
+    if (!entries.length) return '—';
+    return entries.map(([step, state]) => `${step}: ${String(state)}`).join(', ');
+  }
+
+  function formatStewardRoster(meet: Record<string, unknown>): string {
+    const config = isRecord(meet.officialConfig) ? meet.officialConfig : undefined;
+    const stewards = Array.isArray(config?.stewards) ? config.stewards : [];
+    return stewards.length ? stewards.map(String).join(', ') : '—';
+  }
 
   return (
     <div className="space-y-4">
@@ -76,14 +180,21 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
         items={[
           { id: 'avg', label: 'Readiness score', value: avgScore != null ? `${avgScore}%` : '—', status: avgScore != null && avgScore >= 80 ? 'nominal' : 'warning' },
           { id: 'surface', label: 'Surface score', value: surfaceScore != null ? String(surfaceScore) : '—' },
+          { id: 'measurements', label: 'Live readings', value: String(surfaceMeasurements.length) },
           { id: 'gate', label: 'Gate readiness', value: gateReadiness ? String(gateReadiness.status ?? '—') : '—', status: gateReadiness?.status === 'ready' ? 'nominal' : 'warning' },
           { id: 'weather', label: 'Forecast rain', value: weatherObservation?.forecastRainMm != null ? `${weatherObservation.forecastRainMm}mm` : '—' },
+          { id: 'meets', label: 'Active meets', value: String(officeMeets.length || calendarMeets.length) },
+          { id: 'race-days', label: 'Race days', value: String(officeRaceDays.length) },
           { id: 'races', label: 'Race cards', value: String(cards.length || raceCards.length) },
+          { id: 'office-ready', label: 'Office ready', value: officeReadiness.length ? `${officeReadyCount}/${officeReadiness.length}` : '—', status: officeReadiness.length && officeReadyCount === officeReadiness.length ? 'nominal' : 'warning' },
           { id: 'warnings', label: 'Warnings', value: String(warnings.length), status: warnings.length > 0 ? 'warning' : 'nominal' },
         ]}
       />
       <div className="grid gap-4 xl:grid-cols-2">
         <SectionPanel title="Gate readiness" description="Paddock gate checks and starter race readiness indicators from live API feeds.">
+          {commandMessage ? (
+            <p className="mb-3 text-sm text-[var(--muted-foreground)]">{commandMessage}</p>
+          ) : null}
           <RecordTable
             columns={[
               { key: 'source', label: 'Source' },
@@ -104,10 +215,56 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
                 detail: String(indicator.detail ?? indicator.value ?? '—'),
               })),
             ]}
-            emptyLabel="No gate readiness data returned from /race-operations/paddock or /race-operations/starting-gate."
+            emptyLabel={`No gate readiness data returned from ${apiPaths.raceDay.paddock} or ${apiPaths.raceDay.startingGate}.`}
           />
+          {gateStartApprovalRaceIds().length ? (
+            <ul className="mt-4 space-y-2">
+              {gateStartApprovalRaceIds().map((raceId) => {
+                const gateAction = raceStartApprovalAction(raceId);
+                const commandAction = raceStartCommandAction(raceId);
+                const approvalIds = gateStartApprovalIds(raceId);
+                const gateDisabled = !roleCanUseAction(gateAction, session.role);
+                const commandDisabled = !roleCanUseAction(commandAction, session.role);
+                const startIndicator = [...gateIndicators, ...gateOpsIndicators].find(
+                  (entry) => entry.indicator === 'race-start-approval' && resolveRaceId(entry) === raceId,
+                );
+                return (
+                  <li key={raceId} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium">Race {raceId} — gate start approval</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">
+                        {approvalIds.length
+                          ? `Approval pending (${approvalIds.join(', ')})`
+                          : String(startIndicator?.detail ?? startIndicator?.value ?? 'Not requested')}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="governance"
+                        disabled={gateDisabled || approvalIds.length > 0}
+                        title={gateDisabled ? actionDisabledReason(gateAction, session.role) : approvalIds.length ? 'Approval already requested' : gateAction.detail}
+                        onClick={() => setDialog({ open: true, action: gateAction })}
+                      >
+                        Request start approval
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="governance"
+                        disabled={commandDisabled || raceStartCommandMutation.isPending || approvalIds.length === 0}
+                        title={commandDisabled ? actionDisabledReason(commandAction, session.role) : approvalIds.length === 0 ? 'Request gate race start approval first' : commandAction.detail}
+                        onClick={() => raceStartCommandMutation.mutate(raceId)}
+                      >
+                        Submit race start
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
         </SectionPanel>
-        <SectionPanel title="Surface and weather" description="Track surface posture and weather awareness from /surface-intelligence/workspace.">
+        <SectionPanel title="Surface and weather" description="Track surface posture, live sector readings, and weather awareness from /surface-intelligence/workspace and /track-surface/measurements.">
           <RecordTable
             columns={[
               { key: 'metric', label: 'Metric' },
@@ -121,38 +278,99 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
               { metric: 'Wind', value: weatherObservation?.windMph != null ? `${weatherObservation.windMph} mph` : '—', status: 'nominal' },
             ]}
           />
+          <RecordTable
+            className="mt-4"
+            columns={[
+              { key: 'sector', label: 'Sector' },
+              { key: 'moisture', label: 'Moisture' },
+              { key: 'compaction', label: 'Compaction' },
+              { key: 'measuredAt', label: 'Measured' },
+            ]}
+            rows={mapRecords(surfaceMeasurements, (m) => ({
+              sector: String(m.sectorId ?? '—'),
+              moisture: m.moisture != null ? String(m.moisture) : '—',
+              compaction: m.compaction != null ? String(m.compaction) : '—',
+              measuredAt: String(m.measuredAt ?? '—'),
+            }))}
+            emptyLabel="No live surface measurements returned from /track-surface/measurements."
+          />
         </SectionPanel>
       </div>
       <div className="grid gap-4 xl:grid-cols-2">
-        <SectionPanel title="Racing calendar" description="Season meets and scheduling conflicts.">
+        <SectionPanel title="Meet lifecycle" description="Race meets, official configuration, and steward roster from /race-operations/race-office.">
           <RecordTable
             columns={[
               { key: 'meet', label: 'Meet' },
-              { key: 'date', label: 'Date' },
+              { key: 'dates', label: 'Dates' },
+              { key: 'stewards', label: 'Stewards' },
               { key: 'status', label: 'Status' },
             ]}
-            rows={mapRecords(calendarMeets, (m) => ({
-              meet: String(m.name ?? m.meetId ?? '—'),
-              date: String(m.startDate ?? m.date ?? '—'),
+            rows={mapRecords(officeMeets.length ? officeMeets : calendarMeets, (m) => ({
+              meet: String(m.name ?? m.meetId ?? m.id ?? '—'),
+              dates: m.startsOn && m.endsOn ? `${String(m.startsOn)} → ${String(m.endsOn)}` : String(m.startDate ?? m.date ?? m.raceDate ?? '—'),
+              stewards: formatStewardRoster(m),
               status: String(m.status ?? '—'),
             }))}
-            emptyLabel="No calendar meets returned."
+            emptyLabel="No meets returned from race office or racing calendar."
           />
         </SectionPanel>
-        <SectionPanel title="Race card management" description="Published race cards from card management service.">
+        <SectionPanel title="Race days" description="Meet-linked race days and carding status from race office.">
+          <RecordTable
+            columns={[
+              { key: 'day', label: 'Race day' },
+              { key: 'meet', label: 'Meet' },
+              { key: 'races', label: 'Races' },
+              { key: 'status', label: 'Status' },
+            ]}
+            rows={mapRecords(officeRaceDays, (d) => ({
+              day: String(d.raceDate ?? d.id ?? '—'),
+              meet: String(d.meetId ?? '—'),
+              races: String(Array.isArray(d.raceIds) ? d.raceIds.length : '—'),
+              status: String(d.status ?? '—'),
+            }))}
+            emptyLabel="No race days returned from /race-operations/race-office."
+          />
+        </SectionPanel>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionPanel title="Race card status" description="Race office cards with conditions, entries, and workflow approval posture.">
           <RecordTable
             columns={[
               { key: 'race', label: 'Race' },
-              { key: 'classification', label: 'Class' },
+              { key: 'classification', label: 'Conditions' },
               { key: 'entries', label: 'Entries' },
+              { key: 'approvals', label: 'Approvals' },
               { key: 'status', label: 'Status' },
             ]}
-            rows={mapRecords(raceCards.length ? raceCards : cards, (c) => ({
-              race: String(c.raceNumber ?? c.raceId ?? c.id ?? '—'),
-              classification: String(c.classification ?? c.conditions ?? '—'),
-              entries: String(Array.isArray(c.entries) ? c.entries.length : c.entryCount ?? '—'),
-              status: String(c.status ?? '—'),
+            rows={mapRecords(cards.length ? cards : raceCards, (c) => {
+              const entries = Array.isArray(c.entries) ? c.entries : [];
+              const activeEntries = entries.filter((entry) => isRecord(entry) && entry.declared && !entry.scratched);
+              return {
+                race: String(c.raceNumber ?? c.raceId ?? c.id ?? '—'),
+                classification: formatCardConditions(c),
+                entries: entries.length ? `${activeEntries.length}/${entries.length}` : String(c.entryCount ?? '—'),
+                approvals: formatApprovalSummary(c.approvals),
+                status: String(c.status ?? '—'),
+              };
+            })}
+            emptyLabel="No race cards returned from race office or card management."
+          />
+        </SectionPanel>
+        <SectionPanel title="Race office readiness" description="Per-race readiness assessments and blockers from race office.">
+          <RecordTable
+            columns={[
+              { key: 'raceId', label: 'Race' },
+              { key: 'ready', label: 'Ready' },
+              { key: 'entries', label: 'Active entries' },
+              { key: 'blockers', label: 'Blockers' },
+            ]}
+            rows={mapRecords(officeReadiness, (r) => ({
+              raceId: String(r.raceId ?? '—'),
+              ready: r.ready === true ? 'yes' : 'no',
+              entries: r.activeEntries != null ? String(r.activeEntries) : '—',
+              blockers: Array.isArray(r.blockers) && r.blockers.length ? r.blockers.map(String).join('; ') : '—',
             }))}
+            emptyLabel="No race office readiness rows returned."
           />
         </SectionPanel>
       </div>
@@ -188,7 +406,24 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
           />
         </SectionPanel>
       </div>
-      <SectionPanel title="Race command approvals" description="Backend-governed approval controls from race office and starter workflows.">
+      <SectionPanel title="Steward and race command approvals" description="Locked safety-critical controls from /race-operations/race-office and starter workflows.">
+        {stewardControls.length > 0 ? (
+          <RecordTable
+            className="mb-4"
+            columns={[
+              { key: 'label', label: 'Control' },
+              { key: 'action', label: 'Action' },
+              { key: 'target', label: 'Target' },
+              { key: 'roles', label: 'Required roles' },
+            ]}
+            rows={stewardControls.map((control) => ({
+              label: control.label,
+              action: control.protectedAction ?? '—',
+              target: control.target ?? '—',
+              roles: control.requiredRoles?.join(', ') ?? '—',
+            }))}
+          />
+        ) : null}
         {raceCommandControls.length === 0 ? (
           <p className="text-sm text-[var(--muted-foreground)]">No approval controls returned from race office or starting gate.</p>
         ) : (
@@ -225,6 +460,7 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
           protectedAction={dialog.action.protectedAction}
           target={dialog.action.target ?? dialog.action.id}
           approvalApi={dialog.action.approvalApi}
+          onSubmitted={() => setCommandMessage('Gate race start approval requested. Complete approvals before submitting the race start command.')}
         />
       ) : null}
       <SectionPanel title="Readiness warnings" description="Items requiring steward or operational review.">
@@ -250,7 +486,7 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
               { key: 'status', label: 'Status' },
             ]}
             rows={mapRecords(
-              [...paddockAssignments, ...paddockOpsAssignments],
+              paddockAssignments,
               (a) => ({
                 horse: String(a.horseName ?? a.horseId ?? '—'),
                 slot: String(a.paddockSlot ?? a.slot ?? '—'),
@@ -267,10 +503,7 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
               { key: 'status', label: 'Status' },
             ]}
             rows={mapRecords(
-              [
-                ...extractArray<Record<string, unknown>>(startingGate, 'assignments'),
-                ...extractArray<Record<string, unknown>>(startingGateOps, 'assignments'),
-              ],
+              [...startingGateAssignments, ...startingGateOpsAssignments],
               (a) => ({
                 horse: String(a.horseName ?? a.horseId ?? '—'),
                 post: String(a.postPosition ?? a.post ?? '—'),
@@ -289,12 +522,60 @@ export function RaceDayPanels({ results }: { results: WorkspaceDataResult[] }): 
               { key: 'post', label: 'Post time' },
               { key: 'status', label: 'Status' },
             ]}
-            rows={mapRecords(extractArray(schedule, 'races'), (r) => ({
-              race: String(r.raceNumber ?? r.raceId ?? '—'),
-              post: String(r.postTime ?? '—'),
-              status: String(r.status ?? '—'),
-            }))}
+            rows={mapRecords(
+              scheduleRaces.length
+                ? scheduleRaces
+                : gateStartApprovalRaceIds().map((raceId) => ({ raceId, raceNumber: raceId, status: 'scheduled' })),
+              (r) => ({
+                race: String(r.raceNumber ?? r.raceId ?? '—'),
+                post: String(r.postTime ?? '—'),
+                status: String(r.status ?? '—'),
+              }),
+            )}
           />
+          <ul className="mt-4 space-y-2">
+            {(scheduleRaces.length
+              ? scheduleRaces
+              : gateStartApprovalRaceIds().map((raceId) => ({ raceId, raceNumber: raceId }))
+            ).map((race) => {
+              const raceId = resolveRaceId(race);
+              const gateAction = raceStartApprovalAction(raceId);
+              const commandAction = raceStartCommandAction(raceId);
+              const approvalIds = gateStartApprovalIds(raceId);
+              const commandDisabled = !roleCanUseAction(commandAction, session.role);
+              return (
+                <li key={raceId} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium">Race {String(race.raceNumber ?? raceId)} — start command</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">
+                      {approvalIds.length ? `Approval on file (${approvalIds.join(', ')})` : 'Request gate race start approval before submitting command.'}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {!approvalIds.length ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!roleCanUseAction(gateAction, session.role)}
+                        onClick={() => setDialog({ open: true, action: gateAction })}
+                      >
+                        Request approval
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="governance"
+                      disabled={commandDisabled || raceStartCommandMutation.isPending || approvalIds.length === 0}
+                      title={commandDisabled ? actionDisabledReason(commandAction, session.role) : approvalIds.length === 0 ? 'Request gate race start approval first' : commandAction.detail}
+                      onClick={() => raceStartCommandMutation.mutate(raceId)}
+                    >
+                      Submit race start
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         </SectionPanel>
         <SectionPanel title="Race-day timeline" description="Merged paddock and schedule timeline from live race-day APIs.">
           <RecordTable

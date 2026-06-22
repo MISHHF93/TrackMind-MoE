@@ -1,14 +1,32 @@
 # TrackMind Nexus Race Operations Service
 
-This folder is reserved for the future Race Operations bounded-context service described in `docs/TRACKMIND_BUILD_INTENT.md` and sequenced in `docs/TRACKMIND_IMPLEMENTATION_PLAN.md`.
+Runnable microservice template for the Race Operations bounded context.
 
 ## Current status
 
-- Contract scaffold only; `openapi.yaml` and `service.catalog.yaml` exist, but no production runtime service is implemented here yet.
-- Use `templates/service-template` before adding service code.
-- Preserve tenant isolation, audit logging, event contracts, and human-approval boundaries for protected actions.
+- Read models (`race-office`, `dashboard`, `races`, `race-report`) are served through `RaceOperationsService` in this package.
+- Command handlers and approval-gated mutations remain in `apps/api/src/raceOperationsPlatform.ts` until full domain extraction.
+- `apps/api` delegates facade read routes through `@trackmind/race-operations-service` via an in-process platform adapter.
 
-## Next Work
+## Run locally
 
-- Add domain model, command handlers, and read models.
-- Add unit, contract, integration, security, and safety-boundary tests.
+```bash
+npm run start -w @trackmind/race-operations-service
+```
+
+Standalone mode serves operational endpoints with an empty read-model seed. The API facade uses the same service boundary with a seeded `RaceOperationsPlatform` adapter.
+
+## Structure
+
+```text
+src/api            HTTP server and route handlers
+src/application    RaceOperationsService read-model boundary
+src/domain         Read port contracts
+src/infrastructure Platform adapter for in-process delegation
+tests/contract     OpenAPI and catalog contract tests
+```
+
+## Next work
+
+- Extract command handlers and repository persistence from the API monolith.
+- Wire Postgres repository and event bus adapters behind the service boundary.

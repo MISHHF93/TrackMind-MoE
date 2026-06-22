@@ -64,6 +64,19 @@ export class CompliancePlatformController {
         return { status: 400, body: { ok: false, error: { message: (error as Error).message } } };
       }
     }
+    const correctiveActionCloseMatch = path.match(/^\/compliance\/corrective-actions\/([^/]+)\/close$/);
+    if (method === 'POST' && correctiveActionCloseMatch) {
+      const input = (body ?? {}) as Record<string, unknown>;
+      try {
+        const closed = this.service.closeCorrectiveAction(
+          decodeURIComponent(correctiveActionCloseMatch[1]),
+          String(input.actor ?? 'compliance-officer'),
+        );
+        return { status: 200, body: closed };
+      } catch (error) {
+        return { status: 400, body: { ok: false, error: { message: (error as Error).message } } };
+      }
+    }
     const correctiveActionUpdateMatch = path.match(/^\/compliance\/corrective-actions\/([^/]+)\/updates$/);
     if (method === 'POST' && correctiveActionUpdateMatch) {
       const input = (body ?? {}) as Record<string, unknown>;

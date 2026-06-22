@@ -9,6 +9,9 @@ export function normalizeApiBaseUrl(value: string | undefined): string {
 export const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_TRACKMIND_API_BASE_URL);
 export const AGENTS_BASE_URL = (import.meta.env.VITE_TRACKMIND_AGENTS_URL ?? '/agents').replace(/\/+$/, '');
 
+/** Canonical paddock workspace GET; API also serves /paddock-operations/workspace from the same service. */
+export const canonicalPaddockWorkspacePath = '/race-operations/paddock' as const;
+
 export type ApiAdapterSource = 'live-api' | 'facade-api' | 'documented-stub';
 
 export const apiPaths = {
@@ -19,7 +22,13 @@ export const apiPaths = {
     aiGovernanceWorkspace: '/ai-governance/workspace',
     aiControlPlaneWorkspace: '/ai-control-plane/workspace',
   },
-  kpis: { workspace: '/kpis' },
+  kpis: {
+    workspace: '/kpis',
+    registry: '/kpis/registry',
+    definitions: '/kpis/definitions',
+    thresholds: '/kpis/thresholds',
+    thresholdDraftRequests: '/kpis/thresholds/draft-requests',
+  },
   raceDay: {
     races: '/races',
     raceOffice: '/race-operations/race-office',
@@ -27,22 +36,22 @@ export const apiPaths = {
     raceCards: '/race-cards/workspace',
     readiness: '/race-day-readiness/dashboard',
     surface: '/surface-intelligence/workspace',
+    surfaceMeasurements: '/track-surface/measurements',
     trackConfiguration: '/track-configuration/map',
-    paddock: '/race-operations/paddock',
+    paddock: canonicalPaddockWorkspacePath,
     startingGate: '/race-operations/starting-gate',
     startingGateOperations: '/starting-gate-operations/workspace',
-    paddockOperations: '/paddock-operations/workspace',
     schedule: '/race-operations/schedule',
   },
   equine: {
-    horse: '/equine-intelligence/horses/horse-1',
     horseRegistry: '/horse-registry/workspace',
     trainerManagement: '/trainer-management/workspace',
     jockeyManagement: '/jockey-management/workspace',
     jockeyDashboard: '/jockey-management/dashboard',
     veterinaryOperations: '/veterinary-operations/workspace',
     veterinaryDashboard: '/veterinary-operations/dashboard',
-    paddockOperations: '/paddock-operations/workspace',
+    /** Alias of raceDay.paddock; mutations remain under /paddock-operations/*. */
+    paddockOperations: canonicalPaddockWorkspacePath,
     paddockDashboard: '/paddock-operations/dashboard',
     stewardOperations: '/steward-operations/workspace',
     stewardDashboard: '/steward-operations/dashboard',
@@ -56,18 +65,35 @@ export const apiPaths = {
     barnOperations: '/barn-operations/workspace',
     horseProfile: '/horses/horse-1/profile',
     eligibility: '/horses/horse-1/eligibility',
+    horseAudit: '/horses/horse-1/audit',
+    horseVeterinaryRecord: '/horses/horse-1/veterinary',
+    horseEligibilityUpdate: '/horses/horse-1/eligibility',
   },
   approvals: { list: '/approvals/requests', durable: '/approvals/durable' },
   incidents: {
     security: '/security-operations/workspace',
     emergency: '/emergency-operations/workspace',
     list: '/incidents',
+    detail: (incidentId: string) => `/incidents/${incidentId}`,
+    timeline: (incidentId: string) => `/incidents/${incidentId}/timeline`,
+    timelineStream: (incidentId: string) => `/incidents/${incidentId}/timeline/stream`,
     kpiPack: '/incidents/kpi-pack',
     safetyIntelligenceHotPath: '/safety-intelligence/hot-path/evaluate',
     safetyIntelligenceWarmPath: '/safety-intelligence/warm-path/analyze',
     safetyIntelligenceDebrief: '/safety-intelligence/debrief',
   },
-  compliance: { library: '/compliance/control-library' },
+  compliance: {
+    library: '/compliance/control-library',
+    dashboard: '/compliance/dashboard',
+    correctiveActions: '/compliance/corrective-actions',
+    correctiveActionUpdates: (correctiveActionId: string) =>
+      `/compliance/corrective-actions/${correctiveActionId}/updates`,
+    correctiveActionClose: (correctiveActionId: string) =>
+      `/compliance/corrective-actions/${correctiveActionId}/close`,
+    correctiveActionDelete: (correctiveActionId: string) =>
+      `/compliance/corrective-actions/${correctiveActionId}/delete`,
+    evidencePacketGenerate: '/compliance/evidence-packets/generate',
+  },
   security: {
     workspace: '/security-operations/workspace',
     zonesLive: '/security-operations/zones/live',
@@ -84,7 +110,12 @@ export const apiPaths = {
   },
   finance: { ticketing: '/services/finance/ticketing', workspace: '/finance/workspace', dashboard: '/finance/dashboard', auditTrail: '/finance/audit-trail' },
   federation: { workspace: '/federation/workspace', kpiAggregation: '/federation/kpi-aggregation', industryIntelligence: '/industry-intelligence/workspace', industryDashboard: '/industry-intelligence/dashboard', industryBenchmarks: '/industry-intelligence/benchmarks', industryTrends: '/industry-intelligence/trends', federationIntelligence: '/federation-intelligence/workspace' },
-  dataHub: { workspace: '/racing-data', entityResolution: '/racing-data/entity-resolution' },
+  dataHub: {
+    workspace: '/racing-data',
+    entityResolution: '/racing-data/entity-resolution',
+    entityResolutionReview: '/racing-data/entity-resolution/review',
+    providerInvoke: (providerId: string) => `/racing-data/providers/${providerId}/invoke`,
+  },
   audit: { events: '/audit/events', search: '/audit/search' },
   admin: {
     platformHealth: '/platform/health',
@@ -92,6 +123,8 @@ export const apiPaths = {
     environment: '/platform/environment',
     featureFlags: '/platform/feature-flags',
     modules: '/platform/modules',
+    tenants: '/platform/tenants',
+    racetracks: '/platform/racetracks',
     identity: '/identity/workspace',
     domainOwnership: '/platform/domain-ownership',
     lineageValidation: '/platform/governance-lineage/validation',
@@ -101,7 +134,7 @@ export const apiPaths = {
     maturityReview: '/platform/maturity-review',
     governedArtifacts: '/platform/governed-artifacts',
   },
-  analytics: { workspace: '/analytics/workspace', knowledgeGraph: '/knowledge-graph/workspace', knowledgeGraphSearch: '/knowledge-graph/search', reporting: '/reporting/workspace' },
+  analytics: { workspace: '/analytics/workspace', workspaceStream: '/analytics/workspace/stream', knowledgeGraph: '/knowledge-graph/workspace', knowledgeGraphSearch: '/knowledge-graph/search', reporting: '/reporting/workspace' },
   fanExperience: {
     workspace: '/fan-experience/workspace',
     dashboard: '/fan-experience/dashboard',
@@ -109,7 +142,11 @@ export const apiPaths = {
     attendance: '/fan-experience/attendance',
     capacity: '/fan-experience/capacity',
   },
-  notifications: { inbox: '/notifications/inbox' },
+  notifications: {
+    inbox: '/notifications/inbox',
+    deliveryAdapters: '/notifications/delivery-adapters',
+    deliveryAuditTrail: '/notifications/delivery-audit-trail',
+  },
   settings: {
     policy: '/ai-control-plane/policy',
     workspace: '/ai-control-plane/workspace',
@@ -121,6 +158,8 @@ export const apiPaths = {
     modelCards: '/ai-governance/model-cards',
     promptCards: '/ai-governance/prompt-cards',
     aiGovernanceKpiPack: '/ai-governance/kpi-pack',
+    promptLineageDrafts: '/ai-governance/prompt-lineage/drafts',
+    publishPromptLineage: (draftId: string) => `/ai-governance/prompt-lineage/${encodeURIComponent(draftId)}/publish`,
   },
   stewarding: {
     inquiries: '/stewarding/inquiries',
@@ -128,6 +167,7 @@ export const apiPaths = {
     dashboard: '/steward-operations/dashboard',
     auditTrail: '/steward-operations/audit-trail',
     decisionSupport: (inquiryId: string) => `/steward-operations/inquiries/${inquiryId}/decision-support`,
+    finalRuling: (inquiryId: string) => `/steward-operations/inquiries/${inquiryId}/final-ruling`,
     evidence: (inquiryId: string) => `/steward-operations/inquiries/${inquiryId}/evidence`,
   },
   workforce: { workspace: '/workforce-operations/workspace' },
@@ -136,7 +176,14 @@ export const apiPaths = {
     workspace: '/surface-intelligence/workspace',
     measurements: '/track-surface/measurements',
   },
-  emergency: { workspace: '/emergency-operations/workspace' },
+  emergency: {
+    workspace: '/emergency-operations/workspace',
+    workflows: '/emergency-operations/workflows',
+    communications: (workflowId: string) => `/emergency-operations/workflows/${workflowId}/communications`,
+    drills: '/emergency-operations/drills',
+    completeDrill: (drillId: string) => `/emergency-operations/drills/${drillId}/complete`,
+    afterActionReports: '/emergency-operations/after-action-reports',
+  },
   events: { stream: '/events/stream' },
   collaboration: {
     threads: '/collaboration/threads',
@@ -154,6 +201,19 @@ export const commonContextApiPaths = [
   apiPaths.kpis.workspace,
 ] as const;
 
+export const stewardingSeededInquiryId = 'inq-race-7-1';
+
+export function stewardingFeedPaths(inquiryId = stewardingSeededInquiryId): readonly string[] {
+  return [
+    apiPaths.stewarding.inquiries,
+    apiPaths.stewarding.workspace,
+    apiPaths.stewarding.dashboard,
+    apiPaths.stewarding.auditTrail,
+    apiPaths.stewarding.decisionSupport(inquiryId),
+    ...commonContextApiPaths,
+  ];
+}
+
 export const routeApiPathGroups = {
   dashboard: [apiPaths.dashboard.operations, apiPaths.dashboard.platformHealth, ...commonContextApiPaths],
   raceDay: [
@@ -163,23 +223,23 @@ export const routeApiPathGroups = {
     apiPaths.raceDay.raceCards,
     apiPaths.raceDay.readiness,
     apiPaths.raceDay.surface,
+    apiPaths.raceDay.surfaceMeasurements,
     apiPaths.raceDay.trackConfiguration,
     apiPaths.raceDay.paddock,
-    apiPaths.raceDay.paddockOperations,
     apiPaths.raceDay.startingGate,
     apiPaths.raceDay.startingGateOperations,
     apiPaths.raceDay.schedule,
     ...commonContextApiPaths,
   ],
   equine: [
-    apiPaths.equine.horse,
+    apiPaths.equine.horseProfile,
+    apiPaths.equine.eligibility,
+    apiPaths.equine.horseAudit,
     apiPaths.equine.horseRegistry,
     apiPaths.equine.trainerManagement,
     apiPaths.equine.jockeyManagement,
     apiPaths.equine.veterinaryOperations,
     apiPaths.equine.barnOperations,
-    apiPaths.equine.horseProfile,
-    apiPaths.equine.eligibility,
     apiPaths.equine.equineWelfare,
     apiPaths.equine.equineWelfareDashboard,
     apiPaths.equine.equineWelfareAuditTrail,
@@ -187,7 +247,12 @@ export const routeApiPathGroups = {
   ],
   approvals: [apiPaths.approvals.list, apiPaths.approvals.durable, ...commonContextApiPaths],
   incidents: [apiPaths.incidents.security, apiPaths.incidents.emergency, apiPaths.incidents.list, apiPaths.incidents.kpiPack, apiPaths.incidents.safetyIntelligenceHotPath, apiPaths.incidents.safetyIntelligenceWarmPath, apiPaths.incidents.safetyIntelligenceDebrief, ...commonContextApiPaths],
-  compliance: [apiPaths.compliance.library, ...commonContextApiPaths],
+  compliance: [
+    apiPaths.compliance.dashboard,
+    apiPaths.compliance.correctiveActions,
+    apiPaths.compliance.library,
+    ...commonContextApiPaths,
+  ],
   security: [apiPaths.security.workspace, apiPaths.security.zonesLive, apiPaths.security.camerasReadiness, apiPaths.security.sensorsReadiness, apiPaths.security.kpis, ...commonContextApiPaths],
   facilities: [
     apiPaths.facilities.workspace,
@@ -216,7 +281,18 @@ export const routeApiPathGroups = {
     apiPaths.admin.governedArtifacts,
     ...commonContextApiPaths,
   ],
-  analytics: [apiPaths.analytics.workspace, apiPaths.analytics.knowledgeGraph, apiPaths.analytics.knowledgeGraphSearch, apiPaths.analytics.reporting, apiPaths.search.globalSample, apiPaths.federation.kpiAggregation, ...commonContextApiPaths],
+  analytics: [
+    apiPaths.analytics.workspace,
+    apiPaths.analytics.knowledgeGraph,
+    apiPaths.analytics.knowledgeGraphSearch,
+    apiPaths.analytics.reporting,
+    apiPaths.search.globalSample,
+    apiPaths.federation.kpiAggregation,
+    apiPaths.kpis.registry,
+    apiPaths.kpis.definitions,
+    apiPaths.kpis.thresholds,
+    ...commonContextApiPaths,
+  ],
   fanExperience: [
     apiPaths.fanExperience.workspace,
     apiPaths.fanExperience.dashboard,
@@ -225,7 +301,12 @@ export const routeApiPathGroups = {
     apiPaths.fanExperience.capacity,
     ...commonContextApiPaths,
   ],
-  notifications: [apiPaths.notifications.inbox, ...commonContextApiPaths],
+  notifications: [
+    apiPaths.notifications.inbox,
+    apiPaths.notifications.deliveryAdapters,
+    apiPaths.notifications.deliveryAuditTrail,
+    ...commonContextApiPaths,
+  ],
   settings: [
     apiPaths.settings.policy,
     apiPaths.settings.workspace,
@@ -234,15 +315,13 @@ export const routeApiPathGroups = {
     apiPaths.settings.events,
     apiPaths.settings.features,
     apiPaths.settings.modelRegistry,
+    apiPaths.settings.modelCards,
+    apiPaths.settings.promptCards,
+    apiPaths.settings.aiGovernanceKpiPack,
+    apiPaths.dashboard.aiGovernanceWorkspace,
     ...commonContextApiPaths,
   ],
-  stewarding: [
-    apiPaths.stewarding.inquiries,
-    apiPaths.stewarding.workspace,
-    apiPaths.stewarding.dashboard,
-    apiPaths.stewarding.auditTrail,
-    ...commonContextApiPaths,
-  ],
+  stewarding: stewardingFeedPaths(),
   workforce: [apiPaths.workforce.workspace, ...commonContextApiPaths],
   digitalTwin: [apiPaths.digitalTwin.state, apiPaths.digitalTwin.assets, ...commonContextApiPaths],
   surface: [
@@ -255,19 +334,42 @@ export const routeApiPathGroups = {
   emergency: [apiPaths.emergency.workspace, ...commonContextApiPaths],
 } as const satisfies Record<DomainRouteId, readonly string[]>;
 
+/** POST/mutation contract paths declared on routes but not fetched by workspace GET loaders. */
+export const routeMutationPathGroups = {
+  analytics: [apiPaths.kpis.thresholdDraftRequests],
+  compliance: [apiPaths.compliance.correctiveActions, apiPaths.compliance.evidencePacketGenerate],
+  emergency: [
+    apiPaths.emergency.workflows,
+    apiPaths.emergency.drills,
+    apiPaths.emergency.afterActionReports,
+  ],
+  facilities: [apiPaths.facilities.maintenanceSchedules, apiPaths.facilities.incidents],
+  stewarding: [apiPaths.stewarding.finalRuling(stewardingSeededInquiryId)],
+  settings: [apiPaths.settings.promptLineageDrafts],
+  equine: [apiPaths.equine.horseVeterinaryRecord, apiPaths.equine.horseEligibilityUpdate],
+} as const satisfies Partial<Record<DomainRouteId, readonly string[]>>;
+
 const pathSources: Record<string, ApiAdapterSource> = {
   [apiPaths.dashboard.operations]: 'live-api',
   [apiPaths.dashboard.platformHealth]: 'live-api',
   [apiPaths.kpis.workspace]: 'live-api',
+  [apiPaths.kpis.registry]: 'live-api',
+  [apiPaths.kpis.definitions]: 'live-api',
+  [apiPaths.kpis.thresholds]: 'live-api',
+  [apiPaths.kpis.thresholdDraftRequests]: 'live-api',
   [apiPaths.approvals.list]: 'live-api',
   [apiPaths.approvals.durable]: 'live-api',
   [apiPaths.facilities.workspace]: 'live-api',
   [apiPaths.facilities.map]: 'live-api',
   [apiPaths.facilities.utilities]: 'live-api',
+  [apiPaths.facilities.maintenanceSchedules]: 'live-api',
+  [apiPaths.facilities.incidents]: 'live-api',
   [apiPaths.audit.events]: 'live-api',
   [apiPaths.audit.search]: 'live-api',
   [apiPaths.admin.featureFlags]: 'live-api',
   [apiPaths.admin.modules]: 'live-api',
+  [apiPaths.admin.tenants]: 'live-api',
+  [apiPaths.admin.racetracks]: 'live-api',
   [apiPaths.admin.foundation]: 'live-api',
   [apiPaths.admin.environment]: 'live-api',
   [apiPaths.analytics.workspace]: 'live-api',
@@ -279,19 +381,26 @@ const pathSources: Record<string, ApiAdapterSource> = {
   [apiPaths.fanExperience.attendance]: 'live-api',
   [apiPaths.fanExperience.capacity]: 'live-api',
   [apiPaths.notifications.inbox]: 'live-api',
+  [apiPaths.notifications.deliveryAdapters]: 'live-api',
+  [apiPaths.notifications.deliveryAuditTrail]: 'live-api',
   [apiPaths.finance.workspace]: 'live-api',
   [apiPaths.finance.dashboard]: 'live-api',
   [apiPaths.finance.auditTrail]: 'live-api',
   [apiPaths.incidents.list]: 'live-api',
   [apiPaths.incidents.kpiPack]: 'live-api',
+  '/incidents/inc-1': 'live-api',
+  '/incidents/inc-1/timeline': 'live-api',
   [apiPaths.incidents.safetyIntelligenceHotPath]: 'live-api',
   [apiPaths.incidents.safetyIntelligenceWarmPath]: 'live-api',
   [apiPaths.incidents.safetyIntelligenceDebrief]: 'live-api',
   [apiPaths.raceDay.paddock]: 'live-api',
+  [apiPaths.raceDay.raceOffice]: 'live-api',
   [apiPaths.raceDay.startingGate]: 'live-api',
+  // surface.workspace and raceDay.surface share pathname /surface-intelligence/workspace
+  [apiPaths.raceDay.surface]: 'live-api',
+  // surface.measurements and raceDay.surfaceMeasurements share pathname /track-surface/measurements
+  [apiPaths.raceDay.surfaceMeasurements]: 'live-api',
   [apiPaths.equine.startingGateDashboard]: 'live-api',
-  [apiPaths.equine.surfaceIntelligence]: 'live-api',
-  [apiPaths.equine.surfaceDashboard]: 'live-api',
   [apiPaths.equine.equineWelfare]: 'live-api',
   [apiPaths.equine.equineWelfareDashboard]: 'live-api',
   [apiPaths.equine.equineWelfareAuditTrail]: 'live-api',
@@ -315,12 +424,12 @@ const pathSources: Record<string, ApiAdapterSource> = {
   [apiPaths.search.globalSample]: 'live-api',
   [apiPaths.raceDay.racingCalendar]: 'live-api',
   [apiPaths.raceDay.raceCards]: 'live-api',
-  [apiPaths.raceDay.paddockOperations]: 'live-api',
   [apiPaths.raceDay.startingGateOperations]: 'live-api',
   [apiPaths.equine.horseRegistry]: 'live-api',
   [apiPaths.equine.trainerManagement]: 'live-api',
   [apiPaths.equine.jockeyManagement]: 'live-api',
   [apiPaths.equine.veterinaryOperations]: 'live-api',
+  [apiPaths.equine.barnOperations]: 'live-api',
   [apiPaths.admin.identity]: 'live-api',
   [apiPaths.admin.domainOwnership]: 'live-api',
   [apiPaths.admin.lineageValidation]: 'live-api',
@@ -331,6 +440,11 @@ const pathSources: Record<string, ApiAdapterSource> = {
   [apiPaths.admin.governedArtifacts]: 'live-api',
   [apiPaths.equine.horseProfile]: 'live-api',
   [apiPaths.equine.eligibility]: 'live-api',
+  [apiPaths.equine.horseAudit]: 'live-api',
+  [apiPaths.compliance.dashboard]: 'live-api',
+  [apiPaths.compliance.correctiveActions]: 'live-api',
+  [apiPaths.compliance.library]: 'live-api',
+  [apiPaths.compliance.evidencePacketGenerate]: 'live-api',
 };
 
 export function adapterSourceForPath(path: string): ApiAdapterSource {
@@ -339,7 +453,11 @@ export function adapterSourceForPath(path: string): ApiAdapterSource {
 }
 
 export function backendContractPathsForRoute(routeId: DomainRouteId): string[] {
-  return routeApiPathGroups[routeId].map((path) => `${nexusApiBasePath}${path}`);
+  const fetchPaths = routeApiPathGroups[routeId].map((path) => `${nexusApiBasePath}${path}`);
+  const mutationPaths = (routeMutationPathGroups[routeId as keyof typeof routeMutationPathGroups] ?? []).map(
+    (path) => `${nexusApiBasePath}${path}`,
+  );
+  return [...fetchPaths, ...mutationPaths];
 }
 
 export function apiUrl(path: string): string {

@@ -12,18 +12,16 @@ import type {
   StewardReviewDto,
 } from '@trackmind/shared';
 import { stewardAdvisoryGuardrailStatement } from '@trackmind/shared';
+import type { AuditAppendTarget } from './auditAdapter.js';
+import { appendAudit } from './auditAdapter.js';
 import type { ImmutableAuditLog } from './auditLog.js';
 import type { Role } from '@trackmind/shared';
 import {
-  addStewardEvidence,
   addStewardRuleReference,
   canAccessStewardCenter,
   createStewardInquiry,
   exportAppealPackage,
   generateStewardTimeline,
-  getStewardEvidenceReference,
-  issueFinalRuling as recordStewardFinalRuling,
-  listStewardEvidenceReferences,
   listStewardInquiries,
   openStewardInvestigation,
   organizeEvidenceForStewards,
@@ -35,6 +33,9 @@ import {
   type StewardFinalRuling,
   type StewardInquiry,
 } from './stewarding.js';
+import type { StewardEvidenceReference } from './stewarding.js';
+import { ApexApprovalGateway } from './services/approvalGateway.js';
+import { createStewardingService, type StewardingService } from './services/stewardingService.js';
 import { CentralizedApprovalService } from './approvals.js';
 import { AuditEvidenceCollectionVault, ImmutableAuditLog as AuditLog } from './auditLog.js';
 import { InMemoryEventBus } from './eventBus.js';
@@ -45,10 +46,12 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const id = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 export interface StewardOperationsDeps {
+  audit?: AuditAppendTarget;
   auditLog?: ImmutableAuditLog;
   tenantId?: string;
   racetrackId?: string;
   integrations?: StewardCenterIntegrations;
+  stewardingService?: StewardingService;
 }
 
 export class StewardOperationsPlatform {
@@ -56,9 +59,23 @@ export class StewardOperationsPlatform {
   private readonly reviews = new Map<string, StewardReviewDto[]>();
   private readonly auditChain: StewardOperationsWorkspaceDto['auditTrail'] = [];
   private readonly deps: StewardOperationsDeps;
+  readonly stewardingService: StewardingService;
 
   constructor(deps: StewardOperationsDeps = {}) {
     this.deps = deps;
+    this.stewardingService = deps.stewardingService ?? createStewardingService(new ApexApprovalGateway(), this);
+  }
+
+  get integrations(): StewardCenterIntegrations | undefined {
+    return this.deps.integrations;
+  }
+
+  get tenantId(): string | undefined {
+    return this.deps.tenantId;
+  }
+
+  get racetrackId(): string | undefined {
+    return this.deps.racetrackId;
   }
 
   workspace(now = new Date().toISOString()): StewardOperationsWorkspaceDto {
@@ -98,14 +115,11 @@ export class StewardOperationsPlatform {
   }
 
   listEvidence(inquiryId: string): StewardEvidenceReferenceDto[] {
-    const inquiry = this.requireInquiry(inquiryId);
-    return listStewardEvidenceReferences(inquiry).map((evidence) => ({ ...clone(evidence), inquiryId })) as StewardEvidenceReferenceDto[];
+    return this.stewardingService.listEvidenceReferences(inquiryId);
   }
 
   getEvidence(inquiryId: string, evidenceId: string): StewardEvidenceReferenceDto | undefined {
-    const inquiry = this.requireInquiry(inquiryId);
-    const evidence = getStewardEvidenceReference(inquiry, evidenceId);
-    return evidence ? { ...clone(evidence), inquiryId } as StewardEvidenceReferenceDto : undefined;
+    return this.stewardingService.getEvidenceReference(inquiryId, evidenceId);
   }
 
   decisionSupport(inquiryId: string, now = new Date().toISOString()): StewardRecommendationSupportDto {
@@ -114,15 +128,14 @@ export class StewardOperationsPlatform {
   }
 
   issueFinalRuling(inquiryId: string, ruling: Omit<StewardFinalRuling, 'officialResultsModified'>, actor = 'steward', options: { approvalToken?: import('./approvals.js').ApprovalToken; tenantId?: string; racetrackId?: string } = {}): StewardMutationResultDto {
-    const inquiry = this.requireInquiry(inquiryId);
-    recordStewardFinalRuling(inquiry, { ...ruling, officialResultsModified: false }, {
-      approvalService: this.deps.integrations?.approvals,
+    return this.stewardingService.issueFinalRuling({
+      inquiryId,
+      ruling,
+      actor,
       approvalToken: options.approvalToken,
       tenantId: options.tenantId ?? this.deps.tenantId,
       racetrackId: options.racetrackId ?? this.deps.racetrackId,
-      deps: this.deps.integrations,
     });
-    return this.commit(inquiryId, actor, 'steward-operations.final-ruling.recorded', `Recorded final ruling ${ruling.id} without official result mutation`);
   }
 
   kpiDashboard(now = new Date().toISOString()): StewardOperationsKpiDashboardDto {
@@ -163,10 +176,8 @@ export class StewardOperationsPlatform {
     return this.commit(inquiryId, actor, 'steward-operations.objection.recorded', `Recorded objection ${objection.id}`);
   }
 
-  addEvidence(inquiryId: string, evidence: Parameters<typeof addStewardEvidence>[1], actor = 'steward'): StewardMutationResultDto {
-    const inquiry = this.requireInquiry(inquiryId);
-    addStewardEvidence(inquiry, evidence, this.deps.integrations);
-    return this.commit(inquiryId, actor, 'steward-operations.evidence.added', `Added evidence ${evidence.id}`);
+  addEvidence(inquiryId: string, evidence: Omit<StewardEvidenceReference, 'hash'> & { hash?: string; content?: unknown }, actor = 'steward'): StewardMutationResultDto {
+    return this.stewardingService.uploadEvidenceReference({ inquiryId, evidence, actor });
   }
 
   addRuleReference(inquiryId: string, rule: Parameters<typeof addStewardRuleReference>[1], actor = 'steward'): StewardMutationResultDto {
@@ -390,11 +401,25 @@ export class StewardOperationsPlatform {
     return { openInquiries, pendingApprovals, openInvestigations, advisoryRecommendations, evidenceItemsUnderCustody, auditLinkageCoveragePct, panels };
   }
 
-  private commit(inquiryId: string, actor: string, eventType: string, message: string, auditId = id('audit-steward')): StewardMutationResultDto {
+  commit(inquiryId: string, actor: string, eventType: string, message: string, auditId = id('audit-steward')): StewardMutationResultDto {
     const previousHash = this.auditChain.at(-1)?.hash ?? 'genesis';
     const hash = `sha256:${JSON.stringify({ inquiryId, eventType, message, previousHash }).length.toString(16)}`;
     this.auditChain.push({ auditId, inquiryId, action: eventType, actor, timestamp: new Date().toISOString(), previousHash, hash, changeSummary: message });
-    if (typeof this.deps.auditLog?.append === 'function') {
+    if (this.deps.audit) {
+      appendAudit(this.deps.audit, {
+        id: auditId,
+        type: 'regulatory-activity',
+        actor,
+        timestamp: new Date().toISOString(),
+        action: eventType,
+        actionClass: 'compliance',
+        subjectId: inquiryId,
+        payload: { action: eventType, message },
+        tenantId: this.deps.tenantId ?? 'trackmind',
+        severity: 'info',
+        regulations: ['HISA', 'ARCI'],
+      });
+    } else if (typeof this.deps.auditLog?.append === 'function') {
       this.deps.auditLog.append({
         id: auditId,
         type: 'regulatory-activity',
@@ -410,7 +435,7 @@ export class StewardOperationsPlatform {
     return { accepted: true, inquiryId, auditId, eventType, message, mock: false };
   }
 
-  private requireInquiry(inquiryId: string): StewardInquiry {
+  requireInquiry(inquiryId: string): StewardInquiry {
     const inquiry = this.inquiries.get(inquiryId);
     if (!inquiry) throw new Error(`Unknown steward inquiry ${inquiryId}`);
     return inquiry;
@@ -447,14 +472,16 @@ function kpi(
   };
 }
 
-export function createStewardOperationsIntegrations(auditLog?: ImmutableAuditLog): StewardCenterIntegrations {
-  const log = auditLog ?? new AuditLog();
+export function createStewardOperationsIntegrations(audit?: AuditAppendTarget | ImmutableAuditLog): StewardCenterIntegrations {
+  const log = audit && 'ledger' in audit ? audit.ledger : (audit as ImmutableAuditLog | undefined) ?? new AuditLog();
+  const auditTarget: AuditAppendTarget | undefined = audit && 'ledger' in audit ? audit : audit ? { ledger: audit as ImmutableAuditLog } : undefined;
   const eventBus = new InMemoryEventBus();
-  const approvals = new CentralizedApprovalService({ auditLog: log, eventBus });
+  const approvals = new CentralizedApprovalService({ audit: auditTarget, auditLog: auditTarget ? undefined : log, eventBus });
   const workflow = new WorkflowOrchestrationEngine({ auditLog: log, eventBus, approvalService: approvals });
   workflow.register(investigationWorkflow('track-1'));
   const evidenceVault = new AuditEvidenceCollectionVault();
   return {
+    audit: auditTarget,
     auditLog: log,
     eventBus,
     approvals,
@@ -466,7 +493,7 @@ export function createStewardOperationsIntegrations(auditLog?: ImmutableAuditLog
 }
 
 export function createSeededStewardOperations(deps: StewardOperationsDeps = {}): StewardOperationsPlatform {
-  const integrations = deps.integrations ?? createStewardOperationsIntegrations(deps.auditLog);
+  const integrations = deps.integrations ?? createStewardOperationsIntegrations(deps.audit ?? deps.auditLog);
   const platform = new StewardOperationsPlatform({ ...deps, integrations });
   for (const inquiry of listStewardInquiries()) {
     platform.loadInquiry(inquiry);

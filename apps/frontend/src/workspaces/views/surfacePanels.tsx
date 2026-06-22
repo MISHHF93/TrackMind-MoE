@@ -8,6 +8,7 @@ import { feedData, numericField } from '../feedUtils';
 
 export function SurfacePanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
   const surface = feedData<Record<string, unknown>>(results, '/surface-intelligence/workspace');
+  const measurements = extractArray<Record<string, unknown>>(feedData(results, '/track-surface/measurements'));
   const sectors = extractArray<Record<string, unknown>>(surface, 'sectors');
   const anomalies = extractArray<Record<string, unknown>>(surface, 'anomalies');
   const recommendations = extractArray<Record<string, unknown>>(surface, 'recommendations');
@@ -19,6 +20,7 @@ export function SurfacePanels({ results }: { results: WorkspaceDataResult[] }): 
       <KpiStrip
         items={[
           { id: 'score', label: 'Overall surface score', value: score != null ? String(score) : '—' },
+          { id: 'readings', label: 'Live readings', value: String(measurements.length) },
           { id: 'sectors', label: 'Sectors monitored', value: String(sectors.length) },
           { id: 'anomalies', label: 'Anomalies', value: String(anomalies.length), status: anomalies.length ? 'warning' : 'nominal' },
           { id: 'weather', label: 'Weather', value: weather ? String(weather.condition ?? weather.summary ?? 'Observed') : '—' },
@@ -38,6 +40,23 @@ export function SurfacePanels({ results }: { results: WorkspaceDataResult[] }): 
             risk: String(s.risk ?? s.riskLevel ?? '—'),
             status: String(s.status ?? '—'),
           }))}
+        />
+      </SectionPanel>
+      <SectionPanel title="Live surface measurements" description="Sector moisture and compaction from /track-surface/measurements.">
+        <RecordTable
+          columns={[
+            { key: 'sector', label: 'Sector' },
+            { key: 'moisture', label: 'Moisture' },
+            { key: 'compaction', label: 'Compaction' },
+            { key: 'measuredAt', label: 'Measured' },
+          ]}
+          rows={mapRecords(measurements, (m) => ({
+            sector: String(m.sectorId ?? '—'),
+            moisture: m.moisture != null ? String(m.moisture) : '—',
+            compaction: m.compaction != null ? String(m.compaction) : '—',
+            measuredAt: String(m.measuredAt ?? '—'),
+          }))}
+          emptyLabel="No live surface measurements returned."
         />
       </SectionPanel>
       <div className="grid gap-4 xl:grid-cols-2">

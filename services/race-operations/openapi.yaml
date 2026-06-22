@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: TrackMind Race Operations Service API
-  version: 0.1.0
-  description: Contract-only race operations scaffold. Runtime reference implementation currently lives in apps/api/src/raceOperationsPlatform.ts and the API facade.
+  version: 0.2.0
+  description: Race operations bounded-context service. Read models are served through the service boundary; command execution remains approval-gated in the API facade until full extraction completes.
 paths:
   /health:
     get:
@@ -24,3 +24,38 @@ paths:
       summary: Race operations metrics
       responses:
         '200': { description: Metrics are available }
+  /race-office:
+    get:
+      summary: Race Office workspace read model
+      responses:
+        '200': { description: Race meets, race days, cards, readiness, lifecycle, and approval controls }
+  /dashboard:
+    get:
+      summary: Operational dashboard read model
+      responses:
+        '200': { description: Race-day operational dashboard projection }
+  /races:
+    get:
+      summary: List races
+      responses:
+        '200': { description: Race card list projection }
+  /races/{raceId}:
+    get:
+      summary: Get race card
+      parameters:
+        - name: raceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Race card projection }
+  /races/{raceId}/report:
+    get:
+      summary: Operational race report
+      parameters:
+        - name: raceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Operational report projection }

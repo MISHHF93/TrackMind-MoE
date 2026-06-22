@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState, type ReactElement, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import type { WorkspaceAction, OpsPosture } from '@/design/components/workspace';
 
 interface WorkspaceContextValue {
@@ -23,10 +23,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }): ReactE
     primaryActions: defaultActions,
   });
 
+  const setWorkspaceState = useCallback(
+    (partial: Partial<Pick<WorkspaceContextValue, 'posture' | 'postureLabel' | 'primaryActions'>>) => {
+      setState((prev) => ({ ...prev, ...partial }));
+    },
+    [],
+  );
+
   const value = useMemo<WorkspaceContextValue>(() => ({
     ...state,
-    setWorkspaceState: (partial) => setState((prev) => ({ ...prev, ...partial })),
-  }), [state]);
+    setWorkspaceState,
+  }), [state, setWorkspaceState]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

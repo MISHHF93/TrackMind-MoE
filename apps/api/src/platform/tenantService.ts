@@ -5,7 +5,7 @@ import type {
   RacetrackDto,
   TenantDto,
 } from '@trackmind/shared';
-import { createRepository, type KeyValueRepository } from '../repository/repositoryAdapter.js';
+import { createNamespacedRepository, getRepositoryEnvironment, type KeyValueRepository } from '../repository/repositoryAdapter.js';
 import { seedFeatureFlags } from './featureFlags.js';
 
 const now = () => new Date().toISOString();
@@ -28,7 +28,7 @@ const seedTenants = (): TenantDto[] => [
     organizationId: 'org-trackmind-network',
     name: 'TrackMind Demo Tenant',
     status: 'active',
-    racetrackIds: ['main-track'],
+    racetrackIds: ['main-track', 'north-chute'],
     dataBoundary: 'us-east',
     isolationMode: 'shared-schema',
     featureFlags: ['platform-health', 'executive-read-only', 'race-day-ops', 'equine-intelligence', 'fan-experience'],
@@ -51,17 +51,30 @@ const seedRacetracks = (): RacetrackDto[] => [
     updatedAt: now(),
     mock: false,
   },
+  {
+    id: 'north-chute',
+    tenantId: 'trackmind',
+    organizationId: 'org-trackmind-network',
+    name: 'North Chute',
+    jurisdiction: 'US-KY',
+    status: 'operational',
+    timezone: 'America/New_York',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: now(),
+    mock: false,
+  },
 ];
 
 export class TenantService {
+  /** Namespaced repositories — honor `PERSISTENCE_MODE` / `DATABASE_URL` via `createNamespacedRepository`. */
   readonly organizations: KeyValueRepository<OrganizationDto>;
   readonly tenants: KeyValueRepository<TenantDto>;
   readonly racetracks: KeyValueRepository<RacetrackDto>;
 
   constructor() {
-    this.organizations = createRepository(seedOrganizations());
-    this.tenants = createRepository(seedTenants());
-    this.racetracks = createRepository(seedRacetracks());
+    this.organizations = createNamespacedRepository('platform.organizations', seedOrganizations());
+    this.tenants = createNamespacedRepository('platform.tenants', seedTenants());
+    this.racetracks = createNamespacedRepository('platform.racetracks', seedRacetracks());
   }
 
   workspace(): PlatformFoundationWorkspaceDto {
@@ -79,10 +92,18 @@ export class TenantService {
 
   environmentConfig(): EnvironmentConfigDto {
     const env = (process.env.NODE_ENV ?? 'development') as EnvironmentConfigDto['environment'];
+    const repository = getRepositoryEnvironment();
     return {
       environment: env === 'production' || env === 'staging' ? env : 'development',
       apiBasePath: '/api/v1',
-      persistenceMode: process.env.TRACKMIND_PERSISTENCE_MODE === 'postgres' ? 'postgres' : 'in-memory',
+      persistenceMode: repository.mode,
+      repository: {
+        mode: repository.mode,
+        wired: repository.wired,
+        postgresReady: repository.postgresReady,
+        usingFallback: repository.usingFallback,
+        pgClientAvailable: repository.pgClientAvailable,
+      },
       featureFlagDefaults: seedFeatureFlags().filter((f) => f.defaultEnabled).map((f) => f.key),
       retentionDays: 2555,
       observabilityEnabled: true,

@@ -3,5 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Contract-only scaffold for the TrackMind safety bounded context."
+  "description": "Safety bounded context contracts with runtime delegation to apps/api reference implementations.",
+  "exports": {
+    ".": "./src/index.ts"
+  }
 }

@@ -1,18 +1,34 @@
 import type { ReactElement } from 'react';
+import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTenantSession } from '@/auth/TenantSessionProvider';
+import { actionDisabledReason, roleCanUseAction } from '@/domain/approvalControls';
+import { Badge } from '@/design/components/badge';
+import { Button } from '@/design/components/button';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
 import { SectionPanel } from '@/design/components/section-panel';
+import { ApprovalDecisionButtons } from '@/features/approvals/GovernedActionDialog';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
+import {
+  authorizeApprovalExecution,
+  issueStewardFinalRuling,
+  type ApprovalTokenPayload,
+} from '@/api/mutations';
 import { feedData } from '../feedUtils';
 
 export function StewardingPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+  const { session } = useTenantSession();
+  const queryClient = useQueryClient();
+  const [rulingMessage, setRulingMessage] = useState<string | null>(null);
   const inquiriesData = feedData<Record<string, unknown>>(results, '/stewarding/inquiries');
   const workspaceData = feedData<Record<string, unknown>>(results, '/steward-operations/workspace');
+  const decisionSupportData = feedData<Record<string, unknown>>(results, '/decision-support');
   const inquiries = extractArray<Record<string, unknown>>(inquiriesData, 'inquiries');
-  const recommendationSupport = (inquiriesData?.recommendationSupport ?? workspaceData?.recommendationSupport) as Record<string, unknown> | undefined;
-  const recommendations = extractArray<Record<string, unknown>>(recommendationSupport ?? {}, 'recommendations');
   const firstInquiry = inquiries[0] as Record<string, unknown> | undefined;
   const inquiryId = String(firstInquiry?.id ?? '');
+  const recommendationSupport = (decisionSupportData ?? inquiriesData?.recommendationSupport ?? workspaceData?.recommendationSupport) as Record<string, unknown> | undefined;
+  const recommendations = extractArray<Record<string, unknown>>(recommendationSupport ?? {}, 'recommendations');
   const evidence = firstInquiry
     ? extractArray<Record<string, unknown>>(firstInquiry, 'evidenceReferences')
     : extractArray<Record<string, unknown>>(inquiriesData, 'evidenceReferences');
@@ -22,6 +38,58 @@ export function StewardingPanels({ results }: { results: WorkspaceDataResult[] }
   const timeline = firstInquiry
     ? extractArray<Record<string, unknown>>(firstInquiry, 'timeline')
     : extractArray<Record<string, unknown>>(inquiriesData, 'timeline');
+  const integrations = (firstInquiry?.integrations ?? {}) as { approvalRequestIds?: string[] };
+  const approvalRequestId = integrations.approvalRequestIds?.[0];
+  const finalRuling = firstInquiry?.finalRuling as Record<string, unknown> | undefined;
+  const humanDraft = drafts.find((draft) => !draft.aiGenerated);
+  const evidenceIds = evidence.map((item) => String(item.id ?? '')).filter(Boolean);
+  const ruleIds = (humanDraft && Array.isArray(humanDraft.ruleIds)
+    ? humanDraft.ruleIds
+    : firstInquiry && Array.isArray(firstInquiry.ruleReferences)
+      ? (firstInquiry.ruleReferences as Array<{ id?: string }>).map((rule) => String(rule.id ?? ''))
+      : []
+  ).filter(Boolean);
+  const canFinalize = roleCanUseAction(
+    { id: 'steward-final-ruling', label: 'Record final ruling', protectedAction: 'steward-decision', target: inquiryId, requiredRoles: ['steward', 'admin'] },
+    session.role,
+  );
+  const finalizeDisabledReason = actionDisabledReason(
+    { id: 'steward-final-ruling', label: 'Record final ruling', protectedAction: 'steward-decision', target: inquiryId, requiredRoles: ['steward', 'admin'] },
+    session.role,
+  );
+
+  const recordFinalRulingMutation = useMutation({
+    mutationFn: async () => {
+      if (!inquiryId) throw new Error('Steward inquiry is required before recording a final ruling.');
+      if (!approvalRequestId) throw new Error('Final ruling requires a pending steward approval request.');
+      const authorized = await authorizeApprovalExecution(approvalRequestId);
+      const token = authorized.approvalToken;
+      if (!token) throw new Error('Approval token was not issued. Complete steward approval first.');
+      return issueStewardFinalRuling(inquiryId, {
+        id: `final-${Date.now().toString(36)}`,
+        issuedBy: session.role,
+        issuedByRole: session.role === 'admin' ? 'admin' : 'steward',
+        issuedAt: new Date().toISOString(),
+        decision: String(humanDraft?.recommendation ?? 'Official steward ruling recorded without official result mutation'),
+        rationale: String(humanDraft?.rationale ?? 'Human steward panel reviewed evidence and rule references.'),
+        penalties: [],
+        evidenceIds,
+        ruleIds,
+        tenantId: session.tenantId,
+        racetrackId: session.racetrackId,
+        approvalToken: token as ApprovalTokenPayload,
+        approvalRequestId,
+        actor: session.role,
+      });
+    },
+    onSuccess: (result) => {
+      setRulingMessage(result.message ?? 'Final steward ruling recorded with verified approval token.');
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+    },
+    onError: (error) => {
+      setRulingMessage(error instanceof Error ? error.message : 'Final ruling request failed.');
+    },
+  });
 
   return (
     <div className="space-y-4">
@@ -64,6 +132,42 @@ export function StewardingPanels({ results }: { results: WorkspaceDataResult[] }
             ),
           }))}
         />
+      </SectionPanel>
+      <SectionPanel
+        title="Final ruling"
+        description="Human-only final steward ruling with verified approval token. AI cannot issue official rulings or modify official results."
+      >
+        {finalRuling ? (
+          <div className="space-y-2 text-sm">
+            <Badge variant="outline">Finalized</Badge>
+            <p>{String(finalRuling.decision ?? 'Final ruling recorded')}</p>
+            <p className="text-muted-foreground">
+              Issued by {String(finalRuling.issuedBy ?? 'steward')} · official results unchanged
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {approvalRequestId
+                ? `Pending approval ${approvalRequestId} before final ruling can be recorded.`
+                : 'No steward approval request is linked to this inquiry.'}
+            </p>
+            {approvalRequestId ? <ApprovalDecisionButtons approvalId={approvalRequestId} /> : null}
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                disabled={!canFinalize || !approvalRequestId || recordFinalRulingMutation.isPending}
+                onClick={() => recordFinalRulingMutation.mutate()}
+              >
+                Record final ruling
+              </Button>
+              {finalizeDisabledReason ? (
+                <span className="text-sm text-muted-foreground">{finalizeDisabledReason}</span>
+              ) : null}
+            </div>
+            {rulingMessage ? <p className="text-sm text-muted-foreground">{rulingMessage}</p> : null}
+          </div>
+        )}
       </SectionPanel>
       <div className="grid gap-4 xl:grid-cols-2">
         <SectionPanel title="Evidence references">

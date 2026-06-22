@@ -54,10 +54,13 @@ test('wave 02: degraded and mock labeling surfaces are present', async () => {
 
 test('wave 02: tenant, racetrack, and role context appear in command shell', async () => {
   const commandBar = await source('src/shell/CommandBar.tsx');
+  const scopePicker = await source('src/auth/TenantRacetrackScopePicker.tsx');
   const session = await source('src/auth/session.ts');
 
-  assert.match(commandBar, /session\.tenantId/);
-  assert.match(commandBar, /session\.racetrackId/);
+  assert.match(commandBar, /TenantRacetrackScopePicker/);
+  assert.match(scopePicker, /setScope/);
+  assert.match(scopePicker, /tenantId/);
+  assert.match(scopePicker, /racetrackId/);
   assert.match(commandBar, /roleDisplayName\(session\.role\)/);
   assert.match(session, /tenantId/);
   assert.match(session, /racetrackId/);

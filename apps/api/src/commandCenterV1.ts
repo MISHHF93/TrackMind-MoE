@@ -84,7 +84,9 @@ export function createTrackMindCommandCenterV1Service() { return new TrackMindCo
 
 export interface CommandCenterContractSnapshot { assets: AssetMarkerDto[]; races: RaceDto[]; approvals: ApprovalDto[]; auditEvents: AuditEventDto[]; digitalTwinState: DigitalTwinStateDto[]; surfaceMeasurements: SurfaceMeasurementDto[]; gatePosition: GatePositionDto; raceDistanceConfiguration: RaceDistanceConfigurationDto; aiRecommendations: AIRecommendationDto[]; openApi: { title: string; version: string; endpoints: typeof apiEndpointContracts }; errors: { notAuthorized: { ok: false; error: { code: string; message: string } } } }
 
-export function createCommandCenterContractSnapshot(service = new TrackMindCommandCenterV1Service()): CommandCenterContractSnapshot {
+let seededCommandCenterContractSnapshot: CommandCenterContractSnapshot | undefined;
+
+function buildCommandCenterContractSnapshot(service: TrackMindCommandCenterV1Service): CommandCenterContractSnapshot {
   const snapshot = service.snapshot();
   const assets = snapshot.assets.map((asset): AssetMarkerDto => assertContract('AssetMarkerDto', { ...asset, twinId: asset.id === 'gate-1' ? 'twin:main-track:gate-1' : `twin:main-track:${asset.id}` }, apiContractSchemas.AssetMarkerDto));
   const approvalPolicies = defaultApprovalPolicies();
@@ -182,4 +184,12 @@ export function createCommandCenterContractSnapshot(service = new TrackMindComma
     mock: false,
   }].map((rec) => assertContract('AIRecommendationDto', rec, apiContractSchemas.AIRecommendationDto));
   return { assets, races, approvals, auditEvents, digitalTwinState, surfaceMeasurements, gatePosition, raceDistanceConfiguration, aiRecommendations, openApi: { title: 'TrackMind Nexus API', version: '1.0.0', endpoints: apiEndpointContracts }, errors: { notAuthorized: { ok: false, error: { code: 'forbidden', message: 'Actor is not authorized for this TrackMind API operation' } } } };
+}
+
+export function createCommandCenterContractSnapshot(service?: TrackMindCommandCenterV1Service): CommandCenterContractSnapshot {
+  if (service) return buildCommandCenterContractSnapshot(service);
+  if (!seededCommandCenterContractSnapshot) {
+    seededCommandCenterContractSnapshot = buildCommandCenterContractSnapshot(new TrackMindCommandCenterV1Service());
+  }
+  return seededCommandCenterContractSnapshot;
 }

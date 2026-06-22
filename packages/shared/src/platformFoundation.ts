@@ -37,10 +37,19 @@ export interface RacetrackDto {
   mock: boolean;
 }
 
+export interface RepositoryEnvironmentDto {
+  mode: 'in-memory' | 'postgres';
+  wired: boolean;
+  postgresReady: boolean;
+  usingFallback: boolean;
+  pgClientAvailable: boolean;
+}
+
 export interface EnvironmentConfigDto {
   environment: 'development' | 'staging' | 'production';
   apiBasePath: string;
   persistenceMode: 'in-memory' | 'postgres';
+  repository: RepositoryEnvironmentDto;
   featureFlagDefaults: string[];
   retentionDays: number;
   observabilityEnabled: boolean;
@@ -105,6 +114,30 @@ export interface AuditSearchQueryDto {
   to?: string;
   limit?: number;
   offset?: number;
+  action?: 'search' | 'export';
+  format?: 'json' | 'ndjson';
+}
+
+export interface AuditVaultExportDto {
+  exportId: string;
+  generatedAt: string;
+  generatedBy: string;
+  recordCount: number;
+  contentHash: string;
+  format: 'json' | 'ndjson';
+  mimeType: string;
+  downloadUri: string;
+  sealed: true;
+  mock: boolean;
+  query?: AuditSearchQueryDto;
+}
+
+export interface AuditVaultExportListDto {
+  generatedAt: string;
+  exports: AuditVaultExportDto[];
+  vaultEnabled: boolean;
+  vaultRecordCount: number;
+  mock: boolean;
 }
 
 export interface IncidentDto {
@@ -123,6 +156,25 @@ export interface IncidentDto {
   eventIds: string[];
   createdAt: string;
   updatedAt: string;
+  mock: boolean;
+}
+
+export interface IncidentTimelineEntryDto {
+  at: string;
+  action: string;
+  actor: string;
+  note?: string;
+}
+
+export interface IncidentTimelineDto {
+  incidentId: string;
+  generatedAt: string;
+  revision: number;
+  updatedAt: string;
+  status: IncidentDto['status'];
+  entries: IncidentTimelineEntryDto[];
+  since?: string | null;
+  hasMore: boolean;
   mock: boolean;
 }
 
@@ -222,12 +274,47 @@ export interface AIPromptCardRegistrationInput {
   lineage: string[];
 }
 
+export interface AIPromptLineageDraftInput {
+  id: string;
+  name: string;
+  version: string;
+  path: string;
+  lineage: string[];
+  reason?: string;
+  requestedBy?: string;
+}
+
+export interface AIPromptLineageDraftResultDto {
+  accepted: true;
+  draftId: string;
+  promptId: string;
+  eventType: 'ai.prompt-lineage.draft.created';
+  draftOnly: true;
+  message: string;
+  auditEventIds: string[];
+  mock: boolean;
+}
+
+export interface AIPromptLineagePublishResultDto {
+  accepted: true;
+  draftId: string;
+  registeredId: string;
+  registry: AIModelCardRegistryDto;
+  eventType: 'ai.prompt-lineage.published';
+  message: string;
+  auditId?: string;
+  audited?: boolean;
+  mock: boolean;
+}
+
 export interface AIModelCardRegistryMutationResultDto {
   accepted: true;
   registry: AIModelCardRegistryDto;
   registeredId: string;
   eventType: string;
   message: string;
+  auditId?: string;
+  audited?: boolean;
   mock: boolean;
 }
 
@@ -268,14 +355,30 @@ export interface EmergencyWorkflowActivationInput {
   racetrackId?: string;
 }
 
-export interface EmergencyWorkflowMutationResultDto {
+export interface EmergencyApprovalPostureDto {
+  mode: 'post-action-evidence' | 'approval-request-created';
+  action: 'emergency-action';
+  target: string;
+  aiMayBlock: false;
+  emergencyPersonnelAuthority: true;
+  approvalRequestId?: string;
+  reason: string;
+}
+
+export interface EmergencyMutationResultDto {
   accepted: true;
-  workflowId: string;
+  subjectId: string;
   auditId: string;
   eventType: string;
   message: string;
+  approvalPosture: EmergencyApprovalPostureDto;
+  evidencePackage: string[];
   workspace: Record<string, unknown>;
   mock: boolean;
+}
+
+export interface EmergencyWorkflowMutationResultDto extends EmergencyMutationResultDto {
+  workflowId: string;
 }
 
 export interface GlobalSearchResultDto {
@@ -420,6 +523,23 @@ export interface ProviderAdapterInvokeResultDto {
   recordsProcessed: number;
   executedAt: string;
   mock: boolean;
+  audited: true;
+  auditId: string;
+  correlationId: string;
+  lineage: {
+    correlationId: string;
+    sourceRefs: string[];
+    upstreamRefs: string[];
+    downstreamRefs: string[];
+  };
+  rateLimit: {
+    limit: number;
+    remaining: number;
+    windowSeconds: number;
+  };
+  externalCallsPerformed: false;
+  scrapingPerformed: false;
+  licenseStatus: string;
 }
 
 export interface FederationKpiAggregationDto {
@@ -449,4 +569,23 @@ export interface EquineEligibilityDto {
   warnings: string[];
   status: Record<string, unknown>;
   mock: boolean;
+}
+
+export interface EquineAuditChainDto {
+  horseId: string;
+  events: Array<Record<string, unknown>>;
+  verification: { valid: boolean; checked?: number; failures?: Array<Record<string, unknown>> };
+}
+
+export interface EquineVeterinaryMutationResultDto {
+  horseId: string;
+  record: Record<string, unknown>;
+  eligibility: Record<string, unknown>;
+  auditEventId: string;
+}
+
+export interface EquineEligibilityMutationResultDto {
+  horseId: string;
+  eligibility: Record<string, unknown>;
+  auditEventId: string;
 }

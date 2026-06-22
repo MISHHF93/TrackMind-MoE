@@ -39,6 +39,7 @@ test('wave 03: module enablement gates navigation and route guards', async () =>
   assert.match(hook, /ModuleEnablementDto/);
   assert.match(modules, /gatedRouteModules/);
   assert.match(modules, /analytics: 'analytics'/);
+  assert.match(modules, /surface: 'surface'/);
   assert.match(modules, /fanExperience: 'fanExperience'/);
   assert.match(modules, /admin: 'admin'/);
   assert.match(support, /canAccessRoute/);
@@ -57,7 +58,7 @@ test('wave 03: route coverage inventory stays synchronized', async () => {
   const validate = await source('src/routes/validateRoutes.ts');
 
   const routeIds = [...routes.matchAll(/id: '([^']+)'/g)].map((match) => match[1]);
-  const apiGroups = [...paths.matchAll(/^\s{2}([a-zA-Z]+): \[/gm)].map((match) => match[1]);
+  const apiGroups = [...paths.matchAll(/^\s{2}([a-zA-Z]+): (?=\[|stewardingFeedPaths)/gm)].map((match) => match[1]);
   const panelCases = [...panels.matchAll(/case '([^']+)':/g)].map((match) => match[1]);
 
   assert.equal(routeIds.length, 23);
@@ -70,4 +71,38 @@ test('wave 03: route coverage inventory stays synchronized', async () => {
   assert.match(router, /routes\.map\(\(route\) => \(/);
   assert.match(validate, /validateRouteInventory/);
   assert.match(routes, /backendContractPathsForRoute/);
+});
+
+function resolveApiPathRef(pathsSource, apiRef) {
+  const [, group, key] = apiRef.split('.');
+  const groupBlock = pathsSource.match(new RegExp(`${group}: \\{([\\s\\S]*?)\\n  \\}`))?.[1] ?? '';
+  return groupBlock.match(new RegExp(`${key}: '([^']+)'`))?.[1];
+}
+
+function contractDeclaresPath(contractPath, backendPath) {
+  if (contractPath === backendPath) return true;
+  const templatePattern = contractPath.replace(/\{[^/]+\}/g, '[^/]+');
+  return new RegExp(`^${templatePattern}$`).test(backendPath);
+}
+
+test('wave 03: route backendPaths are declared in shared endpoint contracts', async () => {
+  const { apiEndpointContracts } = await import('@trackmind/shared');
+  const pathsSource = await source('src/api/paths.ts');
+  const routeBackendPaths = [...pathsSource.matchAll(/routeApiPathGroups = \{([\s\S]*?)\} as const/g)]
+    .flatMap((match) => [...match[1].matchAll(/apiPaths\.[a-zA-Z0-9]+\.[a-zA-Z0-9]+/g)].map((pathMatch) => pathMatch[0]))
+    .map((apiRef) => resolveApiPathRef(pathsSource, apiRef))
+    .filter(Boolean)
+    .map((relativePath) => `/api/v1${relativePath.startsWith('/') ? relativePath : `/${relativePath}`}`);
+
+  const undeclared = routeBackendPaths.filter((backendPath) => (
+    !apiEndpointContracts.some((contract) => contractDeclaresPath(contract.path, backendPath))
+  ));
+
+  assert.deepEqual(
+    undeclared,
+    [],
+    undeclared.length
+      ? `Undeclared backendPaths:\n${undeclared.map((backendPath) => `- ${backendPath}`).join('\n')}`
+      : undefined,
+  );
 });

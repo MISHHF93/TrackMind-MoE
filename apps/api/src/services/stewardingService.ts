@@ -1,9 +1,27 @@
-import type { StewardAdvisoryRecommendationDto, StewardEvidenceReferenceDto, StewardRecommendationSupportDto } from '@trackmind/shared';
+import type { StewardEvidenceReferenceDto, StewardMutationResultDto, StewardRecommendationSupportDto } from '@trackmind/shared';
 import { stewardAdvisoryGuardrailStatement } from '@trackmind/shared';
-import type { StewardEvidenceKind } from '../stewarding.js';
 import type { ApprovalToken } from '../approvals.js';
+import {
+  addStewardEvidence,
+  getStewardEvidenceReference,
+  issueFinalRuling as recordStewardFinalRuling,
+  listStewardEvidenceReferences,
+  type StewardCenterIntegrations,
+  type StewardEvidenceKind,
+  type StewardEvidenceReference,
+  type StewardFinalRuling,
+  type StewardInquiry,
+} from '../stewarding.js';
 import { ApexApprovalGateway, type ApexMutationContext, type ApprovalEvidencePackage, type ApprovalRequiredActionRecord } from './approvalGateway.js';
-import type { StewardOperationsPlatform } from '../stewardOperationsPlatform.js';
+
+export interface StewardOperationsContext {
+  requireInquiry(inquiryId: string): StewardInquiry;
+  commit(inquiryId: string, actor: string, eventType: string, message: string, auditId?: string): StewardMutationResultDto;
+  decisionSupport?(inquiryId: string): StewardRecommendationSupportDto;
+  integrations?: StewardCenterIntegrations;
+  tenantId?: string;
+  racetrackId?: string;
+}
 
 export interface RulebookQuery {
   question: string;
@@ -25,12 +43,23 @@ export interface StewardEvidenceUploadInput {
   actor?: string;
 }
 
+export interface StewardFinalRulingInput {
+  inquiryId: string;
+  ruling: Omit<StewardFinalRuling, 'officialResultsModified'>;
+  actor?: string;
+  approvalToken?: ApprovalToken;
+  tenantId?: string;
+  racetrackId?: string;
+}
+
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
 export class StewardingService {
   private readonly penaltyDrafts = new Map<string, unknown>();
 
   constructor(
     private readonly approvals: ApexApprovalGateway,
-    private readonly stewardOps?: StewardOperationsPlatform,
+    private readonly operations?: StewardOperationsContext,
   ) {}
 
   queryRulebook(query: RulebookQuery) {
@@ -42,19 +71,21 @@ export class StewardingService {
   }
 
   listEvidenceReferences(inquiryId: string): StewardEvidenceReferenceDto[] {
-    if (!this.stewardOps) throw new Error('Steward evidence API requires steward operations integration');
-    return this.stewardOps.listEvidence(inquiryId);
+    const inquiry = this.requireOperations().requireInquiry(inquiryId);
+    return listStewardEvidenceReferences(inquiry).map((evidence) => ({ ...clone(evidence), inquiryId })) as StewardEvidenceReferenceDto[];
   }
 
   getEvidenceReference(inquiryId: string, evidenceId: string): StewardEvidenceReferenceDto | undefined {
-    if (!this.stewardOps) throw new Error('Steward evidence API requires steward operations integration');
-    return this.stewardOps.getEvidence(inquiryId, evidenceId);
+    const inquiry = this.requireOperations().requireInquiry(inquiryId);
+    const evidence = getStewardEvidenceReference(inquiry, evidenceId);
+    return evidence ? { ...clone(evidence), inquiryId } as StewardEvidenceReferenceDto : undefined;
   }
 
-  uploadEvidenceReference(input: StewardEvidenceUploadInput) {
-    if (!this.stewardOps) throw new Error('Steward evidence upload requires steward operations integration');
+  uploadEvidenceReference(input: StewardEvidenceUploadInput): StewardMutationResultDto {
+    const operations = this.requireOperations();
     const { evidence, inquiryId, actor = 'steward' } = input;
-    return this.stewardOps.addEvidence(inquiryId, {
+    const inquiry = operations.requireInquiry(inquiryId);
+    addStewardEvidence(inquiry, {
       id: evidence.id,
       kind: evidence.kind as StewardEvidenceKind,
       uri: evidence.uri,
@@ -67,20 +98,38 @@ export class StewardingService {
       twinContextIds: evidence.twinContextIds,
       tags: evidence.tags,
       content: (input.evidence as { content?: unknown }).content,
-    } as import('../stewarding.js').StewardEvidenceReference & { content?: unknown }, actor);
+    } as StewardEvidenceReference & { content?: unknown }, operations.integrations);
+    return operations.commit(inquiryId, actor, 'steward-operations.evidence.added', `Added evidence ${evidence.id}`);
+  }
+
+  issueFinalRuling(input: StewardFinalRulingInput): StewardMutationResultDto {
+    const operations = this.requireOperations();
+    const actor = input.actor ?? 'steward';
+    const inquiry = operations.requireInquiry(input.inquiryId);
+    recordStewardFinalRuling(inquiry, { ...input.ruling, officialResultsModified: false }, {
+      approvalService: operations.integrations?.approvals,
+      approvalToken: input.approvalToken,
+      tenantId: input.tenantId ?? operations.tenantId,
+      racetrackId: input.racetrackId ?? operations.racetrackId,
+      deps: operations.integrations,
+    });
+    return operations.commit(
+      input.inquiryId,
+      actor,
+      'steward-operations.final-ruling.recorded',
+      `Recorded final ruling ${input.ruling.id} without official result mutation`,
+    );
   }
 
   getDecisionSupport(inquiryId: string): StewardRecommendationSupportDto {
-    if (!this.stewardOps) {
-      return {
-        advisoryOnly: true,
-        mayIssueOfficialRuling: false,
-        mayModifyOfficialResults: false,
-        guardrailStatement: stewardAdvisoryGuardrailStatement,
-        recommendations: [],
-      };
-    }
-    return this.stewardOps.decisionSupport(inquiryId);
+    if (this.operations?.decisionSupport) return this.operations.decisionSupport(inquiryId);
+    return {
+      advisoryOnly: true,
+      mayIssueOfficialRuling: false,
+      mayModifyOfficialResults: false,
+      guardrailStatement: stewardAdvisoryGuardrailStatement,
+      recommendations: [],
+    };
   }
 
   async recommendPenalty(input: PenaltyRecommendationInput): Promise<ApprovalRequiredActionRecord> {
@@ -103,8 +152,13 @@ export class StewardingService {
   penalties() {
     return [...this.penaltyDrafts.values()];
   }
+
+  private requireOperations(): StewardOperationsContext {
+    if (!this.operations) throw new Error('Stewarding service requires steward operations platform integration');
+    return this.operations;
+  }
 }
 
-export function createStewardingService(gateway = new ApexApprovalGateway(), stewardOps?: StewardOperationsPlatform) {
-  return new StewardingService(gateway, stewardOps);
+export function createStewardingService(gateway = new ApexApprovalGateway(), operations?: StewardOperationsContext) {
+  return new StewardingService(gateway, operations);
 }

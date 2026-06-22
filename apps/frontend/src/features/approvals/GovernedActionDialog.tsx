@@ -3,6 +3,7 @@ import {
   approveRequest,
   createControlledAction,
   rejectRequest,
+  requestStartingGateRaceStartApproval,
   requestTrackConfigDraft,
 } from '@/api/mutations';
 import type { ControlledActionInput } from '@/api/approvalPayload';
@@ -18,6 +19,13 @@ async function submitApprovalRequest(
 ): Promise<{ approvalId?: string; message?: string }> {
   if (approvalApi === 'track-configuration/draft-requests') {
     return requestTrackConfigDraft(input);
+  }
+  if (approvalApi === 'starting-gate-operations/race-start-approval') {
+    const response = await requestStartingGateRaceStartApproval(input.target, {
+      reason: input.reason,
+      evidence: input.evidence,
+    });
+    return { approvalId: response.approvalRequestId, message: response.message };
   }
   return createControlledAction(input);
 }

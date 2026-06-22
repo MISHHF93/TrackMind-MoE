@@ -4,16 +4,20 @@ import type {
   OperationalCostDto,
   RaceDayExpenseDto,
   RacePurseDto,
+  RacingFinanceApprovalControlDto,
   RacingFinanceAuditTrailDto,
   RacingFinanceKpiDashboardDto,
   RacingFinanceKpiDto,
   RacingFinanceMutationResultDto,
   RacingFinanceOperationsDto,
+  RacingFinancePayoutQueueItemDto,
+  SettlementAdapterRegistry,
   TicketRevenueDto,
 } from '@trackmind/shared';
 import { racingFinanceAuditabilityStatement } from '@trackmind/shared';
 import type { ImmutableAuditLog } from './auditLog.js';
-import type { CentralizedApprovalService } from './approvals.js';
+import type { ApprovalToken, CentralizedApprovalService } from './approvals.js';
+import { createSettlementAdapterRegistry } from './settlementAdapter.js';
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const id = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -47,6 +51,7 @@ interface RacingFinanceState {
 export interface RacingFinancePlatformDeps {
   approvalService?: CentralizedApprovalService;
   auditLog?: ImmutableAuditLog;
+  settlementRegistry?: SettlementAdapterRegistry;
   tenantId?: string;
   racetrackId?: string;
   raceDayId?: string;
@@ -55,9 +60,11 @@ export interface RacingFinancePlatformDeps {
 export class RacingFinancePlatform {
   private state: RacingFinanceState;
   private readonly auditChain: RacingFinanceOperationsDto['auditTrail'] = [];
+  private readonly settlementRegistry: SettlementAdapterRegistry;
 
   constructor(private readonly deps: RacingFinancePlatformDeps = {}) {
     const now = new Date().toISOString();
+    this.settlementRegistry = deps.settlementRegistry ?? createSettlementAdapterRegistry(now);
     this.state = {
       tenantId: deps.tenantId ?? 'trackmind',
       racetrackId: deps.racetrackId ?? 'main-track',
@@ -81,6 +88,7 @@ export class RacingFinancePlatform {
   workspace(now = new Date().toISOString()): RacingFinanceOperationsDto {
     const totals = this.computeTotals(now);
     const dashboard = this.buildDashboard(totals, now);
+    const settlement = this.settlementRegistry.snapshot(now);
     return {
       generatedAt: now,
       schemaVersion: 'trackmind.racing-finance-operations.v1',
@@ -110,9 +118,19 @@ export class RacingFinancePlatform {
         currency: 'USD',
       },
       payouts: this.state.payouts.map(clone),
+      payoutQueue: this.buildPayoutQueue(),
+      approvalControls: this.approvalControls(),
       reconciliation: { ...this.state.reconciliation },
+      settlement,
       mock: false,
     };
+  }
+
+  syncSettlement(actor = 'finance', at = new Date().toISOString()): RacingFinanceMutationResultDto {
+    const settlement = this.settlementRegistry.sync(at);
+    const auditId = id('audit-finance');
+    const message = `Settlement sync completed: ${settlement.entries.length} ledger entries, ${settlement.pendingPostings} pending, ${settlement.exceptionCount} exceptions`;
+    return this.commit('racing-finance.settlement.synced', message, auditId, 'settlement-sync', actor);
   }
 
   kpiDashboard(now = new Date().toISOString()): RacingFinanceKpiDashboardDto {
@@ -143,10 +161,30 @@ export class RacingFinancePlatform {
     return this.commit('racing-finance.purse.allocated', `Allocated purse ${purse.allocatedAmount} for race ${purse.raceId}`, auditId, purse.purseId, actor);
   }
 
-  requestPurseRelease(purseId: string, actor = 'finance'): RacingFinanceMutationResultDto {
+  requestPurseRelease(purseId: string, actor = 'finance', options: { approvalToken?: ApprovalToken } = {}): RacingFinanceMutationResultDto {
     if (!this.deps.approvalService) throw new Error('Approval service integration required for purse release workflows');
     const purse = this.state.purses.find((entry) => entry.purseId === purseId);
     if (!purse) throw new Error(`Unknown purse ${purseId}`);
+    if (options.approvalToken) {
+      this.deps.approvalService.assertAuthorized(options.approvalToken, 'payout', purseId, this.state.tenantId, this.state.racetrackId);
+      purse.status = 'released';
+      purse.releasedAmount = purse.allocatedAmount;
+      const auditId = id('audit-finance');
+      return this.commit('racing-finance.purse.released', `Released purse ${purseId} for race ${purse.raceId}`, auditId, purseId, actor, options.approvalToken.requestId);
+    }
+    if (purse.status === 'released') throw new Error(`Purse ${purseId} is already released`);
+    if (purse.approvalRequestId && purse.status === 'pending-approval') {
+      return {
+        accepted: true,
+        recordId: purseId,
+        auditId: purse.auditId,
+        eventType: 'racing-finance.purse.release-requested',
+        message: `Purse release for ${purseId} is pending approval`,
+        approvalRequestId: purse.approvalRequestId,
+        approvalRequired: true,
+        mock: false,
+      };
+    }
     const auditId = id('audit-finance');
     const approval = this.deps.approvalService.createRequest({
       action: 'payout',
@@ -161,7 +199,7 @@ export class RacingFinancePlatform {
     purse.status = 'pending-approval';
     purse.approvalRequestId = approval.id;
     const result = this.commit('racing-finance.purse.release-requested', `Requested purse release for ${purseId}`, auditId, purseId, actor, approval.id);
-    return { ...result, approvalRequestId: approval.id };
+    return { ...result, approvalRequestId: approval.id, approvalRequired: true };
   }
 
   recordRaceDayExpense(input: Omit<RaceDayExpenseDto, 'expenseId' | 'auditId' | 'approvalRequestId'>, actor = 'finance'): RacingFinanceMutationResultDto {
@@ -215,7 +253,76 @@ export class RacingFinancePlatform {
     });
     this.state.payouts.push({ id: payoutId, amount, status: 'pending-approval', approvalId: approval.id });
     const result = this.commit('racing-finance.payout.requested', `Requested payout ${amount} for ${recipientLabel}`, auditId, payoutId, actor, approval.id);
-    return { ...result, approvalRequestId: approval.id };
+    return { ...result, approvalRequestId: approval.id, approvalRequired: true };
+  }
+
+  releasePayout(payoutId: string, actor = 'finance', options: { approvalToken?: ApprovalToken } = {}): RacingFinanceMutationResultDto {
+    if (!this.deps.approvalService) throw new Error('Approval service integration required for payout workflows');
+    const payout = this.state.payouts.find((entry) => entry.id === payoutId);
+    if (!payout) throw new Error(`Unknown payout ${payoutId}`);
+    if (!options.approvalToken) throw new Error('Payout release requires verified approvalToken');
+    this.deps.approvalService.assertAuthorized(options.approvalToken, 'payout', payoutId, this.state.tenantId, this.state.racetrackId);
+    payout.status = 'released';
+    const auditId = id('audit-finance');
+    return this.commit('racing-finance.payout.released', `Released payout ${payoutId}`, auditId, payoutId, actor, options.approvalToken.requestId);
+  }
+
+  private buildPayoutQueue(): RacingFinancePayoutQueueItemDto[] {
+    const purseItems: RacingFinancePayoutQueueItemDto[] = this.state.purses.map((purse) => ({
+      id: purse.purseId,
+      kind: 'purse',
+      reference: purse.raceId,
+      label: `Race ${purse.raceNumber ?? purse.raceId} purse`,
+      amount: purse.allocatedAmount,
+      currency: purse.currency,
+      status: purse.status,
+      approvalRequestId: purse.approvalRequestId,
+      approvalRequired: purse.status !== 'released',
+      executionEndpoint: `/api/v1/finance/purses/${encodeURIComponent(purse.purseId)}/release`,
+    }));
+    const payoutItems: RacingFinancePayoutQueueItemDto[] = this.state.payouts.map((payout) => ({
+      id: payout.id,
+      kind: 'payout',
+      reference: payout.id,
+      label: `Payout ${payout.id}`,
+      amount: payout.amount,
+      currency: 'USD',
+      status: payout.status,
+      approvalRequestId: payout.approvalId,
+      approvalRequired: payout.status !== 'released',
+      executionEndpoint: `/api/v1/finance/payouts/${encodeURIComponent(payout.id)}/release`,
+    }));
+    return [...purseItems, ...payoutItems];
+  }
+
+  private approvalControls(): RacingFinanceApprovalControlDto[] {
+    const controls: RacingFinanceApprovalControlDto[] = [
+      {
+        id: 'finance-request-payout',
+        label: 'Request payout approval',
+        action: 'payout',
+        target: 'new-payout',
+        reason: 'Dual-control steward and finance approval required before payout release.',
+        requiredRoles: ['admin', 'finance'],
+        approvalApi: 'POST /api/v1/approvals/controlled-actions',
+        locked: true,
+        safetyCritical: true,
+      },
+    ];
+    for (const purse of this.state.purses.filter((entry) => entry.status === 'allocated')) {
+      controls.push({
+        id: `finance-purse-release-${purse.purseId}`,
+        label: `Request purse release (${purse.raceId})`,
+        action: 'payout',
+        target: purse.purseId,
+        reason: `Purse release for race ${purse.raceId} requires steward and finance approval.`,
+        requiredRoles: ['admin', 'finance'],
+        approvalApi: 'POST /api/v1/approvals/controlled-actions',
+        locked: true,
+        safetyCritical: true,
+      });
+    }
+    return controls;
   }
 
   private computeTotals(now: string) {
@@ -236,10 +343,12 @@ export class RacingFinancePlatform {
   private buildDashboard(totals: ReturnType<RacingFinancePlatform['computeTotals']>, now: string): RacingFinanceKpiDashboardDto {
     const netPositionToday = totals.revenueToday - totals.expensesToday;
     const budgetUtilizationPercent = Math.round((this.state.budgetSpentMtd / this.state.budgetAllocated) * 100);
+    const settlement = this.settlementRegistry.snapshot(now);
     const readinessScore = Math.round(
       Math.max(0, 100
         - this.state.reconciliation.exceptions * 8
         - this.state.payouts.filter((payout) => payout.status === 'pending-approval').length * 5
+        - settlement.exceptionCount * 6
         - (budgetUtilizationPercent > 90 ? 10 : 0)),
     );
     const panels: RacingFinanceKpiDto[] = [
@@ -249,6 +358,7 @@ export class RacingFinancePlatform {
       this.panel('finance-purse-obligations', 'Purse obligations', 'Outstanding purse allocations awaiting release.', totals.purseObligations, 'USD', 0, totals.purseObligations === 0 ? 'nominal' : totals.purseObligations <= 100_000 ? 'watch' : 'warning', 'flat', now),
       this.panel('finance-budget-utilization', 'Budget utilization', 'Month-to-date spend against allocated budget.', budgetUtilizationPercent, '%', 85, budgetUtilizationPercent <= 85 ? 'nominal' : budgetUtilizationPercent <= 95 ? 'watch' : 'critical', 'up', now),
       this.panel('finance-reconciliation', 'Reconciliation exceptions', 'Unmatched financial records requiring review.', this.state.reconciliation.exceptions, 'exceptions', 0, this.state.reconciliation.exceptions === 0 ? 'nominal' : 'warning', 'flat', now),
+      this.panel('finance-settlement-sync', 'GL/settlement sync', 'Ledger read model sync status across GL and settlement adapters.', settlement.coveragePct, '%', 100, settlement.exceptionCount > 0 ? 'warning' : settlement.syncStatus === 'synced' ? 'nominal' : 'watch', settlement.syncStatus === 'synced' ? 'up' : 'flat', now),
     ];
     return {
       grossRevenueToday: totals.revenueToday,
@@ -463,5 +573,6 @@ export function createSeededRacingFinance(deps: RacingFinancePlatformDeps = {}, 
   );
 
   platform.workspace(now);
+  platform.syncSettlement('racing-finance', now);
   return platform;
 }

@@ -1,3 +1,5 @@
+import type { TicketingAdapterDescriptor, TicketingConnectorStatus } from './ticketingAdapter.js';
+
 export const fanExperienceOperationsSchemaVersion = 'trackmind.fan-experience-operations.v1' as const;
 
 export const fanExperienceServiceGuardrailStatement =
@@ -180,6 +182,18 @@ export interface FanExperienceOperationsGuardrailsDto {
   guardrailStatement: string;
 }
 
+export type FanExperienceDataSource = 'platform' | 'connector' | 'degraded-connector';
+
+export interface FanExperienceTicketingConnectorDto {
+  overallStatus: TicketingConnectorStatus;
+  degraded: boolean;
+  adapters: TicketingAdapterDescriptor[];
+  lastSyncAt: string;
+  inventorySource: FanExperienceDataSource;
+  attendanceSource: FanExperienceDataSource;
+  syncAuditIds: string[];
+}
+
 export interface FanExperienceOperationsDto {
   generatedAt: string;
   schemaVersion: typeof fanExperienceOperationsSchemaVersion;
@@ -202,6 +216,7 @@ export interface FanExperienceOperationsDto {
   auditTrail: FanExperienceAuditRecordDto[];
   attendance: { current: number; capacity: number; utilizationPercent: number };
   hospitalityReadiness: { score: number; openIssues: number };
+  ticketingConnector: FanExperienceTicketingConnectorDto;
   mock: false;
 }
 

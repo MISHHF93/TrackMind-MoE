@@ -2,8 +2,27 @@ openapi: 3.1.0
 info:
   title: TrackMind Safety Service API
   version: 0.1.0
-  description: Contract-only safety scaffold. Runtime reference implementations currently live in apps/api/src/services/safetyService.ts, apps/api/src/safetyIntelligence, and apps/api/src/telemetry.
+  description: Safety bounded context with runtime delegation to apps/api reference implementations for emergency operations workspace read models and post-action evidence mutations.
 paths:
+  /services/safety/emergency-operations/workspace:
+    get:
+      summary: Emergency operations workspace read model
+      description: Delegates to SafetyEmergencyOperationsBoundary; preserves incident-commander authority and post-action evidence posture without blocking life-safety response.
+      responses:
+        '200':
+          description: Emergency operations workspace projection
+  /services/safety/state:
+    get:
+      summary: Current safety state
+      responses:
+        '200':
+          description: Track conditions, weather alerts, and safety incidents
+  /services/safety/emergency-actions:
+    post:
+      summary: Request emergency action with approval gate
+      responses:
+        '202':
+          description: Approval request created for emergency action
   /health:
     get:
       summary: Health check

@@ -6,6 +6,7 @@ import { isRecord } from '@/lib/utils';
 function approvalApiKind(api: string | undefined): WorkspaceAction['approvalApi'] {
   if (!api) return 'controlled-actions';
   if (api.includes('track-configuration/draft-requests')) return 'track-configuration/draft-requests';
+  if (api.includes('starting-gate-operations/race-start-approval')) return 'starting-gate-operations/race-start-approval';
   return 'controlled-actions';
 }
 

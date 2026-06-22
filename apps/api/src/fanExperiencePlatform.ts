@@ -117,6 +117,15 @@ export class FanExperiencePlatform {
         score: hospitality.readinessScore,
         openIssues: hospitality.openIssues,
       },
+      ticketingConnector: {
+        overallStatus: 'disconnected',
+        degraded: false,
+        adapters: [],
+        lastSyncAt: now,
+        inventorySource: 'platform',
+        attendanceSource: 'platform',
+        syncAuditIds: [],
+      },
       mock: false,
     };
   }

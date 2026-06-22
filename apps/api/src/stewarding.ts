@@ -1,4 +1,6 @@
 import type { Role } from '@trackmind/shared';
+import type { AuditAppendTarget } from './auditAdapter.js';
+import { appendAudit } from './auditAdapter.js';
 import { CentralizedApprovalService, type ApprovalToken, type ControlledActionRequest } from './approvals.js';
 import { AuditEvidenceCollectionVault, ImmutableAuditLog } from './auditLog.js';
 import { InMemoryEventBus, type UniversalEventBus } from './eventBus.js';
@@ -76,6 +78,7 @@ export interface StewardNotificationPublisher {
 }
 
 export interface StewardCenterIntegrations {
+  audit?: AuditAppendTarget;
   auditLog?: Pick<ImmutableAuditLog, 'append'>;
   eventBus?: Pick<UniversalEventBus, 'publish'>;
   approvals?: Pick<CentralizedApprovalService, 'createRequest' | 'assertAuthorized'>;
@@ -91,7 +94,25 @@ function digest(value: string) { let hash = 0; for (const ch of value) hash = Ma
 function signal(inquiry: StewardInquiry, name: string, severity: 'info' | 'warning' | 'critical', at: string) { const item = { name, at, severity, traceId: `trace-steward-${inquiry.id}` }; inquiry.integrations.observabilitySignals.push(item); return item; }
 function mirror(inquiry: StewardInquiry, entry: StewardAuditRecord, deps?: StewardCenterIntegrations) {
   inquiry.integrations.auditRecordIds.push(entry.id);
-  deps?.auditLog?.append({ id: `steward:${entry.id}`, type: 'regulatory-activity', actor: entry.actorId, timestamp: entry.at, payload: { action: entry.action, inquiryId: inquiry.id, subjectId: entry.subjectId }, subjectId: inquiry.id, correlationId: `steward:${inquiry.id}`, severity: entry.action === 'access.denied' ? 'critical' : 'warning', regulations: ['HISA', 'ARCI'], evidenceIds: entry.evidenceIds });
+  const record = {
+    id: `steward:${entry.id}`,
+    type: 'regulatory-activity' as const,
+    actor: entry.actorId,
+    timestamp: entry.at,
+    action: entry.action,
+    actionClass: 'compliance' as const,
+    payload: { action: entry.action, inquiryId: inquiry.id, subjectId: entry.subjectId },
+    subjectId: inquiry.id,
+    correlationId: `steward:${inquiry.id}`,
+    severity: entry.action === 'access.denied' ? 'critical' as const : 'warning' as const,
+    regulations: ['HISA', 'ARCI'],
+    evidenceIds: entry.evidenceIds,
+  };
+  if (deps?.audit) {
+    appendAudit(deps.audit, record);
+  } else {
+    deps?.auditLog?.append(record);
+  }
   deps?.observability?.recordSignal?.({ name: `steward.${entry.action}`, severity: entry.action === 'access.denied' ? 'critical' : 'info', traceId: `trace-steward-${inquiry.id}`, attributes: { inquiryId: inquiry.id, subjectId: entry.subjectId }, timestamp: entry.at });
 }
 function notifyStewards(inquiry: StewardInquiry, input: { title: string; message: string; severity?: 'info' | 'warning' | 'critical' | 'advisory'; category?: 'approval' | 'incident' | 'compliance' | 'platform' | 'ai-recommendation' }, deps?: StewardCenterIntegrations) {

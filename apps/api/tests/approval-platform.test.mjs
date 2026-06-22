@@ -153,3 +153,55 @@ test('approval-gated mutations emit audit events when audit log is wired', () =>
   assert.ok(auditEntries.some((entry) => entry.action === 'approval.requested'));
   assert.ok(auditEntries.some((entry) => entry.action === 'approval.approved'));
 });
+
+test('approval decisions appear in GET /audit/search', async () => {
+  resetApprovalRepositoryForTests();
+  const { createApiFacadeState, handleApiRequest } = await import('../dist/server.js');
+  const state = createApiFacadeState();
+  const headers = {
+    'x-trackmind-role': 'security',
+    'x-trackmind-tenant-id': 'trackmind',
+    'x-trackmind-racetrack-id': 'main-track',
+  };
+
+  const created = await handleApiRequest('POST', '/api/v1/approvals/controlled-actions', {
+    tenantId: 'trackmind',
+    racetrackId: 'main-track',
+    action: 'emergency-action',
+    target: 'gate-audit-search',
+    actorId: 'incident-commander',
+    actorType: 'human',
+    roles: ['security'],
+    reason: 'Gate fault requires controlled approval for audit search test',
+    evidence: ['alarm-feed'],
+  }, state, headers);
+  assert.equal(created.status, 202);
+  const approvalId = created.body.approvalId;
+  assert.ok(approvalId);
+
+  const approved = await handleApiRequest(
+    'POST',
+    `/api/v1/approvals/${approvalId}/approve`,
+    {
+      actorId: 'security-lead',
+      actorType: 'human',
+      roles: ['security'],
+      reason: 'Gate fault verified',
+      evidence: ['human-approval-record'],
+    },
+    state,
+    headers,
+  );
+  assert.equal(approved.status, 200);
+
+  const search = await handleApiRequest('GET', '/api/v1/audit/search?domain=approval', undefined, state, {
+    'x-trackmind-role': 'compliance-officer',
+    'x-trackmind-tenant-id': 'trackmind',
+  });
+  assert.equal(search.status, 200);
+  assert.ok(Array.isArray(search.body));
+  assert.ok(
+    search.body.some((event) => event.action === 'approval.approved' && (event.subjectId === 'gate-audit-search' || event.affectedAssets?.includes('gate-audit-search'))),
+    'expected approval.approved in audit search results',
+  );
+});

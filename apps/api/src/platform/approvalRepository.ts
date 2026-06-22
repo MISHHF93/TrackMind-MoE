@@ -1,6 +1,11 @@
-import { createRepository, type KeyValueRepository } from '../repository/index.js';
+import {
+  createNamespacedRepository,
+  resolvePersistenceMode,
+  type KeyValueRepository,
+  type PersistenceMode,
+} from '../repository/repositoryAdapter.js';
 
-/** Module-scoped repository so approval records survive process restarts within the same runtime. */
+/** Module-scoped repository — uses `createNamespacedRepository` when `PERSISTENCE_MODE=postgres`. */
 export interface StoredApprovalRecord {
   id: string;
   request: unknown;
@@ -11,14 +16,23 @@ export interface StoredApprovalRecord {
 }
 
 let sharedApprovalRepository: KeyValueRepository<StoredApprovalRecord> | undefined;
+let sharedApprovalRepositoryMode: PersistenceMode | undefined;
 
 export function getApprovalRepository(): KeyValueRepository<StoredApprovalRecord> {
-  if (!sharedApprovalRepository) {
-    sharedApprovalRepository = createRepository<StoredApprovalRecord>([]);
+  const mode = resolvePersistenceMode();
+  if (!sharedApprovalRepository || sharedApprovalRepositoryMode !== mode) {
+    sharedApprovalRepository = createNamespacedRepository<StoredApprovalRecord>('platform.approvals', []);
+    sharedApprovalRepositoryMode = mode;
   }
   return sharedApprovalRepository;
 }
 
+/** Rebind the module-scoped approval repository after postgres hydration on API boot. */
+export function rewireApprovalRepository(): void {
+  sharedApprovalRepository = createNamespacedRepository<StoredApprovalRecord>('platform.approvals', []);
+  sharedApprovalRepositoryMode = resolvePersistenceMode();
+}
+
 export function resetApprovalRepositoryForTests(): void {
-  sharedApprovalRepository = createRepository<StoredApprovalRecord>([]);
+  rewireApprovalRepository();
 }

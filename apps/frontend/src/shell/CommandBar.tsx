@@ -1,6 +1,7 @@
 import { Search } from 'lucide-react';
 import type { ReactElement } from 'react';
 import { RoleSwitcher } from '@/auth/role-switcher';
+import { TenantRacetrackScopePicker } from '@/auth/TenantRacetrackScopePicker';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { roleDisplayName } from '@/domain/support';
 import { PostureBadge } from '@/design/components/badge';
@@ -27,9 +28,7 @@ export function CommandBar({
       <div className="flex flex-wrap items-center gap-3 justify-between">
         <div className="flex items-center gap-3 min-w-0">
           <PostureBadge posture={posture} label={postureLabel} onChrome />
-          <div className="hidden md:flex flex-wrap gap-2 text-xs">
-            <span className="scope-chip">Tenant <strong>{session.tenantId}</strong></span>
-            <span className="scope-chip">Racetrack <strong>{session.racetrackId}</strong></span>
+          <div className="hidden md:flex text-xs">
             <span className="scope-chip">Role <strong>{roleDisplayName(session.role)}</strong></span>
           </div>
         </div>
@@ -45,6 +44,7 @@ export function CommandBar({
             />
           </div>
           <NotificationCenter />
+          <TenantRacetrackScopePicker />
           <RoleSwitcher />
         </div>
       </div>

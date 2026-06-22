@@ -23,6 +23,39 @@ export interface ApiErrorBody {
 }
 
 const defaultRequestTimeoutMs = 8000;
+const staleWhileRevalidateTtlMs = 60_000;
+const inFlightGetRequests = new Map<string, Promise<AdapterResult<unknown>>>();
+const staleGetCache = new Map<string, { result: AdapterResult<unknown>; cachedAt: number }>();
+
+function readStaleGetCache<T>(cacheKey: string): AdapterResult<T> | undefined {
+  const entry = staleGetCache.get(cacheKey);
+  if (!entry) return undefined;
+  if (Date.now() - entry.cachedAt > staleWhileRevalidateTtlMs) {
+    staleGetCache.delete(cacheKey);
+    return undefined;
+  }
+  if (entry.result.status !== 'ready' && entry.result.status !== 'empty') return undefined;
+  return entry.result as AdapterResult<T>;
+}
+
+function writeStaleGetCache(cacheKey: string, result: AdapterResult<unknown>): void {
+  if (result.status === 'ready' || result.status === 'empty') {
+    staleGetCache.set(cacheKey, { result, cachedAt: Date.now() });
+  }
+}
+
+function revalidateGetInBackground<T>(path: string, init: RequestInit | undefined, cacheKey: string): void {
+  if (inFlightGetRequests.has(cacheKey)) return;
+  const promise = requestJson<T>(path, { ...init, method: 'GET' })
+    .then((result) => {
+      writeStaleGetCache(cacheKey, result);
+      return result;
+    })
+    .finally(() => {
+      inFlightGetRequests.delete(cacheKey);
+    });
+  inFlightGetRequests.set(cacheKey, promise as Promise<AdapterResult<unknown>>);
+}
 
 function scopedPath(path: string): string {
   const tenantContext = getTenantContext();
@@ -100,8 +133,39 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<Adapter
   }
 }
 
+function withStaleWhileRevalidateFallback<T>(
+  cacheKey: string,
+  path: string,
+  init: RequestInit | undefined,
+  result: AdapterResult<T>,
+  stale: AdapterResult<T> | undefined,
+): AdapterResult<T> {
+  if (result.status === 'ready' || result.status === 'empty') {
+    writeStaleGetCache(cacheKey, result);
+    return result;
+  }
+  if (!stale) return result;
+  revalidateGetInBackground<T>(path, init, cacheKey);
+  return {
+    ...stale,
+    message: stale.message ?? 'Serving cached data while backend is degraded.',
+  };
+}
+
 export async function getJson<T>(path: string, init?: RequestInit): Promise<AdapterResult<T>> {
-  return requestJson<T>(path, { ...init, method: 'GET' });
+  const scoped = scopedPath(path);
+  const cacheKey = `${init?.method ?? 'GET'}:${scoped}`;
+  const stale = readStaleGetCache<T>(cacheKey);
+  const inFlight = inFlightGetRequests.get(cacheKey);
+  if (inFlight) return inFlight as Promise<AdapterResult<T>>;
+
+  const promise = requestJson<T>(path, { ...init, method: 'GET' })
+    .then((result) => withStaleWhileRevalidateFallback(cacheKey, path, init, result, stale))
+    .finally(() => {
+      inFlightGetRequests.delete(cacheKey);
+    });
+  inFlightGetRequests.set(cacheKey, promise as Promise<AdapterResult<unknown>>);
+  return promise;
 }
 
 export async function postJson<T>(path: string, body: unknown, init?: RequestInit): Promise<AdapterResult<T>> {

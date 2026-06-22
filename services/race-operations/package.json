@@ -3,5 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Contract-only scaffold for the TrackMind race operations bounded context."
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "description": "TrackMind race operations bounded-context service with read-model boundary and operational HTTP surface.",
+  "scripts": {
+    "build": "npm --prefix ../../packages/shared run build && tsc -p tsconfig.json",
+    "typecheck": "npm --prefix ../../packages/shared run build && tsc -p tsconfig.json --noEmit",
+    "prestart": "npm run build",
+    "start": "node dist/server.js",
+    "test": "npm run build && node ../../scripts/run-node-tests.mjs tests/contract/*.test.mjs"
+  },
+  "dependencies": {
+    "@trackmind/shared": "file:../../packages/shared"
+  }
 }

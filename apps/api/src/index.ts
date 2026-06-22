@@ -11,12 +11,14 @@ export * from './assetIntelligence.js';
 export * from './barnOperations.js';
 export * from './auditLog.js';
 export * from './auditAdapter.js';
+export * from './auditVaultAdapter.js';
 export * from './canonicalRacingDataService.js';
 export * from './digitalTwin.js';
 export * from './digitalTwinFoundation.js';
 export * from './digitalTwinRuntime.js';
 export * from './dailyOperationsExperience.js';
 export * from './emergencyOperations.js';
+export * from './emergencyOperationsService.js';
 export * from './enterpriseApiGateway.js';
 export * from './enterpriseArchitecture.js';
 export * from './enterpriseDataLakehouse.js';
@@ -28,6 +30,7 @@ export * from './eventBus.js';
 export * from './events/index.js';
 export * from './facilitiesMaintenance.js';
 export * from './facilitiesUtilitiesAdapter.js';
+export * from './ticketingAdapter.js';
 export * from './federation.js';
 export * from './franchiseCertification.js';
 export * from './governanceCenter.js';
@@ -41,6 +44,7 @@ export * from './operationsCenter.js';
 export * from './platformObservability.js';
 export * from './providerRegistryService.js';
 export * from './raceOperationsPlatform.js';
+export * from './raceOperationsService.js';
 export * from './raceDayReadiness.js';
 export * from './racingCalendarPlatform.js';
 export * from './raceCardManagement.js';
@@ -56,6 +60,7 @@ export * from './fanExperiencePlatform.js';
 export * from './fanExperience.js';
 export * from './financePlatform.js';
 export * from './racingFinancePlatform.js';
+export * from './settlementAdapter.js';
 export * from './equineWelfareIntelligencePlatform.js';
 export * from './racingKnowledgeGraphPlatform.js';
 export * from './industryIntelligencePlatform.js';
@@ -73,6 +78,7 @@ export * from './services/equine/index.js';
 export * from './services/equineIntelligenceService.js';
 export * from './services/financeService.js';
 export * from './services/safetyService.js';
+export * from './services/safetyEmergencyBoundary.js';
 export * from './services/securityService.js';
 export * from './services/stewardingService.js';
 export * from './stewarding.js';
@@ -98,6 +104,27 @@ export * from './commandCenterV1.js';
 export * from './collaborationService.js';
 export * from './platform/approvalStore.js';
 export * from './platform/approvalEscalationWorker.js';
-export { getApprovalRepository, resetApprovalRepositoryForTests } from './platform/approvalRepository.js';
+export * from './platform/approvalEscalationScheduler.js';
+export { getApprovalRepository, resetApprovalRepositoryForTests, rewireApprovalRepository } from './platform/approvalRepository.js';
+export {
+  createNamespacedRepository,
+  createRepository,
+  getRepositoryEnvironment,
+  initializeRepositoryPersistence,
+  InMemoryPostgresRecordStore,
+  isPostgresPersistenceReady,
+  loadSnapshot,
+  persistSnapshot,
+  resetPostgresRecordStoreForTests,
+  resetRepositorySnapshotsForTests,
+  resolvePersistenceMode,
+  setPostgresClientAvailableForTests,
+  setPostgresRecordStoreForTests,
+  wireRepositoryAdaptersOnBoot,
+  type PostgresRecordStore,
+  type RepositoryEnvironment,
+  type RepositoryNamespace,
+} from './repository/repositoryAdapter.js';
 export { notificationFramework } from './platform/notificationFramework.js';
+export { IncidentService } from './platform/incidentService.js';
 export * from './server.js';

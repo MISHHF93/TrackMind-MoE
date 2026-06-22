@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
-import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/design/components/badge';
 import { KpiStrip } from '@/design/components/kpi-strip';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
@@ -8,8 +8,12 @@ import { SectionPanel } from '@/design/components/section-panel';
 import { Button } from '@/design/components/button';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
+import { useIncidentTimelineStream } from '@/hooks/useIncidentTimelineStream';
 import { feedData } from '../feedUtils';
-import { activateEmergencyWorkflow } from '@/api/mutations';
+import { activateEmergencyWorkflow, completeEmergencyCommunication, scheduleEmergencyDrill, completeEmergencyDrill, createEmergencyAfterActionReport } from '@/api/mutations';
+import { getJson } from '@/api/client';
+import { apiPaths } from '@/api/paths';
+import { useTenantSession } from '@/auth/TenantSessionProvider';
 
 function securityData(results: WorkspaceDataResult[]) {
   return feedData<Record<string, unknown>>(results, '/security-operations/workspace');
@@ -142,11 +146,48 @@ export function SecurityPanels({ results }: { results: WorkspaceDataResult[] }):
 }
 
 export function IncidentPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
+  const { session } = useTenantSession();
+  const uniqueIncidents = useMemo(() => {
+    const listData = feedData<unknown>(results, apiPaths.incidents.list);
+    const platformIncidents = extractArray<Record<string, unknown>>(listData);
+    const seen = new Set<string>();
+    return platformIncidents.filter((incident) => {
+      const id = String(incident.id ?? '');
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }, [results]);
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+  const focusedIncidentId = selectedIncidentId ?? String(uniqueIncidents[0]?.id ?? 'inc-1');
+
   const security = securityData(results);
   const emergency = feedData<Record<string, unknown>>(results, '/emergency-operations/workspace');
   const investigations = extractArray<Record<string, unknown>>(security, 'investigations');
-  const incidents = extractArray<Record<string, unknown>>(security, 'incidents');
   const emergencyStatus = String(emergency?.activeEmergencyStatus ?? 'nominal');
+
+  const incidentDetailQuery = useQuery({
+    queryKey: ['incident-detail', focusedIncidentId, session.sessionKey],
+    queryFn: async () => {
+      const result = await getJson<Record<string, unknown>>(apiPaths.incidents.detail(focusedIncidentId));
+      return result.status === 'ready' ? result.data : undefined;
+    },
+    enabled: Boolean(focusedIncidentId),
+    refetchInterval: 15_000,
+  });
+
+  const {
+    timeline: streamedTimeline,
+    status: timelineStreamStatus,
+    revision: timelineRevision,
+  } = useIncidentTimelineStream(focusedIncidentId);
+
+  const timelineEntries: Record<string, unknown>[] = streamedTimeline?.entries?.length
+    ? streamedTimeline.entries.map((entry) => ({ ...entry }))
+    : extractArray<Record<string, unknown>>(incidentDetailQuery.data, 'timeline');
+  const liveTimeline = timelineEntries;
+  const focusedIncident = uniqueIncidents.find((incident) => String(incident.id) === focusedIncidentId)
+    ?? incidentDetailQuery.data;
 
   return (
     <div className="space-y-4">
@@ -157,18 +198,61 @@ export function IncidentPanels({ results }: { results: WorkspaceDataResult[] }):
         </div>
         <Badge variant={emergencyStatus.includes('active') ? 'critical' : 'nominal'}>{emergencyStatus}</Badge>
       </div>
-      <SectionPanel title="Incident command board">
+      <KpiStrip
+        items={[
+          { id: 'open', label: 'Platform incidents', value: String(uniqueIncidents.length), status: uniqueIncidents.length ? 'warning' : 'nominal' },
+          { id: 'timeline', label: 'Timeline entries', value: String(liveTimeline.length) },
+          { id: 'status', label: 'Focused status', value: String(focusedIncident?.status ?? '—') },
+        ]}
+      />
+      <SectionPanel title="Incident command board" description="Lifecycle incidents from /incidents with SSE timeline subscription.">
+        {uniqueIncidents.length > 1 ? (
+          <label className="mb-3 flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+            Focus incident
+            <select
+              className="rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1 text-sm text-[var(--foreground)]"
+              value={focusedIncidentId}
+              onChange={(event) => setSelectedIncidentId(event.target.value)}
+            >
+              {uniqueIncidents.map((incident) => (
+                <option key={String(incident.id)} value={String(incident.id)}>
+                  {String(incident.title ?? incident.id)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <RecordTable
           columns={[
             { key: 'incident', label: 'Incident' },
             { key: 'severity', label: 'Severity' },
             { key: 'status', label: 'Status' },
           ]}
-          rows={mapRecords(incidents, (i) => ({
+          rows={mapRecords(uniqueIncidents, (i) => ({
             incident: String(i.title ?? i.id ?? '—'),
             severity: String(i.severity ?? '—'),
             status: String(i.status ?? '—'),
           }))}
+        />
+      </SectionPanel>
+      <SectionPanel
+        title="Live incident timeline"
+        description={`SSE /incidents/${focusedIncidentId}/timeline/stream (${timelineStreamStatus}${timelineRevision != null ? `, rev ${timelineRevision}` : ''}).`}
+      >
+        <RecordTable
+          columns={[
+            { key: 'time', label: 'Time' },
+            { key: 'action', label: 'Action' },
+            { key: 'actor', label: 'Actor' },
+            { key: 'note', label: 'Note' },
+          ]}
+          rows={mapRecords(liveTimeline, (entry) => ({
+            time: String(entry.at ?? '—'),
+            action: String(entry.action ?? '—'),
+            actor: String(entry.actor ?? '—'),
+            note: String(entry.note ?? '—'),
+          }))}
+          emptyLabel={timelineStreamStatus === 'connecting' ? 'Connecting to incident timeline stream…' : 'No timeline entries returned for the focused incident.'}
         />
       </SectionPanel>
       <SectionPanel title="Investigations">
@@ -191,11 +275,30 @@ export function IncidentPanels({ results }: { results: WorkspaceDataResult[] }):
 
 export function EmergencyPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
   const queryClient = useQueryClient();
-  const [activationMessage, setActivationMessage] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
   const emergency = feedData<Record<string, unknown>>(results, '/emergency-operations/workspace');
   const checklist = extractArray<Record<string, unknown>>(emergency, 'checklist');
   const comms = extractArray<Record<string, unknown>>(emergency, 'communicationLog');
   const roles = extractArray<Record<string, unknown>>(emergency, 'commandRoles');
+  const drills = extractArray<Record<string, unknown>>(emergency, 'drills');
+  const afterActionReports = extractArray<Record<string, unknown>>(emergency, 'afterActionReports');
+  const approvalPosture = emergency?.approvalPosture as { target?: string } | undefined;
+  const activeWorkflowId = String(approvalPosture?.target && approvalPosture.target !== 'no-active-emergency' ? approvalPosture.target : 'wf-fire-1');
+  const pendingComm = comms.find((item) => !item.completed);
+  const pendingDrill = drills.find((item) => !item.completedAt);
+  const commanderAssignee = String(roles.find((role) => role.role === 'incident-commander')?.assignee ?? 'Avery Chen');
+
+  const invalidateWorkspace = () => void queryClient.invalidateQueries({ queryKey: ['workspace'] });
+  const onMutationMessage = (response: unknown, fallback: string) => {
+    if (typeof response === 'object' && response && 'message' in response) {
+      const posture = (response as { approvalPosture?: { mode?: string } }).approvalPosture?.mode;
+      const base = String((response as { message?: string }).message);
+      setActionMessage(posture ? `${base} (${posture})` : base);
+    } else {
+      setActionMessage(fallback);
+    }
+    invalidateWorkspace();
+  };
 
   const activateWorkflow = useMutation({
     mutationFn: () =>
@@ -205,18 +308,55 @@ export function EmergencyPanels({ results }: { results: WorkspaceDataResult[] })
         scenario: 'severe-weather',
         severity: 'major',
         location: 'Grandstand shelter level',
-        activatedBy: 'incident-commander',
+        activatedBy: commanderAssignee,
         roles: ['admin'],
       }),
-    onSuccess: (response) => {
-      setActivationMessage(
-        typeof response === 'object' && response && 'message' in response
-          ? String((response as { message?: string }).message)
-          : 'Emergency workflow activated.',
-      );
-      void queryClient.invalidateQueries({ queryKey: ['workspace'] });
-    },
-    onError: (error: Error) => setActivationMessage(error.message),
+    onSuccess: (response) => onMutationMessage(response, 'Emergency workflow activated.'),
+    onError: (error: Error) => setActionMessage(error.message),
+  });
+
+  const completeCommunication = useMutation({
+    mutationFn: () =>
+      completeEmergencyCommunication(activeWorkflowId, {
+        itemId: String(pendingComm?.id ?? 'comm-radio'),
+        actor: commanderAssignee,
+      }),
+    onSuccess: (response) => onMutationMessage(response, 'Emergency communication recorded.'),
+    onError: (error: Error) => setActionMessage(error.message),
+  });
+
+  const scheduleDrill = useMutation({
+    mutationFn: () =>
+      scheduleEmergencyDrill({
+        id: `drill-${Date.now()}`,
+        scenario: 'severe-weather',
+        participants: ['ops', 'security', 'facilities'],
+      }),
+    onSuccess: (response) => onMutationMessage(response, 'Emergency drill scheduled.'),
+    onError: (error: Error) => setActionMessage(error.message),
+  });
+
+  const finishDrill = useMutation({
+    mutationFn: () =>
+      completeEmergencyDrill(String(pendingDrill?.id ?? 'drill-weather-1'), {
+        actor: commanderAssignee,
+        workflowId: activeWorkflowId,
+        observations: ['Command log reconciled with digital twin'],
+      }),
+    onSuccess: (response) => onMutationMessage(response, 'Emergency drill completed.'),
+    onError: (error: Error) => setActionMessage(error.message),
+  });
+
+  const createAfterAction = useMutation({
+    mutationFn: () =>
+      createEmergencyAfterActionReport({
+        incidentId: 'inc-100',
+        actor: commanderAssignee,
+        workflowId: activeWorkflowId,
+        findings: [{ finding: 'Communications checklist reviewed under incident command', severity: 'major', owner: 'safety' }],
+      }),
+    onSuccess: (response) => onMutationMessage(response, 'After-action report created.'),
+    onError: (error: Error) => setActionMessage(error.message),
   });
 
   return (
@@ -228,20 +368,64 @@ export function EmergencyPanels({ results }: { results: WorkspaceDataResult[] })
           { id: 'roles', label: 'Command roles', value: String(roles.length) },
         ]}
       />
-      <SectionPanel title="Incident command activation" description="Human-governed emergency workflow activation; AI cannot block life-safety actions.">
+      <SectionPanel title="Incident command activation" description="Human-governed emergency workflow activation; AI cannot block life-safety actions. Post-action evidence is recorded without blocking response.">
         <div className="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
             variant="governance"
             disabled={activateWorkflow.isPending}
             onClick={() => {
-              setActivationMessage(null);
+              setActionMessage(null);
               activateWorkflow.mutate();
             }}
           >
             Activate severe-weather workflow
           </Button>
-          {activationMessage ? <p className="text-xs text-[var(--muted-foreground)]">{activationMessage}</p> : null}
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!pendingComm || completeCommunication.isPending}
+            onClick={() => {
+              setActionMessage(null);
+              completeCommunication.mutate();
+            }}
+          >
+            Complete next communication
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={scheduleDrill.isPending}
+            onClick={() => {
+              setActionMessage(null);
+              scheduleDrill.mutate();
+            }}
+          >
+            Schedule drill
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!pendingDrill || finishDrill.isPending}
+            onClick={() => {
+              setActionMessage(null);
+              finishDrill.mutate();
+            }}
+          >
+            Complete drill
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={createAfterAction.isPending}
+            onClick={() => {
+              setActionMessage(null);
+              createAfterAction.mutate();
+            }}
+          >
+            Create after-action report
+          </Button>
+          {actionMessage ? <p className="text-xs text-[var(--muted-foreground)]">{actionMessage}</p> : null}
         </div>
       </SectionPanel>
       <div className="grid gap-4 xl:grid-cols-2">
@@ -280,12 +464,35 @@ export function EmergencyPanels({ results }: { results: WorkspaceDataResult[] })
             { key: 'time', label: 'Time' },
             { key: 'audience', label: 'Audience' },
             { key: 'message', label: 'Message' },
+            { key: 'status', label: 'Status' },
           ]}
           rows={mapRecords(comms, (c) => ({
-            time: String(c.timestamp ?? '—'),
+            time: String(c.completedAt ?? c.timestamp ?? '—'),
             audience: String(c.audience ?? c.channel ?? '—'),
             message: String(c.message ?? c.summary ?? '—'),
+            status: String(c.completed ? 'complete' : 'pending'),
           }))}
+        />
+      </SectionPanel>
+      <SectionPanel title="Drills and after-action evidence">
+        <RecordTable
+          columns={[
+            { key: 'id', label: 'Record' },
+            { key: 'type', label: 'Type' },
+            { key: 'status', label: 'Status' },
+          ]}
+          rows={[
+            ...mapRecords(drills, (drill) => ({
+              id: String(drill.id ?? '—'),
+              type: 'drill',
+              status: String(drill.completedAt ? 'completed' : 'scheduled'),
+            })),
+            ...mapRecords(afterActionReports, (report) => ({
+              id: String(report.incidentId ?? '—'),
+              type: 'after-action',
+              status: 'evidence-recorded',
+            })),
+          ]}
         />
       </SectionPanel>
     </div>

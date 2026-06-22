@@ -132,6 +132,24 @@ export class EmergencyOperationsPlatform {
   registerEvacuationZone(zone: EvacuationZone): EvacuationZone { this.evacuationProcedures.set(zone.id, zone); return clone(zone); }
   canManageEmergency(roles: Role[]) { return roles.some((role) => hasPermission(role, 'incident:manage')); }
 
+  requireIncidentCommander(workflowId: string, actor: string, permission: IncidentCommandRole['permissions'][number] = 'activate-workflow') {
+    const workflow = this.requireWorkflow(workflowId);
+    const commander = workflow.commandRoles.find((role) => role.role === 'incident-commander');
+    if (!commander) throw new Error('incident-commander role required in command structure');
+    const actorRole = workflow.commandRoles.find((role) => role.assignee === actor);
+    const isCommander = commander.assignee === actor;
+    const hasPermission = actorRole?.permissions.includes(permission) ?? false;
+    if (!isCommander && !hasPermission) {
+      throw new Error(`incident-commander authority required for ${permission}; actor ${actor} is not assigned`);
+    }
+    return commander;
+  }
+
+  postActionEvidencePosture(target: string, auditId: string, approvalRequestId?: string): EmergencyApprovalPosture {
+    const base: EmergencyApprovalPosture = { mode: 'post-action-evidence', action: 'emergency-action', target, aiMayBlock: false, emergencyPersonnelAuthority: true, reason: 'Emergency personnel may act immediately; platform records post-action evidence without blocking life-safety response.' };
+    return approvalRequestId ? { ...base, mode: 'approval-request-created', approvalRequestId } : base;
+  }
+
   registerWorkflowDefinitions(tenantId: string): WorkflowDefinition[] {
     const definitions = buildEmergencyWorkflowDefinitions(tenantId);
     definitions.forEach((definition) => this.deps.workflows?.register(definition));
@@ -148,8 +166,18 @@ export class EmergencyOperationsPlatform {
     return { incidentId: input.id, scenario: input.scenario, severity: input.severity, incidentCommander: commandByScenario[input.scenario], commandStructure: ['incident commander', 'safety officer', 'public information officer', 'operations', 'planning', 'logistics', 'finance/admin'], workflows: workflowByScenario[input.scenario], communicationChannels: ['mass-notification', 'radio-ops', 'executive-briefing', 'public-address', 'regulator-update'], integratedSystems: input.systems.map((system) => system.system), degradedSystems: offlineSystems, twinImpactMap: input.affectedAssets, evacuationRequired: input.scenario === 'evacuation' || input.severity === 'critical' || (input.populationAtRisk ?? 0) > 500, resourceRequests: this.resourcePlan(input), aiMayBlockEmergencyAction: false, humanOverrideSupported: true, authority: 'Human emergency personnel retain authority; AI recommendations are advisory and never block life-safety actions.' };
   }
 
+  assertActivationCommander(input: EmergencyWorkflowInput) {
+    const commander = input.commandRoles.find((role) => role.role === 'incident-commander');
+    if (!commander) throw new Error('incident-commander role required in command structure');
+    if (commander.assignee !== input.activatedBy) {
+      throw new Error(`incident-commander authority required for activate-workflow; actor ${input.activatedBy} is not assigned`);
+    }
+    return commander;
+  }
+
   createEmergencyWorkflow(input: EmergencyWorkflowInput): EmergencyWorkflow {
     if (!this.canManageEmergency(input.activatedByRoles)) throw new Error('incident:manage permission required');
+    this.assertActivationCommander(input);
     const incidentView = this.openIncident(input.incident);
     const resources = [...input.resources, ...(input.workforceResources ?? [])];
     resources.forEach((resource) => this.resources.set(resource.id, resource));
@@ -167,6 +195,7 @@ export class EmergencyOperationsPlatform {
   }
 
   recordCommunication(workflowId: string, itemId: string, actor: string) {
+    this.requireIncidentCommander(workflowId, actor, 'send-communication');
     const workflow = this.requireWorkflow(workflowId);
     workflow.communicationLog = workflow.communicationLog.map((item) => item.id === itemId ? { ...item, completed: true, completedBy: actor, completedAt: nowIso() } : item);
     const audit = this.appendAudit('emergency.communication.completed', actor, itemId, true, workflow.incident.severity);
@@ -180,7 +209,8 @@ export class EmergencyOperationsPlatform {
     return clone(drill);
   }
 
-  completeDrill(id: string, actor: string, observations: string[] = []): EmergencyDrillRecord {
+  completeDrill(id: string, actor: string, observations: string[] = [], workflowId?: string): EmergencyDrillRecord {
+    if (workflowId) this.requireIncidentCommander(workflowId, actor, 'activate-workflow');
     const drill = this.drills.find((candidate) => candidate.id === id);
     if (!drill) throw new Error(`Unknown drill: ${id}`);
     const audit = this.appendAudit('emergency.drill.completed', actor, id, true, drill.scenario === 'fire-incident' ? 'major' : 'minor');
@@ -189,10 +219,11 @@ export class EmergencyOperationsPlatform {
     return clone(drill);
   }
 
-  afterActionReport(incidentId: string, observations: Array<{ finding: string; severity: IncidentSeverity; owner: string }>): EmergencyAfterActionReport {
+  afterActionReport(incidentId: string, observations: Array<{ finding: string; severity: IncidentSeverity; owner: string }>, actor = 'after-action-coordinator', workflowId?: string) {
+    if (workflowId) this.requireIncidentCommander(workflowId, actor, 'close-incident');
     const incident = this.incidents.get(incidentId);
     if (!incident) throw new Error(`Unknown incident: ${incidentId}`);
-    const audit = this.appendAudit('emergency.after-action.created', 'after-action-coordinator', incidentId, true, incident.severity);
+    const audit = this.appendAudit('emergency.after-action.created', actor, incidentId, true, incident.severity);
     const report = { incidentId, scenario: incident.scenario, timelineEntries: workflowByScenario[incident.scenario].length, findings: observations, correctiveActions: observations.map((observation, index) => ({ id: `${incidentId}-ca-${index + 1}`, owner: observation.owner, action: `Resolve: ${observation.finding}`, dueDays: observation.severity === 'critical' ? 7 : 30 })), evidencePackage: ['command-log', 'communications-transcript', 'digital-twin-state-history', 'resource-ledger', audit.id], approvalPosture: { mode: 'post-action-evidence' as const, action: 'emergency-action' as const, target: incidentId, aiMayBlock: false as const, emergencyPersonnelAuthority: true as const, reason: 'After-action reports document command decisions and corrective actions; they do not retroactively block emergency personnel.' } };
     this.afterActions.push(report);
     this.appendEvent('emergency.after-action.created', incidentId, incident.severity, audit.id, { correctiveActions: report.correctiveActions.length });

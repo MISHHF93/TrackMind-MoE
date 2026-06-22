@@ -1,7 +1,14 @@
 import type { AnalyticsWorkspaceDto, FederationWorkspaceDto } from '@trackmind/shared';
 import type { KPIArtifact } from '@trackmind/shared';
 import type { RacingDataApiFacadeState } from '../racingDataApiHub.js';
-import { findRacingDataProvider, findRacingDataStatus } from '../racingDataApiHub.js';
+import {
+  invokeLicensedProviderConnector,
+  type LicensedConnectorLineage,
+  type LicensedConnectorRateLimit,
+  type LicensedProviderConnectorResult,
+  type ProviderAdapterInvokeFailure,
+  type ProviderAdapterInvokeSuccess,
+} from './licensedProviderConnector.js';
 
 const now = () => new Date().toISOString();
 
@@ -11,6 +18,14 @@ export interface ProviderAdapterInvokeResult {
   recordsProcessed: number;
   executedAt: string;
   mock: false;
+  audited: true;
+  auditId: string;
+  correlationId: string;
+  lineage: LicensedConnectorLineage;
+  rateLimit: LicensedConnectorRateLimit;
+  externalCallsPerformed: false;
+  scrapingPerformed: false;
+  licenseStatus: string;
 }
 
 export interface FederationKpiAggregationRow {
@@ -80,25 +95,46 @@ export function federationBenchmarksForAnalytics(
   });
 }
 
-export function executeProviderAdapter(providerId: string, state: RacingDataApiFacadeState): ProviderAdapterInvokeResult | undefined {
-  const provider = findRacingDataProvider(state, providerId);
-  if (!provider) return undefined;
-  const status = findRacingDataStatus(state, providerId);
-  if (status?.status === 'suspended') return undefined;
-  const jobRecords = state.ingestionJobs.filter((job) => job.providerId === providerId).length;
-  const canonicalRecords = [
-    ...state.canonical.raceCards,
-    ...state.canonical.races,
-    ...state.canonical.horses,
-    ...state.canonical.entries,
-    ...state.canonical.results,
-  ].filter((envelope) => envelope.providerId === providerId).length;
-  const recordsProcessed = Math.max(1, jobRecords * 10 + canonicalRecords);
+export function executeProviderAdapter(
+  providerId: string,
+  state: RacingDataApiFacadeState,
+  auditId: string,
+): ProviderAdapterInvokeResult | undefined {
+  const result = invokeLicensedProviderConnector(providerId, state);
+  if (!result.ok) return undefined;
+  return toInvokeResult(result, auditId);
+}
+
+export function invokeProviderAdapter(
+  providerId: string,
+  state: RacingDataApiFacadeState,
+): LicensedProviderConnectorResult {
+  return invokeLicensedProviderConnector(providerId, state);
+}
+
+export function toInvokeResult(
+  success: ProviderAdapterInvokeSuccess,
+  auditId: string,
+): ProviderAdapterInvokeResult {
   return {
-    providerId,
-    status: 'simulated',
-    recordsProcessed,
-    executedAt: now(),
+    providerId: success.providerId,
+    status: success.status,
+    recordsProcessed: success.recordsProcessed,
+    executedAt: success.executedAt,
     mock: false,
+    audited: true,
+    auditId,
+    correlationId: success.correlationId,
+    lineage: success.lineage,
+    rateLimit: success.rateLimit,
+    externalCallsPerformed: false,
+    scrapingPerformed: false,
+    licenseStatus: success.licenseStatus,
   };
 }
+
+export type {
+  LicensedProviderConnectorResult,
+  ProviderAdapterInvokeFailure,
+  ProviderAdapterInvokeSuccess,
+};

@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getJson } from '@/api/client';
 import { routeApiPathGroups } from '@/api/paths';
 import type { DomainRouteId } from '@/domain/support';
@@ -12,33 +12,58 @@ export interface WorkspaceDataResult {
   message?: string;
 }
 
+const workspacePathStaleTimeMs = 30_000;
+
 export function workspaceQueryKey(routeId: DomainRouteId, sessionKey: string): readonly [string, DomainRouteId, string] {
   return ['workspace', routeId, sessionKey];
 }
 
-async function fetchWorkspacePaths(paths: readonly string[]): Promise<WorkspaceDataResult[]> {
-  const results = await Promise.all(
-    paths.map(async (path) => {
-      const result = await getJson<unknown>(path);
-      return {
-        path,
-        status: result.status === 'ready' ? 'ready' : result.status === 'empty' ? 'empty' : 'error',
-        data: result.data,
-        message: result.message,
-      } satisfies WorkspaceDataResult;
-    }),
+export function workspacePathQueryKey(path: string, sessionKey: string): readonly [string, string, string] {
+  return ['workspace-path', path, sessionKey];
+}
+
+function toWorkspaceDataResult(path: string, result: Awaited<ReturnType<typeof getJson>>): WorkspaceDataResult {
+  return {
+    path,
+    status: result.status === 'ready' ? 'ready' : result.status === 'empty' ? 'empty' : 'error',
+    data: result.data,
+    message: result.message,
+  };
+}
+
+export async function loadWorkspacePath(path: string): Promise<WorkspaceDataResult> {
+  const result = await getJson<unknown>(path);
+  return toWorkspaceDataResult(path, result);
+}
+
+async function fetchWorkspacePaths(
+  queryClient: QueryClient,
+  paths: readonly string[],
+  sessionKey: string,
+): Promise<WorkspaceDataResult[]> {
+  const uniquePaths = [...new Set(paths)];
+  const loaded = await Promise.all(
+    uniquePaths.map((path) =>
+      queryClient.fetchQuery({
+        queryKey: workspacePathQueryKey(path, sessionKey),
+        queryFn: () => loadWorkspacePath(path),
+        staleTime: workspacePathStaleTimeMs,
+      }),
+    ),
   );
-  return results;
+  const byPath = new Map(loaded.map((result) => [result.path, result]));
+  return paths.map((path) => byPath.get(path) ?? { path, status: 'error', message: 'Workspace path was not loaded.' });
 }
 
 export function useWorkspaceData(routeId: DomainRouteId) {
   const { session } = useTenantSession();
+  const queryClient = useQueryClient();
   const paths = routeApiPathGroups[routeId];
 
   return useQuery({
     queryKey: workspaceQueryKey(routeId, session.sessionKey),
-    queryFn: () => fetchWorkspacePaths(paths),
-    staleTime: 30_000,
+    queryFn: () => fetchWorkspacePaths(queryClient, paths, session.sessionKey),
+    staleTime: workspacePathStaleTimeMs,
     retry: 1,
   });
 }

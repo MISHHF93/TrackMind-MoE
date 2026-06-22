@@ -1,31 +1,36 @@
 import type { ReactElement } from 'react';
+import { useMemo } from 'react';
 import { KpiStrip } from '@/design/components/kpi-strip';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
 import { SectionPanel } from '@/design/components/section-panel';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
-import { feedData } from '../feedUtils';
+import { feedFromIndex, indexWorkspaceFeeds } from '../feedUtils';
 import { AdminFoundationPanels } from './platformPanels';
 
 export function CommandCenterPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
-  const command = feedData<Record<string, unknown>>(results, '/operations/command-center');
-  const health = feedData<Record<string, unknown>>(results, '/platform/health');
-  const kpis = feedData<Record<string, unknown>>(results, '/kpis');
+  const feeds = useMemo(() => indexWorkspaceFeeds(results), [results]);
+  const command = feedFromIndex<Record<string, unknown>>(feeds, '/operations/command-center');
+  const health = feedFromIndex<Record<string, unknown>>(feeds, '/platform/health');
+  const kpis = feedFromIndex<Record<string, unknown>>(feeds, '/kpis');
 
   const widgets = extractArray<Record<string, unknown>>(command, 'widgets');
   const liveEvents = extractArray<Record<string, unknown>>(command, 'liveEvents');
   const services = extractArray<Record<string, unknown>>(health, 'services');
   const kpiItems = extractArray<Record<string, unknown>>(kpis, 'kpis');
-
-  const kpiSnapshotCount = kpiItems.reduce((total, kpi) => {
-    return total + extractArray(kpi, 'historicalSnapshots').length;
-  }, 0);
+  const kpiItemsWithSnapshots = useMemo(
+    () => kpiItems.map((kpi) => ({
+      kpi,
+      snapshots: extractArray<Record<string, unknown>>(kpi, 'historicalSnapshots'),
+    })),
+    [kpiItems],
+  );
+  const kpiSnapshotCount = kpiItemsWithSnapshots.reduce((total, item) => total + item.snapshots.length, 0);
 
   return (
     <div className="space-y-4">
       <KpiStrip
-        items={kpiItems.slice(0, 6).map((kpi, index) => {
-          const snapshots = extractArray<Record<string, unknown>>(kpi, 'historicalSnapshots');
+        items={kpiItemsWithSnapshots.slice(0, 6).map(({ kpi, snapshots }, index) => {
           const latest = snapshots.length ? snapshots[snapshots.length - 1] : undefined;
           return {
             id: String(kpi.id ?? kpi.kpiId ?? index),
@@ -88,11 +93,12 @@ export function CommandCenterPanels({ results }: { results: WorkspaceDataResult[
 }
 
 export function AdminPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
-  const health = feedData<Record<string, unknown>>(results, '/platform/health');
-  const ownership = feedData<Record<string, unknown>>(results, '/platform/domain-ownership');
-  const lineage = feedData<Record<string, unknown>>(results, '/platform/governance-lineage/validation');
-  const executive = feedData<Record<string, unknown>>(results, '/platform/executive-scorecard');
-  const maturity = feedData<Record<string, unknown>>(results, '/platform/maturity-review');
+  const feeds = useMemo(() => indexWorkspaceFeeds(results), [results]);
+  const health = feedFromIndex<Record<string, unknown>>(feeds, '/platform/health');
+  const ownership = feedFromIndex<Record<string, unknown>>(feeds, '/platform/domain-ownership');
+  const lineage = feedFromIndex<Record<string, unknown>>(feeds, '/platform/governance-lineage/validation');
+  const executive = feedFromIndex<Record<string, unknown>>(feeds, '/platform/executive-scorecard');
+  const maturity = feedFromIndex<Record<string, unknown>>(feeds, '/platform/maturity-review');
   const services = extractArray<Record<string, unknown>>(health, 'services');
   const lineageSummary = lineage?.summary as Record<string, unknown> | undefined;
 

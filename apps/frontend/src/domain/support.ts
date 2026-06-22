@@ -56,6 +56,36 @@ export const defaultTenantContext: TenantRacetrackContext = {
   scopeSource: 'operator-session',
 };
 
+export interface OperatorScopeOption {
+  id: string;
+  label: string;
+  organizationId: string;
+}
+
+/** Demo tenant/racetrack options aligned with API tenant seed data. */
+export const operatorTenantOptions: OperatorScopeOption[] = [
+  { id: 'trackmind', label: 'TrackMind Demo Tenant', organizationId: 'org-trackmind-network' },
+];
+
+export const operatorRacetracksByTenant: Record<string, OperatorScopeOption[]> = {
+  trackmind: [
+    { id: 'main-track', label: 'Main Track', organizationId: 'org-trackmind-network' },
+    { id: 'north-chute', label: 'North Chute', organizationId: 'org-trackmind-network' },
+  ],
+};
+
+export function racetracksForTenant(tenantId: string): OperatorScopeOption[] {
+  return operatorRacetracksByTenant[tenantId] ?? [];
+}
+
+export function tenantScopeLabel(tenantId: string): string {
+  return operatorTenantOptions.find((tenant) => tenant.id === tenantId)?.label ?? tenantId;
+}
+
+export function racetrackScopeLabel(tenantId: string, racetrackId: string): string {
+  return racetracksForTenant(tenantId).find((racetrack) => racetrack.id === racetrackId)?.label ?? racetrackId;
+}
+
 export function roleDisplayName(role: Role): string {
   return roleRegistry[role]?.displayName ?? role;
 }

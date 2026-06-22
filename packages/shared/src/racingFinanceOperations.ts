@@ -1,3 +1,5 @@
+import type { SettlementLedgerSnapshot } from './settlementAdapter.js';
+
 export const racingFinanceOperationsSchemaVersion = 'trackmind.racing-finance-operations.v1' as const;
 
 export const racingFinanceAuditabilityStatement =
@@ -133,6 +135,31 @@ export interface RacingFinanceGuardrailsDto {
   guardrailStatement: string;
 }
 
+export interface RacingFinancePayoutQueueItemDto {
+  id: string;
+  kind: 'purse' | 'payout';
+  reference: string;
+  label: string;
+  amount: number;
+  currency: string;
+  status: string;
+  approvalRequestId?: string;
+  approvalRequired: boolean;
+  executionEndpoint: string;
+}
+
+export interface RacingFinanceApprovalControlDto {
+  id: string;
+  label: string;
+  action: 'payout';
+  target: string;
+  reason: string;
+  requiredRoles: string[];
+  approvalApi: 'POST /api/v1/approvals/controlled-actions';
+  locked: true;
+  safetyCritical: true;
+}
+
 export interface RacingFinanceOperationsDto {
   generatedAt: string;
   schemaVersion: typeof racingFinanceOperationsSchemaVersion;
@@ -152,7 +179,10 @@ export interface RacingFinanceOperationsDto {
   expenses: { today: number; mtd: number; currency: string };
   budget: { allocated: number; spent: number; remaining: number; currency: string };
   payouts: Array<{ id: string; amount: number; status: string; approvalId?: string }>;
+  payoutQueue: RacingFinancePayoutQueueItemDto[];
+  approvalControls: RacingFinanceApprovalControlDto[];
   reconciliation: { pending: number; matched: number; exceptions: number };
+  settlement: SettlementLedgerSnapshot;
   mock: false;
 }
 
@@ -163,6 +193,7 @@ export interface RacingFinanceMutationResultDto {
   eventType: string;
   message: string;
   approvalRequestId?: string;
+  approvalRequired?: boolean;
   mock: false;
 }
 

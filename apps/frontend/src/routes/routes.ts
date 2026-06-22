@@ -134,7 +134,7 @@ export const routes = [
     requiredPermission: routePermissions.compliance,
     requiredRoles: ['admin', 'compliance-officer', 'read-only-auditor'],
     supportStatus: 'live-api',
-    dataSource: 'Compliance frameworks and control mappings.',
+    dataSource: 'Compliance dashboard, control library, corrective actions, and evidence packet metadata.',
     backendPaths: backendContractPathsForRoute('compliance'),
   },
   {

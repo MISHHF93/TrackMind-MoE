@@ -5,6 +5,7 @@ type MapFeature = {
   layer: string;
   label: string;
   status: string;
+  linkedAssetId?: string;
   geometry?: { type: string; coordinates?: { latitude: number; longitude: number } | Array<{ latitude: number; longitude: number }> };
   properties?: Record<string, unknown>;
 };
@@ -26,10 +27,30 @@ function statusClass(status: string): string {
   return 'bg-emerald-500';
 }
 
-export function FacilitiesGeospatialMap({ map }: { map?: Record<string, unknown> | null }): ReactElement {
+export function assetIdFromMapFeature(feature: MapFeature): string | undefined {
+  if (feature.linkedAssetId) return feature.linkedAssetId;
+  if (feature.properties?.assetId) return String(feature.properties.assetId);
+  if (feature.id.startsWith('asset:')) return feature.id.slice('asset:'.length);
+  return undefined;
+}
+
+export function FacilitiesGeospatialMap({
+  map,
+  selectedAssetId,
+  onAssetSelect,
+}: {
+  map?: Record<string, unknown> | null;
+  selectedAssetId?: string;
+  onAssetSelect?: (assetId: string) => void;
+}): ReactElement {
   const features = Array.isArray(map?.features) ? map.features as MapFeature[] : [];
   const viewport = map && typeof map.viewport === 'object' ? map.viewport as Record<string, unknown> : undefined;
   const center = viewport && typeof viewport.center === 'object' ? viewport.center as Record<string, unknown> : undefined;
+
+  const selectFeature = (feature: MapFeature) => {
+    const assetId = assetIdFromMapFeature(feature);
+    if (assetId) onAssetSelect?.(assetId);
+  };
 
   return (
     <div className="rounded-lg border border-border bg-muted/20 p-4">
@@ -39,6 +60,7 @@ export function FacilitiesGeospatialMap({ map }: { map?: Record<string, unknown>
           <p className="text-xs text-muted-foreground">
             {features.length} features
             {center ? ` · center ${String(center.latitude ?? '—')}, ${String(center.longitude ?? '—')}` : ''}
+            {selectedAssetId ? ` · selected ${selectedAssetId}` : ''}
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
@@ -54,10 +76,21 @@ export function FacilitiesGeospatialMap({ map }: { map?: Record<string, unknown>
           {features.map((feature) => {
             const position = point(feature);
             if (!position) return null;
+            const assetId = assetIdFromMapFeature(feature);
+            const selected = Boolean(assetId && assetId === selectedAssetId);
             return (
               <g key={feature.id}>
-                <circle cx={position.x} cy={position.y} r="2.4" className={statusClass(feature.status)} opacity="0.95" />
-                <title>{`${feature.label} (${feature.layer})`}</title>
+                <circle
+                  cx={position.x}
+                  cy={position.y}
+                  r={selected ? '3.2' : '2.4'}
+                  className={`${statusClass(feature.status)} ${assetId ? 'cursor-pointer' : ''}`}
+                  opacity="0.95"
+                  stroke={selected ? '#f8fafc' : 'none'}
+                  strokeWidth={selected ? '0.5' : '0'}
+                  onClick={() => selectFeature(feature)}
+                />
+                <title>{`${feature.label} (${feature.layer})${assetId ? ` · ${assetId}` : ''}`}</title>
               </g>
             );
           })}
@@ -69,12 +102,22 @@ export function FacilitiesGeospatialMap({ map }: { map?: Record<string, unknown>
         ) : null}
       </div>
       <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {features.slice(0, 6).map((feature) => (
-          <div key={`${feature.id}-legend`} className="rounded border border-border/70 px-2 py-1 text-xs">
-            <div className="font-medium text-foreground">{feature.label}</div>
-            <div className="text-muted-foreground">{feature.layer} · {feature.status}</div>
-          </div>
-        ))}
+        {features.slice(0, 6).map((feature) => {
+          const assetId = assetIdFromMapFeature(feature);
+          const selected = Boolean(assetId && assetId === selectedAssetId);
+          return (
+            <button
+              key={`${feature.id}-legend`}
+              type="button"
+              className={`rounded border px-2 py-1 text-left text-xs transition-colors ${selected ? 'border-[var(--brand-blue)] bg-[var(--brand-blue)]/10' : 'border-border/70 hover:border-border'}`}
+              disabled={!assetId}
+              onClick={() => selectFeature(feature)}
+            >
+              <div className="font-medium text-foreground">{feature.label}</div>
+              <div className="text-muted-foreground">{feature.layer} · {feature.status}</div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

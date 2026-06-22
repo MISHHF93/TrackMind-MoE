@@ -5,8 +5,28 @@ service:
   boundedContext: race-operations
   dataClassification: regulated
   tenantIsolation: required
+  runtime:
+    package: services/race-operations
+    mode: in-process-read-boundary-with-standalone-http
+    defaultPort: 4107
+    healthEndpoints:
+      - /health
+      - /ready
+      - /live
+      - /metrics
+  extractionStatus: read-models-delegated
+  serviceBoundary:
+    readModels:
+      - race-office
+      - dashboard
+      - races
+      - race-report
+    commandHandlers: apps/api/src/raceOperationsPlatform.ts
   currentReferenceImplementation:
+    - services/race-operations/src/application/raceOperationsService.ts
+    - services/race-operations/src/infrastructure/platformAdapter.ts
     - apps/api/src/raceOperationsPlatform.ts
+    - apps/api/src/raceOperationsService.ts
     - apps/api/src/server.ts
   humanApprovalRequiredFor:
     - race-start

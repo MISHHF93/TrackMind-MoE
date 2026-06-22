@@ -22,6 +22,8 @@ test('wave 01 foundation platform endpoints', async () => {
   const env = await handleApiRequest('GET', '/api/v1/platform/environment', undefined, state, adminHeaders);
   assert.equal(env.status, 200);
   assert.equal(env.body.persistenceMode, 'in-memory');
+  assert.equal(env.body.repository.mode, 'in-memory');
+  assert.equal(env.body.repository.wired, true);
 
   const orgList = await handleApiRequest('GET', '/api/v1/platform/organizations', undefined, state, adminHeaders);
   assert.equal(orgList.status, 200);
@@ -94,6 +96,16 @@ test('wave 09 paddock and schedule plus wave 11 incidents', async () => {
   assert.ok(incident.body.timeline.length > 0);
   assert.ok(incident.body.auditIds.length > 0);
 
+  const incidentTimeline = await handleApiRequest('GET', '/api/v1/incidents/inc-1/timeline', undefined, state, adminHeaders);
+  assert.equal(incidentTimeline.status, 200);
+  assert.equal(incidentTimeline.body.incidentId, 'inc-1');
+  assert.ok(incidentTimeline.body.entries.length > 0);
+
+  const incidentStream = await handleApiRequest('GET', '/api/v1/incidents/inc-1/timeline/stream', undefined, state, adminHeaders);
+  assert.equal(incidentStream.status, 200);
+  assert.match(String(incidentStream.body), /event: snapshot/);
+  assert.match(String(incidentStream.body), /event: heartbeat/);
+
   const created = await handleApiRequest('POST', '/api/v1/incidents', {
     title: 'Surface washout near rail',
     description: 'Standing water reported on backstretch.',
@@ -113,6 +125,14 @@ test('wave 09 paddock and schedule plus wave 11 incidents', async () => {
   assert.equal(triaged.status, 200);
   assert.equal(triaged.body.status, 'triaged');
 
+  const triagedTimeline = await handleApiRequest('GET', `/api/v1/incidents/${created.body.id}/timeline`, undefined, state, adminHeaders);
+  assert.equal(triagedTimeline.status, 200);
+  assert.ok(triagedTimeline.body.entries.length >= 2);
+  const since = triagedTimeline.body.entries[0].at;
+  const incrementalTimeline = await handleApiRequest('GET', `/api/v1/incidents/${created.body.id}/timeline?since=${encodeURIComponent(since)}`, undefined, state, adminHeaders);
+  assert.equal(incrementalTimeline.status, 200);
+  assert.ok(incrementalTimeline.body.entries.length >= 1);
+
   const resolved = await handleApiRequest('POST', `/api/v1/incidents/${created.body.id}`, {
     status: 'resolved',
     actor: 'incident-commander',
@@ -131,6 +151,24 @@ test('wave 09 paddock and schedule plus wave 11 incidents', async () => {
   assert.equal(kpiPack.status, 200);
   assert.equal(kpiPack.body.kpiPackId, 'safety-kpi-pack-v1');
   assert.ok(kpiPack.body.kpis.length >= 5);
+
+  const incidentCatalog = state.platformEventBus.governanceCatalog().map((entry) => entry.type);
+  assert.ok(incidentCatalog.includes('incident.reported.v1'));
+  assert.ok(incidentCatalog.includes('incident.updated.v1'));
+  assert.ok(incidentCatalog.includes('incident.triaged.v1'));
+  assert.ok(incidentCatalog.includes('incident.resolved.v1'));
+  assert.ok(incidentCatalog.includes('incident.post-incident-review.submitted.v1'));
+
+  await handleApiRequest('POST', '/api/v1/incidents', {
+    title: 'Event bus verification',
+    description: 'Verify incident.*.v1 registration.',
+    severity: 'medium',
+    category: 'operational',
+    reportedBy: 'security-officer',
+  }, state, adminHeaders);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const incidentBusEvents = state.platformEventBus.events().filter((event) => String(event.type).startsWith('incident.') || String(event.eventType ?? '').startsWith('incident.'));
+  assert.ok(incidentBusEvents.some((event) => event.eventType === 'incident.reported.v1' || event.type === 'incident.reported.v1'));
 });
 
 test('wave 16 fan experience and wave 17 finance workspace', async () => {
@@ -140,6 +178,19 @@ test('wave 16 fan experience and wave 17 finance workspace', async () => {
   assert.equal(fan.body.schemaVersion, 'trackmind.fan-experience-operations.v1');
   assert.ok(fan.body.attendance);
   assert.ok(fan.body.dashboard.panels.length >= 6);
+  assert.ok(fan.body.ticketingConnector);
+  assert.equal(fan.body.ticketingConnector.overallStatus, 'degraded');
+  assert.equal(fan.body.ticketingConnector.degraded, true);
+  assert.ok(fan.body.ticketingConnector.adapters.length >= 2);
+  assert.equal(fan.body.ticketingConnector.inventorySource, 'degraded-connector');
+  assert.equal(fan.body.ticketingConnector.attendanceSource, 'degraded-connector');
+  assert.ok(fan.body.ticketingConnector.syncAuditIds.length >= 1);
+  assert.equal(fan.body.ticketInventory.sold, 8490);
+  assert.equal(fan.body.attendance.current, 8490);
+
+  const attendance = await handleApiRequest('GET', '/api/v1/fan-experience/attendance', undefined, state, adminHeaders);
+  assert.equal(attendance.status, 200);
+  assert.ok(attendance.body.ticketingConnector);
 
   const finance = await handleApiRequest('GET', '/api/v1/finance/workspace', undefined, state, adminHeaders);
   assert.equal(finance.status, 200);
@@ -156,6 +207,12 @@ test('wave 08 analytics workspace and dashboard KPI trends', async () => {
   assert.ok(analytics.body.kpiTrends.length >= 1);
   assert.ok(analytics.body.kpiTrends.every((trend) => trend.kpiId && trend.points.length >= 1));
   assert.ok(analytics.body.forecastingReadiness.modelsAvailable.length >= 1);
+
+  const analyticsStream = await handleApiRequest('GET', '/api/v1/analytics/workspace/stream', undefined, state, adminHeaders);
+  assert.equal(analyticsStream.status, 200);
+  assert.match(String(analyticsStream.body), /event: snapshot/);
+  assert.match(String(analyticsStream.body), /event: heartbeat/);
+  assert.match(String(analyticsStream.body), /forecastingReadiness/);
 
   const kpis = await handleApiRequest('GET', '/api/v1/kpis', undefined, state, adminHeaders);
   assert.equal(kpis.status, 200);
@@ -177,13 +234,61 @@ test('wave 18 model registry and wave 19 federation KPIs', async () => {
   }, state, adminHeaders);
   assert.equal(promptRegistration.status, 201);
   assert.equal(promptRegistration.body.eventType, 'ai.prompt-card.registered');
+  assert.equal(promptRegistration.body.audited, true);
+  assert.ok(promptRegistration.body.auditId);
   assert.ok(promptRegistration.body.registry.promptCards.some((card) => card.id === 'surface-intervention-v5'));
+
+  const modelRegistration = await handleApiRequest('POST', '/api/v1/ai-governance/model-registry/models', {
+    id: 'weather-advisor-v1',
+    name: 'Weather Advisor',
+    version: '1.0.0',
+    riskLevel: 'medium',
+    path: 'ai/model-cards/weather-advisor-v1.md',
+    reason: 'wave-18 verification registration',
+  }, state, adminHeaders);
+  assert.equal(modelRegistration.status, 201);
+  assert.equal(modelRegistration.body.eventType, 'ai.model-card.registered');
+  assert.equal(modelRegistration.body.audited, true);
+  assert.ok(modelRegistration.body.auditId);
+
+  const auditSearch = await handleApiRequest('GET', '/api/v1/audit/search?domain=ai', undefined, state, adminHeaders);
+  assert.equal(auditSearch.status, 200);
+  assert.ok(auditSearch.body.some((event) => event.action === 'ai.prompt-card.registered'));
+  assert.ok(auditSearch.body.some((event) => event.action === 'ai.model-card.registered'));
 
   const connector = await handleApiRequest('POST', '/api/v1/racing-data/providers/provider-official-feed/invoke', undefined, state, adminHeaders);
   assert.equal(connector.status, 202);
   assert.equal(connector.body.providerId, 'provider-official-feed');
   assert.equal(connector.body.status, 'simulated');
   assert.ok(connector.body.recordsProcessed >= 1);
+  assert.equal(connector.body.mock, false);
+  assert.equal(connector.body.audited, true);
+  assert.ok(connector.body.auditId);
+  assert.ok(connector.body.correlationId);
+  assert.equal(connector.body.externalCallsPerformed, false);
+  assert.equal(connector.body.scrapingPerformed, false);
+  assert.ok(connector.body.lineage?.sourceRefs?.length >= 1);
+  assert.ok(typeof connector.body.rateLimit?.remaining === 'number');
+  assert.ok(connector.body.rateLimit.remaining < connector.body.rateLimit.limit);
+
+  const restrictedInvoke = await handleApiRequest('POST', '/api/v1/racing-data/providers/provider-restricted-odds/invoke', undefined, state, adminHeaders);
+  assert.equal(restrictedInvoke.status, 403);
+  assert.equal(restrictedInvoke.body.error?.code, 'provider_suspended');
+
+  const entityReview = await handleApiRequest('POST', '/api/v1/racing-data/entity-resolution/review', {
+    providerId: 'provider-official-feed',
+    entityId: 'trainer-candidate-1',
+    resolutionId: 'resolution-trainer-ambiguous-1',
+    rationale: 'wave-19 entity resolution review draft',
+  }, state, adminHeaders);
+  assert.equal(entityReview.status, 202);
+  assert.equal(entityReview.body.eventType, 'racing-data.entity-resolution.review.draft.created');
+  assert.equal(entityReview.body.executionAllowed, false);
+  assert.ok(entityReview.body.draftId);
+
+  const providerAudit = await handleApiRequest('GET', '/api/v1/audit/search?domain=racing-data', undefined, state, adminHeaders);
+  assert.equal(providerAudit.status, 200);
+  assert.ok(providerAudit.body.some((event) => event.action === 'racing-data.provider.invoked'));
 
   const federation = await handleApiRequest('GET', '/api/v1/federation/kpi-aggregation', undefined, state, adminHeaders);
   assert.equal(federation.status, 200);
@@ -268,7 +373,8 @@ test('wave 20 global search and notifications', async () => {
   const adapters = await handleApiRequest('GET', '/api/v1/notifications/delivery-adapters', undefined, state, adminHeaders);
   assert.equal(adapters.status, 200);
   assert.ok(adapters.body.adapters.includes('in-app'));
-  assert.ok(adapters.body.adapters.includes('sse'));
+  assert.ok(adapters.body.adapters.includes('webhook-stub'));
+  assert.ok(adapters.body.adapters.includes('email-stub'));
   assert.ok(adapters.body.stats.length >= 1);
 
   const coverage = await handleApiRequest('GET', '/api/v1/platform/contract-coverage', undefined, state, adminHeaders);
@@ -314,4 +420,23 @@ test('wave 06 durable approvals, escalation simulation, and audit-backed mutatio
   assert.equal(listed.status, 200);
   const live = listed.body.find((item) => item.id === approvalId || item.approvalRequestId === approvalId);
   assert.ok(live);
+
+  const approved = await handleApiRequest(
+    'POST',
+    `/api/v1/approvals/${approvalId}/approve`,
+    {
+      actorId: 'security-lead',
+      actorType: 'human',
+      roles: ['security'],
+      reason: 'Gate fault verified for wave 06 audit search',
+      evidence: ['human-approval-record'],
+    },
+    state,
+    { ...adminHeaders, 'x-trackmind-role': 'security' },
+  );
+  assert.equal(approved.status, 200);
+
+  const approvalSearch = await handleApiRequest('GET', '/api/v1/audit/search?domain=approval', undefined, state, adminHeaders);
+  assert.equal(approvalSearch.status, 200);
+  assert.ok(approvalSearch.body.some((event) => event.action === 'approval.approved'));
 });

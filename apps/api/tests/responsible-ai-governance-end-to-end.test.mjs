@@ -214,3 +214,51 @@ test('approval-required AI recommendation adapts to Recommendation Insight and F
   assert.deepEqual([recommendation.outputClass, insight.outputClass, forecast.outputClass], ['Recommendation', 'Insight', 'Forecast']);
   assert.equal(forecast.payload.horizon, '2h');
 });
+
+test('prompt lineage draft and publish mutations govern registry cards with audit trail', async () => {
+  const { createApiFacadeState, handleApiRequest } = await import('../dist/server.js');
+  const adminHeaders = {
+    'x-trackmind-role': 'admin',
+    'x-trackmind-tenant-id': 'trackmind',
+    'x-trackmind-racetrack-id': 'main-track',
+    'x-trackmind-organization-id': 'org-trackmind-network',
+  };
+  const state = createApiFacadeState();
+
+  const draft = await handleApiRequest('POST', '/api/v1/ai-governance/prompt-lineage/drafts', {
+    id: 'surface-intervention-v6',
+    name: 'Surface Intervention',
+    version: '6.0.0',
+    path: 'ai/prompt-cards/surface-intervention-v6.md',
+    lineage: ['surface-intervention-v4', 'surface-advisor-v2'],
+    reason: 'Governed lineage draft for end-to-end verification',
+    requestedBy: 'compliance-officer',
+  }, state, adminHeaders);
+
+  assert.equal(draft.status, 202);
+  assert.equal(draft.body.eventType, 'ai.prompt-lineage.draft.created');
+  assert.equal(draft.body.draftOnly, true);
+  assert.ok(draft.body.draftId);
+  assert.ok(draft.body.auditEventIds.length >= 1);
+
+  const cardsBeforePublish = await handleApiRequest('GET', '/api/v1/ai-governance/prompt-cards', undefined, state, adminHeaders);
+  assert.equal(cardsBeforePublish.status, 200);
+  assert.equal(cardsBeforePublish.body.promptCards.some((card) => card.id === 'surface-intervention-v6'), false);
+
+  const published = await handleApiRequest('POST', `/api/v1/ai-governance/prompt-lineage/${encodeURIComponent(draft.body.draftId)}/publish`, {}, state, adminHeaders);
+  assert.equal(published.status, 201);
+  assert.equal(published.body.eventType, 'ai.prompt-lineage.published');
+  assert.equal(published.body.registeredId, 'surface-intervention-v6');
+  assert.equal(published.body.audited, true);
+  assert.ok(published.body.auditId);
+  assert.ok(published.body.registry.promptCards.some((card) => card.id === 'surface-intervention-v6'));
+
+  const auditSearch = await handleApiRequest('GET', '/api/v1/audit/search?domain=ai', undefined, state, adminHeaders);
+  assert.equal(auditSearch.status, 200);
+  assert.ok(auditSearch.body.some((event) => event.action === 'ai.prompt-lineage.draft.created'));
+  assert.ok(auditSearch.body.some((event) => event.action === 'ai.prompt-lineage.published'));
+
+  const republish = await handleApiRequest('POST', `/api/v1/ai-governance/prompt-lineage/${encodeURIComponent(draft.body.draftId)}/publish`, {}, state, adminHeaders);
+  assert.equal(republish.status, 400);
+  assert.match(republish.body.error.message, /already published/i);
+});

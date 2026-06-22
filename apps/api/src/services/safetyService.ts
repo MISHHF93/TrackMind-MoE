@@ -83,6 +83,34 @@ export class SafetyService {
     });
   }
 
+  recordPostActionEmergencyEvidence(input: {
+    incidentId: string;
+    action: string;
+    requestedBy: string;
+    auditId: string;
+    evidenceLinks: string[];
+  }) {
+    const incident = this.incidents.find((item) => item.id === input.incidentId) ?? {
+      id: input.incidentId,
+      title: input.action,
+      severity: 'critical' as const,
+      status: 'open' as const,
+      evidence: [],
+    };
+    incident.evidence = [...new Set([...incident.evidence, ...input.evidenceLinks, input.auditId])];
+    if (!this.incidents.some((item) => item.id === incident.id)) this.incidents.push(incident);
+    if (this.incidentService?.get(input.incidentId)) {
+      this.incidentService.update(input.incidentId, { status: 'responding', actor: input.requestedBy, note: input.action });
+    }
+    return {
+      recorded: true,
+      posture: 'post-action-evidence' as const,
+      aiMayBlock: false as const,
+      emergencyPersonnelAuthority: true as const,
+      incident: { ...incident, evidence: [...incident.evidence] },
+    };
+  }
+
   async requestEmergencyAction(input: EmergencyActionInput): Promise<ApprovalRequiredActionRecord> {
     return this.approvals.requestProtectedMutation({
       service: 'safety',

@@ -8,6 +8,9 @@ import type {
   AIPromptCardDto,
   AIPromptCardListDto,
   AIPromptCardRegistrationInput,
+  AIPromptLineageDraftInput,
+  AIPromptLineageDraftResultDto,
+  AIPromptLineagePublishResultDto,
 } from '@trackmind/shared';
 import { listAIAgentRegistryRecords, listExpertModelRegistry } from '../aiControlPlane.js';
 
@@ -20,8 +23,22 @@ function riskLevelForCriticality(criticality: string): string {
   return 'medium';
 }
 
+interface PromptLineageDraftRecord {
+  draftId: string;
+  promptId: string;
+  name: string;
+  version: string;
+  path: string;
+  lineage: string[];
+  reason?: string;
+  requestedBy: string;
+  createdAt: string;
+  status: 'draft' | 'published';
+}
+
 export class AIModelCardRegistryStore {
   private controlPlaneSynced = false;
+  private promptLineageDrafts = new Map<string, PromptLineageDraftRecord>();
 
   private modelCards: AIModelCardDto[] = [
     {
@@ -172,6 +189,63 @@ export class AIModelCardRegistryStore {
       registeredId: card.id,
       eventType: 'ai.model-card.registered',
       message: `Model card ${card.id}@${card.version} registered with governed lineage metadata.`,
+      mock: false,
+    };
+  }
+
+  draftPromptLineage(input: AIPromptLineageDraftInput): AIPromptLineageDraftResultDto {
+    if (!input.id?.trim() || !input.name?.trim() || !input.version?.trim() || !input.path?.trim()) {
+      throw new Error('Prompt lineage draft requires id, name, version, and path');
+    }
+    if (!Array.isArray(input.lineage) || input.lineage.length === 0) {
+      throw new Error('Prompt lineage draft requires at least one lineage reference');
+    }
+    const promptId = input.id.trim();
+    const draftId = `prompt-lineage-draft-${promptId}-${Date.now().toString(36)}`;
+    const auditEventIds = [`audit-${draftId}`];
+    this.promptLineageDrafts.set(draftId, {
+      draftId,
+      promptId,
+      name: input.name.trim(),
+      version: input.version.trim(),
+      path: input.path.trim(),
+      lineage: input.lineage.map((ref) => String(ref).trim()).filter(Boolean),
+      reason: input.reason?.trim(),
+      requestedBy: input.requestedBy?.trim() || 'compliance-officer',
+      createdAt: now(),
+      status: 'draft',
+    });
+    return {
+      accepted: true,
+      draftId,
+      promptId,
+      eventType: 'ai.prompt-lineage.draft.created',
+      draftOnly: true,
+      message: `Prompt lineage draft ${promptId}@${input.version.trim()} recorded with lineage ${input.lineage.join(' -> ')}. Publish through governed review to activate the registry card.`,
+      auditEventIds,
+      mock: false,
+    };
+  }
+
+  publishPromptLineage(draftId: string): AIPromptLineagePublishResultDto {
+    const draft = this.promptLineageDrafts.get(draftId);
+    if (!draft) throw new Error(`Unknown prompt lineage draft ${draftId}`);
+    if (draft.status === 'published') throw new Error(`Prompt lineage draft ${draftId} is already published`);
+    const registered = this.registerPrompt({
+      id: draft.promptId,
+      name: draft.name,
+      version: draft.version,
+      path: draft.path,
+      lineage: draft.lineage,
+    });
+    draft.status = 'published';
+    return {
+      accepted: true,
+      draftId,
+      registeredId: registered.registeredId,
+      registry: registered.registry,
+      eventType: 'ai.prompt-lineage.published',
+      message: `Prompt lineage draft ${draftId} published as ${registered.registeredId}@${draft.version}.`,
       mock: false,
     };
   }
