@@ -95,13 +95,21 @@ export function canViewRoute(route: RouteSupportMetadata, role: Role): boolean {
   return canRoleAccessRoute(role, route.id);
 }
 
-export {
+import {
   accessibleRoutesForRole,
   canAccessRoute,
   homePathForAccessibleRole,
   isPathAccessibleForRole,
   isRouteModuleEnabled,
 } from '@/domain/accessibleRoutes';
+
+export {
+  accessibleRoutesForRole,
+  canAccessRoute,
+  homePathForAccessibleRole,
+  isPathAccessibleForRole,
+  isRouteModuleEnabled,
+};
 
 export function homePathForSessionRole(
   role: Role,

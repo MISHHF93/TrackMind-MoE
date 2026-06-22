@@ -4,7 +4,7 @@ import { listOperatorSessions, revokeOperatorSessionById, revokeOtherOperatorSes
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { isSignedInSession } from '@/auth/session';
 import { Button } from '@/design/components/button';
-import { RecordTable, mapRecords } from '@/design/components/record-table';
+import { RecordTable } from '@/design/components/record-table';
 import { SectionPanel } from '@/design/components/section-panel';
 
 export function AccountSecurityTab(): ReactElement {
@@ -61,9 +61,9 @@ export function AccountSecurityTab(): ReactElement {
                 { key: 'expires', label: 'Expires' },
                 { key: 'current', label: 'Current' },
               ]}
-              rows={mapRecords(sessions, (row) => ({
+              rows={sessions.slice(0, 12).map((row) => ({
                 client: row.clientHint ?? 'Web browser',
-                provider: row.authProvider,
+                provider: String(row.authProvider),
                 expires: new Date(row.expiresAt).toLocaleString(),
                 current: row.current ? 'Yes' : 'No',
               }))}

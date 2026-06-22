@@ -33,12 +33,12 @@ export function canAccessRoute(
     && isRouteModuleEnabled(route.id, enabledModules, moduleKey, modulesLoading);
 }
 
-export function accessibleRoutesForRole(
+export function accessibleRoutesForRole<T extends RouteSupportMetadata>(
   role: Role,
-  routeList: readonly RouteSupportMetadata[],
+  routeList: readonly T[],
   enabledModules?: ReadonlyMap<string, boolean>,
   modulesLoading = false,
-): RouteSupportMetadata[] {
+): T[] {
   return routeList.filter((route) =>
     canAccessRoute(route, role, enabledModules, routeModuleKey(route.id), modulesLoading),
   );

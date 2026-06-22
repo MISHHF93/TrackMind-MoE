@@ -4,7 +4,7 @@ import type { RouteSupportMetadata } from '@/domain/support';
 import { useModuleEnablement } from '@/hooks/useModuleEnablement';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 
-export function useAccessibleRoutes(routeList: readonly RouteSupportMetadata[]) {
+export function useAccessibleRoutes<T extends RouteSupportMetadata>(routeList: readonly T[]) {
   const { session } = useTenantSession();
   const { enabledModules, isLoading } = useModuleEnablement();
 

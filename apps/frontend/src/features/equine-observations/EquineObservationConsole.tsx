@@ -76,7 +76,7 @@ export function EquineObservationConsole({
     return merged;
   }, [veterinaryObservations, welfareObservations, session.role]);
 
-  const canSeeClinicalNotes = session.role === 'veterinarian' || session.role === 'admin' || session.role === 'compliance-officer';
+  const canSeeClinicalNotes = session.role === 'veterinarian' || session.role === 'platform-super-admin' || session.role === 'compliance-officer';
 
   return (
     <div className={cn('space-y-4', className)}>

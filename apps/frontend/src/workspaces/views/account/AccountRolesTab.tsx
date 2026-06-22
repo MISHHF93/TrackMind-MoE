@@ -8,7 +8,7 @@ import { roleDisplayName } from '@/domain/support';
 import { Badge } from '@/design/components/badge';
 import { Button } from '@/design/components/button';
 import { SectionPanel } from '@/design/components/section-panel';
-import { RecordTable, mapRecords } from '@/design/components/record-table';
+import { RecordTable } from '@/design/components/record-table';
 
 export function AccountRolesTab({
   session,
@@ -126,9 +126,9 @@ export function AccountRolesTab({
             { key: 'status', label: 'Status' },
             { key: 'createdAt', label: 'Submitted' },
           ]}
-          rows={mapRecords(requests, (row) => ({
+          rows={requests.slice(0, 12).map((row) => ({
             requestedRole: roleDisplayName(row.requestedRole as Role),
-            status: row.status,
+            status: String(row.status),
             createdAt: new Date(row.createdAt).toLocaleString(),
           }))}
           emptyLabel="No access requests yet."

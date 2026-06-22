@@ -25,7 +25,7 @@ export function buildRaceCardSubmitPayload(
 ): Record<string, unknown> {
   return buildRaceCardDomainPayload(entityKind, mode, values, {
     actorId: String(values.actorId ?? values.actor ?? 'operator'),
-    role: 'racing-secretary',
+    role: 'horse-operations-coordinator',
     recordId,
   });
 }

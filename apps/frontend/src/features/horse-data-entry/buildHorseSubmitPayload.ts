@@ -10,7 +10,7 @@ export function buildHorseSubmitPayload(
 ): Record<string, unknown> {
   return buildHorseDomainPayload(entityKind, mode, values, {
     actorId: String(values.actorId ?? values.actor ?? 'operator'),
-    role: role ?? 'admin',
+    role: role ?? 'platform-super-admin',
     recordId,
   });
 }

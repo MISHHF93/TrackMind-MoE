@@ -1,8 +1,8 @@
 import {
   canRoleAccessEntity,
   canRoleEditRoute,
+  canRoleViewKpiDomain,
   canRoleViewRoute,
-  filterKpisForRole,
   isReadOnlyOperationalRole,
   type EntityDomain,
   type KPIDomain,
@@ -33,7 +33,7 @@ export function useEntityAccess(domain: EntityDomain) {
 
 export function useKpiAccess(domain: KPIDomain): boolean {
   const { session } = useTenantSession();
-  return filterKpisForRole(session.role, [domain]).length > 0;
+  return canRoleViewKpiDomain(session.role, domain);
 }
 
 export function roleCanMutate(role: Role): boolean {

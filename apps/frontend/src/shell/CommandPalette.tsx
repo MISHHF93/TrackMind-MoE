@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import type { Role } from '@trackmind/shared';
-import { canAccessEntityPickerKind, isEntityPickerKind, mapGraphKindToEntityPickerKind } from '@trackmind/shared';
+import {
+  canAccessEntityPickerKind,
+  isEntityPickerKind,
+  knowledgeGraphEntityKinds,
+  mapGraphKindToEntityPickerKind,
+  type KnowledgeGraphEntityKind,
+} from '@trackmind/shared';
 import type { AppRoute } from '@/routes/routes';
 import { useGlobalSearch } from '@/hooks/useGlobalSearch';
 
@@ -22,7 +28,11 @@ export function CommandPalette({
   const [query, setQuery] = useState(initialQuery);
   const { results: globalResults, loading } = useGlobalSearch(query, open);
   const filteredGlobalResults = useMemo(() => globalResults.filter((result) => {
-    const pickerKind = mapGraphKindToEntityPickerKind(result.kind) ?? (isEntityPickerKind(result.kind) ? result.kind : undefined);
+    const pickerKind = isEntityPickerKind(result.kind)
+      ? result.kind
+      : isKnowledgeGraphEntityKind(result.kind)
+        ? mapGraphKindToEntityPickerKind(result.kind)
+        : undefined;
     if (!pickerKind) return true;
     return canAccessEntityPickerKind(pickerKind, role);
   }), [globalResults, role]);
@@ -107,4 +117,8 @@ export function CommandPalette({
       </div>
     </div>
   );
+}
+
+function isKnowledgeGraphEntityKind(kind: string): kind is KnowledgeGraphEntityKind {
+  return (knowledgeGraphEntityKinds as readonly string[]).includes(kind);
 }

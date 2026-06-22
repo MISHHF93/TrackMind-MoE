@@ -40,7 +40,7 @@ export function HorseFormAction({
     return null;
   }
 
-  if (isHorseVeterinaryRestrictedKind(entityKind) && session.role !== 'veterinarian' && session.role !== 'admin' && session.role !== 'compliance-officer') {
+  if (isHorseVeterinaryRestrictedKind(entityKind) && session.role !== 'veterinarian' && session.role !== 'platform-super-admin' && session.role !== 'compliance-officer') {
     return null;
   }
 
