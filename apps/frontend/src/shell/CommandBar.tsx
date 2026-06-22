@@ -1,6 +1,9 @@
-import { Search } from 'lucide-react';
 import type { ReactElement } from 'react';
-import { RoleSwitcher } from '@/auth/role-switcher';
+import { Search } from 'lucide-react';
+import { AssignedRolePicker } from '@/auth/AssignedRolePicker';
+import { demoAccessEnabled } from '@/auth/entraAuth';
+import { OperatorIdentityMenu } from '@/auth/OperatorIdentityMenu';
+import { isDemoSession, isSignedInSession } from '@/auth/session';
 import { TenantRacetrackScopePicker } from '@/auth/TenantRacetrackScopePicker';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { roleDisplayName } from '@/domain/support';
@@ -31,6 +34,9 @@ export function CommandBar({
         <div className="flex items-center gap-3 min-w-0">
           <PostureBadge posture={posture} label={postureLabel} onChrome />
           <div className="hidden md:flex text-xs gap-2">
+            {demoAccessEnabled() ? <span className="scope-chip">Demo mode</span> : null}
+            {isSignedInSession(session) ? <span className="scope-chip">Signed in</span> : null}
+            {isDemoSession(session) ? <span className="scope-chip">Demo operator</span> : null}
             <span className="scope-chip">Role <strong>{roleDisplayName(session.role)}</strong></span>
             <span className="scope-chip capitalize">{category.replace('-', ' ')}</span>
           </div>
@@ -48,7 +54,8 @@ export function CommandBar({
           </div>
           <NotificationCenter />
           <TenantRacetrackScopePicker />
-          <RoleSwitcher />
+          <OperatorIdentityMenu />
+          <AssignedRolePicker />
         </div>
       </div>
     </header>

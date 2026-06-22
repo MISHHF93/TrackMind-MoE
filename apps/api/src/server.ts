@@ -60,6 +60,7 @@ import { workflowTemplateRegistry } from './workflowEngine.js';
 import { seedWorkforceOperations } from './workforceOperations.js';
 import { createPlatformServices, handlePlatformRequest, type PlatformServices } from './platform/platformController.js';
 import { IdentityService } from './platform/identityService.js';
+import { authProviderMode, rejectSpoofedRoleHeader, resolveRequestPrincipal } from './platform/authMiddleware.js';
 import { IncidentIntakeService } from './incidentIntakeService.js';
 import { ApprovalRequestComposerService } from './approvalRequestComposerService.js';
 import { startApprovalEscalationScheduler } from './platform/approvalEscalationScheduler.js';
@@ -73,7 +74,7 @@ import { createEntityPickerService, type EntityPickerService } from './entityPic
 import { dataEntryScopeFromHeaders, handleDataEntryRoute } from './dataEntry/dataEntryRoutes.js';
 import { entityPickerScopeFromHeaders, handleEntityPickerRoute } from './entityPicker/entityPickerRoutes.js';
 
-type HttpMethod = 'GET' | 'POST' | 'OPTIONS';
+type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'OPTIONS';
 type JsonBody = unknown;
 type SeededAIAgent = { id: string; name: string; owner: string; modelVersionId: string; promptTemplateId: string; allowedActivities?: string[]; restrictedActions: string[]; digitalTwinRefs?: string[] };
 type SeededAIModelVersion = { id: string; lineage: string[] };
@@ -88,7 +89,7 @@ type SeededAIRecommendation = { id: string; agentId?: string; modelVersionId?: s
 type SeededAIGovernanceWorkspace = { activeAgents: SeededAIAgent[]; modelVersions: SeededAIModelVersion[]; recommendationQueue: SeededAIRecommendation[]; safetyBlockedActions: SeededAIRecommendation[]; evaluationStatus: unknown; approvalRequirements: SeededAIApproval[]; safetyPolicies: SeededAIPolicy[]; evidencePackages: SeededAIEvidencePackage[]; auditTrails: SeededAIAuditTrail[]; events: SeededAIEvent[]; digitalTwinImpacts?: SeededAIDigitalTwinImpact[] };
 
 const now = () => new Date().toISOString();
-const jsonHeaders = { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization, x-trackmind-request-id, x-trackmind-tenant-id, x-trackmind-racetrack-id, x-trackmind-organization-id, x-trackmind-role', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
+const jsonHeaders = { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization, x-trackmind-request-id, x-trackmind-tenant-id, x-trackmind-racetrack-id, x-trackmind-organization-id, x-trackmind-role', 'access-control-allow-methods': 'GET, POST, PATCH, DELETE, OPTIONS' };
 
 function createRequestId() {
   return `tm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -161,7 +162,9 @@ function contractForRequest(method: HttpMethod, path: string) {
 }
 
 function isPublicApiRoute(method: HttpMethod, path: string): boolean {
-  return method === 'GET' && (path === '/health' || path === '/events/stream');
+  if (method === 'GET' && (path === '/health' || path === '/events/stream')) return true;
+  if (method === 'POST' && path === '/platform/session') return true;
+  return false;
 }
 
 function authHeadersFromQuery(method: HttpMethod, path: string, searchParams: URLSearchParams, headers: IncomingMessage['headers'] | undefined): IncomingMessage['headers'] | undefined {
@@ -171,9 +174,14 @@ function authHeadersFromQuery(method: HttpMethod, path: string, searchParams: UR
   return { ...headers, 'x-trackmind-role': role };
 }
 
-const identityPolicyEvaluator = new IdentityService();
-
-function authorizeApiRequest(method: HttpMethod, path: string, headers: IncomingMessage['headers'] | undefined, requestId: string): { status: number; headers?: Record<string, string>; body: JsonBody } | undefined {
+function authorizeApiRequest(
+  method: HttpMethod,
+  path: string,
+  headers: IncomingMessage['headers'] | undefined,
+  requestId: string,
+  identity: IdentityService,
+): { status: number; headers?: Record<string, string>; body: JsonBody } | undefined {
+  if (isPublicApiRoute(method, path)) return undefined;
   const contract = contractForRequest(method, path);
   if (!contract) {
     if (headers && !isPublicApiRoute(method, path)) {
@@ -181,17 +189,26 @@ function authorizeApiRequest(method: HttpMethod, path: string, headers: Incoming
     }
     return undefined;
   }
+  if (rejectSpoofedRoleHeader(headers)) {
+    return apiUnauthorized('x-trackmind-role header is not permitted when Entra auth is enabled', path, requestId);
+  }
   const directCallRequiresAuth = contract.requiredPermission === 'audit:export' || contract.operationId.startsWith('requestRace');
-  if (!headers && !directCallRequiresAuth) return undefined;
-  const rawRole = headerValue(headers ?? {}, 'x-trackmind-role');
-  if (!rawRole) return apiUnauthorized(`Role header required for ${method} ${path}`, path, requestId, [`known roles: ${roles.join(', ')}`]);
+  const principal = resolveRequestPrincipal(headers, identity);
+  if (!headers && !directCallRequiresAuth && !principal) return undefined;
+  const rawRole = principal?.activeRole ?? (authProviderMode() === 'header-role' ? roleFromHeader(headers) : undefined);
+  if (!rawRole) {
+    return apiUnauthorized(`Authenticated session or role required for ${method} ${path}`, path, requestId, [`known roles: ${roles.join(', ')}`]);
+  }
   const role = normalizeRole(rawRole);
   if (!role) return apiForbidden(`Unknown TrackMind role: ${rawRole}`, path, requestId, [`known roles: ${roles.join(', ')}`]);
+  if (principal && !principal.roles.includes(role)) {
+    return apiForbidden(`Active role ${role} is not assigned to the authenticated user`, path, requestId);
+  }
   if (!contractAllowsRole(contract.roles, role)) {
     return apiForbidden(`Role ${role} is not allowed to call ${contract.operationId}`, path, requestId, [`allowed roles: ${contract.roles === 'authenticated' ? 'authenticated' : contract.roles.join(', ')}`]);
   }
-  const tenantId = headerValue(headers ?? {}, 'x-trackmind-tenant-id') ?? 'trackmind';
-  if (!identityPolicyEvaluator.evaluatePolicy(tenantId, role, contract.requiredPermission)) {
+  const tenantId = headerValue(headers ?? {}, 'x-trackmind-tenant-id') ?? principal?.tenantId ?? 'trackmind';
+  if (!identity.evaluatePolicy(tenantId, role, contract.requiredPermission)) {
     return apiForbidden(`Role ${role} lacks permission ${contract.requiredPermission}`, path, requestId, [`permission: ${contract.requiredPermission}`]);
   }
   if (!hasAnyPermission(role, [contract.requiredPermission])) {
@@ -1238,7 +1255,7 @@ export function createApiFacadeState(): ApiFacadeState {
         { id: 'active-incidents', title: 'Active incidents', domain: 'security', status: security.incidents.length ? 'warning' : 'nominal', value: `${security.incidents.length} active incident`, detail: `Security incidents load from /api/v1/security-operations/workspace; escalation count metadata ${security.dashboard.openEscalations ?? 0}.`, source: 'service', drillDownPath: '/security', roleView: 'all', configurable: false },
         { id: 'pending-approvals', title: 'Pending approvals', domain: 'approvals', status: contract.approvals.length ? 'warning' : 'nominal', value: `${contract.approvals.length} pending approval`, detail: 'Approval queue loads from /api/v1/approvals/requests; protected controls stay locked and are not executable from dashboard cards.', source: 'service', drillDownPath: '/approvals', roleView: 'all', configurable: false },
         { id: 'steward-inquiries', title: 'Steward inquiries', domain: 'stewards', status: stewardCenter.inquiries.length ? 'warning' : 'nominal', value: `${stewardCenter.inquiries.length} inquiry under review`, detail: 'Steward Center loads inquiry evidence, audit, events, and approval refs; official results stay read-only in command cards.', source: 'service', drillDownPath: '/compliance', roleView: ['platform-super-admin', 'steward'], configurable: false },
-        { id: 'workforce-readiness', title: 'Workforce readiness', domain: 'workforce', status: workforce.readiness.status === 'ready' ? 'nominal' : workforce.readiness.status === 'watch' ? 'warning' : 'critical', value: `${workforce.readiness.coveragePct}% covered`, detail: `${workforce.readiness.checkedIn}/${workforce.readiness.demand} checked in; compliance metadata ${workforce.compliance.status}.`, source: 'service', drillDownPath: '/facilities', roleView: 'all', configurable: false },
+        { id: 'workforce-readiness', title: 'Workforce readiness', domain: 'workforce', status: workforce.readiness.status === 'ready' ? 'nominal' : workforce.readiness.status === 'watch' ? 'warning' : 'critical', value: `${workforce.readiness.coveragePct}% covered`, detail: `${workforce.readiness.checkedIn}/${workforce.readiness.demand} checked in; compliance metadata ${workforce.compliance.status}.`, source: 'service', drillDownPath: '/workforce', roleView: 'all', configurable: false },
         { id: 'asset-health', title: 'Asset health', domain: 'assets', status: 'warning', value: `${contract.assets.length} assets`, detail: 'Asset and twin records are read from /api/v1/assets and /api/v1/digital-twin/state metadata.', source: 'digital-twin', drillDownPath: '/facilities', roleView: 'all', configurable: false },
         { id: 'facility-readiness', title: 'Facility readiness', domain: 'facilities', status: facilitiesMaintenance.readiness.status === 'ready' ? 'nominal' : 'warning', value: `${facilitiesMaintenance.readiness.score}% ready`, detail: 'Facilities maintenance reads RACR assets, Digital Twin references, approvals, work orders, and predictive metadata.', source: 'service', drillDownPath: '/facilities', roleView: 'all', configurable: false },
         { id: 'emergency-resources', title: 'Emergency resources', domain: 'emergency', status: emergency.events.length ? 'warning' : 'nominal', value: `${emergency.resources.length} resources`, detail: `EmergencyOperationsPlatform exposes ${emergency.workflowIntegrations.length} workflow integration metadata and an active human command checklist; AI cannot block emergency actions.`, source: 'service', drillDownPath: '/incidents', roleView: 'all', configurable: false },
@@ -2057,8 +2074,14 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     };
   }
   const authHeaders = authHeadersFromQuery(method, path, requestUrl.searchParams, headers);
-  const authorization = authorizeApiRequest(method, path, authHeaders, requestId);
+  const authorization = authorizeApiRequest(method, path, authHeaders, requestId, state.platformServices.identity);
   if (authorization) return authorization;
+  const requestPrincipal = resolveRequestPrincipal(authHeaders, state.platformServices.identity);
+  const resolvedRole = requestPrincipal?.activeRole ?? roleFromHeader(authHeaders);
+  const platformContext = {
+    sessionId: requestPrincipal?.sessionId,
+    principalUserId: requestPrincipal?.userId,
+  };
   if (path.startsWith('/data-entry/')) {
     const dataEntryResponse = handleDataEntryRoute(
       state.dataEntryService,
@@ -2435,7 +2458,7 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     federation: state.federation as Record<string, unknown>,
     equine: state.equine as { horse?: { horseId: string; name?: string } },
     aiControlPlane: state.aiControlPlane as { recommendations?: unknown[] },
-  }, state.platformServices, requestUrl.searchParams, roleFromHeader(headers));
+  }, state.platformServices, requestUrl.searchParams, resolvedRole, platformContext);
   if (platformResponse) return platformResponse;
   if (method === 'GET' && path === '/approvals/requests') {
     const seeded = Array.isArray(state.approvals) ? state.approvals : [];

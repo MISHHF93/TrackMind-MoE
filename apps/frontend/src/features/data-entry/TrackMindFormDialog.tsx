@@ -252,17 +252,19 @@ export function EntityFormAction({
       {message ? (
         <p role="status" aria-live="polite" className="text-xs text-[var(--muted-foreground)]">{message}</p>
       ) : null}
-      <TrackMindFormDialog
-        entityKind={entityKind}
-        mode={mode}
-        seed={seed}
-        open={open}
-        onOpenChange={setOpen}
-        title={title}
-        description={description}
-        submitLabel={submitLabel}
-        onSubmitted={(result) => setMessage(result.message ?? 'Saved.')}
-      />
+      {open ? (
+        <TrackMindFormDialog
+          entityKind={entityKind}
+          mode={mode}
+          seed={seed}
+          open={open}
+          onOpenChange={setOpen}
+          title={title}
+          description={description}
+          submitLabel={submitLabel}
+          onSubmitted={(result) => setMessage(result.message ?? 'Saved.')}
+        />
+      ) : null}
     </>
   );
 }

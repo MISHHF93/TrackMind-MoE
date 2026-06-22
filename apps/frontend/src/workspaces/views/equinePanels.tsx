@@ -14,6 +14,7 @@ import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { isRecord } from '@/lib/utils';
 import { feedData } from '../feedUtils';
 import { flattenEligibilityRules } from '../feedPresenters';
+import { useEntityAccess, roleCanMutate } from '@/domain/routeAccess';
 
 function profileVetStatus(profile: Record<string, unknown> | undefined): string {
   if (!profile) return '—';
@@ -36,8 +37,10 @@ import type { WorkspacePanelProps } from './workspacePanelTypes';
 export function EquinePanels({ results, role: roleProp }: WorkspacePanelProps): ReactElement {
   const queryClient = useQueryClient();
   const role = roleProp ?? 'staff-limited';
-  const canViewMedical = role === 'veterinarian' || role === 'equine-welfare-officer' || role === 'compliance-officer' || role === 'platform-super-admin';
-  const canManageHorseOps = role === 'horse-operations-coordinator' || role === 'racetrack-admin' || role === 'platform-super-admin';
+  const veterinaryAccess = useEntityAccess('veterinary');
+  const operationalAccess = useEntityAccess('operational');
+  const canViewMedical = veterinaryAccess.canView;
+  const canManageHorseOps = operationalAccess.canEdit && roleCanMutate(role);
   const [eligibilityMessage, setEligibilityMessage] = useState<string | null>(null);
   const profile = feedData<Record<string, unknown>>(results, '/horses/horse-1/profile');
   const eligibilityFeed = feedData<Record<string, unknown>>(results, '/horses/horse-1/eligibility');

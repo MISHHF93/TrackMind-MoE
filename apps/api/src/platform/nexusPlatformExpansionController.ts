@@ -8,7 +8,7 @@ import type { PlatformState } from './platformController.js';
 import type { FeatureFlagService } from './featureFlags.js';
 import type { TenantService } from './tenantService.js';
 
-type HttpMethod = 'GET' | 'POST';
+type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 type HandlerResult = { status: number; body: unknown } | undefined;
 
 export interface NexusPlatformExpansionServices {

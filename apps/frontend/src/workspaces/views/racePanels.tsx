@@ -2,7 +2,9 @@ import type { ReactElement } from 'react';
 import { useMemo, useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiPaths } from '@/api/paths';
+import { canRoleEditRoute } from '@trackmind/shared';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
+import { roleCanMutate } from '@/domain/routeAccess';
 import { raceDayCommandRoles } from '@trackmind/shared';
 import { actionDisabledReason, extractApprovalControls, resolveDefaultRaceTarget, roleCanUseAction } from '@/domain/approvalControls';
 import { KpiStrip } from '@/design/components/kpi-strip';
@@ -27,7 +29,7 @@ import type { WorkspacePanelProps } from './workspacePanelTypes';
 export function RaceDayPanels({ results, role: roleProp }: WorkspacePanelProps): ReactElement {
   const { session } = useTenantSession();
   const role = roleProp ?? session.role;
-  const canRunRaceCommand = role === 'race-day-operations-manager' || role === 'platform-super-admin';
+  const canRunRaceCommand = canRoleEditRoute(role, 'raceDay') && roleCanMutate(role);
   const isGateRole = role === 'starter-official' || role === 'paddock-official';
   const queryClient = useQueryClient();
   const [dialog, setDialog] = useState<{ open: boolean; action?: WorkspaceAction }>({ open: false });

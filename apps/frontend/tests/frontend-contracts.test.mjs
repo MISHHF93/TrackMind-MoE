@@ -23,7 +23,7 @@ test('frontend has canonical entrypoint and control surface shell', async () => 
   assert.match(main, /design\/tokens\.css/);
   assert.match(app, /RouterProvider/);
   assert.match(shell, /export function AppShell/);
-  assert.match(shell, /canAccessRoute\(route, session\.role, enabledModules/);
+  assert.match(shell, /useAccessibleRoutes/);
 });
 
 test('route constants cover required backend-driven sections', async () => {
@@ -93,8 +93,8 @@ test('frontend route filtering honors tenant scope headers', async () => {
   const shell = await source('src/shell/AppShell.tsx');
   const client = await source('src/api/client.ts');
   const session = await source('src/auth/TenantSessionProvider.tsx');
-  assert.match(shell, /canAccessRoute\(route, session\.role, enabledModules/);
-  assert.match(shell, /useModuleEnablement/);
+  assert.match(shell, /useAccessibleRoutes/);
+  assert.match(shell, /RouteAccessSync/);
   assert.match(client, /getTenantContext\(\)/);
   assert.match(client, /x-trackmind-tenant-id/);
   assert.match(client, /x-trackmind-role/);
@@ -197,7 +197,7 @@ test('frontend brand design language is defined', async () => {
   const button = await source('src/design/components/button.tsx');
   assert.match(tokens, /--accent-governance: var\(--brand-maroon\)/);
   assert.match(tokens, /\.brand-mark/);
-  assert.match(tokens, /linear-gradient\(135deg, var\(--brand-blue\), var\(--brand-maroon\) 72%, var\(--brand-brass\)\)/);
+  assert.match(tokens, /brand-logo-float/);
   assert.match(globals, /--color-navy: #142A45/);
   assert.match(globals, /--color-parchment: #FBF8F4/);
   assert.match(tokens, /--brand-turf:/);

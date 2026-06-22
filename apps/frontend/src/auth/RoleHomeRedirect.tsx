@@ -1,10 +1,9 @@
-import { useTenantSession } from '@/auth/TenantSessionProvider';
-import { homePathForRole } from '@trackmind/shared';
 import type { ReactElement } from 'react';
 import { Navigate } from 'react-router-dom';
+import { useAccessibleRoutes } from '@/hooks/useAccessibleRoutes';
+import { routes } from '@/routes/routes';
 
-/** Redirects to the role-resonant home workspace for the active session. */
 export function RoleHomeRedirect(): ReactElement {
-  const { session } = useTenantSession();
-  return <Navigate to={homePathForRole(session.role)} replace />;
+  const { homePath } = useAccessibleRoutes(routes);
+  return <Navigate to={homePath} replace />;
 }

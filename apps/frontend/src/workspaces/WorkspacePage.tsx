@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { Role } from '@trackmind/shared';
+import { isReadOnlyOperationalRole } from '@trackmind/shared';
 import { backendSupportLabels } from '@/domain/support';
 import { extractApprovalControls, roleCanUseAction } from '@/domain/approvalControls';
 import { mergeRoleQuickActions } from '@/domain/roleQuickActions';
@@ -178,6 +179,7 @@ function buildAdvisories(results: WorkspaceDataResult[]): WorkspaceAdvisory[] {
 }
 
 function buildActions(routeId: DomainRouteId, results: WorkspaceDataResult[], role: Role, quickActions: readonly string[]) {
+  if (isReadOnlyOperationalRole(role)) return [];
   const backendActions = extractApprovalControls(results);
   const routeActions = roleFilterActions(buildRouteActions(routeId, results, backendActions, role), role, roleCanUseAction);
   return mergeRoleQuickActions(routeId, routeActions, quickActions);

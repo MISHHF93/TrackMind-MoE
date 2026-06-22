@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import {
   Activity,
   AlertTriangle,
@@ -21,6 +22,11 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AppRoute } from '@/routes/routes';
+import { OperatorAvatar } from '@/auth/OperatorAvatar';
+import { useTenantSession } from '@/auth/TenantSessionProvider';
+import { roleDisplayName } from '@/domain/support';
+import { Button } from '@/design/components/button';
+import { FloatingLogo } from '@/design/components/FloatingLogo';
 import { cn } from '@/lib/utils';
 
 const iconMap: Record<string, LucideIcon> = {
@@ -46,6 +52,7 @@ const iconMap: Record<string, LucideIcon> = {
   analytics: TrendingUp,
   fan: Sparkles,
   notifications: Bell,
+  account: Users,
   settings: Settings,
 };
 
@@ -62,13 +69,15 @@ export function Sidebar({
   activePath?: string;
   onNavigate: (path: string) => void;
 }): React.ReactElement {
+  const { session, logout } = useTenantSession();
+
   return (
     <aside className="shell-sidebar">
       <div className="flex items-center gap-3 border-b border-[var(--border-chrome)] px-4 py-4">
-        <div className="brand-mark" aria-hidden>TM</div>
+        <FloatingLogo size="sm" />
         <div>
-          <p className="font-semibold leading-tight text-[var(--text-on-chrome)]">TrackMind Nexus</p>
-          <p className="text-xs text-[var(--text-on-chrome-muted)]">Race Day Operations</p>
+          <p className="font-semibold leading-tight text-[var(--text-on-chrome)]">TrackMind Racetrack</p>
+          <p className="text-xs text-[var(--text-on-chrome-muted)]">Horse Racing Operations</p>
         </div>
       </div>
       <nav className="flex-1 overflow-y-auto p-3 space-y-4" aria-label="Operating consoles">
@@ -102,7 +111,23 @@ export function Sidebar({
           </div>
         ))}
       </nav>
-      <footer className="border-t border-[var(--border-chrome)] px-4 py-3 text-xs text-[var(--text-on-chrome-muted)]">Steward control surface</footer>
+      <footer className="border-t border-[var(--border-chrome)] px-4 py-3">
+        <div className="flex items-center gap-2">
+          <OperatorAvatar displayName={session.displayName} size="sm" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-[var(--text-on-chrome)]">{session.displayName ?? 'Operator'}</p>
+            <p className="truncate text-xs text-[var(--text-on-chrome-muted)]">{roleDisplayName(session.role)}</p>
+          </div>
+        </div>
+        <div className="mt-2 flex gap-2">
+          <Button size="sm" variant="outline" className="h-7 flex-1 text-xs" asChild>
+            <Link to="/account">My Profile</Link>
+          </Button>
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => void logout()}>
+            Sign out
+          </Button>
+        </div>
+      </footer>
     </aside>
   );
 }

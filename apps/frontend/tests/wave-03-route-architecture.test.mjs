@@ -33,6 +33,7 @@ test('wave 03: module enablement gates navigation and route guards', async () =>
   const guards = await source('src/auth/guards.tsx');
   const hook = await source('src/hooks/useModuleEnablement.ts');
   const modules = await source('src/routes/routeModules.ts');
+  const accessible = await source('src/domain/accessibleRoutes.ts');
   const support = await source('src/domain/support.ts');
 
   assert.match(hook, /apiPaths\.admin\.modules/);
@@ -42,11 +43,12 @@ test('wave 03: module enablement gates navigation and route guards', async () =>
   assert.match(modules, /surface: 'surface'/);
   assert.match(modules, /fanExperience: 'fanExperience'/);
   assert.match(modules, /admin: 'admin'/);
-  assert.match(support, /canAccessRoute/);
-  assert.match(support, /isRouteModuleEnabled/);
-  assert.match(shell, /useModuleEnablement/);
-  assert.match(shell, /canAccessRoute/);
-  assert.match(guards, /useModuleEnablement/);
+  assert.match(accessible, /canAccessRoute/);
+  assert.match(accessible, /isRouteModuleEnabled/);
+  assert.match(accessible, /demoAccessEnabled/);
+  assert.match(support, /accessibleRoutesForRole/);
+  assert.match(shell, /useAccessibleRoutes/);
+  assert.match(guards, /useAccessibleRoutes/);
   assert.match(guards, /canAccessRoute/);
 });
 
@@ -61,11 +63,13 @@ test('wave 03: route coverage inventory stays synchronized', async () => {
   const apiGroups = [...paths.matchAll(/^\s{2}([a-zA-Z]+): (?=\[|stewardingFeedPaths)/gm)].map((match) => match[1]);
   const panelCases = [...panels.matchAll(/case '([^']+)':/g)].map((match) => match[1]);
 
-  assert.equal(routeIds.length, 23);
+  assert.equal(routeIds.length, 24);
   for (const routeId of routeIds) {
     assert.ok(apiGroups.includes(routeId), `routeApiPathGroups missing ${routeId}`);
     assert.ok(panelCases.includes(routeId), `WorkspaceDomainPanels missing ${routeId}`);
-    assert.match(routes, new RegExp(`backendPaths: backendContractPathsForRoute\\('${routeId}'\\)`));
+    if (routeId !== 'account') {
+      assert.match(routes, new RegExp(`backendPaths: backendContractPathsForRoute\\('${routeId}'\\)`));
+    }
   }
 
   assert.match(router, /routes\.map\(\(route\) => \(/);

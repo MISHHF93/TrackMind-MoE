@@ -570,6 +570,7 @@ export const frontendRoutePermissionRegistry = {
   analytics: 'analytics:read',
   fanExperience: 'ticketing:manage',
   notifications: 'read:any',
+  account: 'read:any',
 } as const satisfies Record<string, Permission>;
 export type FrontendRoutePermissionId = keyof typeof frontendRoutePermissionRegistry;
 
@@ -666,10 +667,18 @@ export function permissionForApiEndpoint(input: { method: 'GET' | 'POST' | 'PATC
   if (input.path.includes('/platform/users') || input.path.includes('/platform/roles')) {
     return input.method === 'GET' ? 'identity:read' : 'identity:write';
   }
+  if (
+    input.path.includes('/platform/session')
+    || input.path.includes('/platform/sessions')
+    || input.path.includes('/platform/notification-preferences')
+    || input.path.includes('/platform/operator-preferences')
+  ) {
+    return 'read:any';
+  }
   if (input.path.includes('/platform/access-requests')) {
-    if (input.method === 'GET') return 'identity:read';
+    if (input.method === 'GET') return 'read:any';
     if (input.operationId === 'reviewPlatformAccessRequest') return 'access:approve';
-    return 'access:request';
+    return 'read:any';
   }
   if (input.path.includes('/platform/health') || input.path.includes('/platform/readiness-scorecards') || input.path.includes('/platform/nexus-upgrade') || input.path.includes('/platform/modules') || input.path.includes('/platform/feature-flags/evaluate')) {
     return 'read:any';

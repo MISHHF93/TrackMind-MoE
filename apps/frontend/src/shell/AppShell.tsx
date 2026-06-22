@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { backendSupportLabels, canAccessRoute } from '@/domain/support';
-import { useModuleEnablement } from '@/hooks/useModuleEnablement';
+import { backendSupportLabels } from '@/domain/support';
+import { RouteAccessSync } from '@/auth/RouteAccessSync';
+import { SessionExpiryBanner } from '@/auth/SessionExpiryBanner';
+import { useAccessibleRoutes } from '@/hooks/useAccessibleRoutes';
 import { useRoleWorkspace } from '@/hooks/useRoleWorkspace';
-import { moduleKeyForRoute, routes, type AppRoute } from '@/routes/routes';
+import { routes, type AppRoute } from '@/routes/routes';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { useWorkspaceContext } from '@/hooks/useWorkspaceContext';
 import { useEventStream } from '@/hooks/useEventStream';
@@ -23,7 +25,7 @@ export function AppShell(): ReactElement {
   const [searchQuery, setSearchQuery] = useState('');
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { status, lastHeartbeat } = useEventStream();
-  const { enabledModules } = useModuleEnablement();
+  const { routes: visibleRoutes } = useAccessibleRoutes(routes);
   const { navigationGroupOrder } = useRoleWorkspace();
 
   const navigationOrder = useMemo(
@@ -31,13 +33,11 @@ export function AppShell(): ReactElement {
     [navigationGroupOrder],
   );
 
-  const visibleRoutes = routes.filter((route) =>
-    canAccessRoute(route, session.role, enabledModules, moduleKeyForRoute(route.id)),
-  );
+  const visibleRoutesList = visibleRoutes;
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const searchableRoutes = normalizedSearch
-    ? visibleRoutes.filter((route) => routeSearchText(route).includes(normalizedSearch))
-    : visibleRoutes;
+    ? visibleRoutesList.filter((route) => routeSearchText(route).includes(normalizedSearch))
+    : visibleRoutesList;
 
   const groupedRoutes = useMemo(
     () =>
@@ -69,6 +69,8 @@ export function AppShell(): ReactElement {
 
   return (
     <div className="app-shell">
+      <RouteAccessSync />
+      <SessionExpiryBanner />
       <Sidebar groups={groupedRoutes} activePath={location.pathname} onNavigate={navigate} />
       <div className="shell-body">
         <CommandBar
@@ -84,7 +86,7 @@ export function AppShell(): ReactElement {
         <ActionDock actions={primaryActions} />
         <LiveStatusBar status={status} lastHeartbeat={lastHeartbeat} />
       </div>
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} routes={visibleRoutes} onNavigate={navigate} initialQuery={searchQuery} role={session.role} />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} routes={visibleRoutesList} onNavigate={navigate} initialQuery={searchQuery} role={session.role} />
       <MoEChatPanel />
     </div>
   );

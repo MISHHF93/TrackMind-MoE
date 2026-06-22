@@ -158,7 +158,13 @@ function buildCommandCenterContractSnapshot(service: TrackMindCommandCenterV1Ser
     { sectorId: 'backstretch', moisture: 18, compaction: 238, measuredAt: now(), eventId: 'evt-surface-backstretch', auditId: 'audit-surface-backstretch' },
     { sectorId: 'far-turn', moisture: 27, compaction: 276, measuredAt: now(), eventId: 'evt-surface-far-turn', auditId: 'audit-surface-far-turn' },
   ].map((measurement) => assertContract('SurfaceMeasurementDto', measurement, apiContractSchemas.SurfaceMeasurementDto));
-  const races: RaceDto[] = [{ raceId: 'race-7', trackId: 'main-track', postTime: '2026-06-13T21:00:00.000Z', score: 87, status: 'watch' as const, warnings: 2, approvals: approvals.length, mock: false }].map((race) => assertContract('RaceDto', race, apiContractSchemas.RaceDto));
+  const races: RaceDto[] = [
+    { raceId: 'race-5', trackId: 'main-track', postTime: '2026-06-22T18:30:00.000Z', score: 94, status: 'ready' as const, warnings: 0, approvals: 0, mock: false },
+    { raceId: 'race-6', trackId: 'main-track', postTime: '2026-06-22T19:15:00.000Z', score: 91, status: 'ready' as const, warnings: 0, approvals: 0, mock: false },
+    { raceId: 'race-7', trackId: 'main-track', postTime: '2026-06-22T20:00:00.000Z', score: 87, status: 'watch' as const, warnings: 2, approvals: approvals.length, mock: false },
+    { raceId: 'race-8', trackId: 'main-track', postTime: '2026-06-22T20:45:00.000Z', score: 89, status: 'ready' as const, warnings: 0, approvals: 0, mock: false },
+    { raceId: 'race-9', trackId: 'main-track', postTime: '2026-06-22T21:30:00.000Z', score: 92, status: 'ready' as const, warnings: 0, approvals: 0, mock: false },
+  ].map((race) => assertContract('RaceDto', race, apiContractSchemas.RaceDto));
   const recommendationGeneratedAt = now();
   const aiRecommendations: AIRecommendationDto[] = [{
     id: 'ai-1',

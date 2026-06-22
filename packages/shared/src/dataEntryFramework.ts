@@ -237,6 +237,9 @@ export function getDataEntryFormDefinition(
   mode: DataEntryFormMode = 'create',
 ): DataEntryFormDefinition {
   const definition = dataEntryEntityForms[entityKind];
+  if (!definition) {
+    throw new Error(`Unknown data-entry entity kind: ${entityKind}`);
+  }
   if (!definition.modes.includes(mode)) {
     throw new Error(`Entity ${entityKind} does not support mode ${mode}`);
   }

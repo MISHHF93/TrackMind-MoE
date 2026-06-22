@@ -263,7 +263,18 @@ export function stewardingFeedPaths(inquiryId = stewardingSeededInquiryId): read
 }
 
 export const routeApiPathGroups = {
-  dashboard: [apiPaths.dashboard.operations, apiPaths.dashboard.platformHealth, ...commonContextApiPaths],
+  dashboard: [
+    apiPaths.dashboard.operations,
+    apiPaths.dashboard.platformHealth,
+    apiPaths.raceDay.readiness,
+    apiPaths.raceDay.raceOffice,
+    apiPaths.raceDay.races,
+    apiPaths.raceDay.surface,
+    apiPaths.workforce.workspace,
+    apiPaths.equine.horseRegistry,
+    apiPaths.digitalTwin.state,
+    ...commonContextApiPaths,
+  ],
   raceDay: [
     apiPaths.raceDay.races,
     apiPaths.raceDay.raceOffice,
@@ -357,6 +368,11 @@ export const routeApiPathGroups = {
     apiPaths.notifications.deliveryAuditTrail,
     ...commonContextApiPaths,
   ],
+  account: [
+    '/platform/session',
+    '/platform/notification-preferences',
+    ...commonContextApiPaths,
+  ],
   settings: [
     apiPaths.settings.policy,
     apiPaths.settings.workspace,
@@ -373,7 +389,12 @@ export const routeApiPathGroups = {
   ],
   stewarding: stewardingFeedPaths(),
   workforce: [apiPaths.workforce.workspace, ...commonContextApiPaths],
-  digitalTwin: [apiPaths.digitalTwin.state, apiPaths.digitalTwin.assets, ...commonContextApiPaths],
+  digitalTwin: [
+    apiPaths.digitalTwin.state,
+    apiPaths.digitalTwin.assets,
+    '/track-configuration/map',
+    ...commonContextApiPaths,
+  ],
   surface: [
     apiPaths.surface.workspace,
     apiPaths.surface.measurements,

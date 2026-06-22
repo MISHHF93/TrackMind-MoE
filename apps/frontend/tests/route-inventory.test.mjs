@@ -36,7 +36,7 @@ test('route inventory stays synchronized across router, panels, navigation, and 
     ? [...iconMapBlock[1].matchAll(/^\s{2}['"]?([a-zA-Z0-9-]+)['"]?:/gm)].map((match) => match[1])
     : [];
 
-  assert.equal(routeIds.length, 23, 'expected 23 canonical workspace routes');
+  assert.equal(routeIds.length, 24, 'expected 24 canonical workspace routes');
   assert.equal(new Set(routeIds).size, routeIds.length, 'duplicate route ids in routes.ts');
   assert.equal(new Set(routePaths).size, routePaths.length, 'duplicate route paths in routes.ts');
 
@@ -78,9 +78,9 @@ test('every route declares permissions and navigation metadata', async () => {
   const navigationCount = [...routesSource.matchAll(/navigationGroup: '/g)].length;
   const roleCount = [...routesSource.matchAll(/requiredRoles:/g)].length;
 
-  assert.equal(permissionCount, 23);
-  assert.equal(navigationCount, 23);
-  assert.equal(roleCount, 23);
+  assert.equal(permissionCount, 24);
+  assert.equal(navigationCount, 24);
+  assert.equal(roleCount, 24);
 });
 
 test('router does not contain hard-coded orphaned paths', async () => {

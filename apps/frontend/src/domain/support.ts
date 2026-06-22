@@ -1,4 +1,4 @@
-import { hasPermission, roleRegistry, canRoleViewRoute, homePathForRole, type Permission, type Role, type TenantRacetrackContext } from '@trackmind/shared';
+import { canRoleAccessRoute, roleRegistry, homePathForRole, type Permission, type Role, type TenantRacetrackContext } from '@trackmind/shared';
 
 export type BackendSupportStatus = 'live-api' | 'facade-api' | 'documented-stub';
 export type NavigationGroup = 'Command' | 'Race Operations' | 'Safety & Facilities' | 'Governance' | 'Business Controls' | 'Data Governance' | 'System Status' | 'Platform';
@@ -26,7 +26,8 @@ export type DomainRouteId =
   | 'emergency'
   | 'analytics'
   | 'fanExperience'
-  | 'notifications';
+  | 'notifications'
+  | 'account';
 
 export interface RouteSupportMetadata {
   id: DomainRouteId;
@@ -69,8 +70,8 @@ export const operatorTenantOptions: OperatorScopeOption[] = [
 
 export const operatorRacetracksByTenant: Record<string, OperatorScopeOption[]> = {
   trackmind: [
-    { id: 'main-track', label: 'Main Track', organizationId: 'org-trackmind-network' },
-    { id: 'north-chute', label: 'North Chute', organizationId: 'org-trackmind-network' },
+    { id: 'main-track', label: 'Laurel Park Main Oval', organizationId: 'org-trackmind-network' },
+    { id: 'north-chute', label: 'North Training Chute', organizationId: 'org-trackmind-network' },
   ],
 };
 
@@ -91,32 +92,27 @@ export function roleDisplayName(role: Role): string {
 }
 
 export function canViewRoute(route: RouteSupportMetadata, role: Role): boolean {
-  const roleAllowed = route.requiredRoles === 'authenticated' || route.requiredRoles.includes(role);
-  return roleAllowed && canRoleViewRoute(role, route.id) && hasPermission(role, route.requiredPermission);
+  return canRoleAccessRoute(role, route.id);
 }
 
-export function homePathForSessionRole(role: Role): string {
-  return homePathForRole(role);
-}
+export {
+  accessibleRoutesForRole,
+  canAccessRoute,
+  homePathForAccessibleRole,
+  isPathAccessibleForRole,
+  isRouteModuleEnabled,
+} from '@/domain/accessibleRoutes';
 
-export function isRouteModuleEnabled(
-  routeId: DomainRouteId,
-  enabledModules: ReadonlyMap<string, boolean> | undefined,
-  moduleKey?: string,
-): boolean {
-  if (!moduleKey) return true;
-  if (!enabledModules) return true;
-  if (!enabledModules.has(moduleKey)) return true;
-  return enabledModules.get(moduleKey) === true;
-}
-
-export function canAccessRoute(
-  route: RouteSupportMetadata,
+export function homePathForSessionRole(
   role: Role,
+  routeList?: readonly RouteSupportMetadata[],
   enabledModules?: ReadonlyMap<string, boolean>,
-  moduleKey?: string,
-): boolean {
-  return canViewRoute(route, role) && isRouteModuleEnabled(route.id, enabledModules, moduleKey);
+  modulesLoading = false,
+): string {
+  if (routeList?.length) {
+    return homePathForAccessibleRole(role, routeList, enabledModules, modulesLoading);
+  }
+  return homePathForRole(role);
 }
 
 export const regulatedActionNames = [

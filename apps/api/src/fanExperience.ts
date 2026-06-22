@@ -7,7 +7,7 @@ import type {
 import type { FanExperiencePlatform } from './fanExperiencePlatform.js';
 import type { ImmutableAuditLog } from './auditLog.js';
 
-type HttpMethod = 'GET' | 'POST';
+type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 type HandlerResult = { status: number; body: unknown } | undefined;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

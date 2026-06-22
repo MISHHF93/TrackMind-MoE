@@ -35,7 +35,7 @@ import { FeatureFlagService } from './featureFlags.js';
 import { TenantService } from './tenantService.js';
 import type { UniversalEventBus } from '../eventBus.js';
 
-type HttpMethod = 'GET' | 'POST';
+type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 type HandlerResult = { status: number; body: unknown; headers?: Record<string, string> } | undefined;
 
 export interface PlatformState {
@@ -198,6 +198,11 @@ function recordAiRegistryAudit(
   return audit;
 }
 
+export interface PlatformRequestContext {
+  sessionId?: string;
+  principalUserId?: string;
+}
+
 export function handlePlatformRequest(
   method: HttpMethod,
   path: string,
@@ -206,6 +211,7 @@ export function handlePlatformRequest(
   platform: PlatformServices,
   searchParams: URLSearchParams,
   actorRole?: Role,
+  platformContext: PlatformRequestContext = {},
 ): HandlerResult {
   const tenantId = searchParams.get('tenantId') ?? 'trackmind';
   const racetrackId = searchParams.get('racetrackId') ?? 'main-track';
@@ -269,6 +275,152 @@ export function handlePlatformRequest(
   if (method === 'GET' && path === '/identity/workspace') {
     return { status: 200, body: platform.identity.workspace() };
   }
+  if (method === 'POST' && path === '/platform/session') {
+    const input = isRecord(body) ? body : {};
+    try {
+      return {
+        status: 201,
+        body: platform.identity.createOperatorSession({
+          accessToken: typeof input.accessToken === 'string' ? input.accessToken : undefined,
+          userId: typeof input.userId === 'string' ? input.userId : undefined,
+          tenantId: typeof input.tenantId === 'string' ? input.tenantId : tenantId,
+          clientHint: typeof input.clientHint === 'string' ? input.clientHint : undefined,
+        }),
+      };
+    } catch (error) {
+      return { status: 401, body: { ok: false, error: { code: 'unauthorized', message: (error as Error).message } } };
+    }
+  }
+  if (method === 'GET' && path === '/platform/session') {
+    const resolvedId = platformContext.sessionId;
+    if (!resolvedId) {
+      return { status: 401, body: { ok: false, error: { code: 'unauthorized', message: 'Bearer session token required' } } };
+    }
+    const session = platform.identity.resolveOperatorSession(resolvedId, tenantId);
+    if (!session) {
+      return { status: 401, body: { ok: false, error: { code: 'unauthorized', message: 'Session not found or expired' } } };
+    }
+    return { status: 200, body: session };
+  }
+  if (method === 'DELETE' && path === '/platform/session') {
+    const sessionId = platformContext.sessionId;
+    if (!sessionId) {
+      return { status: 401, body: { ok: false, error: { code: 'unauthorized', message: 'Bearer session token required' } } };
+    }
+    platform.identity.revokeOperatorSession(sessionId);
+    return { status: 200, body: { accepted: true, message: 'Session revoked', mock: false } };
+  }
+  if (method === 'PATCH' && path === '/platform/session/active-role') {
+    const sessionId = platformContext.sessionId;
+    const input = isRecord(body) ? body : {};
+    if (!sessionId) {
+      return { status: 401, body: { ok: false, error: { code: 'unauthorized', message: 'Bearer session token required' } } };
+    }
+    try {
+      return {
+        status: 200,
+        body: platform.identity.patchActiveRole(sessionId, tenantId, String(input.activeRole ?? '')),
+      };
+    } catch (error) {
+      return { status: 403, body: { ok: false, error: { code: 'forbidden', message: (error as Error).message } } };
+    }
+  }
+  if (method === 'GET' && path === '/platform/notification-preferences') {
+    const userId = platformContext.principalUserId ?? searchParams.get('userId');
+    if (!userId) {
+      return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: 'Authenticated user required' } } };
+    }
+    try {
+      return { status: 200, body: platform.identity.getNotificationPreferences(userId) };
+    } catch (error) {
+      return { status: 404, body: { ok: false, error: { code: 'not_found', message: (error as Error).message } } };
+    }
+  }
+  if (method === 'PATCH' && path === '/platform/notification-preferences') {
+    const userId = platformContext.principalUserId ?? searchParams.get('userId');
+    const input = isRecord(body) ? body : {};
+    if (!userId) {
+      return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: 'Authenticated user required' } } };
+    }
+    const channels = Array.isArray(input.channels) ? input.channels : [];
+    try {
+      return {
+        status: 200,
+        body: platform.identity.patchNotificationPreferences(
+          userId,
+          channels.filter(isRecord).map((c) => ({
+            channel: String(c.channel ?? ''),
+            enabled: Boolean(c.enabled),
+          })),
+        ),
+      };
+    } catch (error) {
+      return { status: 404, body: { ok: false, error: { code: 'not_found', message: (error as Error).message } } };
+    }
+  }
+  if (method === 'GET' && path === '/platform/operator-preferences') {
+    const userId = platformContext.principalUserId ?? searchParams.get('userId');
+    if (!userId) {
+      return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: 'Authenticated user required' } } };
+    }
+    try {
+      return { status: 200, body: platform.identity.getOperatorPreferences(userId) };
+    } catch (error) {
+      return { status: 404, body: { ok: false, error: { code: 'not_found', message: (error as Error).message } } };
+    }
+  }
+  if (method === 'PATCH' && path === '/platform/operator-preferences') {
+    const userId = platformContext.principalUserId ?? searchParams.get('userId');
+    const input = isRecord(body) ? body : {};
+    if (!userId) {
+      return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: 'Authenticated user required' } } };
+    }
+    try {
+      return {
+        status: 200,
+        body: platform.identity.patchOperatorPreferences(userId, {
+          theme: input.theme === 'light' || input.theme === 'dark' || input.theme === 'system' ? input.theme : undefined,
+          locale: typeof input.locale === 'string' ? input.locale : undefined,
+          timezone: typeof input.timezone === 'string' ? input.timezone : undefined,
+          density: input.density === 'comfortable' || input.density === 'compact' ? input.density : undefined,
+        }),
+      };
+    } catch (error) {
+      return { status: 404, body: { ok: false, error: { code: 'not_found', message: (error as Error).message } } };
+    }
+  }
+  if (method === 'GET' && path === '/platform/sessions') {
+    const userId = platformContext.principalUserId;
+    const sessionId = platformContext.sessionId;
+    if (!userId) {
+      return { status: 401, body: { ok: false, error: { code: 'unauthorized', message: 'Authenticated user required' } } };
+    }
+    return { status: 200, body: platform.identity.listOperatorSessions(userId, sessionId) };
+  }
+  if (method === 'DELETE' && path === '/platform/sessions' && searchParams.get('scope') === 'others') {
+    const userId = platformContext.principalUserId;
+    const currentSessionId = platformContext.sessionId;
+    if (!userId || !currentSessionId) {
+      return { status: 401, body: { ok: false, error: { code: 'unauthorized', message: 'Authenticated user required' } } };
+    }
+    const revoked = platform.identity.revokeOtherOperatorSessions(userId, currentSessionId);
+    return { status: 200, body: { accepted: true, message: `Revoked ${revoked} other session(s)`, mock: false } };
+  }
+  const sessionRevokeMatch = path.match(/^\/platform\/sessions\/([^/]+)$/);
+  if (method === 'DELETE' && sessionRevokeMatch) {
+    const userId = platformContext.principalUserId;
+    const currentSessionId = platformContext.sessionId;
+    if (!userId) {
+      return { status: 401, body: { ok: false, error: { code: 'unauthorized', message: 'Authenticated user required' } } };
+    }
+    const targetSessionId = decodeURIComponent(sessionRevokeMatch[1]);
+    try {
+      platform.identity.revokeOperatorSessionForUser(userId, targetSessionId, currentSessionId);
+      return { status: 200, body: { accepted: true, message: 'Session revoked', mock: false } };
+    } catch (error) {
+      return { status: 403, body: { ok: false, error: { code: 'forbidden', message: (error as Error).message } } };
+    }
+  }
   if (method === 'GET' && path === '/platform/users') {
     return { status: 200, body: platform.identity.listUsers(tenantId) };
   }
@@ -312,7 +464,9 @@ export function handlePlatformRequest(
     }
   }
   if (method === 'GET' && path === '/platform/access-requests') {
-    return { status: 200, body: platform.identity.listAccessRequests(tenantId) };
+    const mine = searchParams.get('mine') === 'true';
+    const userId = mine ? platformContext.principalUserId ?? undefined : undefined;
+    return { status: 200, body: platform.identity.listAccessRequests(tenantId, userId) };
   }
   if (method === 'POST' && path === '/platform/access-requests') {
     const input = isRecord(body) ? body : {};
@@ -336,12 +490,13 @@ export function handlePlatformRequest(
         return { status: 404, body: { ok: false, error: { code: 'not_found', message: (error as Error).message } } };
       }
     }
-    const userId = String(input.userId ?? 'user-steward-1');
+    const userId = String(input.userId ?? platformContext.principalUserId ?? 'user-steward-1');
     const requestedRole = String(input.requestedRole ?? 'read-only-auditor');
+    const justification = typeof input.justification === 'string' ? input.justification : undefined;
     try {
       return {
         status: 201,
-        body: platform.identity.requestAccess(userId, requestedRole, String(input.tenantId ?? tenantId)),
+        body: platform.identity.requestAccess(userId, requestedRole, String(input.tenantId ?? tenantId), justification),
       };
     } catch (error) {
       return { status: 400, body: { ok: false, error: { code: 'invalid_request', message: (error as Error).message } } };

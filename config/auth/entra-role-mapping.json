@@ -1,0 +1,15 @@
+{
+  "tenantId": "trackmind",
+  "mappings": [
+    { "entraAppRole": "PlatformSuperAdmin", "trackmindRole": "platform-super-admin" },
+    { "entraAppRole": "OrganizationAdmin", "trackmindRole": "organization-admin" },
+    { "entraAppRole": "Steward", "trackmindRole": "steward" },
+    { "entraAppRole": "Veterinarian", "trackmindRole": "veterinarian" },
+    { "entraAppRole": "RaceDayManager", "trackmindRole": "race-day-operations-manager" },
+    { "entraAppRole": "FacilitiesManager", "trackmindRole": "facilities-manager" },
+    { "entraAppRole": "FinanceManager", "trackmindRole": "finance-manager" },
+    { "entraAppRole": "Auditor", "trackmindRole": "read-only-auditor" },
+    { "entraGroupId": "grp-stewards", "trackmindRole": "steward" },
+    { "entraGroupId": "grp-vets", "trackmindRole": "veterinarian" }
+  ]
+}

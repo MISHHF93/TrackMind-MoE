@@ -390,18 +390,48 @@ export function createSeededHorseRegistry(deps: HorseRegistryDeps, now = new Dat
   const platform = new HorseRegistryPlatform(deps);
   const equine = deps.equinePlatform;
   const actor = defaultActor(deps.tenantId);
+
+  const seedHorses: Array<{ horseId: string; name: string; sex: 'colt' | 'filly' | 'gelding' | 'mare'; foaled: string; microchipId: string; barnId: string; stallId: string }> = [
+    { horseId: 'horse-1', name: 'Lifecycle Runner', sex: 'colt', foaled: '2022-03-15', microchipId: '985141001', barnId: 'barn-2', stallId: 'stall-12A' },
+    { horseId: 'horse-2', name: 'Silver Rail Runner', sex: 'filly', foaled: '2021-04-22', microchipId: '985141002', barnId: 'barn-2', stallId: 'stall-14B' },
+    { horseId: 'horse-3', name: 'Paddock Prince', sex: 'gelding', foaled: '2020-05-10', microchipId: '985141003', barnId: 'barn-1', stallId: 'stall-08C' },
+    { horseId: 'horse-4', name: 'Laurel Lightning', sex: 'colt', foaled: '2023-02-08', microchipId: '985141004', barnId: 'barn-1', stallId: 'stall-03A' },
+    { horseId: 'horse-5', name: 'Storm Chaser', sex: 'mare', foaled: '2019-06-30', microchipId: '985141005', barnId: 'barn-3', stallId: 'stall-22D' },
+  ];
+
   if (equine && equine.listProfiles(deps.tenantId).length === 0) {
-    equine.createProfile({
-      horseId: 'horse-1',
-      tenantId: deps.tenantId ?? 'trackmind',
-      racetrackId: deps.racetrackId ?? 'main-track',
-      name: 'Lifecycle Runner',
-      microchipId: '985141001',
-      lifecycleStatus: 'active',
-      foaled: '2022-03-15',
-      sex: 'colt',
-      breed: 'Thoroughbred',
-    }, actor);
+    for (const horse of seedHorses) {
+      equine.createProfile({
+        horseId: horse.horseId,
+        tenantId: deps.tenantId ?? 'trackmind',
+        racetrackId: deps.racetrackId ?? 'main-track',
+        name: horse.name,
+        microchipId: horse.microchipId,
+        lifecycleStatus: 'active',
+        foaled: horse.foaled,
+        sex: horse.sex,
+        breed: 'Thoroughbred',
+      }, actor);
+      equine.addRegistrationRecord(horse.horseId, {
+        authority: 'Jockey Club',
+        registrationNumber: horse.horseId === 'horse-1' ? 'TB-2200315' : `TB-${horse.microchipId.slice(-6)}`,
+        registrationType: 'racing',
+        effectiveFrom: horse.foaled,
+        status: 'active',
+        evidence: ['foal-registration'],
+      }, actor);
+      if (horse.horseId === 'horse-1') {
+        equine.addRegistrationRecord(horse.horseId, {
+          authority: 'ISO',
+          registrationNumber: horse.microchipId,
+          registrationType: 'microchip',
+          effectiveFrom: '2022-03-20',
+          status: 'active',
+          evidence: ['microchip-scan'],
+        }, actor);
+      }
+      equine.assignBarn(horse.horseId, { barnId: horse.barnId, stallId: horse.stallId, assignedAt: now, assignedBy: actor.id, evidence: ['barn-assignment'] }, actor);
+    }
     equine.updateBreedingMetadata('horse-1', {
       sireId: 'sire-1',
       sireName: 'Leading Sire',
@@ -412,25 +442,8 @@ export function createSeededHorseRegistry(deps: HorseRegistryDeps, now = new Dat
       color: 'bay',
       markings: ['star', 'left hind sock'],
     }, actor);
-    equine.addRegistrationRecord('horse-1', {
-      authority: 'Jockey Club',
-      registrationNumber: 'TB-2200315',
-      registrationType: 'racing',
-      effectiveFrom: '2022-04-01',
-      status: 'active',
-      evidence: ['foal-registration'],
-    }, actor);
-    equine.addRegistrationRecord('horse-1', {
-      authority: 'ISO',
-      registrationNumber: '985141001',
-      registrationType: 'microchip',
-      effectiveFrom: '2022-03-20',
-      status: 'active',
-      evidence: ['microchip-scan'],
-    }, actor);
     equine.updateOwnership('horse-1', [{ ownerId: 'owner-1', ownerName: 'Stable A', effectiveFrom: '2026-01-01', percentage: 100, evidence: ['ownership-registry'] }], actor);
     equine.assignTrainer('horse-1', { trainerId: 'trainer-1', trainerName: 'Trainer A', effectiveFrom: '2026-02-01', licenseStatus: 'active', evidence: ['license-registry'] }, actor);
-    equine.assignBarn('horse-1', { barnId: 'barn-2', stallId: 'stall-12A', assignedAt: now, assignedBy: actor.id, evidence: ['barn-assignment'] }, actor);
   }
   platform.workspace(now, actor);
   return platform;

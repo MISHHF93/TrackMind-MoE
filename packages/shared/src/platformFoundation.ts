@@ -93,8 +93,110 @@ export interface PlatformUserDto {
   email: string;
   roles: string[];
   status: 'active' | 'pending' | 'suspended';
+  entraObjectId?: string;
   lastLoginAt?: string;
   createdAt: string;
+  mock: boolean;
+}
+
+export interface OperatorProfileResonanceDto {
+  role: string;
+  scope: string;
+  category: string;
+  viewerRoutes: string[];
+  kpiDomains: string[];
+  auditRead: boolean;
+  auditExport: boolean;
+  privacyScopes: string[];
+}
+
+export interface OperatorProfileDto {
+  userId: string;
+  displayName: string;
+  email: string;
+  tenantId: string;
+  organizationId: string;
+  assignedRoles: string[];
+  activeRole: string;
+  resonance: OperatorProfileResonanceDto;
+}
+
+export interface OperatorSessionDto extends TenantSessionDto {
+  displayName: string;
+  email: string;
+  assignedRoles: string[];
+  activeRole: string;
+  profile: OperatorProfileDto;
+}
+
+export interface PlatformSessionCreateDto {
+  accessToken?: string;
+  userId?: string;
+  tenantId?: string;
+}
+
+export interface PlatformActiveRolePatchDto {
+  activeRole: string;
+}
+
+export interface NotificationChannelPreferenceDto {
+  channel: string;
+  enabled: boolean;
+}
+
+export interface NotificationPreferencesDto {
+  userId: string;
+  tenantId: string;
+  channels: NotificationChannelPreferenceDto[];
+  updatedAt: string;
+  mock: boolean;
+}
+
+export type OperatorThemePreference = 'light' | 'dark' | 'system';
+export type OperatorDensityPreference = 'comfortable' | 'compact';
+
+export interface OperatorPreferencesDto {
+  userId: string;
+  tenantId: string;
+  theme: OperatorThemePreference;
+  locale: string;
+  timezone: string;
+  density: OperatorDensityPreference;
+  updatedAt: string;
+  mock: boolean;
+}
+
+export interface OperatorPreferencesPatchDto {
+  theme?: OperatorThemePreference;
+  locale?: string;
+  timezone?: string;
+  density?: OperatorDensityPreference;
+}
+
+export interface OperatorSessionSummaryDto {
+  sessionId: string;
+  issuedAt: string;
+  expiresAt: string;
+  authProvider: string;
+  current: boolean;
+  clientHint?: string;
+}
+
+export interface AccessRequestCreateDto {
+  requestedRole: string;
+  justification?: string;
+}
+
+export interface EntraRoleMappingEntryDto {
+  entraGroupId?: string;
+  entraAppRole?: string;
+  trackmindRole: string;
+}
+
+export interface EntraRoleMappingDto {
+  generatedAt: string;
+  tenantId: string;
+  mappings: EntraRoleMappingEntryDto[];
   mock: boolean;
 }
 
@@ -445,6 +547,7 @@ export interface AccessRequestDto {
   createdAt: string;
   reviewedAt?: string;
   reviewedBy?: string;
+  justification?: string;
 }
 
 export interface PlatformRoleDto {

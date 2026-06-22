@@ -15,6 +15,7 @@ import { FacilitiesPanels, WorkforcePanels, DigitalTwinPanels } from './operatio
 import { FinancePanels, TicketingPanels, FederationPanels, DataHubPanels } from './businessPanels';
 import { SettingsPanels } from './settingsPanels';
 import { AnalyticsPanels, FanExperiencePanels, NotificationsPanels } from './platformPanels';
+import { AccountPanels } from './accountPanels';
 
 export function WorkspaceDomainPanels({
   routeId,
@@ -75,6 +76,8 @@ export function WorkspaceDomainPanels({
       return <FanExperiencePanels {...panelProps} />;
     case 'notifications':
       return <NotificationsPanels {...panelProps} />;
+    case 'account':
+      return <AccountPanels {...panelProps} />;
     default: {
       const unknownRoute: never = routeId;
       return (

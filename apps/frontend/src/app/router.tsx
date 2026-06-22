@@ -1,11 +1,15 @@
 import type { ReactElement } from 'react';
-import { Navigate, createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter } from 'react-router-dom';
 import { AppShell } from '@/shell/AppShell';
+import { AuthGate } from '@/auth/AuthGate';
+import { LoginPage } from '@/auth/LoginPage';
 import { RequireRouteAccess } from '@/auth/guards';
 import { RoleHomeRedirect } from '@/auth/RoleHomeRedirect';
 import { routes, routeById } from '@/routes/routes';
 import { routePathSegment } from '@/routes/validateRoutes';
 import { RouteError } from '@/app/RouteError';
+import { RootLayout } from '@/app/RootLayout';
+import { AppProviders } from '@/app/providers';
 import { WorkspacePage } from '@/workspaces/WorkspacePage';
 import type { DomainRouteId } from '@/domain/support';
 
@@ -20,13 +24,32 @@ const workspaceRoutes = routes.map((route) => ({
 
 export const appRouter = createBrowserRouter([
   {
-    path: '/',
-    element: <AppShell />,
-    errorElement: <RouteError />,
+    element: <RootLayout />,
+    errorElement: (
+      <AppProviders>
+        <RouteError />
+      </AppProviders>
+    ),
     children: [
-      { index: true, element: <RoleHomeRedirect /> },
-      ...workspaceRoutes,
-      { path: '*', element: <RoleHomeRedirect /> },
+      { path: '/login', element: <LoginPage /> },
+      {
+        path: '/',
+        element: (
+          <AuthGate>
+            <AppShell />
+          </AuthGate>
+        ),
+        errorElement: (
+          <AppProviders>
+            <RouteError />
+          </AppProviders>
+        ),
+        children: [
+          { index: true, element: <RoleHomeRedirect /> },
+          ...workspaceRoutes,
+          { path: '*', element: <RoleHomeRedirect /> },
+        ],
+      },
     ],
   },
 ]);

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { facilitiesActionRoles } from '@trackmind/shared';
+import { useRouteAccess, roleCanMutate } from '@/domain/routeAccess';
 import { actionDisabledReason, roleCanUseAction } from '@/domain/approvalControls';
 import { Button } from '@/design/components/button';
 import { KpiStrip } from '@/design/components/kpi-strip';
@@ -16,6 +17,7 @@ import { extractArray } from '@/hooks/useWorkspaceData';
 import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { feedData } from '../feedUtils';
 import { FacilitiesGeospatialMap } from './FacilitiesGeospatialMap';
+import { TrackOvalDiagram } from '@/features/track/TrackOvalDiagram';
 import { completeWorkforceTask, syncDigitalTwinState } from '@/api/mutations';
 
 function defaultAssetId(assets: Record<string, unknown>[], selectedAssetId?: string): string {
@@ -29,7 +31,8 @@ import type { WorkspacePanelProps } from './workspacePanelTypes';
 export function FacilitiesPanels({ results, role: roleProp }: WorkspacePanelProps): ReactElement {
   const { session } = useTenantSession();
   const role = roleProp ?? session.role;
-  const canManageFacilities = role === 'facilities-manager' || role === 'racetrack-admin' || role === 'platform-super-admin';
+  const routeAccess = useRouteAccess('facilities');
+  const canManageFacilities = routeAccess.canEdit && roleCanMutate(role);
   const data = feedData<Record<string, unknown>>(results, '/facilities-maintenance/workspace');
   const readiness = data && typeof data.readiness === 'object' ? data.readiness as Record<string, unknown> : undefined;
   const assets = extractArray<Record<string, unknown>>(data, 'assets');
@@ -281,8 +284,20 @@ export function WorkforcePanels({ results }: { results: WorkspaceDataResult[] })
   const [taskMessage, setTaskMessage] = useState<string | null>(null);
   const data = feedData<Record<string, unknown>>(results, '/workforce-operations/workspace');
   const readiness = data && typeof data.readiness === 'object' ? data.readiness as Record<string, unknown> : undefined;
+  const planning = data && typeof data.planning === 'object' ? data.planning as Record<string, unknown> : undefined;
+  const employees = extractArray<Record<string, unknown>>(data, 'employees');
   const assignments = extractArray<Record<string, unknown>>(data, 'assignments');
   const certifications = extractArray<Record<string, unknown>>(data, 'certifications');
+  const shifts = extractArray<Record<string, unknown>>(data, 'shifts');
+
+  const employeeName = (identityId: string): string => {
+    const employee = employees.find((entry) => {
+      const identity = entry.identity && typeof entry.identity === 'object' ? entry.identity as Record<string, unknown> : undefined;
+      return String(identity?.id ?? entry.identityId) === identityId;
+    });
+    const identity = employee?.identity && typeof employee.identity === 'object' ? employee.identity as Record<string, unknown> : undefined;
+    return String(identity?.displayName ?? employee?.displayName ?? identityId);
+  };
 
   const completeTaskMutation = useMutation({
     mutationFn: (taskId: string) => completeWorkforceTask(taskId),
@@ -299,35 +314,65 @@ export function WorkforcePanels({ results }: { results: WorkspaceDataResult[] })
         items={[
           { id: 'coverage', label: 'Coverage', value: readiness?.coveragePct != null ? `${readiness.coveragePct}%` : '—' },
           { id: 'gaps', label: 'Staffing gaps', value: String(readiness?.staffingGap ?? '—') },
-          { id: 'assignments', label: 'Assignments', value: String(assignments.length) },
+          { id: 'checked-in', label: 'Checked in', value: `${readiness?.checkedIn ?? '—'}/${readiness?.demand ?? '—'}` },
+          { id: 'assignments', label: 'Active crew', value: String(assignments.length) },
+          { id: 'shift', label: 'Race shift', value: String(shifts[0]?.label ?? '—') },
+          { id: 'compliance', label: 'Compliance', value: String(readiness?.complianceStatus ?? '—') },
         ]}
       />
       {taskMessage ? <p className="text-xs text-[var(--muted-foreground)]">{taskMessage}</p> : null}
-      <div className="grid gap-4 xl:grid-cols-2">
-        <SectionPanel title="Shift assignments">
-          <div className="space-y-2">
-            {assignments.slice(0, 8).map((assignment) => {
-              const taskId = String(assignment.assignmentId ?? assignment.id ?? assignment.employeeId ?? '');
-              return (
-                <div key={taskId} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--border)] p-2 text-sm">
+      <SectionPanel title="Race-day crew roster" description="Five core track workers assigned to today's card — gate, veterinary, starter, emergency, and facilities.">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {assignments.map((assignment) => {
+            const identityId = String(assignment.identityId ?? '');
+            const taskId = String(assignment.assignmentId ?? assignment.id ?? '');
+            const status = String(assignment.status ?? '—');
+            return (
+              <div key={taskId || identityId} className="rounded-lg border border-[var(--border)] p-3">
+                <div className="flex items-start justify-between gap-2">
                   <div>
-                    <p className="font-medium">{String(assignment.employeeId ?? assignment.name ?? '—')}</p>
-                    <p className="text-xs text-[var(--muted-foreground)]">
-                      {String(assignment.role ?? '—')} · {String(assignment.zoneId ?? assignment.zone ?? '—')} · {String(assignment.status ?? assignment.checkInStatus ?? '—')}
-                    </p>
+                    <p className="font-medium text-[var(--text-strong)]">{employeeName(identityId)}</p>
+                    <p className="text-xs capitalize text-[var(--muted-foreground)]">{String(assignment.role ?? '—').replace(/-/g, ' ')}</p>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="governance"
-                    disabled={!taskId || completeTaskMutation.isPending}
-                    onClick={() => completeTaskMutation.mutate(taskId)}
-                  >
-                    Mark complete
-                  </Button>
+                  <span className={`text-[10px] font-semibold uppercase tracking-wide ${status === 'checked-in' ? 'text-[var(--brand-turf)]' : status === 'assigned' ? 'text-[var(--status-warning)]' : 'text-[var(--muted-foreground)]'}`}>
+                    {status}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
+                <p className="mt-2 text-xs text-[var(--muted-foreground)]">Zone {String(assignment.zoneId ?? '—')}</p>
+                {assignment.emergencyCritical === true ? (
+                  <p className="mt-1 text-[11px] font-medium text-[var(--brand-maroon)]">Emergency-critical post</p>
+                ) : null}
+                <Button
+                  className="mt-2"
+                  size="sm"
+                  variant="governance"
+                  disabled={!taskId || completeTaskMutation.isPending || status === 'checked-in'}
+                  onClick={() => completeTaskMutation.mutate(taskId)}
+                >
+                  Mark checked in
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      </SectionPanel>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SectionPanel title="Role coverage" description="Demand vs assigned by race-day role.">
+          <RecordTable
+            columns={[
+              { key: 'role', label: 'Role' },
+              { key: 'demand', label: 'Demand' },
+              { key: 'assigned', label: 'Assigned' },
+              { key: 'gap', label: 'Gap' },
+            ]}
+            rows={mapRecords(extractArray<Record<string, unknown>>(planning, 'byRole'), (row) => ({
+              role: String(row.role ?? '—').replace(/-/g, ' '),
+              demand: String(row.demand ?? '—'),
+              assigned: String(row.assigned ?? '—'),
+              gap: String(row.gap ?? '0'),
+            }))}
+            emptyLabel="No role planning data."
+          />
         </SectionPanel>
         <SectionPanel title="Certifications">
           <RecordTable
@@ -337,8 +382,8 @@ export function WorkforcePanels({ results }: { results: WorkspaceDataResult[] })
               { key: 'expires', label: 'Expires' },
             ]}
             rows={mapRecords(certifications, (c) => ({
-              cert: String(c.certificationId ?? c.name ?? '—'),
-              employee: String(c.employeeId ?? '—'),
+              cert: String(c.kind ?? c.certificationId ?? c.name ?? '—'),
+              employee: employeeName(String(c.identityId ?? c.employeeId ?? '')),
               expires: String(c.expiresAt ?? '—'),
             }))}
           />
@@ -351,11 +396,31 @@ export function WorkforcePanels({ results }: { results: WorkspaceDataResult[] })
 export function DigitalTwinPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
   const queryClient = useQueryClient();
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [selectedAssetId, setSelectedAssetId] = useState<string | undefined>();
   const twin = feedData<Record<string, unknown>>(results, '/digital-twin/state');
   const assets = feedData<Record<string, unknown>>(results, '/assets');
+  const geospatial = feedData<Record<string, unknown>>(results, '/track-configuration/map');
   const twinList = Array.isArray(twin) ? twin : extractArray<Record<string, unknown>>(twin, 'twins');
   const assetList = Array.isArray(assets) ? assets : extractArray<Record<string, unknown>>(assets, 'assets');
+  const mapFeatures = (() => {
+    const direct = extractArray<Record<string, unknown>>(geospatial, 'features');
+    if (direct.length) return direct;
+    if (geospatial && typeof geospatial.geospatial === 'object') {
+      return extractArray<Record<string, unknown>>(geospatial.geospatial as Record<string, unknown>, 'features');
+    }
+    return [];
+  })();
   const primaryTwinId = String(twinList[0]?.twinId ?? twinList[0]?.id ?? 'twin:main-track');
+
+  const trackAssets = (mapFeatures.length ? mapFeatures : assetList).slice(0, 12).map((feature, index) => ({
+    id: String(feature.id ?? feature.assetId ?? `asset-${index}`),
+    label: String(feature.label ?? feature.name ?? feature.assetId ?? 'Asset'),
+    type: typeof feature.layer === 'string' ? feature.layer : typeof feature.assetType === 'string' ? feature.assetType : undefined,
+    sectorId: typeof feature.properties === 'object' && feature.properties && typeof (feature.properties as Record<string, unknown>).sectorId === 'string'
+      ? String((feature.properties as Record<string, unknown>).sectorId)
+      : index % 4 === 0 ? 'chute' : index % 4 === 1 ? 'backstretch' : index % 4 === 2 ? 'far-turn' : 'stretch',
+    status: typeof feature.status === 'string' ? feature.status : undefined,
+  }));
 
   const syncMutation = useMutation({
     mutationFn: () => syncDigitalTwinState(primaryTwinId),
@@ -372,9 +437,15 @@ export function DigitalTwinPanels({ results }: { results: WorkspaceDataResult[] 
         items={[
           { id: 'twins', label: 'Digital twins', value: String(twinList.length || (twin ? 1 : 0)) },
           { id: 'assets', label: 'Registered assets', value: String(assetList.length) },
+          { id: 'features', label: 'Map features', value: String(mapFeatures.length) },
         ]}
       />
-      <SectionPanel title="Twin synchronization" description="Trigger governed digital twin state refresh from racing data hub.">
+      <TrackOvalDiagram
+        assets={trackAssets}
+        selectedAssetId={selectedAssetId}
+        onAssetSelect={setSelectedAssetId}
+      />
+      <SectionPanel title="Twin synchronization" description="Trigger governed digital twin state refresh from the racing data hub.">
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" variant="governance" disabled={syncMutation.isPending} onClick={() => syncMutation.mutate()}>
             Trigger twin sync

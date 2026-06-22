@@ -47,6 +47,7 @@ export const workspacePanelRouteIds = [
   'analytics',
   'fanExperience',
   'notifications',
+  'account',
 ] as const satisfies readonly DomainRouteId[];
 
 export const sidebarIconKeys = [
@@ -72,6 +73,7 @@ export const sidebarIconKeys = [
   'analytics',
   'fan',
   'notifications',
+  'account',
   'settings',
 ] as const;
 

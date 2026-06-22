@@ -8,7 +8,7 @@ import { CustomerOnboardingWorkflowService } from './customerOnboardingWorkflowS
 import { CustomerSuccessService } from './customerSuccessService.js';
 import type { TenantService } from './tenantService.js';
 
-type HttpMethod = 'GET' | 'POST';
+type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 type HandlerResult = { status: number; body: unknown } | undefined;
 
 export interface CustomerManagementServices {

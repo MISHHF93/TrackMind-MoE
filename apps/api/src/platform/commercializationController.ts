@@ -6,7 +6,7 @@ import { SubscriptionService } from './subscriptionService.js';
 import type { TenantService } from './tenantService.js';
 import { UsageTrackingService } from './usageTrackingService.js';
 
-type HttpMethod = 'GET' | 'POST';
+type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 type HandlerResult = { status: number; body: unknown } | undefined;
 
 export interface CommercializationServices {

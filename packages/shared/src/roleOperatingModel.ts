@@ -30,7 +30,8 @@ export type DomainRouteId =
   | 'emergency'
   | 'analytics'
   | 'fanExperience'
-  | 'notifications';
+  | 'notifications'
+  | 'account';
 
 export type NavigationGroup =
   | 'Command'
@@ -82,7 +83,7 @@ const allRoutes: DomainRouteId[] = [
   'dashboard', 'raceDay', 'equine', 'approvals', 'incidents', 'compliance', 'security',
   'facilities', 'ticketing', 'finance', 'federation', 'dataHub', 'audit', 'admin',
   'settings', 'stewarding', 'workforce', 'digitalTwin', 'surface', 'emergency',
-  'analytics', 'fanExperience', 'notifications',
+  'analytics', 'fanExperience', 'notifications', 'account',
 ];
 
 const bind = (binding: RoleCapabilityBinding): RoleCapabilityBinding => binding;
@@ -476,6 +477,7 @@ export function homePathForRole(role: Role): string {
     analytics: '/analytics',
     fanExperience: '/fan-experience',
     notifications: '/notifications',
+    account: '/account',
   };
   return routePaths[homeRouteForRole(role)] ?? '/dashboard';
 }
@@ -485,6 +487,7 @@ export function visibleKpiDomainsForRole(role: Role): KPIDomain[] {
 }
 
 export function canRoleViewRoute(role: Role, routeId: DomainRouteId): boolean {
+  if (routeId === 'account') return true;
   return roleCapabilityBindings[role]?.viewerRoutes.includes(routeId) ?? false;
 }
 
@@ -522,5 +525,6 @@ export function functionalCategoryForRole(role: Role): FunctionalCategory {
 }
 
 export function viewerRolesForRoute(routeId: DomainRouteId): Role[] {
+  if (routeId === 'account') return [...roles];
   return (roles as readonly Role[]).filter((role) => canRoleViewRoute(role, routeId));
 }

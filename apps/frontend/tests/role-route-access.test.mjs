@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { resolve } from 'node:path';
 import {
   assignableRoles,
+  canRoleAccessRoute,
   canRoleViewRoute,
   homePathForRole,
   homeRouteForRole,
@@ -33,11 +34,15 @@ test('frontend guards redirect denied users to role home', async () => {
   const router = await readFile(resolve(root, 'src/app/router.tsx'), 'utf8');
   const support = await readFile(resolve(root, 'src/domain/support.ts'), 'utf8');
   const session = await readFile(resolve(root, 'src/auth/session.ts'), 'utf8');
+  const shell = await readFile(resolve(root, 'src/shell/AppShell.tsx'), 'utf8');
 
-  assert.match(guards, /homePathForSessionRole/);
+  assert.match(guards, /homePath/);
+  assert.match(guards, /<Navigate to=\{destination\}/);
   assert.match(router, /RoleHomeRedirect/);
-  assert.match(support, /canRoleViewRoute/);
-  assert.match(session, /normalizeRole/);
+  assert.match(support, /canRoleAccessRoute/);
+  assert.match(session, /demoAccessEnabled|createDemoBypassSession/);
+  assert.match(shell, /useAccessibleRoutes/);
+  assert.match(shell, /RouteAccessSync/);
 });
 
 test('steward and security personas have distinct workspace homes', () => {
@@ -65,6 +70,12 @@ test('organization admin lands on executive analytics workspace', () => {
   assert.equal(homeRouteForRole('organization-admin'), 'analytics');
   assert.ok(canRoleViewRoute('organization-admin', 'analytics'));
   assert.ok(canRoleViewRoute('organization-admin', 'admin'));
+});
+
+test('steward navigation excludes finance and platform admin routes', () => {
+  assert.equal(canRoleAccessRoute('steward', 'finance'), false);
+  assert.equal(canRoleAccessRoute('steward', 'admin'), false);
+  assert.equal(canRoleAccessRoute('steward', 'stewarding'), true);
 });
 
 test('racetrack admin cannot access platform admin workspace', () => {

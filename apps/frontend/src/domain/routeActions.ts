@@ -111,6 +111,10 @@ function routeSpecificActions(routeId: DomainRouteId, results: WorkspaceDataResu
       { id: 'settings-lineage', label: 'Prompt lineage draft', detail: 'Create AI prompt lineage draft for review.', href: '/settings?focus=lineage' },
       { id: 'settings-model', label: 'Register model card', detail: 'Open AI model registry intake.', href: '/settings?focus=registry' },
     ],
+    account: [
+      { id: 'account-profile', label: 'Review profile', detail: 'Open operator profile and resonance summary.', href: '/account' },
+      { id: 'account-access', label: 'Request access', detail: 'Submit an access elevation request.', href: '/admin?focus=identity' },
+    ],
   };
   return byRoute[routeId] ?? [];
 }
