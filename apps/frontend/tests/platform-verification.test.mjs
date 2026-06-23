@@ -229,3 +229,16 @@ test('platform verification: surface intelligence panels load live API feeds', a
   assert.match(surfacePanels, /requestSurfaceOperationalAction/);
   assert.match(routes, /backendContractPathsForRoute\('surface'\)/);
 });
+
+test('platform verification: identity access table renders assignments only', async () => {
+  const panels = await source('src/workspaces/views/platformPanels.tsx');
+  assert.doesNotMatch(panels, /primaryRole/);
+  assert.doesNotMatch(panels, /\.\.\.mapRecords\(users/);
+  assert.match(panels, /mapRecords\(roleAssignments/);
+  assert.match(panels, /assignmentRows/);
+  assert.match(panels, /roleDisplayName/);
+  assert.match(panels, /Pending access requests/);
+  assert.match(panels, /Available roles/);
+  assert.match(panels, /assignableRoles/);
+  assert.match(panels, /roleRegistry/);
+});

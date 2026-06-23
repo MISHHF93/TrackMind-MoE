@@ -33,6 +33,9 @@ function profilePrivacy(profile: Record<string, unknown> | undefined): Record<st
 }
 
 import type { WorkspacePanelProps } from './workspacePanelTypes';
+import { EquineSurveillanceContextPanel } from './equineSurveillanceContextPanels';
+import type { EquineSurveillanceContextWorkspaceDto } from '@trackmind/shared';
+import { hasPermission } from '@trackmind/shared';
 
 export function EquinePanels({ results, role: roleProp }: WorkspacePanelProps): ReactElement {
   const queryClient = useQueryClient();
@@ -51,6 +54,8 @@ export function EquinePanels({ results, role: roleProp }: WorkspacePanelProps): 
   const jockeys = feedData<Record<string, unknown>>(results, '/jockey-management/workspace');
   const veterinary = feedData<Record<string, unknown>>(results, '/veterinary-operations/workspace');
   const welfare = feedData<Record<string, unknown>>(results, '/equine-welfare/workspace');
+  const surveillanceContext = welfare?.surveillanceContext as EquineSurveillanceContextWorkspaceDto | undefined;
+  const showVeterinaryConfidential = hasPermission(role, 'vet:clear-flag') || role === 'veterinarian' || role === 'platform-super-admin' || role === 'compliance-officer';
 
   const movements = extractArray<Record<string, unknown>>(barn, 'movements');
   const vetVisits = extractArray<Record<string, unknown>>(barn, 'vetVisits');
@@ -102,7 +107,13 @@ export function EquinePanels({ results, role: roleProp }: WorkspacePanelProps): 
           { id: 'eligible', label: 'Eligibility', value: String(eligibilityFeed?.eligible ?? '—') },
           { id: 'registry', label: 'Registry horses', value: String(horses.length) },
           { id: 'welfare', label: 'Welfare score', value: welfare?.overallScore != null ? String(welfare.overallScore) : '—' },
+          { id: 'surv-context', label: 'Surveillance refs', value: String(surveillanceContext?.summary.welfareEvidenceReferences ?? '—') },
         ]}
+      />
+      <EquineSurveillanceContextPanel
+        context={surveillanceContext}
+        showCareTeamSections={canViewMedical}
+        showVeterinaryConfidentialSections={showVeterinaryConfidential}
       />
       {canManageHorseOps ? (
       <>

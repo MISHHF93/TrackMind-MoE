@@ -25,6 +25,8 @@ import type { WorkspaceAction } from '@/design/components/workspace';
 import { authorizeApprovalExecution, requestRaceStart, requestRaceStop, requestScratch, type ApprovalTokenPayload } from '@/api/mutations';
 
 import type { WorkspacePanelProps } from './workspacePanelTypes';
+import { RaceDaySurveillanceVisibilityPanel } from './raceDaySurveillanceVisibilityPanels';
+import type { RaceDaySurveillanceVisibilityWorkspaceDto } from '@trackmind/shared';
 
 export function RaceDayPanels({ results, role: roleProp }: WorkspacePanelProps): ReactElement {
   const { session } = useTenantSession();
@@ -40,6 +42,7 @@ export function RaceDayPanels({ results, role: roleProp }: WorkspacePanelProps):
   const calendar = feedFromIndex<Record<string, unknown>>(feeds, '/racing-calendar/workspace');
   const raceCardsWorkspace = feedFromIndex<Record<string, unknown>>(feeds, '/race-cards/workspace');
   const readiness = feedFromIndex<Record<string, unknown>>(feeds, '/race-day-readiness/dashboard');
+  const surveillanceVisibility = readiness?.surveillanceVisibility as RaceDaySurveillanceVisibilityWorkspaceDto | undefined;
   const surface = feedFromIndex<Record<string, unknown>>(feeds, '/surface-intelligence/workspace');
   const surfaceMeasurements = extractArray<Record<string, unknown>>(
     feedFromIndex(feeds, '/track-surface/measurements'),
@@ -269,8 +272,10 @@ export function RaceDayPanels({ results, role: roleProp }: WorkspacePanelProps):
           { id: 'published-cards', label: 'Published', value: lifecycleSummary?.published != null ? String(lifecycleSummary.published) : '—' },
           { id: 'office-ready', label: 'Office ready', value: officeReadiness.length ? `${officeReadyCount}/${officeReadiness.length}` : '—', status: officeReadiness.length && officeReadyCount === officeReadiness.length ? 'nominal' : 'warning' },
           { id: 'warnings', label: 'Warnings', value: String(warnings.length), status: warnings.length > 0 ? 'warning' : 'nominal' },
+          { id: 'surv-alerts', label: 'Surveillance alerts', value: String(surveillanceVisibility?.summary.openDisruptionAlerts ?? '—'), status: Number(surveillanceVisibility?.summary.openDisruptionAlerts ?? 0) > 0 ? 'warning' : 'nominal' },
         ]}
       />
+      <RaceDaySurveillanceVisibilityPanel visibility={surveillanceVisibility} />
       {canRunRaceCommand ? (
       <>
       <SectionPanel title="Race command target" description="Select the active race for stop, scratch, and gate command actions.">

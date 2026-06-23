@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import type { Role } from '@trackmind/shared';
 import { isReadOnlyOperationalRole } from '@trackmind/shared';
 import { backendSupportLabels } from '@/domain/support';
@@ -189,7 +189,14 @@ export function WorkspacePage({ routeId }: { routeId: DomainRouteId }): ReactEle
   const route = routeById[routeId];
   const { session } = useTenantSession();
   const roleWorkspace = useRoleWorkspace();
-  const { data, isLoading, isError, error, refetch } = useWorkspaceData(routeId);
+  const params = useParams();
+  let pathParams: Record<string, string> | undefined;
+  if (routeId === 'cctvCameraDetail' && params.cameraId) {
+    pathParams = { cameraId: params.cameraId };
+  } else if (routeId === 'iotDeviceDetail' && params.deviceId) {
+    pathParams = { deviceId: params.deviceId };
+  }
+  const { data, isLoading, isError, error, refetch } = useWorkspaceData(routeId, pathParams);
   const { setWorkspaceState } = useWorkspaceContext();
   const [searchParams] = useSearchParams();
   const [devJson, setDevJson] = useState(isDevJsonEnabled);
@@ -271,7 +278,11 @@ export function WorkspacePage({ routeId }: { routeId: DomainRouteId }): ReactEle
               rows={results.map((item) => [
                 item.path,
                 item.status,
-                item.status === 'ready' ? stringField(item.data, 'summary', stringField(item.data, 'title', 'Ready')) : item.message ?? 'Unavailable',
+                item.status === 'ready'
+                  ? stringField(item.data, 'summary', stringField(item.data, 'title', Array.isArray(item.data) ? `${item.data.length} items` : 'Ready'))
+                  : item.status === 'empty'
+                    ? (Array.isArray(item.data) ? `${item.data.length} items` : item.emptyReason ?? 'No data')
+                    : item.message ?? 'Unavailable',
               ])}
             />
           </EvidencePanel>

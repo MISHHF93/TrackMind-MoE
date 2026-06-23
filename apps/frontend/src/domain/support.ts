@@ -19,6 +19,14 @@ export type DomainRouteId =
   | 'audit'
   | 'admin'
   | 'iotMonitoring'
+  | 'cctvRegistry'
+  | 'cctvViewer'
+  | 'cctvCameraDetail'
+  | 'iotRegistry'
+  | 'iotDeviceDetail'
+  | 'surveillanceZoneMapping'
+  | 'surveillanceHealth'
+  | 'surveillanceAlerting'
   | 'settings'
   | 'stewarding'
   | 'workforce'
@@ -36,6 +44,8 @@ export interface RouteSupportMetadata {
   label: string;
   navigationGroup: NavigationGroup;
   iconKey: string;
+  /** When true, route is reachable but omitted from sidebar navigation. */
+  navigationHidden?: boolean;
   requiredPermission: Permission | 'read:any';
   requiredRoles: Role[] | 'authenticated';
   supportStatus: BackendSupportStatus;

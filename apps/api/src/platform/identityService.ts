@@ -32,26 +32,26 @@ import { mapEntraClaimsToRoles } from './entraRoleMapping.js';
 const now = () => new Date().toISOString();
 
 const personaSeeds: Array<{ id: string; role: Role; displayName: string; email: string; entraObjectId?: string }> = [
-  { id: 'user-admin-1', role: 'platform-super-admin', displayName: 'Operations Admin', email: 'admin@trackmind.local', entraObjectId: 'entra-admin-1' },
-  { id: 'user-org-admin-1', role: 'organization-admin', displayName: 'Organization Admin', email: 'org-admin@trackmind.local', entraObjectId: 'entra-org-admin-1' },
-  { id: 'user-racetrack-admin-1', role: 'racetrack-admin', displayName: 'Racetrack Admin', email: 'racetrack-admin@trackmind.local' },
-  { id: 'user-race-day-1', role: 'race-day-operations-manager', displayName: 'Race Day Manager', email: 'race-day@trackmind.local', entraObjectId: 'entra-race-day-1' },
-  { id: 'user-steward-1', role: 'steward', displayName: 'Chief Steward', email: 'steward@trackmind.local', entraObjectId: 'entra-steward-1' },
-  { id: 'user-starter-1', role: 'starter-official', displayName: 'Starter Official', email: 'starter@trackmind.local' },
-  { id: 'user-paddock-1', role: 'paddock-official', displayName: 'Paddock Official', email: 'paddock@trackmind.local' },
-  { id: 'user-welfare-1', role: 'equine-welfare-officer', displayName: 'Equine Welfare Officer', email: 'welfare@trackmind.local' },
-  { id: 'user-vet-1', role: 'veterinarian', displayName: 'Track Veterinarian', email: 'vet@trackmind.local', entraObjectId: 'entra-vet-1' },
-  { id: 'user-horse-ops-1', role: 'horse-operations-coordinator', displayName: 'Horse Operations Coordinator', email: 'horse-ops@trackmind.local' },
-  { id: 'user-security-1', role: 'security-manager', displayName: 'Security Manager', email: 'security@trackmind.local' },
-  { id: 'user-facilities-1', role: 'facilities-manager', displayName: 'Facilities Manager', email: 'facilities@trackmind.local', entraObjectId: 'entra-facilities-1' },
-  { id: 'user-compliance-1', role: 'compliance-officer', displayName: 'Compliance Officer', email: 'compliance@trackmind.local' },
-  { id: 'user-finance-1', role: 'finance-manager', displayName: 'Finance Manager', email: 'finance@trackmind.local', entraObjectId: 'entra-finance-1' },
-  { id: 'user-ticketing-1', role: 'ticketing-fan-manager', displayName: 'Ticketing Manager', email: 'ticketing@trackmind.local' },
-  { id: 'user-executive-1', role: 'executive', displayName: 'Track Executive', email: 'executive@trackmind.local' },
-  { id: 'user-auditor-1', role: 'read-only-auditor', displayName: 'Read-Only Auditor', email: 'auditor@trackmind.local', entraObjectId: 'entra-auditor-1' },
-  { id: 'user-analytics-1', role: 'data-analytics-user', displayName: 'Analytics User', email: 'analytics@trackmind.local' },
-  { id: 'user-support-1', role: 'support-operator', displayName: 'Support Operator', email: 'support@trackmind.local' },
-  { id: 'user-staff-1', role: 'staff-limited', displayName: 'Limited Staff', email: 'staff@trackmind.local' },
+  { id: 'user-admin-1', role: 'platform-super-admin', displayName: 'Alex Morgan', email: 'admin@trackmind.local', entraObjectId: 'entra-admin-1' },
+  { id: 'user-org-admin-1', role: 'organization-admin', displayName: 'Jordan Blake', email: 'org-admin@trackmind.local', entraObjectId: 'entra-org-admin-1' },
+  { id: 'user-racetrack-admin-1', role: 'racetrack-admin', displayName: 'Casey Rivera', email: 'racetrack-admin@trackmind.local' },
+  { id: 'user-race-day-1', role: 'race-day-operations-manager', displayName: 'Morgan Chen', email: 'race-day@trackmind.local', entraObjectId: 'entra-race-day-1' },
+  { id: 'user-steward-1', role: 'steward', displayName: 'Sam OBrien', email: 'steward@trackmind.local', entraObjectId: 'entra-steward-1' },
+  { id: 'user-starter-1', role: 'starter-official', displayName: 'Riley Nash', email: 'starter@trackmind.local' },
+  { id: 'user-paddock-1', role: 'paddock-official', displayName: 'Taylor Brooks', email: 'paddock@trackmind.local' },
+  { id: 'user-welfare-1', role: 'equine-welfare-officer', displayName: 'Jamie Lawson', email: 'welfare@trackmind.local' },
+  { id: 'user-vet-1', role: 'veterinarian', displayName: 'Pat Nguyen', email: 'vet@trackmind.local', entraObjectId: 'entra-vet-1' },
+  { id: 'user-horse-ops-1', role: 'horse-operations-coordinator', displayName: 'Reese Dalton', email: 'horse-ops@trackmind.local' },
+  { id: 'user-security-1', role: 'security-manager', displayName: 'Avery Stone', email: 'security@trackmind.local' },
+  { id: 'user-facilities-1', role: 'facilities-manager', displayName: 'Quinn Hart', email: 'facilities@trackmind.local', entraObjectId: 'entra-facilities-1' },
+  { id: 'user-compliance-1', role: 'compliance-officer', displayName: 'Drew Sinclair', email: 'compliance@trackmind.local' },
+  { id: 'user-finance-1', role: 'finance-manager', displayName: 'Cameron Wells', email: 'finance@trackmind.local', entraObjectId: 'entra-finance-1' },
+  { id: 'user-ticketing-1', role: 'ticketing-fan-manager', displayName: 'Skyler Marks', email: 'ticketing@trackmind.local' },
+  { id: 'user-executive-1', role: 'executive', displayName: 'Elena Vasquez', email: 'executive@trackmind.local' },
+  { id: 'user-auditor-1', role: 'read-only-auditor', displayName: 'Chris Palmer', email: 'auditor@trackmind.local', entraObjectId: 'entra-auditor-1' },
+  { id: 'user-analytics-1', role: 'data-analytics-user', displayName: 'Dana Ortiz', email: 'analytics@trackmind.local' },
+  { id: 'user-support-1', role: 'support-operator', displayName: 'Logan Pierce', email: 'support@trackmind.local' },
+  { id: 'user-staff-1', role: 'staff-limited', displayName: 'Avery Kim', email: 'staff@trackmind.local' },
 ];
 
 const seedUsers = (): PlatformUserDto[] => personaSeeds.map((persona) => ({
@@ -67,6 +67,10 @@ const seedUsers = (): PlatformUserDto[] => personaSeeds.map((persona) => ({
   createdAt: '2026-01-01T00:00:00.000Z',
   mock: false,
 }));
+
+export function seededUserIdForRole(role: Role): string | undefined {
+  return personaSeeds.find((persona) => persona.role === role)?.id;
+}
 
 const seedPolicies = (): TenantRbacPolicyDto[] => [
   {

@@ -45,6 +45,7 @@ export function AppShell(): ReactElement {
         .map((group) => ({
           group,
           routes: searchableRoutes
+            .filter((route) => !('navigationHidden' in route && route.navigationHidden))
             .filter((route) => route.navigationGroup === group)
             .map((route) => ({ ...route, supportLabel: backendSupportLabels[route.supportStatus] })),
         }))

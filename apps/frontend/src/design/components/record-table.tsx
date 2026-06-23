@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 export interface RecordColumn {
@@ -14,7 +14,7 @@ export function RecordTable({
   className,
 }: {
   columns: RecordColumn[];
-  rows: Record<string, string>[];
+  rows: Record<string, ReactNode>[];
   emptyLabel?: string;
   className?: string;
 }): ReactElement {
@@ -51,8 +51,8 @@ export function RecordTable({
 
 export function mapRecords(
   records: Record<string, unknown>[],
-  mapper: (record: Record<string, unknown>, index: number) => Record<string, string>,
+  mapper: (record: Record<string, unknown>, index: number) => Record<string, ReactNode>,
   limit = 12,
-): Record<string, string>[] {
+): Record<string, ReactNode>[] {
   return records.slice(0, limit).map(mapper);
 }

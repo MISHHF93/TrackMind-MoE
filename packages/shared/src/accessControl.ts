@@ -52,6 +52,21 @@ export const permissionRegistry = {
   'analytics:read': { group: 'read', description: 'Read analytics, trends, and benchmarking reports.' },
   'support:operate': { group: 'service', description: 'Use governed support tooling and tenant diagnostics.' },
   'staff:task': { group: 'workflow', description: 'Complete assigned operational tasks and limited data entry.' },
+  'surveillance:health-read': { group: 'security', description: 'Read surveillance health, monitoring, and readiness workspaces.' },
+  'surveillance:device-read': { group: 'security', description: 'Read CCTV and IoT device registries and zone mapping within authorized scope.' },
+  'surveillance:device-manage': { group: 'security', description: 'Create or mutate CCTV and IoT registry records within authorized domain scope.' },
+  'surveillance:facility-read': { group: 'track-operations', description: 'Read facility-scoped IoT devices and facilities surveillance embeds.' },
+  'surveillance:security-read': { group: 'security', description: 'Read security-scoped cameras, restricted zones, and SOC integration embeds.' },
+  'surveillance:incident-link': { group: 'security', description: 'Link surveillance evidence and device context to incidents.' },
+  'surveillance:alert-rule-edit': { group: 'security', description: 'Submit or approve surveillance alert rule and policy changes.' },
+  'surveillance:audit-export': { group: 'compliance', description: 'Export surveillance governance and administration audit records.' },
+  'surveillance:sensitive-read': { group: 'security', description: 'Read retention policies, privileged configuration, and restricted surveillance metadata.' },
+  'surveillance:governance-read': { group: 'compliance', description: 'Read surveillance governance workspaces and approval queues.' },
+  'surveillance:admin-read': { group: 'service', description: 'Read platform surveillance administration workspace and adapter configuration.' },
+  'surveillance:live-view': { group: 'security', description: 'Use the in-house CCTV viewer for governed live and preview stream tiles.' },
+  'surveillance:playback': { group: 'security', description: 'Play recorded surveillance and steward evidence clips in the media viewer.' },
+  'surveillance:media-export': { group: 'security', description: 'Export or share governed media clips from the media viewer.' },
+  'surveillance:media-snapshot': { group: 'security', description: 'Capture governed snapshots from live camera streams.' },
 } as const satisfies Record<string, { group: PermissionGroup; description: string }>;
 
 export type Permission = keyof typeof permissionRegistry;
@@ -189,20 +204,31 @@ export const rolePermissions: Record<Role, Permission[]> = {
     'access:request', 'access:approve', 'access:review', 'workflow:execute', 'service:operate', 'integration:invoke',
     'kpi:read', 'kpi:admin', 'executive:read', 'analytics:read', 'compliance:report', 'audit:read',
     'incident:manage', 'track:readings', 'security:manage', 'staff:task', 'ai:approve',
+    'surveillance:health-read', 'surveillance:device-read', 'surveillance:device-manage', 'surveillance:facility-read',
+    'surveillance:security-read', 'surveillance:incident-link', 'surveillance:alert-rule-edit', 'surveillance:audit-export',
+    'surveillance:sensitive-read', 'surveillance:governance-read', 'surveillance:admin-read', 'surveillance:live-view',
+    'surveillance:playback', 'surveillance:media-export', 'surveillance:media-snapshot',
   ],
   'racetrack-admin': [
     'read:any', 'racetrack:admin', 'identity:read', 'identity:write', 'access:request', 'workflow:execute',
     'track:readings', 'incident:manage', 'kpi:read', 'audit:read', 'compliance:report', 'race-day:operate',
     'integration:invoke', 'service:operate',
+    'surveillance:health-read', 'surveillance:device-read', 'surveillance:device-manage', 'surveillance:facility-read',
+    'surveillance:security-read', 'surveillance:incident-link', 'surveillance:audit-export', 'surveillance:sensitive-read',
+    'surveillance:governance-read', 'surveillance:admin-read', 'surveillance:live-view',
+    'surveillance:playback', 'surveillance:media-export', 'surveillance:media-snapshot',
   ],
   'race-day-operations-manager': [
     'read:any', 'race-day:operate', 'race:request-start', 'horse:scratch', 'track:readings', 'incident:manage',
     'ai:read', 'ai:approve', 'workflow:execute', 'kpi:read', 'audit:read', 'starter:update',
+    'surveillance:health-read', 'surveillance:device-read', 'surveillance:facility-read', 'surveillance:security-read',
+    'surveillance:incident-link', 'surveillance:live-view', 'surveillance:playback',
   ],
   steward: [
     'read:any', 'race:request-start', 'race:finalize-results', 'horse:scratch', 'track:readings', 'incident:manage',
     'ai:read', 'ai:approve', 'discipline:issue', 'audit:read', 'workflow:execute', 'kpi:read',
     'welfare:observe', 'vet:review', 'executive:read', 'horse-ops:manage', 'compliance:audit',
+    'surveillance:security-read', 'surveillance:incident-link', 'surveillance:playback',
   ],
   'starter-official': [
     'read:any', 'starter:update', 'race:request-start', 'track:readings', 'kpi:read', 'workflow:execute',
@@ -223,14 +249,23 @@ export const rolePermissions: Record<Role, Permission[]> = {
   'security-manager': [
     'read:any', 'security:read', 'security:manage', 'security:sensitive-read', 'security:investigate',
     'incident:manage', 'ai:read', 'ai:approve', 'audit:read', 'workflow:execute',
+    'surveillance:health-read', 'surveillance:device-read', 'surveillance:device-manage', 'surveillance:facility-read',
+    'surveillance:security-read', 'surveillance:incident-link', 'surveillance:alert-rule-edit', 'surveillance:audit-export',
+    'surveillance:sensitive-read', 'surveillance:governance-read', 'surveillance:admin-read', 'surveillance:live-view',
+    'surveillance:playback', 'surveillance:media-export', 'surveillance:media-snapshot',
   ],
   'facilities-manager': [
     'read:any', 'track:readings', 'incident:manage', 'ai:read', 'ai:approve', 'workflow:execute', 'kpi:read',
+    'surveillance:health-read', 'surveillance:device-read', 'surveillance:device-manage', 'surveillance:facility-read',
+    'surveillance:incident-link',
   ],
   'compliance-officer': [
     'read:any', 'security:read', 'compliance:audit', 'compliance:report', 'audit:read', 'audit:export',
     'ai:read', 'ai:approve', 'artifact:read', 'integration:invoke', 'data-hub:read', 'kpi:read', 'policy:manage', 'access:review',
     'vet:review', 'executive:read', 'staff:task',
+    'surveillance:health-read', 'surveillance:device-read', 'surveillance:facility-read', 'surveillance:security-read',
+    'surveillance:incident-link', 'surveillance:audit-export', 'surveillance:sensitive-read', 'surveillance:governance-read',
+    'surveillance:playback', 'surveillance:media-export',
   ],
   'finance-manager': [
     'read:any', 'finance:payout', 'ticketing:manage', 'ai:approve', 'audit:read', 'kpi:read',
@@ -243,6 +278,7 @@ export const rolePermissions: Record<Role, Permission[]> = {
   ],
   'read-only-auditor': [
     'read:any', 'audit:read', 'compliance:report', 'artifact:read', 'data-hub:read', 'kpi:read', 'analytics:read', 'vet:review', 'security:read',
+    'surveillance:health-read', 'surveillance:device-read', 'surveillance:audit-export', 'surveillance:governance-read', 'surveillance:sensitive-read',
   ],
   'data-analytics-user': [
     'read:any', 'analytics:read', 'kpi:read', 'data-hub:read', 'artifact:read', 'staff:task',
@@ -561,7 +597,15 @@ export const frontendRoutePermissionRegistry = {
   dataHub: 'data-hub:read',
   audit: 'audit:read',
   admin: 'service:operate',
-  iotMonitoring: 'service:operate',
+  iotMonitoring: 'surveillance:health-read',
+  cctvRegistry: 'surveillance:device-read',
+  cctvViewer: 'surveillance:live-view',
+  cctvCameraDetail: 'surveillance:device-read',
+  iotRegistry: 'surveillance:device-read',
+  iotDeviceDetail: 'surveillance:device-read',
+  surveillanceZoneMapping: 'surveillance:device-read',
+  surveillanceHealth: 'surveillance:health-read',
+  surveillanceAlerting: 'surveillance:health-read',
   settings: 'ai:read',
   stewarding: 'read:any',
   workforce: 'read:any',
@@ -701,5 +745,60 @@ export function permissionForApiEndpoint(input: { method: 'GET' | 'POST' | 'PATC
   if (input.path.includes('/analytics/')) return 'analytics:read';
   if (input.path.includes('/fan-experience')) return 'ticketing:manage';
   if (input.path.includes('/federation')) return 'compliance:report';
+  if (input.path.includes('/surveillance-iot/')) {
+    if (input.operationId === 'linkSurveillanceEvidence') return 'surveillance:incident-link';
+    if (input.operationId === 'requestSurveillanceAlertRuleChange') return 'surveillance:alert-rule-edit';
+    if (
+      input.operationId === 'getSurveillanceIoTGovernanceWorkspace'
+      || input.operationId === 'getSurveillanceAdministrationGovernanceWorkspace'
+      || input.operationId === 'decideSurveillanceAdministrationApproval'
+    ) {
+      return 'surveillance:governance-read';
+    }
+    if (
+      input.operationId === 'requestSurveillanceRetentionPolicyChange'
+      || input.operationId === 'recordSurveillancePrivilegedConfigAccess'
+    ) {
+      return 'surveillance:sensitive-read';
+    }
+    if (
+      input.operationId === 'getSurveillanceIoTAdministrationWorkspace'
+      || input.operationId === 'getSurveillanceIoTWorkspace'
+    ) {
+      return 'surveillance:admin-read';
+    }
+    if (input.operationId === 'getSurveillanceIoTEvidenceWorkspace') return 'surveillance:governance-read';
+    if (input.path.includes('/governance/') && input.method === 'GET') return 'surveillance:governance-read';
+    if (input.operationId === 'getSurveillanceCctvViewerWorkspace' || input.operationId === 'getSurveillanceMediaViewerWorkspace') {
+      return 'surveillance:live-view';
+    }
+    if (input.operationId === 'getSurveillanceMediaViewerPlayback') return 'surveillance:playback';
+    if (input.operationId === 'createSurveillanceMediaSnapshot') return 'surveillance:media-snapshot';
+    if (
+      input.operationId === 'createSurveillanceMediaExport'
+      || input.operationId === 'createSurveillanceMediaShareLink'
+    ) {
+      return 'surveillance:media-export';
+    }
+    if (input.path.includes('/viewer/snapshot')) return 'surveillance:media-snapshot';
+    if (input.path.includes('/viewer/')) return input.method === 'GET' ? 'surveillance:live-view' : 'surveillance:media-export';
+    if (input.method === 'PATCH' || input.method === 'POST') {
+      if (input.path.includes('/alert-rules/')) return 'surveillance:alert-rule-edit';
+      if (input.path.includes('/retention-policies/') || input.path.includes('/privileged-config/')) {
+        return 'surveillance:sensitive-read';
+      }
+      return 'surveillance:device-manage';
+    }
+    if (input.path.includes('/health/') || input.operationId === 'getSurveillanceHealthWorkspace') {
+      return 'surveillance:health-read';
+    }
+    if (input.path.includes('/cameras/') || input.path.includes('/devices/') || input.path.includes('/mapping/')) {
+      return 'surveillance:device-read';
+    }
+    if (input.path.includes('/monitoring/') || input.path.includes('/readiness') || input.path.includes('/alerting/')) {
+      return 'surveillance:health-read';
+    }
+    return 'surveillance:health-read';
+  }
   return 'read:any';
 }

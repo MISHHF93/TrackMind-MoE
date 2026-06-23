@@ -5,6 +5,7 @@ import type {
   RoleScope,
 } from './accessControl.js';
 import { roles } from './accessControl.js';
+import { canRoleEditSurveillanceRoute, surveillanceFrontendRoutePermissions } from './surveillanceIoTRbac.js';
 import type { VeterinaryPrivacyScope } from './veterinaryOperations.js';
 
 export type DomainRouteId =
@@ -23,6 +24,14 @@ export type DomainRouteId =
   | 'audit'
   | 'admin'
   | 'iotMonitoring'
+  | 'cctvRegistry'
+  | 'cctvViewer'
+  | 'cctvCameraDetail'
+  | 'iotRegistry'
+  | 'iotDeviceDetail'
+  | 'surveillanceZoneMapping'
+  | 'surveillanceHealth'
+  | 'surveillanceAlerting'
   | 'settings'
   | 'stewarding'
   | 'workforce'
@@ -82,7 +91,7 @@ export interface RoleCapabilityBinding {
 
 const allRoutes: DomainRouteId[] = [
   'dashboard', 'raceDay', 'equine', 'approvals', 'incidents', 'compliance', 'security',
-  'facilities', 'ticketing', 'finance', 'federation', 'dataHub', 'audit', 'admin', 'iotMonitoring',
+  'facilities', 'ticketing', 'finance', 'federation', 'dataHub', 'audit', 'admin', 'iotMonitoring', 'cctvRegistry', 'cctvViewer', 'cctvCameraDetail', 'iotRegistry', 'iotDeviceDetail', 'surveillanceZoneMapping', 'surveillanceHealth', 'surveillanceAlerting',
   'settings', 'stewarding', 'workforce', 'digitalTwin', 'surface', 'emergency',
   'analytics', 'fanExperience', 'notifications', 'account',
 ];
@@ -101,7 +110,7 @@ export const roleCapabilityBindings: Record<Role, RoleCapabilityBinding> = {
     approverActions: [],
     adminRoutes: ['admin', 'iotMonitoring', 'settings'],
     exportRoutes: ['audit', 'compliance', 'dataHub', 'federation'],
-    kpiDomains: ['system-health', 'tenant-operations', 'deployment-readiness', 'audit-integrity'],
+    kpiDomains: ['system-health', 'tenant-operations', 'deployment-readiness', 'audit-integrity', 'surveillance-iot'],
     auditVisibility: 'export',
     notificationChannels: ['platform', 'security', 'compliance', 'operations'],
     quickActions: ['platform-health', 'tenant-management', 'feature-flags'],
@@ -113,12 +122,12 @@ export const roleCapabilityBindings: Record<Role, RoleCapabilityBinding> = {
     category: 'system-admin',
     homeRouteId: 'analytics',
     navigationGroupOrder: ['Command', 'Governance', 'System Status', 'Race Operations', 'Business Controls', 'Data Governance'],
-    viewerRoutes: ['dashboard', 'admin', 'iotMonitoring', 'analytics', 'compliance', 'audit', 'approvals', 'finance', 'federation', 'dataHub', 'notifications'],
-    editorRoutes: ['admin', 'iotMonitoring', 'approvals'],
+    viewerRoutes: ['dashboard', 'admin', 'iotMonitoring', 'cctvRegistry', 'cctvViewer', 'cctvCameraDetail', 'iotRegistry', 'iotDeviceDetail', 'surveillanceZoneMapping', 'surveillanceHealth', 'surveillanceAlerting', 'analytics', 'compliance', 'audit', 'approvals', 'finance', 'federation', 'dataHub', 'notifications'],
+    editorRoutes: ['admin', 'iotMonitoring', 'cctvRegistry', 'cctvCameraDetail', 'iotRegistry', 'iotDeviceDetail', 'surveillanceZoneMapping', 'surveillanceHealth', 'surveillanceAlerting', 'approvals'],
     approverActions: ['kpi-threshold-change', 'compliance-filing-approval'],
     adminRoutes: ['admin', 'iotMonitoring'],
     exportRoutes: ['audit', 'compliance'],
-    kpiDomains: ['tenant-operations', 'multi-track-federation', 'approval-workflows'],
+    kpiDomains: ['tenant-operations', 'multi-track-federation', 'approval-workflows', 'surveillance-iot'],
     auditVisibility: 'export',
     notificationChannels: ['organization', 'compliance', 'executive'],
     quickActions: ['user-management', 'module-enablement'],
@@ -130,12 +139,12 @@ export const roleCapabilityBindings: Record<Role, RoleCapabilityBinding> = {
     category: 'system-admin',
     homeRouteId: 'dashboard',
     navigationGroupOrder: ['Command', 'Race Operations', 'Safety & Facilities', 'Governance', 'Business Controls'],
-    viewerRoutes: ['dashboard', 'raceDay', 'equine', 'stewarding', 'surface', 'approvals', 'incidents', 'emergency', 'security', 'facilities', 'workforce', 'compliance', 'audit', 'notifications', 'analytics'],
-    editorRoutes: ['dashboard', 'raceDay', 'facilities', 'approvals'],
+    viewerRoutes: ['dashboard', 'raceDay', 'equine', 'stewarding', 'surface', 'approvals', 'incidents', 'emergency', 'security', 'facilities', 'workforce', 'compliance', 'audit', 'notifications', 'analytics', 'iotMonitoring', 'cctvRegistry', 'cctvViewer', 'cctvCameraDetail', 'iotRegistry', 'iotDeviceDetail', 'surveillanceZoneMapping', 'surveillanceHealth', 'surveillanceAlerting'],
+    editorRoutes: ['dashboard', 'raceDay', 'facilities', 'approvals', 'cctvRegistry', 'cctvCameraDetail', 'iotRegistry', 'iotDeviceDetail', 'surveillanceZoneMapping', 'surveillanceHealth'],
     approverActions: ['facility-maintenance-execution', 'kpi-threshold-change'],
     adminRoutes: ['dashboard'],
     exportRoutes: ['audit'],
-    kpiDomains: ['tenant-operations', 'race-day-operations', 'facilities', 'approval-workflows'],
+    kpiDomains: ['tenant-operations', 'race-day-operations', 'facilities', 'approval-workflows', 'surveillance-iot'],
     auditVisibility: 'export',
     notificationChannels: ['racetrack', 'operations', 'compliance'],
     quickActions: ['race-day-readiness', 'user-assignments'],
@@ -147,7 +156,7 @@ export const roleCapabilityBindings: Record<Role, RoleCapabilityBinding> = {
     category: 'operational',
     homeRouteId: 'raceDay',
     navigationGroupOrder: ['Race Operations', 'Command', 'Safety & Facilities', 'Governance'],
-    viewerRoutes: ['raceDay', 'dashboard', 'surface', 'stewarding', 'equine', 'approvals', 'incidents', 'emergency', 'notifications'],
+    viewerRoutes: ['raceDay', 'dashboard', 'surface', 'stewarding', 'equine', 'approvals', 'incidents', 'emergency', 'notifications', 'iotMonitoring', 'cctvViewer', 'surveillanceHealth'],
     editorRoutes: ['raceDay', 'incidents', 'approvals'],
     approverActions: ['race-start', 'race-stop', 'emergency-action', 'race-status-change'],
     adminRoutes: [],
@@ -266,12 +275,12 @@ export const roleCapabilityBindings: Record<Role, RoleCapabilityBinding> = {
     category: 'operational',
     homeRouteId: 'security',
     navigationGroupOrder: ['Safety & Facilities', 'Governance', 'Command'],
-    viewerRoutes: ['security', 'incidents', 'emergency', 'iotMonitoring', 'audit', 'approvals', 'notifications'],
-    editorRoutes: ['security', 'incidents', 'emergency'],
+    viewerRoutes: ['security', 'incidents', 'emergency', 'iotMonitoring', 'cctvRegistry', 'cctvViewer', 'cctvCameraDetail', 'iotRegistry', 'iotDeviceDetail', 'surveillanceZoneMapping', 'surveillanceHealth', 'surveillanceAlerting', 'audit', 'approvals', 'notifications'],
+    editorRoutes: ['security', 'incidents', 'emergency', 'cctvRegistry', 'cctvCameraDetail', 'iotRegistry', 'iotDeviceDetail', 'surveillanceZoneMapping', 'surveillanceHealth', 'surveillanceAlerting'],
     approverActions: ['emergency-action', 'safety-critical-control'],
     adminRoutes: [],
     exportRoutes: ['audit', 'security'],
-    kpiDomains: ['security', 'safety-incidents'],
+    kpiDomains: ['security', 'safety-incidents', 'surveillance-iot'],
     auditVisibility: 'export',
     notificationChannels: ['security', 'incidents', 'alerts'],
     quickActions: ['security-incident', 'escalation-request'],
@@ -283,12 +292,12 @@ export const roleCapabilityBindings: Record<Role, RoleCapabilityBinding> = {
     category: 'operational',
     homeRouteId: 'facilities',
     navigationGroupOrder: ['Safety & Facilities', 'Race Operations'],
-    viewerRoutes: ['facilities', 'surface', 'digitalTwin', 'approvals', 'notifications'],
-    editorRoutes: ['facilities', 'surface'],
+    viewerRoutes: ['facilities', 'surface', 'digitalTwin', 'approvals', 'notifications', 'iotMonitoring', 'cctvRegistry', 'cctvCameraDetail', 'iotRegistry', 'iotDeviceDetail', 'surveillanceZoneMapping', 'surveillanceHealth', 'surveillanceAlerting'],
+    editorRoutes: ['facilities', 'surface', 'cctvRegistry', 'cctvCameraDetail', 'iotRegistry', 'iotDeviceDetail', 'surveillanceZoneMapping', 'surveillanceHealth'],
     approverActions: ['facility-maintenance-execution', 'surface-irrigation', 'track-closure', 'track-reopen'],
     adminRoutes: [],
     exportRoutes: [],
-    kpiDomains: ['facilities', 'surface-intelligence', 'tenant-operations'],
+    kpiDomains: ['facilities', 'surface-intelligence', 'tenant-operations', 'surveillance-iot'],
     auditVisibility: 'read',
     notificationChannels: ['facilities', 'maintenance'],
     quickActions: ['maintenance-approval', 'inspection'],
@@ -300,12 +309,12 @@ export const roleCapabilityBindings: Record<Role, RoleCapabilityBinding> = {
     category: 'compliance',
     homeRouteId: 'compliance',
     navigationGroupOrder: ['Governance', 'Data Governance', 'Command'],
-    viewerRoutes: ['compliance', 'audit', 'approvals', 'security', 'federation', 'dataHub', 'dashboard', 'notifications'],
+    viewerRoutes: ['compliance', 'audit', 'approvals', 'security', 'federation', 'dataHub', 'dashboard', 'notifications', 'iotMonitoring', 'surveillanceHealth'],
     editorRoutes: ['compliance', 'approvals'],
     approverActions: ['compliance-filing-approval', 'payout', 'disciplinary-decision'],
     adminRoutes: ['compliance'],
     exportRoutes: ['audit', 'compliance', 'federation'],
-    kpiDomains: ['compliance', 'audit-integrity', 'approval-workflows', 'multi-track-federation'],
+    kpiDomains: ['compliance', 'audit-integrity', 'approval-workflows', 'multi-track-federation', 'surveillance-iot'],
     auditVisibility: 'export',
     notificationChannels: ['compliance', 'audit', 'approvals'],
     quickActions: ['evidence-upload', 'audit-export'],
@@ -356,7 +365,7 @@ export const roleCapabilityBindings: Record<Role, RoleCapabilityBinding> = {
     approverActions: ['payout'],
     adminRoutes: [],
     exportRoutes: ['audit'],
-    kpiDomains: ['tenant-operations', 'finance', 'compliance', 'safety-incidents', 'multi-track-federation'],
+    kpiDomains: ['tenant-operations', 'finance', 'compliance', 'safety-incidents', 'multi-track-federation', 'surveillance-iot'],
     auditVisibility: 'read',
     notificationChannels: ['executive', 'incidents', 'compliance'],
     quickActions: ['executive-scorecard'],
@@ -368,12 +377,12 @@ export const roleCapabilityBindings: Record<Role, RoleCapabilityBinding> = {
     category: 'compliance',
     homeRouteId: 'audit',
     navigationGroupOrder: ['Governance', 'Data Governance'],
-    viewerRoutes: ['audit', 'compliance', 'stewarding', 'security', 'federation', 'dataHub', 'analytics'],
+    viewerRoutes: ['audit', 'compliance', 'stewarding', 'security', 'federation', 'dataHub', 'analytics', 'iotMonitoring', 'surveillanceHealth', 'surveillanceAlerting', 'cctvRegistry', 'iotRegistry', 'surveillanceZoneMapping'],
     editorRoutes: [],
     approverActions: [],
     adminRoutes: [],
     exportRoutes: ['audit', 'compliance', 'federation', 'dataHub'],
-    kpiDomains: ['audit-integrity', 'compliance', 'data-quality'],
+    kpiDomains: ['audit-integrity', 'compliance', 'data-quality', 'surveillance-iot'],
     auditVisibility: 'export',
     notificationChannels: ['audit', 'compliance'],
     quickActions: ['evidence-export'],
@@ -470,6 +479,14 @@ export function homePathForRole(role: Role): string {
     audit: '/audit',
     admin: '/admin',
     iotMonitoring: '/iot-monitoring',
+    cctvRegistry: '/cctv-registry',
+    cctvViewer: '/cctv-viewer',
+    cctvCameraDetail: '/cctv-registry/cameras/:cameraId',
+    iotRegistry: '/iot-registry',
+    iotDeviceDetail: '/iot-registry/devices/:deviceId',
+    surveillanceZoneMapping: '/surveillance-zone-mapping',
+    surveillanceHealth: '/surveillance-health',
+    surveillanceAlerting: '/surveillance-alerting',
     settings: '/settings',
     stewarding: '/stewarding',
     workforce: '/workforce',
@@ -494,6 +511,9 @@ export function canRoleViewRoute(role: Role, routeId: DomainRouteId): boolean {
 }
 
 export function canRoleEditRoute(role: Role, routeId: DomainRouteId): boolean {
+  if (routeId in surveillanceFrontendRoutePermissions) {
+    return canRoleEditSurveillanceRoute(role, routeId);
+  }
   return roleCapabilityBindings[role]?.editorRoutes.includes(routeId) ?? false;
 }
 

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import type { OperatorSessionDto, Role } from '@trackmind/shared';
 import { isRole } from '@trackmind/shared';
-import { fetchPlatformSession, patchPlatformActiveRole, revokePlatformSession } from '@/api/sessionApi';
+import { fetchPlatformSession, createPlatformSession, patchPlatformActiveRole, revokePlatformSession } from '@/api/sessionApi';
 import { demoAccessEnabled, logoutEntra } from '@/auth/entraAuth';
 import {
   applyOperatorSession,
@@ -62,9 +62,17 @@ export function TenantSessionProvider({ children }: { children: ReactNode }): Re
     let cancelled = false;
     async function restore() {
       if (demoAccessEnabled() && !session.bearerToken) {
-        const demoSession = createDemoBypassSession(session.role);
-        hydrateFromOperatorSession(demoSession);
-        if (!cancelled) setAuthReady(true);
+        const created = await createPlatformSession({
+          userId: session.userId ?? 'user-admin-1',
+          tenantId: session.tenantId,
+        });
+        if (cancelled) return;
+        if (created.status === 'ready' && created.data) {
+          hydrateFromOperatorSession(operatorToSessionState(session, created.data));
+        } else {
+          hydrateFromOperatorSession(createDemoBypassSession(session.role));
+        }
+        setAuthReady(true);
         return;
       }
       if (!session.bearerToken) {

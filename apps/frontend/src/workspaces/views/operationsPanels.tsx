@@ -11,6 +11,8 @@ import { mapRecords, RecordTable } from '@/design/components/record-table';
 import { SectionPanel } from '@/design/components/section-panel';
 import { TrackMindFormDialog } from '@/features/data-entry/TrackMindFormDialog';
 import { FacilitiesEntryConsole } from '@/features/facilities-entry/FacilitiesEntryConsole';
+import { FacilitiesSurveillanceMonitoringPanel } from './facilitiesSurveillanceMonitoringPanels';
+import { SurveillanceIoTKpiPanel } from './surveillanceIoTKpiPanels';
 import { BulkDataEntryConsole } from '@/features/bulk-data-entry/BulkDataEntryConsole';
 import { GovernedActionDialog } from '@/features/approvals/GovernedActionDialog';
 import { extractArray } from '@/hooks/useWorkspaceData';
@@ -27,6 +29,7 @@ function defaultAssetId(assets: Record<string, unknown>[], selectedAssetId?: str
 }
 
 import type { WorkspacePanelProps } from './workspacePanelTypes';
+import type { FacilitiesSurveillanceMonitoringWorkspaceDto } from '@trackmind/shared';
 
 export function FacilitiesPanels({ results, role: roleProp }: WorkspacePanelProps): ReactElement {
   const { session } = useTenantSession();
@@ -42,6 +45,7 @@ export function FacilitiesPanels({ results, role: roleProp }: WorkspacePanelProp
   const incidents = extractArray<Record<string, unknown>>(data, 'incidents');
   const utilities = data && typeof data.utilities === 'object' ? data.utilities as Record<string, unknown> : undefined;
   const map = data && typeof data.map === 'object' ? data.map as Record<string, unknown> : undefined;
+  const surveillanceMonitoring = data?.surveillanceMonitoring as FacilitiesSurveillanceMonitoringWorkspaceDto | undefined;
 
   const [selectedAssetId, setSelectedAssetId] = useState<string | undefined>();
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
@@ -67,8 +71,12 @@ export function FacilitiesPanels({ results, role: roleProp }: WorkspacePanelProp
           { id: 'orders', label: 'Work orders', value: String(workOrders.length) },
           { id: 'utilities', label: 'Utilities coverage', value: utilities?.coveragePct != null ? `${utilities.coveragePct}%` : '—' },
           { id: 'incidents', label: 'Incidents', value: String(incidents.length) },
+          { id: 'facility-devices', label: 'Facility devices', value: String(surveillanceMonitoring?.summary.scopedDevices ?? '—') },
+          { id: 'facility-alerts', label: 'Facility alerts', value: String(surveillanceMonitoring?.summary.openFacilityAlerts ?? '—'), status: Number(surveillanceMonitoring?.summary.openFacilityAlerts ?? 0) > 0 ? 'warning' : 'nominal' },
         ]}
       />
+      <SurveillanceIoTKpiPanel results={results} profile="facilities" title="Facilities surveillance KPIs" description="Facility sensor health, gateway uptime, zone coverage, maintenance backlog, and device connectivity from the surveillance IoT layer." />
+      <FacilitiesSurveillanceMonitoringPanel monitoring={surveillanceMonitoring} />
       <FacilitiesGeospatialMap
         map={map}
         selectedAssetId={selectedAssetId}

@@ -17,13 +17,16 @@ import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { EntityFormAction } from '@/features/data-entry/TrackMindFormDialog';
 import { IncidentIntakeConsole } from '@/features/incident-intake/IncidentIntakeConsole';
 import { SecurityEventEntryConsole } from '@/features/security-events/SecurityEventEntryConsole';
+import { SecuritySurveillanceIntegrationPanel } from './securitySurveillanceIntegrationPanels';
+import { SurveillanceIoTKpiPanel } from './surveillanceIoTKpiPanels';
+import { IncidentSurveillanceContextPanel } from './incidentSurveillanceContextPanels';
+import { Link } from 'react-router-dom';
+import { hasPermission, type IncidentSurveillanceContextWorkspaceDto, type SecuritySurveillanceIntegrationWorkspaceDto } from '@trackmind/shared';
+import type { WorkspacePanelProps } from './workspacePanelTypes';
 
 function securityData(results: WorkspaceDataResult[]) {
   return feedData<Record<string, unknown>>(results, '/security-operations/workspace');
 }
-
-import { hasPermission } from '@trackmind/shared';
-import type { WorkspacePanelProps } from './workspacePanelTypes';
 
 export function SecurityPanels({ results, role: roleProp }: WorkspacePanelProps): ReactElement {
   const { session } = useTenantSession();
@@ -43,6 +46,8 @@ export function SecurityPanels({ results, role: roleProp }: WorkspacePanelProps)
   const sensorItems = extractArray<Record<string, unknown>>(sensorReadiness, 'items');
   const kpiItems = extractArray<Record<string, unknown>>(securityKpis, 'kpis');
   const dashboard = (data?.dashboard ?? {}) as Record<string, unknown>;
+  const surveillanceIntegration = data?.surveillanceIntegration as SecuritySurveillanceIntegrationWorkspaceDto | undefined;
+  const canViewLiveSurveillance = hasPermission(role, 'surveillance:live-view');
 
   return (
     <div className="space-y-4">
@@ -56,14 +61,24 @@ export function SecurityPanels({ results, role: roleProp }: WorkspacePanelProps)
         escalations={escalations}
       />
       ) : null}
+      {canViewLiveSurveillance ? (
+        <SectionPanel title="Live surveillance" description="Governed in-house CCTV viewer for multi-camera grids and single-camera focus.">
+          <Button size="sm" variant="outline" asChild>
+            <Link to="/cctv-viewer">Open CCTV viewer</Link>
+          </Button>
+        </SectionPanel>
+      ) : null}
       <KpiStrip
         items={[
           { id: 'coverage', label: 'Security coverage', value: `${String(securityKpis?.coveragePercent ?? '—')}%`, status: Number(securityKpis?.coveragePercent ?? 100) < 90 ? 'warning' : 'nominal' },
           { id: 'incidents', label: 'Active incidents', value: String(incidents.length), status: incidents.length ? 'warning' : 'nominal' },
           { id: 'cameras', label: 'Camera readiness', value: `${String(cameraReadiness?.score ?? '—')}%` },
           { id: 'access', label: 'Access events', value: String(access.length) },
+          { id: 'surv-alerts', label: 'Surveillance alerts', value: String(surveillanceIntegration?.summary.openSurveillanceAlerts ?? '—'), status: Number(surveillanceIntegration?.summary.openSurveillanceAlerts ?? 0) > 0 ? 'warning' : 'nominal' },
         ]}
       />
+      <SurveillanceIoTKpiPanel results={results} profile="security" title="Security surveillance KPIs" description="Live security posture from camera uptime, stream availability, alert volume, unresolved alerts, and incident-linked evidence." />
+      <SecuritySurveillanceIntegrationPanel integration={surveillanceIntegration} />
       <div className="grid gap-4 xl:grid-cols-2">
         <SectionPanel title="Incidents">
           <RecordTable
@@ -251,6 +266,9 @@ export function IncidentPanels({ results }: { results: WorkspaceDataResult[] }):
   const liveTimeline = timelineEntries;
   const focusedIncident = uniqueIncidents.find((incident) => String(incident.id) === focusedIncidentId)
     ?? incidentDetailQuery.data;
+  const surveillanceContext = incidentDetailQuery.data?.surveillanceContext as
+    | IncidentSurveillanceContextWorkspaceDto
+    | undefined;
 
   return (
     <div className="space-y-4">
@@ -329,6 +347,7 @@ export function IncidentPanels({ results }: { results: WorkspaceDataResult[] }):
           emptyLabel={timelineStreamStatus === 'connecting' ? 'Connecting to incident timeline stream…' : 'No timeline entries returned for the focused incident.'}
         />
       </SectionPanel>
+      <IncidentSurveillanceContextPanel context={surveillanceContext} />
       <SectionPanel title="Investigations">
         <RecordTable
           columns={[

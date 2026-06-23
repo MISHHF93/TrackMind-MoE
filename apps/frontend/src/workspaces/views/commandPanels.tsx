@@ -11,6 +11,9 @@ import type { WorkspaceDataResult } from '@/hooks/useWorkspaceData';
 import { feedFromIndex, indexWorkspaceFeeds, numericField } from '../feedUtils';
 import { flattenKpiItems } from '../feedPresenters';
 import { AdminFoundationPanels } from './platformPanels';
+import { SurveillanceInfrastructureStatusPanel } from './surveillanceInfrastructureStatus';
+import { SurveillanceIoTKpiPanel } from './surveillanceIoTKpiPanels';
+import { SurveillanceVendorIntegrationPanels } from './surveillanceVendorIntegrationPanels';
 import { EntityFormAction } from '@/features/data-entry/TrackMindFormDialog';
 import { TrackDayOverview } from '@/features/track/TrackDayOverview';
 import { TrackOvalDiagram } from '@/features/track/TrackOvalDiagram';
@@ -192,6 +195,9 @@ export function CommandCenterPanels({ results, role = 'platform-super-admin' }: 
 export function AdminPanels({ results }: WorkspacePanelProps): ReactElement {
   return (
     <div className="space-y-4">
+      <SurveillanceInfrastructureStatusPanel results={results} />
+      <SurveillanceIoTKpiPanel results={results} profile="admin" title="Platform surveillance KPIs" description="Administration view of camera uptime, stream availability, connectivity, gateway posture, zone coverage, and maintenance backlog." />
+      <SurveillanceVendorIntegrationPanels results={results} />
       <SectionPanel title="Administration actions" description="Platform identity, modules, and environment controls.">
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" asChild><Link to="/admin?focus=identity">Identity workspace</Link></Button>

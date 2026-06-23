@@ -19,6 +19,7 @@ import { createSafetyEmergencyOperationsBoundary, type SafetyEmergencyOperations
 import { createCqrsCommandHandler, type CqrsCommandHandler, type RaceStartCommandBody, type SafetyCriticalCommandBody } from './events/index.js';
 import { createNexusEventCatalog, InMemoryEventBus, type UniversalEventBus } from './eventBus.js';
 import { FacilitiesMaintenanceService, createSeededFacilitiesMaintenanceService } from './facilitiesMaintenance.js';
+import { FacilitiesSurveillanceMonitoringService } from './facilitiesSurveillanceMonitoringService.js';
 import { createFederationWorkspace } from './federation.js';
 import { createTrackCertificationCandidate } from './franchiseCertification.js';
 import { createKPIWorkspace, filterKPIWorkspace } from './kpiArtifacts.js';
@@ -42,6 +43,11 @@ import { ResponsibleAIGovernancePlatform } from './responsibleAiGovernor.js';
 import { createSafetyIntelligenceController, type SafetyIntelligenceController } from './safetyIntelligence/index.js';
 import { createOperationalNotesService, OperationalNotesService } from './operationalNotesService.js';
 import { SecurityOperationsService, createSeededSecurityOperationsService, type SecurityActor, type SecurityOpsPermission } from './securityOps.js';
+import { SecuritySurveillanceIntegrationService } from './securitySurveillanceIntegrationService.js';
+import { IncidentSurveillanceContextService } from './incidentSurveillanceContextService.js';
+import { RaceDaySurveillanceVisibilityService } from './raceDaySurveillanceVisibilityService.js';
+import { EquineSurveillanceContextService } from './equineSurveillanceContextService.js';
+import { createSurveillanceIoTModule, handleSurveillanceIoTRoute, type SurveillanceIoTModule } from './surveillanceIoT/index.js';
 import { createApexDomainControllers, type ApexDomainControllers } from './services/controllers.js';
 import { createEquineIntelligenceController, type EquineIntelligenceController } from './services/equine/index.js';
 import { createRtkTelemetryController, type RtkTelemetryController } from './telemetry/index.js';
@@ -802,9 +808,15 @@ export interface ApiFacadeState {
   barn: JsonBody;
   facilitiesMaintenance: JsonBody;
   facilitiesMaintenanceService: FacilitiesMaintenanceService;
+  facilitiesSurveillanceMonitoringService: FacilitiesSurveillanceMonitoringService;
   steward: JsonBody;
   security: JsonBody;
   securityOperationsService: SecurityOperationsService;
+  securitySurveillanceIntegrationService: SecuritySurveillanceIntegrationService;
+  incidentSurveillanceContextService: IncidentSurveillanceContextService;
+  raceDaySurveillanceVisibilityService: RaceDaySurveillanceVisibilityService;
+  equineSurveillanceContextService: EquineSurveillanceContextService;
+  surveillanceIoTModule: SurveillanceIoTModule;
   emergency: JsonBody;
   emergencyPlatform: EmergencyOperationsPlatform;
   emergencyOperationsService: EmergencyOperationsService;
@@ -872,6 +884,7 @@ export function createApiFacadeState(): ApiFacadeState {
   const barnOperations = barnService.snapshot();
   const workforce = seedWorkforceOperations({}, 'track-1', timestamp).dashboard(timestamp);
   const facilitiesMaintenanceService = createSeededFacilitiesMaintenanceService(timestamp);
+  const facilitiesSurveillanceMonitoringService = new FacilitiesSurveillanceMonitoringService();
   const facilitiesMaintenance = facilitiesMaintenanceService.workspace(facilitiesPrincipal) as any;
   const racingData = createRacingDataApiFacadeState(timestamp);
   const racingDataPolicyAudit = new ImmutableAuditLog();
@@ -891,6 +904,11 @@ export function createApiFacadeState(): ApiFacadeState {
   const compliance = complianceLibrary.dashboard();
   const securitySeed = createSecurityOperationsFacade(timestamp);
   const securityOperationsService = securitySeed.service;
+  const securitySurveillanceIntegrationService = new SecuritySurveillanceIntegrationService();
+  const incidentSurveillanceContextService = new IncidentSurveillanceContextService();
+  const raceDaySurveillanceVisibilityService = new RaceDaySurveillanceVisibilityService();
+  const equineSurveillanceContextService = new EquineSurveillanceContextService();
+  const surveillanceIoTModule = createSurveillanceIoTModule({ securityOps: securityOperationsService, clock: () => timestamp });
   const security = securitySeed.workspace as any;
   const securityKpiPack = securityOperationsService.computeSecurityKpiPack();
   const emergencySeed = createServiceBackedEmergencyWorkspace(workforce, timestamp);
@@ -921,6 +939,28 @@ export function createApiFacadeState(): ApiFacadeState {
   const approvalEventBus = new InMemoryEventBus();
   const platformEventBus = new InMemoryEventBus();
   const approvalService = new CentralizedApprovalService({ audit: sharedAuditTarget, eventBus: approvalEventBus });
+  if (approvalService.allRequests().length === 0) {
+    approvalService.createRequest({
+      tenantId: 'trackmind',
+      racetrackId: 'main-track',
+      action: 'race-start',
+      target: 'race-7',
+      requestedBy: 'user-horse-ops-1',
+      actorType: 'human',
+      reason: 'Race 7 post-time readiness requires steward and veterinarian sign-off.',
+      evidence: ['readiness-watch', 'gate-crew-checked-in'],
+    });
+    approvalService.createRequest({
+      tenantId: 'trackmind',
+      racetrackId: 'main-track',
+      action: 'starting-gate-move',
+      target: 'gate-1',
+      requestedBy: 'user-starter-1',
+      actorType: 'human',
+      reason: 'Verify starting gate position before race 7.',
+      evidence: ['gps-fix', 'distance-calculation-sheet'],
+    });
+  }
   const racingCalendarService = createSeededRacingCalendarPlatform({
     racePlatform: raceOperations.platform,
     readinessDashboard,
@@ -991,6 +1031,26 @@ export function createApiFacadeState(): ApiFacadeState {
   });
   const stewardOperations = stewardOperationsService.workspace(timestamp);
   const stewardCenter = stewardOperationsService.centerDto(timestamp);
+  surveillanceIoTModule.configureExternalClipProvider(() => {
+    const clips: import('./surveillanceIoT/viewer/mediaViewerService.js').ExternalMediaClipSource[] = [];
+    for (const inquiry of stewardCenter.inquiries) {
+      for (const evidence of inquiry.evidenceReferences ?? []) {
+        if (evidence.kind !== 'video') continue;
+        clips.push({
+          ref: { kind: 'steward-evidence', id: evidence.id, inquiryId: inquiry.id },
+          title: evidence.description ?? evidence.id,
+          sourceDomain: 'steward',
+          capturedAt: evidence.capturedAt,
+          inquiryId: inquiry.id,
+          storageUri: evidence.uri,
+          custodySummary: evidence.custody?.chainOfCustody?.[0]?.actorId
+            ? `Collected by ${evidence.custody.chainOfCustody[0].actorId}`
+            : 'Steward evidence vault',
+        });
+      }
+    }
+    return clips;
+  });
   const startingGateAuditLog = new ImmutableAuditLog();
   const startingGateOperationsService = createSeededStartingGateOperations({
     raceCardManagement: raceCardManagementService,
@@ -1305,9 +1365,15 @@ export function createApiFacadeState(): ApiFacadeState {
     barn: { ...barnOperations, mock: false },
     facilitiesMaintenance: { ...facilitiesMaintenance, mock: false },
     facilitiesMaintenanceService,
+    facilitiesSurveillanceMonitoringService,
     steward: stewardCenter,
     security,
     securityOperationsService,
+    securitySurveillanceIntegrationService,
+    incidentSurveillanceContextService,
+    raceDaySurveillanceVisibilityService,
+    equineSurveillanceContextService,
+    surveillanceIoTModule,
     emergency,
     emergencyPlatform,
     emergencyOperationsService,
@@ -2204,8 +2270,32 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     const input = isRecord(body) ? body : {};
     return { status: 202, body: state.racingFinanceService.requestPayout(Number(input.amount ?? 0), String(input.recipientLabel ?? 'Recipient'), String(input.actor ?? 'finance-manager')) };
   }
+  if (method === 'GET' && path === '/equine-welfare/surveillance-context/workspace') {
+    const actor = securityActorFromHeaders(authHeaders);
+    const viewerRole = state.equineSurveillanceContextService.resolveViewerRole(roleFromHeader(authHeaders));
+    return {
+      status: 200,
+      body: state.equineSurveillanceContextService.buildContext(
+        viewerRole,
+        actor,
+        state.surveillanceIoTModule,
+        state.equineWelfareIntelligenceService.workspace(now()),
+        now(),
+      ),
+    };
+  }
   if (method === 'GET' && path === '/equine-welfare/workspace') {
-    return { status: 200, body: state.equineWelfareIntelligenceService.workspace(now()) };
+    const actor = securityActorFromHeaders(authHeaders);
+    const viewerRole = state.equineSurveillanceContextService.resolveViewerRole(roleFromHeader(authHeaders));
+    const workspace = state.equineWelfareIntelligenceService.workspace(now());
+    const surveillanceContext = state.equineSurveillanceContextService.buildContext(
+      viewerRole,
+      actor,
+      state.surveillanceIoTModule,
+      workspace,
+      now(),
+    );
+    return { status: 200, body: { ...workspace, surveillanceContext } };
   }
   if (method === 'GET' && path === '/equine-welfare/dashboard') {
     return { status: 200, body: state.equineWelfareIntelligenceService.kpiRegistry(now()) };
@@ -2310,6 +2400,33 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   }
   if (method === 'GET' && path === '/security-operations/kpis') {
     return { status: 200, body: state.securityOperationsService.computeSecurityKpiPack() };
+  }
+  if (method === 'GET' && path === '/security-operations/surveillance-integration/workspace') {
+    try {
+      const actor = securityActorFromHeaders(authHeaders);
+      return {
+        status: 200,
+        body: state.securitySurveillanceIntegrationService.buildIntegrationWorkspace(
+          actor,
+          state.securityOperationsService,
+          state.surveillanceIoTModule,
+          now(),
+        ),
+      };
+    } catch (error) {
+      return { status: 403, body: { ok: false, error: { code: 'security_forbidden', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
+  if (path.startsWith('/surveillance-iot/')) {
+    const surveillanceResponse = handleSurveillanceIoTRoute(
+      state.surveillanceIoTModule,
+      method,
+      path,
+      body,
+      securityActorFromHeaders(authHeaders),
+      requestUrl.searchParams,
+    );
+    if (surveillanceResponse) return surveillanceResponse;
   }
   if (method === 'POST' && path === '/security-operations/events') {
     const input = isRecord(body) ? body : {};
@@ -2447,6 +2564,43 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
       },
     };
   }
+  const incidentSurveillanceContextMatch = path.match(/^\/incidents\/([^/]+)\/surveillance-context$/);
+  if (method === 'GET' && incidentSurveillanceContextMatch) {
+    const incidentId = decodeURIComponent(incidentSurveillanceContextMatch[1]);
+    const incident = state.platformServices.incidents.get(incidentId);
+    if (!incident) {
+      return { status: 404, body: { ok: false, error: { code: 'not_found', message: 'Incident not found' } } };
+    }
+    const actor = securityActorFromHeaders(authHeaders);
+    return {
+      status: 200,
+      body: state.incidentSurveillanceContextService.buildContext(
+        actor,
+        incident,
+        state.surveillanceIoTModule,
+        state.securityOperationsService,
+        state.securitySurveillanceIntegrationService,
+        now(),
+      ),
+    };
+  }
+  const incidentDetailMatch = path.match(/^\/incidents\/([^/]+)$/);
+  if (method === 'GET' && incidentDetailMatch) {
+    const incidentId = decodeURIComponent(incidentDetailMatch[1]);
+    const incident = state.platformServices.incidents.get(incidentId);
+    if (incident) {
+      const actor = securityActorFromHeaders(authHeaders);
+      const surveillanceContext = state.incidentSurveillanceContextService.buildContext(
+        actor,
+        incident,
+        state.surveillanceIoTModule,
+        state.securityOperationsService,
+        state.securitySurveillanceIntegrationService,
+        now(),
+      );
+      return { status: 200, body: { ...incident, surveillanceContext } };
+    }
+  }
   const platformResponse = handlePlatformRequest(method, path, body, {
     auditEvents: state.auditEvents as AuditEventDto[],
     auditLedger: state.immutableAuditLedger,
@@ -2577,7 +2731,26 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     return { status: 200, body: filterOperationsForRole(state.operations, roleFromHeader(headers)) };
   }
   if (method === 'GET' && path === '/races') return { status: 200, body: (state.readiness as any).races ?? [] };
-  if (method === 'GET' && path === '/race-day-readiness/dashboard') return { status: 200, body: state.readiness };
+  if (method === 'GET' && path === '/race-day-readiness/surveillance-visibility/workspace') {
+    const actor = securityActorFromHeaders(authHeaders);
+    return {
+      status: 200,
+      body: state.raceDaySurveillanceVisibilityService.buildVisibilityWorkspace(
+        actor,
+        state.surveillanceIoTModule,
+        now(),
+      ),
+    };
+  }
+  if (method === 'GET' && path === '/race-day-readiness/dashboard') {
+    const actor = securityActorFromHeaders(authHeaders);
+    const surveillanceVisibility = state.raceDaySurveillanceVisibilityService.buildVisibilityWorkspace(
+      actor,
+      state.surveillanceIoTModule,
+      now(),
+    );
+    return { status: 200, body: { ...(state.readiness as Record<string, unknown>), surveillanceVisibility } };
+  }
   if (method === 'GET' && path === '/racing-calendar/workspace') return { status: 200, body: state.racingCalendar };
   if (method === 'GET' && path === '/racing-calendar/seasons') return { status: 200, body: state.racingCalendarService.listSeasonsView(now()) };
   if (method === 'GET' && path === '/racing-calendar/conflicts') return { status: 200, body: state.racingCalendarService.listConflicts(now()) };
@@ -2834,7 +3007,18 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     status: /require|access|only|Unknown/i.test(error instanceof Error ? error.message : String(error)) ? 403 : 400,
     body: { ok: false, error: { code: 'veterinary_request_denied', message: error instanceof Error ? error.message : String(error) } },
   });
-  if (method === 'GET' && path === '/veterinary-operations/workspace') return { status: 200, body: state.veterinaryOperationsService.workspace(now(), vetAccess) };
+  if (method === 'GET' && path === '/veterinary-operations/workspace') {
+    const workspace = state.veterinaryOperationsService.workspace(now(), vetAccess);
+    const actor = securityActorFromHeaders(authHeaders);
+    const surveillanceContext = state.equineSurveillanceContextService.buildContext(
+      vetAccess.role,
+      actor,
+      state.surveillanceIoTModule,
+      state.equineWelfareIntelligenceService.workspace(now()),
+      now(),
+    );
+    return { status: 200, body: { ...workspace, surveillanceContext } };
+  }
   if (method === 'GET' && path === '/veterinary-operations/dashboard') return { status: 200, body: state.veterinaryOperationsService.workspace(now(), vetAccess).dashboard };
   if (method === 'GET' && path === '/veterinary-operations/audit-trail') {
     const horseId = requestUrl.searchParams.get('horseId') ?? undefined;
@@ -3041,7 +3225,35 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
     }
   }
   if (method === 'GET' && path === '/barn-operations/workspace') return { status: 200, body: state.barn };
-  if (method === 'GET' && path === '/facilities-maintenance/workspace') return { status: 200, body: state.facilitiesMaintenanceService.workspace(facilitiesPrincipal) };
+  if (method === 'GET' && path === '/facilities-maintenance/surveillance-monitoring/workspace') {
+    try {
+      const actor = securityActorFromHeaders(authHeaders);
+      return {
+        status: 200,
+        body: state.facilitiesSurveillanceMonitoringService.buildMonitoringWorkspace(
+          actor,
+          state.facilitiesMaintenanceService,
+          facilitiesPrincipal,
+          state.surveillanceIoTModule,
+          now(),
+        ),
+      };
+    } catch (error) {
+      return { status: 403, body: { ok: false, error: { code: 'facilities_forbidden', message: error instanceof Error ? error.message : String(error) } } };
+    }
+  }
+  if (method === 'GET' && path === '/facilities-maintenance/workspace') {
+    const actor = securityActorFromHeaders(authHeaders);
+    const workspace = state.facilitiesMaintenanceService.workspace(facilitiesPrincipal);
+    const surveillanceMonitoring = state.facilitiesSurveillanceMonitoringService.buildMonitoringWorkspace(
+      actor,
+      state.facilitiesMaintenanceService,
+      facilitiesPrincipal,
+      state.surveillanceIoTModule,
+      now(),
+    );
+    return { status: 200, body: { ...workspace, surveillanceMonitoring, mock: false } };
+  }
   if (method === 'GET' && path === '/facilities-maintenance/map') return { status: 200, body: state.facilitiesMaintenanceService.mapState(facilitiesPrincipal) };
   if (method === 'GET' && path === '/facilities-maintenance/utilities') return { status: 200, body: state.facilitiesMaintenanceService.utilities.snapshot(now()) };
   if (method === 'POST' && path === '/facilities-maintenance/inspections') {
@@ -3345,7 +3557,15 @@ export async function handleApiRequest(method: HttpMethod, pathname: string, bod
   }
   if (method === 'GET' && path === '/security-operations/workspace') {
     try {
-      return { status: 200, body: { ...state.securityOperationsService.getWorkspace(securityActorFromHeaders(authHeaders)), mock: false } };
+      const actor = securityActorFromHeaders(authHeaders);
+      const workspace = state.securityOperationsService.getWorkspace(actor);
+      const surveillanceIntegration = state.securitySurveillanceIntegrationService.buildIntegrationWorkspace(
+        actor,
+        state.securityOperationsService,
+        state.surveillanceIoTModule,
+        now(),
+      );
+      return { status: 200, body: { ...workspace, surveillanceIntegration, mock: false } };
     } catch (error) {
       return { status: 403, body: { ok: false, error: { code: 'security_forbidden', message: error instanceof Error ? error.message : String(error) } } };
     }

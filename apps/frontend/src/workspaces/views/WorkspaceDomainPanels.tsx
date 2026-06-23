@@ -16,6 +16,14 @@ import { FinancePanels, TicketingPanels, FederationPanels, DataHubPanels } from 
 import { SettingsPanels } from './settingsPanels';
 import { AnalyticsPanels, FanExperiencePanels, NotificationsPanels } from './platformPanels';
 import { IotMonitoringPanels } from './iotMonitoringPanels';
+import { CctvViewerPanels } from './cctvViewerPanels';
+import { CctvDeviceRegistryPanels } from './cctvDeviceRegistryPanels';
+import { CctvCameraDetailPanels } from './cctvCameraDetailPanels';
+import { IoTDeviceRegistryPanels } from './iotDeviceRegistryPanels';
+import { IoTDeviceDetailPanels } from './iotDeviceDetailPanels';
+import { SurveillanceZoneMappingPanels } from './surveillanceZoneMappingPanels';
+import { SurveillanceHealthPanels } from './surveillanceHealthPanels';
+import { SurveillanceAlertingPanels } from './surveillanceAlertingPanels';
 import { AccountPanels } from './accountPanels';
 
 export function WorkspaceDomainPanels({
@@ -37,6 +45,22 @@ export function WorkspaceDomainPanels({
       return <AdminPanels {...panelProps} />;
     case 'iotMonitoring':
       return <IotMonitoringPanels {...panelProps} />;
+    case 'cctvRegistry':
+      return <CctvDeviceRegistryPanels {...panelProps} />;
+    case 'cctvViewer':
+      return <CctvViewerPanels {...panelProps} />;
+    case 'cctvCameraDetail':
+      return <CctvCameraDetailPanels {...panelProps} />;
+    case 'iotRegistry':
+      return <IoTDeviceRegistryPanels {...panelProps} />;
+    case 'iotDeviceDetail':
+      return <IoTDeviceDetailPanels {...panelProps} />;
+    case 'surveillanceZoneMapping':
+      return <SurveillanceZoneMappingPanels {...panelProps} />;
+    case 'surveillanceHealth':
+      return <SurveillanceHealthPanels {...panelProps} />;
+    case 'surveillanceAlerting':
+      return <SurveillanceAlertingPanels {...panelProps} />;
     case 'raceDay':
       return <RaceDayPanels {...panelProps} />;
     case 'surface':

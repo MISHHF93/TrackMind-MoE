@@ -4,6 +4,8 @@ import {
   hasPermission,
   registerFacilitiesKpiPack,
   registerSafetyKpiPack,
+  registerSurveillanceIoTKpiPack,
+  surveillanceIoTKpiSeedMetrics,
   type KPIDomain,
   type KPIArtifact,
   type KPIApprovalSensitivity,
@@ -145,7 +147,14 @@ export function createKPIWorkspace(input: KPIWorkspaceInput): KPIWorkspaceDto {
   const baseKpis = seeds.map((definition, index) => toArtifact(definition, generatedAt, tenantId, organizationId, racetrackId, index + 1));
   const facilitiesPack = registerFacilitiesKpiPack({ generatedAt, tenantId, organizationId, racetrackId });
   const safetyPack = registerSafetyKpiPack({ generatedAt, tenantId, organizationId, racetrackId });
-  const kpis = [...baseKpis, ...facilitiesPack, ...safetyPack];
+  const surveillancePack = registerSurveillanceIoTKpiPack({
+    generatedAt,
+    tenantId,
+    organizationId,
+    racetrackId,
+    metrics: surveillanceIoTKpiSeedMetrics,
+  });
+  const kpis = [...baseKpis, ...facilitiesPack, ...safetyPack, ...surveillancePack];
   return {
     generatedAt,
     tenantId,

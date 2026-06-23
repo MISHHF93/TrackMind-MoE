@@ -33,6 +33,7 @@ export const kpiDomains = [
   'data-quality',
   'veterinary-privacy',
   'deployment-readiness',
+  'surveillance-iot',
 ] as const;
 
 export type KPIDomain = typeof kpiDomains[number];

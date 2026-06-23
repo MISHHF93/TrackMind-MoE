@@ -111,6 +111,10 @@ export function getBearerToken(): string | undefined {
   return currentSession.bearerToken;
 }
 
+export function getSessionUserId(): string | undefined {
+  return currentSession.userId;
+}
+
 export function setCurrentSession(session: SessionState): void {
   currentSession = session;
 }

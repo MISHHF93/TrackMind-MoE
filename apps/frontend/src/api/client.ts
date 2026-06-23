@@ -1,6 +1,6 @@
 import type { TenantRacetrackContext } from '@trackmind/shared';
 import { apiUrl } from './paths';
-import { getBearerToken, getTenantContext } from '@/auth/session';
+import { getBearerToken, getTenantContext, getSessionUserId } from '@/auth/session';
 import { isRecord } from '@/lib/utils';
 import type { ApiAdapterSource } from './paths';
 import { adapterSourceForPath } from './paths';
@@ -68,6 +68,7 @@ function scopedPath(path: string): string {
 
 function scopeHeaders(tenantContext: TenantRacetrackContext, init?: RequestInit): HeadersInit {
   const bearerToken = getBearerToken();
+  const sessionUserId = getSessionUserId();
   const useDevRoleHeader = import.meta.env.VITE_TRACKMIND_AUTH_PROVIDER !== 'entra' && !bearerToken;
   return {
     Accept: 'application/json',
@@ -75,6 +76,7 @@ function scopeHeaders(tenantContext: TenantRacetrackContext, init?: RequestInit)
     'x-trackmind-tenant-id': tenantContext.tenantId,
     'x-trackmind-racetrack-id': tenantContext.racetrackId,
     'x-trackmind-organization-id': tenantContext.organizationId,
+    ...(sessionUserId ? { 'x-trackmind-actor-id': sessionUserId } : {}),
     ...(useDevRoleHeader ? { 'x-trackmind-role': tenantContext.role } : {}),
     ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
     ...(init?.headers ?? {}),

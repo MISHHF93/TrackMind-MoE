@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import type { KpiMutationDraftResultDto, Role } from '@trackmind/shared';
-import { kpiAdminRoles } from '@trackmind/shared';
+import { assignableRoles, kpiAdminRoles, normalizeRole, roleRegistry } from '@trackmind/shared';
 import {
   acknowledgeNotification,
   authorizeApprovalExecution,
@@ -12,6 +12,7 @@ import {
 } from '@/api/mutations';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { actionDisabledReason, roleCanUseAction } from '@/domain/approvalControls';
+import { roleDisplayName } from '@/domain/support';
 import { Button } from '@/design/components/button';
 import { KpiStrip } from '@/design/components/kpi-strip';
 import { mapRecords, RecordTable } from '@/design/components/record-table';
@@ -437,6 +438,7 @@ function KpiAdminPanels({ results }: { results: WorkspaceDataResult[] }): ReactE
 
 import { filterKpisForRole } from '@trackmind/shared';
 import type { WorkspacePanelProps } from './workspacePanelTypes';
+import { SurveillanceIoTKpiPanel } from './surveillanceIoTKpiPanels';
 
 export function AnalyticsPanels({ results, role = 'data-analytics-user' }: WorkspacePanelProps): ReactElement {
   const workspaceFeed = feedData<Record<string, unknown>>(results, '/analytics/workspace');
@@ -480,6 +482,12 @@ export function AnalyticsPanels({ results, role = 'data-analytics-user' }: Works
 
   return (
     <div className="space-y-4">
+      <SurveillanceIoTKpiPanel
+        results={results}
+        profile="executive"
+        title="Operational surveillance summary"
+        description="Executive rollup of camera uptime, connectivity, alert pressure, facility sensor health, maintenance backlog, and incident-linked evidence."
+      />
       <KpiStrip
         items={summary.slice(0, 4).map((item, index) => ({
           id: String(item.label ?? index),
@@ -860,6 +868,11 @@ export function NotificationsPanels({ results }: { results: WorkspaceDataResult[
   );
 }
 
+function assignmentRoleLabel(roleSlug: string): string {
+  const normalized = normalizeRole(roleSlug);
+  return normalized ? roleDisplayName(normalized) : roleSlug;
+}
+
 export function AdminFoundationPanels({ results }: { results: WorkspaceDataResult[] }): ReactElement {
   const foundation = feedData<Record<string, unknown>>(results, '/platform/foundation');
   const environment = feedData<Record<string, unknown>>(results, '/platform/environment');
@@ -870,6 +883,56 @@ export function AdminFoundationPanels({ results }: { results: WorkspaceDataResul
   const users = extractArray<Record<string, unknown>>(identity, 'users');
   const roleAssignments = extractArray<Record<string, unknown>>(identity, 'roleAssignments');
   const accessRequests = extractArray<Record<string, unknown>>(identity, 'accessRequests');
+
+  const userById = useMemo(() => {
+    const map = new Map<string, { displayName: string; email: string }>();
+    for (const user of users) {
+      const id = String(user.id ?? user.userId ?? '');
+      if (!id) continue;
+      map.set(id, {
+        displayName: String(user.displayName ?? id),
+        email: String(user.email ?? ''),
+      });
+    }
+    return map;
+  }, [users]);
+
+  const assignmentRows = useMemo(
+    () => mapRecords(roleAssignments, (assignment) => {
+      const userId = String(assignment.userId ?? '—');
+      const user = userById.get(userId);
+      const roleSlug = String(assignment.role ?? '—');
+      return {
+        principal: user ? `${user.displayName} (${userId})` : userId,
+        role: assignmentRoleLabel(roleSlug),
+        status: 'assigned',
+      };
+    }),
+    [roleAssignments, userById],
+  );
+
+  const accessRequestRows = useMemo(
+    () => mapRecords(accessRequests, (request) => {
+      const userId = String(request.userId ?? '—');
+      const user = userById.get(userId);
+      const roleSlug = String(request.requestedRole ?? '—');
+      return {
+        principal: user ? `${user.displayName} (${userId})` : userId,
+        role: assignmentRoleLabel(roleSlug),
+        status: String(request.status ?? 'pending'),
+      };
+    }),
+    [accessRequests, userById],
+  );
+
+  const roleCatalogRows = useMemo(
+    () => assignableRoles.map((role) => ({
+      role: roleRegistry[role]?.displayName ?? role,
+      group: roleRegistry[role]?.group ?? '—',
+      privileged: roleRegistry[role]?.privileged ? 'yes' : 'no',
+    })),
+    [],
+  );
 
   return (
     <div className="space-y-4">
@@ -915,31 +978,37 @@ export function AdminFoundationPanels({ results }: { results: WorkspaceDataResul
           rows={mapRecords(flags, (f) => ({ key: String(f.key ?? '—'), description: String(f.description ?? '—') }))}
         />
       </SectionPanel>
-      <SectionPanel title="Identity & access" description="Users, role assignments, and pending access requests.">
+      <SectionPanel title="Identity & access" description="Active principal-to-role assignments for this tenant.">
         <RecordTable
           columns={[
             { key: 'principal', label: 'Principal' },
             { key: 'role', label: 'Role' },
             { key: 'status', label: 'Status' },
           ]}
-          rows={[
-            ...mapRecords(users, (u) => ({
-              principal: String(u.displayName ?? u.userId ?? '—'),
-              role: String(u.primaryRole ?? '—'),
-              status: String(u.status ?? 'active'),
-            })),
-            ...mapRecords(roleAssignments, (r) => ({
-              principal: String(r.userId ?? '—'),
-              role: String(r.role ?? '—'),
-              status: 'assigned',
-            })),
-            ...mapRecords(accessRequests, (r) => ({
-              principal: String(r.userId ?? '—'),
-              role: String(r.requestedRole ?? '—'),
-              status: String(r.status ?? 'pending'),
-            })),
+          rows={assignmentRows}
+          emptyLabel="No role assignments returned."
+        />
+      </SectionPanel>
+      <SectionPanel title="Pending access requests" description="Governed access elevation requests awaiting review.">
+        <RecordTable
+          columns={[
+            { key: 'principal', label: 'Principal' },
+            { key: 'role', label: 'Requested role' },
+            { key: 'status', label: 'Status' },
           ]}
-          emptyLabel="No identity records returned."
+          rows={accessRequestRows}
+          emptyLabel="No pending access requests."
+        />
+      </SectionPanel>
+      <SectionPanel title="Available roles" description="Assignable role catalog for dropdowns, permission matrix, and governance.">
+        <RecordTable
+          columns={[
+            { key: 'role', label: 'Role' },
+            { key: 'group', label: 'Group' },
+            { key: 'privileged', label: 'Privileged' },
+          ]}
+          rows={roleCatalogRows}
+          emptyLabel="No assignable roles configured."
         />
       </SectionPanel>
     </div>

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getJson } from '@/api/client';
-import { routeApiPathGroups } from '@/api/paths';
+import { resolveRouteApiPaths } from '@/api/paths';
 import type { DomainRouteId } from '@/domain/support';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { isRecord } from '@/lib/utils';
@@ -10,6 +10,7 @@ export interface WorkspaceDataResult {
   status: 'ready' | 'empty' | 'error';
   data?: unknown;
   message?: string;
+  emptyReason?: string;
 }
 
 const workspacePathStaleTimeMs = 30_000;
@@ -28,6 +29,7 @@ function toWorkspaceDataResult(path: string, result: Awaited<ReturnType<typeof g
     status: result.status === 'ready' ? 'ready' : result.status === 'empty' ? 'empty' : 'error',
     data: result.data,
     message: result.message,
+    emptyReason: result.emptyReason,
   };
 }
 
@@ -55,16 +57,19 @@ async function fetchWorkspacePaths(
   return paths.map((path) => byPath.get(path) ?? { path, status: 'error', message: 'Workspace path was not loaded.' });
 }
 
-export function useWorkspaceData(routeId: DomainRouteId) {
-  const { session } = useTenantSession();
+export function useWorkspaceData(routeId: DomainRouteId, pathParams?: Record<string, string>) {
+  const { session, authReady } = useTenantSession();
   const queryClient = useQueryClient();
-  const paths = routeApiPathGroups[routeId];
+  const paths = resolveRouteApiPaths(routeId, pathParams);
 
   return useQuery({
-    queryKey: workspaceQueryKey(routeId, session.sessionKey),
+    queryKey: [...workspaceQueryKey(routeId, session.sessionKey), pathParams ?? {}],
     queryFn: () => fetchWorkspacePaths(queryClient, paths, session.sessionKey),
     staleTime: workspacePathStaleTimeMs,
     retry: 1,
+    enabled: authReady
+      && (routeId !== 'cctvCameraDetail' || Boolean(pathParams?.cameraId))
+      && (routeId !== 'iotDeviceDetail' || Boolean(pathParams?.deviceId)),
   });
 }
 

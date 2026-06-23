@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTenantSession } from '@/auth/TenantSessionProvider';
 import { stewardRulingRoles } from '@trackmind/shared';
@@ -213,13 +214,21 @@ export function StewardingPanels({ results, role: roleProp }: WorkspacePanelProp
               { key: 'ref', label: 'Reference' },
               { key: 'custody', label: 'Custody' },
               { key: 'hold', label: 'Legal hold' },
+              { key: 'viewer', label: 'Viewer' },
             ]}
             rows={mapRecords(evidence, (e) => {
               const custody = e.custody as { chainOfCustody?: unknown[]; legalHold?: boolean } | undefined;
+              const evidenceId = String(e.id ?? e.referenceId ?? '');
+              const isVideo = String(e.kind ?? '') === 'video';
               return {
-                ref: String(e.id ?? e.referenceId ?? '—'),
+                ref: evidenceId || '—',
                 custody: String(custody?.chainOfCustody?.length ?? e.custodyStatus ?? '—'),
                 hold: String(custody?.legalHold ?? e.legalHold ?? '—'),
+                viewer: isVideo && evidenceId ? (
+                  <Link className="text-sm underline" to={`/cctv-viewer?tab=recorded&clip=${encodeURIComponent(`steward-evidence:${evidenceId}`)}`}>
+                    Open in viewer
+                  </Link>
+                ) : '—',
               };
             })}
           />

@@ -1,6 +1,7 @@
 import { normalizeRole, roles, type Role } from '@trackmind/shared';
 import type { IncomingMessage } from 'node:http';
 import type { IdentityService } from './identityService.js';
+import { seededUserIdForRole } from './identityService.js';
 
 export interface RequestPrincipal {
   userId: string;
@@ -59,7 +60,7 @@ export function resolveRequestPrincipal(
     const rawRole = headerValue(headers, 'x-trackmind-role');
     const role = rawRole ? normalizeRole(rawRole) : undefined;
     if (!role) return undefined;
-    const userId = headerValue(headers, 'x-trackmind-actor-id') ?? `dev-${role}`;
+    const userId = headerValue(headers, 'x-trackmind-actor-id') ?? seededUserIdForRole(role) ?? `dev-${role}`;
     return {
       userId,
       tenantId,

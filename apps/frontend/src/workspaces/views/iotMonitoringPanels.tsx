@@ -7,6 +7,9 @@ import { SectionPanel } from '@/design/components/section-panel';
 import { extractArray } from '@/hooks/useWorkspaceData';
 import { feedData } from '../feedUtils';
 import type { WorkspacePanelProps } from './workspacePanelTypes';
+import { SurveillanceInfrastructureStatusPanel } from './surveillanceInfrastructureStatus';
+import { SurveillanceIoTKpiPanel } from './surveillanceIoTKpiPanels';
+import { SurveillanceVendorIntegrationPanels } from './surveillanceVendorIntegrationPanels';
 
 function iotCategoryLabel(category: unknown): string {
   const value = String(category ?? '');
@@ -40,16 +43,32 @@ export function IotMonitoringPanels({ results }: WorkspacePanelProps): ReactElem
 
   return (
     <div className="space-y-4">
+      <SurveillanceInfrastructureStatusPanel results={results} showHierarchy={false} showActions={false} />
+      <SurveillanceIoTKpiPanel results={results} profile="full" title="Surveillance & IoT KPI pack" description="Full KPI pack across camera uptime, streams, connectivity, alerts, gateways, facility sensors, zone coverage, maintenance, and incident evidence." />
+      <SurveillanceVendorIntegrationPanels results={results} />
+
       <SectionPanel
-        title="Platform monitoring hierarchy"
-        description="System Status tier for IoT gateways, CCTV/VMS connectors, and live device readiness across the racetrack estate."
+        title="Integration & domain drill-down"
+        description="Connector catalog, fleet tables, and SOC projections below the platform infrastructure status tier."
       >
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" asChild>
-            <Link to="/admin">Platform administration</Link>
+            <Link to="/cctv-viewer">CCTV viewer</Link>
           </Button>
           <Button size="sm" variant="outline" asChild>
-            <Link to="/security">Security operations console</Link>
+            <Link to="/cctv-registry">CCTV device registry</Link>
+          </Button>
+          <Button size="sm" variant="outline" asChild>
+            <Link to="/iot-registry">IoT device registry</Link>
+          </Button>
+          <Button size="sm" variant="outline" asChild>
+            <Link to="/surveillance-zone-mapping">Zone mapping</Link>
+          </Button>
+          <Button size="sm" variant="outline" asChild>
+            <Link to="/surveillance-health">Surveillance health</Link>
+          </Button>
+          <Button size="sm" variant="outline" asChild>
+            <Link to="/admin">Platform administration</Link>
           </Button>
         </div>
         <ol className="mt-4 space-y-1 text-sm text-[var(--muted-foreground)]">
@@ -70,13 +89,13 @@ export function IotMonitoringPanels({ results }: WorkspacePanelProps): ReactElem
           },
           {
             id: 'camera-readiness',
-            label: 'Camera readiness',
+            label: 'Camera readiness score',
             value: `${String(cameraReadiness?.score ?? securityKpis?.cameraHealthScore ?? '—')}%`,
             status: Number(cameraReadiness?.score ?? 100) < 90 ? 'warning' : 'nominal',
           },
           {
             id: 'sensor-readiness',
-            label: 'IoT sensor readiness',
+            label: 'IoT sensor readiness score',
             value: `${String(sensorReadiness?.score ?? securityKpis?.sensorHealthScore ?? '—')}%`,
             status: Number(sensorReadiness?.score ?? 100) < 90 ? 'warning' : 'nominal',
           },
@@ -87,7 +106,7 @@ export function IotMonitoringPanels({ results }: WorkspacePanelProps): ReactElem
           },
           {
             id: 'soc-alerts',
-            label: 'SOC alerts',
+            label: 'SOC alert queue',
             value: String(securitySoc?.alertCount ?? '—'),
             status: Number(securitySoc?.alertCount ?? 0) > 0 ? 'warning' : 'nominal',
           },
